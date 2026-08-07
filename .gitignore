@@ -1,0 +1,34 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+*.egg-info/
+
+# Environment
+.env
+bot/.env
+
+# Bot runtime data
+bot/playlists.json
+bot/playlists.json.tmp
+bot/sessions.json
+bot/sessions.json.tmp
+
+# Training artifacts
+training/output/
+training/*.onnx
+training/*.tflite
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+.docker/

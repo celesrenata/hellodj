@@ -1,0 +1,36 @@
+# Lavalink configuration for Docker deployment
+# Based on standard Lavalink application.yml format
+
+lavalink:
+  server:
+    host: "0.0.0.0"
+    port: 2333
+    password: "youshallnotpass"
+  buffer:
+    period: 500
+    periodMilliseconds: 500
+  limits:
+    memory: 0
+    cpu: 0
+
+sources:
+  youtube:
+    enabled: true
+  youtubemusic:
+    enabled: true
+  soundcloud:
+    enabled: true
+  spotify:
+    enabled: false  # Requires Spotify credentials in the bot, not in Lavalink
+
+filters:
+  enabled: true
+  timescale:
+    enabled: true
+  rotation:
+    enabled: true
+  equalizer:
+    enabled: true
+
+server:
+  port: 2333

@@ -1,31 +1,63 @@
-# Hello DJ — Wake Word Training
+# Hello DJ
 
-Custom "Hello DJ" wake word model for a Discord music bot with voice activation.
+A voice-activated Discord music bot with a custom "Hello DJ" wake word.
 
-## Requirements
+## Project Structure
 
-- GPU with CUDA (tested on RTX 4070 Ti SUPER, 16.7 GB VRAM)
-- PyTorch 2.13, torchaudio 2.11, speechbrain 1.1.0
-
-## Setup
-
-```bash
-git clone git@github.com:celesrenata/openWakeWord.git -b hello-dj-training
-git clone git@github.com:celesrenata/piper-sample-generator.git -b hello-dj-training
+```
+hellodj/
+├── bot/          # Discord music bot (wavelink + Lavalink)
+├── training/     # Custom wake word model training pipeline
+└── docker-compose.yml
 ```
 
-## Usage
+## Bot (`bot/`)
 
-Open `training.ipynb` in Jupyter and run cells in order (Steps 1–5).
+A Discord music bot built with discord.py and wavelink 3.5, backed by Lavalink for audio playback.
 
-## Output
+**Features:**
+- Slash commands: `/play`, `/queue`, `/skip`, `/pause`, `/resume`, `/stop`
+- Playlist management: `/playlist create`, `/playlist play`, etc.
+- Audio filters: bassboost, nightcore, 8D, custom EQ
+- Autoplay with genre-based recommendations
+- Session persistence and auto-resume after restarts
+- Paginated queue and now-playing progress bar
 
-- ONNX model: `/home/jovyan/Hello_DJ/Hello_DJ.onnx`
-- Training clips: 200k positive + 200k negative
+### Quick Start
 
-## Patches
+```bash
+cd bot/
+cp .env.example .env
+# Edit .env with your Discord bot token and API keys
 
-- `augment_wrapper.py`: patches torchaudio.info, speechbrain convolve1d, onnxscript logging
-- openWakeWord `data.py`: stereo RIR → mono + 44.1kHz→16kHz resampling
-- openWakeWord `train.py`: opset_version=17, dynamo=False for ONNX export
-- piper-sample-generator `generate_samples.py`: weights_only=False for torch.load
+# Run with Docker Compose (from repo root):
+docker compose up -d
+```
+
+See `bot/.env.example` for all configuration options.
+
+## Training (`training/`)
+
+Custom "Hello DJ" wake word model training using openWakeWord and piper-sample-generator.
+
+- Generates 200k positive + 200k negative training clips
+- Exports ONNX model for deployment on Raspberry Pi (goblin nodes)
+- Requires GPU with CUDA (trained on RTX 4070 Ti SUPER)
+
+See `training/README.md` for setup and usage.
+
+## Deployment
+
+```bash
+# Start Lavalink + Bot containers
+docker compose up -d
+
+# Or run the bot directly (requires a Lavalink instance):
+cd bot/
+pip install -r requirements.txt
+python bot.py
+```
+
+## License
+
+MIT

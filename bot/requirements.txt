@@ -1,0 +1,4 @@
+discord.py[voice]
+wavelink>=3.5.0
+python-dotenv
+aiohttp

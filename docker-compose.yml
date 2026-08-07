@@ -1,0 +1,36 @@
+version: "3.9"
+
+services:
+  lavalink:
+    image: ghcr.io/lavalink-devs/lavalink:latest
+    container_name: hellodj-lavalink
+    restart: unless-stopped
+    volumes:
+      - ./bot/lavalink/application.yml:/opt/Lavalink/application.yml:ro
+    networks:
+      - hellodj-net
+    expose:
+      - "2333"
+
+  bot:
+    build:
+      context: ./bot
+      dockerfile: Dockerfile
+    container_name: hellodj-bot
+    restart: unless-stopped
+    env_file:
+      - ./bot/.env
+    environment:
+      LAVALINK_HOST: lavalink
+      LAVALINK_PORT: 2333
+      LAVALINK_PASSWORD: "youshallnotpass"
+    volumes:
+      - ./bot:/app
+    networks:
+      - hellodj-net
+    depends_on:
+      - lavalink
+
+networks:
+  hellodj-net:
+    driver: bridge
