@@ -3,6 +3,11 @@
 import sys
 import os
 
+# Scipy >= 1.17 renamed sph_harm to sph_harm_y; acoustics still uses the old name
+import scipy.special
+if not hasattr(scipy.special, 'sph_harm') and hasattr(scipy.special, 'sph_harm_y'):
+    scipy.special.sph_harm = scipy.special.sph_harm_y
+
 # Patch torchaudio.info
 import torchaudio
 import soundfile
