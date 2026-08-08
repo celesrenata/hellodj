@@ -1,0 +1,466 @@
+<best_practices>
+  <general_principles>
+    <principle priority="high">
+      <name>Screenshot Every Distinct Action</name>
+      <description>
+        Capture a screenshot before and after every meaningful user action.
+        A "meaningful action" is any operation that changes page state:
+        click, type, scroll, navigate, form submit, hover-triggered UI change.
+      </description>
+      <rationale>
+        Without screenshots at each step, it is impossible to identify which
+        specific action caused a bug. Post-hoc analysis without per-step
+        screenshots is unreliable.
+      </rationale>
+      <example>
+        <scenario>Debugging a dropdown that fails to show options</scenario>
+        <good>
+          1. Screenshot before clicking dropdown
+          2. Click dropdown trigger
+          3. Wait 500ms for animation
+          4. Screenshot after click
+          5. Compare screenshots → options visible? Partially visible? Missing entirely?
+        </good>
+        <bad>
+          1. Click dropdown
+          2. Wait and assume it worked
+          3. Single screenshot at end
+          4. Cannot tell if options appeared and then disappeared
+        </bad>
+      </example>
+    </principle>
+
+    <principle priority="high">
+      <name>Console Capture Always On</name>
+      <description>
+        Register page.on('console') at the start of every debugging session.
+        Also register page.on('pageerror') and page.on('requestfailed').
+      </description>
+      <rationale>
+        Many visual bugs are accompanied by console warnings or errors.
+        Correlating console output with visual state reveals the root cause.
+      </rationale>
+    </principle>
+
+    <principle priority="high">
+      <name>Wait for Stability After Actions</name>
+      <description>
+        After any action that triggers async rendering (SPA navigation, animation,
+        API call), wait for network idle or a specific element to be visible before
+        capturing state.
+      </description>
+      <rationale>
+        Capturing mid-transition yields misleading screenshots. Always wait for
+        the target state to settle.
+      </rationale>
+    </principle>
+
+    <principle priority="medium">
+      <name>Use Locator API, Not XPath</name>
+      <description>
+        Prefer Playwright's locator API (page.getByRole, page.getByText,
+        page.getByTestId, page.locator with CSS selectors) over XPath strings.
+      </description>
+      <rationale>
+        Locator API auto-waits, has better error messages, and is more
+        resilient to DOM changes. XPath is fragile and hard to debug.
+      </rationale>
+    </principle>
+
+    <principle priority="medium">
+      <name>Isolate the Reproducible Case</name>
+      <description>
+        Before debugging, try to create a minimal reproducible case:
+        clear cookies, use a fresh browser context, disable extensions.
+      </description>
+      <rationale>
+        A clean session eliminates cached state as a variable. The bug
+        should reproduce in a fresh context before investigating further.
+      </rationale>
+    </principle>
+
+    <principle priority="low">
+      <name>Prefer Network Interception Over Polling</name>
+      <description>
+        Use page.route() to intercept API calls rather than polling for
+        state changes. This gives you exact request/response data.
+      </description>
+      <rationale>
+        Polling misses transient states. Direct interception provides
+        precise timing and payload visibility.
+      </rationale>
+    </principle>
+  </general_principles>
+
+  <code_conventions>
+    <convention category="screenshot_naming">
+      <rule>Use consistent naming pattern for screenshot files</rule>
+      <template>
+evidence/{feature-slug}/{step-number}_{action-description}.png
+      </template>
+      <examples>
+        <good>evidence/login-flow/00-before-click-login.png</good>
+        <good>evidence/login-flow/01-after-click-login.png</good>
+        <good>evidence/login-flow/02-form-filled.png</good>
+      </examples>
+    </convention>
+
+    <convention category="evidence_documentation">
+      <rule>Structure evidence.md with consistent sections</rule>
+      <template>
+# Debug Session: {feature-slug}
+
+## Summary
+{one-line conclusion}
+
+## Steps
+
+### Step {n}: {action}
+- **Action**: {description}
+- **Expected**: {what should happen}
+- **Observed**: {what actually happened}
+- **Console**: {relevant console output}
+- **Network**: {relevant network activity}
+- **Screenshot**: {path}
+- **Verdict**: {PASS / FAIL / INVESTIGATE}
+
+## Root Cause
+{identified issue or "inconclusive"}
+      </template>
+    </convention>
+
+    <convention category="playwright_script">
+      <rule>Organize Playwright scripts into logical blocks</rule>
+      <template>
+// 1. Browser setup
+const browser = await playwright.chromium.launch({ headless: false });
+const context = await browser.newContext({ viewport: { width: 1280, height: 720 } });
+const page = await context.newPage();
+
+// 2. Register listeners
+page.on('console', msg => console.log(`[${msg.type()}] ${msg.text()}`));
+page.on('pageerror', err => console.log(`[PAGE ERROR] ${err}`));
+page.on('requestfailed', req => console.log(`[FAILED] ${req.url()}`));
+
+// 3. Navigate and capture
+await page.goto(url, { waitUntil: 'networkidle' });
+await page.screenshot({ path: 'evidence/00-baseline.png' });
+
+// 4. Interact and capture
+await page.getByRole('button').click();
+await page.waitForLoadState('networkidle');
+await page.screenshot({ path: 'evidence/01-after-click.png' });
+
+// 5. Verify
+const computedStyle = await page.evaluate(() => {
+  const el = document.querySelector('.target');
+  return { color: getComputedStyle(el).color, display: getComputedStyle(el).display };
+});
+      </template>
+    </convention>
+  </code_conventions>
+
+  <common_pitfalls>
+    <pitfall>
+      <description>Using headless mode when visual verification is needed</description>
+      <why_problematic>
+        Headless mode may render differently (no GPU, different font rendering).
+        Screenshots taken headless may not match real user experience.
+      </why_problematic>
+      <correct_approach>
+        Use headless: false when debugging visual issues.
+        Use headless: true only for console/network debugging or CI.
+      </correct_approach>
+    </pitfall>
+
+    <pitfall>
+      <description>Not waiting for network idle before capturing state</description>
+      <why_problematic>
+        Screenshots taken during pending API calls show incomplete page state.
+        Console logs may also be incomplete.
+      </why_problematic>
+      <correct_approach>
+        Always await page.waitForLoadState('networkidle') or wait for a specific
+        element selector before capturing.
+      </correct_approach>
+    </pitfall>
+
+    <pitfall>
+      <description>Using page.evaluate() on disconnected elements</description>
+      <why_problematic>
+        After navigation, element references become stale. Trying to read
+        properties from a detached element throws errors.
+      </why_problematic>
+      <correct_approach>
+        Re-query elements after each navigation using locator API.
+        Use page.evaluate with fresh selectors, not stored references.
+      </correct_approach>
+    </pitfall>
+
+    <pitfall>
+      <description>Ignoring CORS and mixed-content warnings</description>
+      <why_problematic>
+        Console warnings about CORS or mixed content often cause partial
+        rendering failures that appear as visual bugs.
+      </why_problematic>
+      <correct_approach>
+        Always review ALL console messages, not just errors.
+        Filter and inspect warnings that correlate with the visual issue.
+      </correct_approach>
+    </pitfall>
+  </common_pitfalls>
+
+  <accessibility_best_practices>
+    <principle priority="high">
+      <name>Never Equate DOM Visibility with Human Readability</name>
+      <description>
+        An element that passes Playwright's visibility check (offsetParent !== null,
+        getComputedStyle visibility/display) may still be UNREADABLE to humans.
+        Always measure contrast ratio, font size, and opacity — not just presence.
+      </description>
+      <rationale>
+        Text with a 1.36:1 contrast ratio (like rgb(33,37,41) on rgb(45,45,68))
+        passes every Playwright visibility check but appears as a dark smudge to
+        human eyes. The DOM says "visible" but the human says "can't read it."
+      </rationale>
+      <example>
+        <scenario>Dashboard stats card text is barely readable</scenario>
+        <good>
+          1. Extract computed text color and background color
+          2. Compute WCAG contrast ratio → 1.36:1
+          3. Compare against AA threshold (4.5:1) → FAIL
+          4. Report: "Text fails WCAG AA by 3.3x — nearly invisible"
+        </good>
+        <bad>
+          1. Check if element is in DOM → yes
+          2. Check if offsetParent is non-null → yes
+          3. Report: "Element is visible" → WRONG, human can't read it
+        </bad>
+      </example>
+    </principle>
+
+    <principle priority="high">
+      <name>Always Compute Exact Contrast Ratio, Not Just "Seems Fine"</name>
+      <description>
+        Visual inspection by the model is insufficient for contrast measurement.
+        Always use page.evaluate() to extract exact RGB values and compute the
+        WCAG 2.1 relative luminance formula.
+      </description>
+      <rationale>
+        Human perception of contrast is unreliable — what looks "slightly dark"
+        to the reviewer may actually be 1.36:1 (3.3x below AA). Only exact RGB
+        extraction + formula computation gives the true answer.
+      </rationale>
+      <code_template>
+// Correct approach — exact computation
+const contrast = await page.evaluate(() => {
+  const el = document.querySelector('.card-text');
+  const fg = getComputedStyle(el).color;         // e.g. "rgb(33, 37, 41)"
+  const bg = getComputedStyle(el).backgroundColor; // e.g. "rgb(45, 45, 68)"
+  const ratio = wcagContrast(fg, bg);              // e.g. 1.36
+  return { ratio, passesAA: ratio >= 4.5 };
+});
+      </code_template>
+    </principle>
+
+    <principle priority="high">
+      <name>Check All Text Sizes for Readability</name>
+      <description>
+        Font size below 12px for body text is often unreadable on standard displays.
+        Font weight below 400 combined with small size is doubly problematic.
+      </description>
+      <checks>
+        <check>body text < 12px → WARN "potentially illegible"</check>
+        <check>fontWeight < 400 AND fontSize < 14px → WARN "light weight too small"</check>
+        <check>fontWeight < 300 AND fontSize < 16px → FAIL "very light text unreadable"</check>
+        <check>fontSize < 10px ANY text → FAIL "below minimum readable size"</check>
+      </checks>
+    </principle>
+
+    <principle priority="medium">
+      <name>Check Opacity as a Contrast Multiplier</name>
+      <description>
+        Text with reduced opacity (rgba alpha < 1.0, CSS opacity < 1.0) compounds
+        low contrast. A subtitle at 75% opacity with already-low contrast may be
+        effectively invisible.
+      </description>
+      <computation>
+        Effective contrast = raw_contrast_ratio × opacity
+        Example: 1.36 ratio × 0.75 opacity = effectively 1.02:1 — nearly invisible
+      </computation>
+    </principle>
+
+    <principle priority="medium">
+      <name>Report Color-Blindness Safety for Status Indicators</name>
+      <description>
+        Status indicators that rely solely on color (red = error, green = success)
+        must also include icons, text, or shape distinctions for color-blind users.
+      </description>
+      <checklist>
+        <item>Does the indicator use color + icon/text? → PASS</item>
+        <item>Does the indicator use color only? → FAIL "not accessible to color-blind users"</item>
+        <item>Are red/green values distinguishable by luminance? → check luminance delta</item>
+      </checklist>
+    </principle>
+  </accessibility_best_practices>
+
+  <visual_polish_best_practices>
+    <principle priority="high">
+      <name>Check Layout Alignment and Spacing Consistency</name>
+      <description>
+        Visually inspect that all elements align to a consistent grid or layout.
+        Misaligned elements, uneven spacing, and inconsistent padding make a site
+        look unprofessional even if all content is present.
+      </description>
+      <checks>
+        <check>Cards/panels have identical padding on all sides → compare computed padding values</check>
+        <check>Elements in a row share the same vertical baseline → compare margin-top/bottom</check>
+        <check>No elements overlap or have negative margins unintentionally</check>
+        <check>Grid columns have consistent gap widths</check>
+        <check>Headers, body text, and UI elements align to the same left edge</check>
+      </checks>
+      <measurement>
+        const spacing = await page.evaluate(() => {
+          const cards = document.querySelectorAll('.card, .panel, [class*="card"], [class*="panel"]');
+          return Array.from(cards).map(c => ({
+            padding: getComputedStyle(c).padding,
+            margin: getComputedStyle(c).margin,
+            borderRadius: getComputedStyle(c).borderRadius,
+          }));
+        });
+      </measurement>
+    </principle>
+
+    <principle priority="high">
+      <name>Verify Typography Hierarchy is Visually Distinct</name>
+      <description>
+        A proper visual hierarchy uses distinct font sizes, weights, and colors
+        to separate headings from body text. If everything looks the same size,
+        the hierarchy is flat and hard to scan.
+      </description>
+      <checks>
+        <check>Heading font size is larger than body text (min 1.25x ratio)</check>
+        <check>Heading font weight is heavier than body text (min 100 weight difference)</check>
+        <check>Section headers have spacing above them (margin-top > margin-bottom)</check>
+        <check>Body text is not the same size as UI labels/buttons</check>
+      </checks>
+    </principle>
+
+    <principle priority="high">
+      <name>Check Border, Shadow, and Visual Treatment Consistency</name>
+      <description>
+        Inconsistent border styles, shadow depths, or corner radii make a UI
+        feel "half-finished." All interactive elements should have consistent
+        visual treatments.
+      </description>
+      <checks>
+        <check>All buttons share the same border-radius → FAIL if wildly different</check>
+        <check>All cards share the same shadow/blur → FAIL if some have shadows and others don't</check>
+        <check>All clickable elements have hover styles → FAIL if some don't respond to hover</check>
+        <check>Border colors match the theme — no "forgotten" default borders</check>
+        <check>Focus indicators exist on all interactive elements</check>
+      </checks>
+    </principle>
+
+    <principle priority="medium">
+      <name>Detect Dead Space, Overflow, and Truncation</name>
+      <description>
+        Elements with excessive whitespace, overflow hidden that clips content,
+        or text truncation without indication degrade the visual experience.
+      </description>
+      <checks>
+        <check>No text-overflow: ellipsis without a tooltip or expand action</check>
+        <check>No overflow: hidden that clips content without scroll</check>
+        <check>No excessive padding/margin that creates large dead zones</check>
+        <check>No elements with width: 0 or height: 0 that leave gaps</check>
+        <check>No empty containers that take up space unnecessarily</check>
+      </checks>
+    </principle>
+
+    <principle priority="medium">
+      <name>Verify Responsive Layout Doesn't Break at Key Breakpoints</name>
+      <description>
+        A site may look great at 1280px but broken at 375px or 1024px.
+        Test at least 3 viewport widths to catch responsive breakage.
+      </description>
+      <breakpoints>
+        <bp name="desktop" width="1280">Primary target — main layout</bp>
+        <bp name="tablet" width="768">Check nav menu collapse, card layout</bp>
+        <bp name="mobile" width="375">Check hamburger menu, stacked layout</bp>
+      </breakpoints>
+      <checks>
+        <check>No horizontal scroll at any breakpoint</check>
+        <check>No overlapping elements at smaller widths</check>
+        <check>No elements with overflow hidden that clip at smaller widths</check>
+        <check>Nav menu collapses correctly at mobile breakpoint</check>
+        <check>Cards/panels stack vertically at mobile widths</check>
+      </checks>
+    </principle>
+
+    <principle priority="low">
+      <name>Check for "Under Construction" / Unfinished States</name>
+      <description>
+        Placeholder text, lorem ipsum, empty states without helpful messages,
+        broken images, and missing favicons all signal an unfinished site.
+      </description>
+      <checks>
+        <check>No "Lorem ipsum" or placeholder text visible</check>
+        <check>No broken images (img with 0 naturalWidth)</check>
+        <check>No empty states without helpful messages</check>
+        <check>favicon.ico exists and loads (not 404)</check>
+        <check>No "Coming Soon" or "Under Construction" labels for active features</check>
+      </checks>
+    </principle>
+  </visual_polish_best_practices>
+
+  <quality_checklist>
+    <category name="before_session">
+      <item>Confirm Playwright is installed and accessible</item>
+      <item>Set model to qwen3.6-abliterated for vision verification</item>
+      <item>Identify the exact URL and any credentials needed</item>
+      <item>Decide browser engine (chromium/firefox/webkit)</item>
+      <item>Plan the interaction sequence in advance</item>
+    </category>
+    <category name="during_session">
+      <item>Register console/error/network listeners before navigation</item>
+      <item>Screenshot before AND after each action</item>
+      <item>Wait for stability between captures</item>
+      <item>Verify authentication state before auth-dependent actions</item>
+      <item>Record network request/response pairs for API flows</item>
+      <item>Use locator API with explicit waits</item>
+    </category>
+    <category name="after_session">
+      <item>Compile all screenshots into evidence directory</item>
+      <item>Write evidence.md with structured observations</item>
+      <item>Compare computed CSS against intended values</item>
+      <item>Identify root cause or mark inconclusive</item>
+      <item>Close browser context cleanly</item>
+    </category>
+    <category name="human_readability_checks" priority="always">
+      <item>Extract computed text color and background color for every text element</item>
+      <item>Compute WCAG contrast ratio — compare against 4.5:1 (AA) and 7:1 (AAA) thresholds</item>
+      <item>Check font size — flag anything below 12px for body text</item>
+      <item>Check opacity — flag anything with opacity below 0.75 that also has poor contrast</item>
+      <item>Check color blindness — flag status indicators that rely solely on color</item>
+      <item>Generate readability scorecard in evidence.md with element-by-element pass/fail</item>
+    </category>
+    <category name="visual_polish_checks" priority="always">
+      <item>Verify layout alignment — all cards/panels share consistent padding, margin, border-radius</item>
+      <item>Verify typography hierarchy — heading sizes are distinctly larger than body text</item>
+      <item>Verify visual treatment consistency — all buttons, cards have matching border/shadow styles</item>
+      <item>Detect dead space, overflow clipping, or truncated text without indication</item>
+      <item>Check for unfinished elements — placeholder text, broken images, missing favicon</item>
+      <item>Generate visual polish scorecard in evidence.md with element-by-element pass/fail</item>
+    </category>
+    <category name="mobile_verification_checks" priority="always">
+      <item>Resize viewport to 375x667 (iPhone SE) — capture full-page screenshot</item>
+      <item>Test hamburger menu toggle — verify all nav links are accessible</item>
+      <item>Check for horizontal scroll at mobile width — FAIL if present</item>
+      <item>Verify cards/panels stack vertically — no overlap, no clipping</item>
+      <item>Check touch target sizes — all interactive elements are at least 44px tall</item>
+      <item>Resize viewport to 768x1024 (iPad) — verify tablet layout renders correctly</item>
+      <item>Return viewport to 1280x720 — confirm no residual layout issues from resize</item>
+      <item>Capture screenshots at each breakpoint for evidence</item>
+    </category>
+  </quality_checklist>
+</best_practices>

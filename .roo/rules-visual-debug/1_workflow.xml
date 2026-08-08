@@ -1,0 +1,356 @@
+<workflow_instructions>
+  <mode_overview>
+    Visual Debug mode specializes in debugging web pages through Playwright browser automation,
+    combining console log analysis, network interception, and visual screenshot comparison.
+    Uses the Qwen3.6 Abliterated model for vision-based verification.
+  </mode_overview>
+
+  <initialization_steps>
+    <step number="1">
+      <action>Parse the user's request</action>
+      <details>
+        Identify the core debugging objective:
+        - Is it a visual/layout bug? → focus on screenshot comparison + computed styles
+        - Is it an auth flow issue? → focus on cookie/token capture + redirect tracing
+        - Is it a REST API flow? → focus on network interception + response validation
+        - Is it a console error? → focus on log capture + stack trace analysis
+        - Is it a user interaction bug? → focus on action replay + state capture
+      </details>
+    </step>
+
+    <step number="2">
+      <action>Determine target environment</action>
+      <details>
+        Establish the URL, expected credentials (if auth needed), and browser context.
+        Verify Playwright is available in the environment.
+        Set the model to qwen3.6-abliterated for screenshot verification steps.
+      </details>
+    </step>
+
+    <step number="3">
+      <action>Plan the debugging session</action>
+      <details>
+        Define the sequence of browser actions needed:
+        1. Launch browser with appropriate configuration
+        2. Navigate to target URL
+        3. Capture initial state (console, network, screenshot)
+        4. Execute the interaction flow step by step
+        5. Capture post-action state at each step
+        6. Compare screenshots and console output against expectations
+        7. Document findings in evidence.md
+      </details>
+    </step>
+  </initialization_steps>
+
+  <main_workflow>
+    <phase name="browser_setup">
+      <description>Configure and launch the Playwright browser instance</description>
+      <steps>
+        <step>
+          <title>Select Browser Engine</title>
+          <description>Choose chromium (default), firefox, or webkit based on the debugging target</description>
+          <heuristics>
+            <heuristic>Chromium for general web debugging and Chrome-specific issues</heuristic>
+            <heuristic>Firefox for cross-browser compatibility checks</heuristic>
+            <heuristic>WebKit for Safari-specific rendering issues</heuristic>
+          </heuristics>
+        </step>
+
+        <step>
+          <title>Configure Browser Context</title>
+          <description>
+            Set viewport size, user agent, and any required storage state (cookies, localStorage).
+            Enable console capture via page.on('console').
+            Enable network interception via page.route() or page.on('request'/'response').
+          </description>
+        </step>
+
+        <step>
+          <title>Set Up Error Capture</title>
+          <description>
+            Register listeners for:
+            - page.on('console') → collect all console.log/warn/error
+            - page.on('pageerror') → capture uncaught JS exceptions
+            - page.on('requestfailed') → capture failed network requests
+            - page.on('response') → capture response status and bodies
+          </description>
+        </step>
+      </steps>
+    </phase>
+
+    <phase name="human_readability_audit">
+      <description>
+        CRITICAL: Verify that text content is actually readable by human eyes, not just
+        present in the DOM. An element can pass Playwright's "visible" check (offsetParent !== null)
+        while being nearly invisible to a person due to low contrast, tiny font size, or
+        poor color choices. This phase bridges the gap between "element exists" and "human can read it."
+      </description>
+      <rationale>
+        The gap between "visible in DOM" and "human-readable" is vast. Elements may:
+        - Pass visibility checks but have contrast ratios as low as 1.36:1 (WCAG AA requires 4.5:1)
+        - Use font sizes below 10px that are illegible on most screens
+        - Apply opacity or color that makes text indistinguishable from background
+        - Use colors that are indistinguishable for color-blind users
+      </rationale>
+      <steps>
+        <step>
+          <title>Extract Contrast Ratios</title>
+          <description>
+            For every text-bearing element, compute the WCAG contrast ratio between text color
+            and background color. Use the WCAG 2.1 formula:
+            L = 0.2126 * R + 0.7152 * G + 0.0722 * B (where R/G/B are linearized sRGB values)
+            Contrast ratio = (L_lighter + 0.05) / (L_darker + 0.05)
+          </description>
+          <thresholds>
+            <threshold name="AA_normal" min="4.5:1">
+              Required for body text under WCAG AA. Below this → FAIL for normal-sized text.
+            </threshold>
+            <threshold name="AA_large" min="3:1">
+              Required for text ≥ 18pt bold or ≥ 22pt regular. Below this → FAIL for large text.
+            </threshold>
+            <threshold name="AAA_normal" min="7:1">
+              WCAG AAA enhanced standard. Below this → WARN, not critical but non-optimal.
+            </threshold>
+            <threshold name="AAA_large" min="4.5:1">
+              WCAG AAA for large text. Below this → WARN for large elements.
+            </threshold>
+          </thresholds>
+          <code_template>
+            await page.evaluate(() => {
+              const el = document.querySelector('.target');
+              const textColor = getComputedStyle(el).color;
+              const bgColor = getComputedStyle(el).backgroundColor;
+              // Parse RGB, linearize, compute luminance, compute ratio
+              // Returns { ratio: 1.36, passesAA: false, passesAALarge: false }
+            });
+          </code_template>
+        </step>
+
+        <step>
+          <title>Check Font Legibility</title>
+          <description>
+            Verify font size, weight, and family are suitable for reading:
+            - Minimum readable font size: 12px for body text, 10px for UI labels
+            - Font weight below 400 (normal) at small sizes may be illegible
+            - Light font weights (100-300) below 16px are often unreadable
+          </description>
+          <checks>
+            <check>fontSize < 12px for body text → WARN "potentially illegible"</check>
+            <check>fontWeight < 400 AND fontSize < 14px → WARN "light weight too small"</check>
+            <check>fontWeight < 300 AND fontSize < 16px → FAIL "very light text unreadable"</check>
+            <check>fontSize < 10px ANY text → FAIL "below minimum readable size"</check>
+          </checks>
+        </step>
+
+        <step>
+          <title>Check Opacity/Alpha Transparency</title>
+          <description>
+            Text with reduced opacity (rgba with alpha < 1.0) further reduces readability.
+            Combined opacity + low contrast can make text effectively invisible.
+          </description>
+          <checks>
+            <check>opacity < 0.5 → FAIL "text is semi-transparent"</check>
+            <check>opacity < 0.75 AND contrastRatio < 3.0 → FAIL "nearly invisible"</check>
+            <check>rgba alpha < 0.5 → FAIL "color transparency obscures text"</check>
+          </checks>
+        </step>
+
+        <step>
+          <title>Color Blindness Simulation (Conceptual)</title>
+          <description>
+            Assess whether color-dependent information is distinguishable for common
+            color vision deficiencies (deuteranopia, protanopia, tritanopia):
+            - Red/green status indicators (✅/❌) are readable even without color
+            - Color-only conveyors (e.g., "red = error" without icon/text) fail accessibility
+          </description>
+          <checks>
+            <check>Status conveyed only by color → FAIL "add icon or text label"</check>
+            <check>Red/green comparison is sole differentiator → FAIL "use shapes or text"</check>
+          </checks>
+        </step>
+
+        <step>
+          <title>Human Readability Scorecard</title>
+          <description>
+            Compile all readability metrics into a structured scorecard for evidence.md.
+            Include element-by-element pass/fail for contrast, size, opacity, and color blindness.
+          </description>
+          <output_format>
+            | Element | Text | fg | bg | Ratio | Pass AA | Pass AAA | Font | Opacity | Verdict |
+            |---------|------|----|----|-------|---------|----------|------|---------|---------|
+          </output_format>
+        </step>
+      </steps>
+    </phase>
+
+    <phase name="navigation_and_capture">
+      <description>Navigate to the target page and capture baseline state</description>
+      <steps>
+        <step number="1">
+          <title>Navigate to URL</title>
+          <description>
+            Use page.goto(url, { waitUntil: 'networkidle' }) for full page load.
+            For SPAs, wait for specific element to be visible after navigation.
+          </description>
+          <validation>
+            Verify page loaded successfully (status code, no crash)
+            Capture the URL after any redirects
+          </validation>
+        </step>
+
+        <step number="2">
+          <title>Capture Baseline Screenshot</title>
+          <description>
+            Take a full-page screenshot or viewport screenshot depending on the bug type.
+            Save to evidence/ directory with descriptive filename.
+          </description>
+          <naming_convention>
+            evidence/{feature-slug}/00-baseline.png
+          </naming_convention>
+        </step>
+
+        <step number="3">
+          <title>Dump Console Log</title>
+          <description>
+            Collect all console messages logged during page load.
+            Filter for warnings, errors, and suspicious messages.
+          </description>
+        </step>
+
+        <step number="4">
+          <title>Capture Network Activity</title>
+          <description>
+            Record all API requests and responses made during page load.
+            Identify failed requests and unexpected status codes.
+          </description>
+        </step>
+      </steps>
+    </phase>
+
+    <phase name="interaction_execution">
+      <description>Execute the user interaction flow step by step with state capture at each step</description>
+      <steps>
+        <step number="1">
+          <title>Plan Interaction Sequence</title>
+          <description>
+            Break the user's requested flow into individual atomic actions:
+            - Click, type, scroll, hover, select, submit
+            - Each action is a separate step with before/after screenshots
+          </description>
+        </step>
+
+        <step number="2">
+          <title>Execute Action and Capture</title>
+          <description>
+            For each atomic action:
+            1. Capture screenshot BEFORE the action
+            2. Perform the action using Playwright locator API
+            3. Wait for any resulting state changes (DOM mutations, network responses)
+            4. Capture screenshot AFTER the action
+            5. Capture console output generated by the action
+            6. Capture any network requests triggered by the action
+          </description>
+        </step>
+
+        <step number="3">
+          <title>Verify Action Result</title>
+          <description>
+            Use the Qwen3.6 Abliterated model's vision capabilities to read screenshots and verify:
+            - Visual state matches expected outcome
+            - Console errors are not present
+            - Network requests completed successfully
+            - CSS computed values match intended styles
+          </description>
+        </step>
+      </steps>
+    </phase>
+
+    <phase name="visual_verification">
+      <description>Compare intended CSS/design values against rendered reality</description>
+      <steps>
+        <step number="1">
+          <title>Extract Computed Styles</title>
+          <description>
+            Use page.evaluate() to get computedStyle for target elements:
+            - Compare intended CSS values (from stylesheets or design specs) with computed values
+            - Check for layout shifts, incorrect colors, spacing, fonts
+          </description>
+        </step>
+
+        <step number="2">
+          <title>Screenshot Diff Analysis</title>
+          <description>
+            Compare before/after screenshots to identify unintended visual changes:
+            - Use pixel comparison or structural diff
+            - Highlight regions with unexpected differences
+          </description>
+        </step>
+
+        <step number="3">
+          <title>Theme Consistency Check</title>
+          <description>
+            Verify CSS custom properties resolve to expected values:
+            - Check --var-name values against theme specification
+            - Verify dark/light mode toggle renders correctly
+          </description>
+        </step>
+      </steps>
+    </phase>
+
+    <phase name="evidence_documentation">
+      <description>Record all findings in structured evidence files</description>
+      <steps>
+        <step number="1">
+          <title>Create Evidence Directory</title>
+          <description>
+            evidence/{feature-slug}/ with descriptive slug for the current debugging session
+          </description>
+        </step>
+
+        <step number="2">
+          <title>Write evidence.md</title>
+          <description>
+            Record for each step:
+            - Action performed
+            - Expected outcome
+            - Observed outcome
+            - Console log excerpt
+            - Network activity summary
+            - Screenshot path
+            - Verdict: PASS / FAIL / INVESTIGATE
+          </description>
+        </step>
+
+        <step number="3">
+          <title>Annotate Screenshots</title>
+          <description>
+            For failed verifications, annotate screenshots to highlight the discrepancy.
+            Include bounding boxes around mismatched regions.
+          </description>
+        </step>
+      </steps>
+    </phase>
+  </main_workflow>
+
+  <completion_criteria>
+    <criterion>All requested interaction steps have been executed and captured</criterion>
+    <criterion>Screenshots exist for every distinct action step</criterion>
+    <criterion>Console logs have been captured and analyzed</criterion>
+    <criterion>Network activity has been captured and validated</criterion>
+    <criterion>Visual state has been compared against expected CSS values</criterion>
+    <criterion>Evidence document (evidence.md) is complete and structured</criterion>
+    <criterion>Root cause is identified and documented, or explicitly marked as inconclusive</criterion>
+    <criterion priority="critical">
+      Handoff task list generated in evidence.md with:
+      - Session state (steps completed, steps remaining)
+      - All evidence paths
+      - Remaining work sorted by priority
+      - Instructions for continuation in a new chat
+    </criterion>
+    <criterion priority="critical">
+      Project-level TODO list updated with any follow-up work discovered
+      during the debugging session (e.g., fix permissions, add missing files,
+      configure environment).
+    </criterion>
+  </completion_criteria>
+</workflow_instructions>

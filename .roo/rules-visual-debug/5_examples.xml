@@ -1,0 +1,530 @@
+<complete_examples>
+  <overview>
+    Complete workflow examples demonstrating the Visual Debug mode handling
+    real debugging scenarios from start to finish.
+  </overview>
+
+  <example name="debugging_auth_flow">
+    <scenario>
+      A user reports that logging into their SPA dashboard fails silently.
+      The login page shows no errors, but after submitting credentials,
+      the user is redirected back to the login page instead of the dashboard.
+    </scenario>
+
+    <user_request>
+      "I'm trying to log in to https://app.example.com/login but after submitting my credentials, it just goes back to the login page. Can you debug this?"
+    </user_request>
+
+    <workflow>
+      <step number="1">
+        <description>Set up browser with console and network capture</description>
+        <approach>
+          Launch Chromium headed, register console/network listeners,
+          create evidence/auth-flow/ directory.
+          Outcome: browser ready, listeners active.
+        </approach>
+        <expected_outcome>Clean browser context ready for debugging</expected_outcome>
+      </step>
+
+      <step number="2">
+        <description>Navigate to login page and capture baseline</description>
+        <approach>
+          page.goto('https://app.example.com/login', { waitUntil: 'networkidle' })
+          Screenshot baseline page state.
+          Collect initial console logs and network requests.
+          Outcome: baseline captured.
+        </approach>
+        <expected_outcome>
+          Login page rendered. Console: no errors. Network: static assets loaded.
+        </expected_outcome>
+      </step>
+
+      <step number="3">
+        <description>Fill and submit the login form</description>
+        <approach>
+          Fill email and password fields using getByLabel locators.
+          Screenshot before click.
+          Click submit button.
+          Wait for navigation or error with waitForURL.
+          Screenshot after click.
+          Outcome: captured the post-submit state.
+        </approach>
+        <analysis>
+          Screenshot shows we are back on /login.
+          Console shows: "POST /api/auth/login 401 Unauthorized"
+          Network capture confirms the API returned 401 with body: {"error": "invalid_grant"}.
+          Root cause: the API rejected the credentials, but the client
+          didn't display the error message due to a missing error handler.
+        </analysis>
+      </step>
+
+      <step number="4">
+        <description>Verify error handling on the client</description>
+        <approach>
+          Use page.evaluate to check if the error response is stored in any
+          React state or Vue reactive variable.
+          Check for hidden error elements in the DOM.
+          Outcome: identified that the client receives the error but doesn't render it.
+        </approach>
+        <expected_outcome>
+          Found a hidden error message div with display:none that should
+          be visible when auth fails.
+        </expected_outcome>
+      </step>
+    </workflow>
+
+    <completion>
+      Identified root cause: The login API returns 401 with error details,
+      but the client-side error handler sets a state variable without
+      triggering a re-render. The error message div exists in the DOM
+      but is hidden. Evidence documented in evidence/auth-flow/evidence.md.
+      Handing off to Code mode to fix the state management issue.
+    </completion>
+
+    <key_takeaways>
+      <takeaway>
+        Always capture the network response body — status code alone is insufficient.
+        The API returned 401 but the body contained the real error message.
+      </takeaway>
+      <takeaway>
+        Screenshot alone wouldn't have revealed the hidden error div.
+        Combined console + network + DOM extraction was necessary.
+      </takeaway>
+    </key_takeaways>
+  </example>
+
+  <example name="debugging_layout_regression">
+    <scenario>
+      A CSS change intended to center the hero title has broken the layout.
+      The title appears off-center on staging but was centered on production.
+    </scenario>
+
+    <user_request>
+      "After deploying the new CSS changes, the hero title on the landing page is no longer centered. Can you compare production vs staging and find the CSS difference?"
+    </user_request>
+
+    <workflow>
+      <step number="1">
+        <description>Capture production baseline</description>
+        <approach>
+          Navigate to production URL, capture full-page screenshot.
+          Extract computed styles of the hero-title element.
+          Outcome: production baseline screenshots and style values.
+        </approach>
+        <expected_outcome>
+          Production hero-title is centered (text-align: center, margin: auto).
+        </expected_outcome>
+      </step>
+
+      <step number="2">
+        <description>Capture staging candidate</description>
+        <approach>
+          Navigate to staging URL, capture full-page screenshot.
+          Extract computed styles of the hero-title element.
+          Outcome: staging screenshots and style values.
+        </approach>
+        <expected_outcome>
+          Staging hero-title is off-center. Computed styles differ from production.
+        </expected_outcome>
+      </step>
+
+      <step number="3">
+        <description>Compare screenshots and styles</description>
+        <approach>
+          Use Qwen3.6 Abliterated vision to visually compare both screenshots.
+          Compare computed style objects.
+          Outcome: identified the specific CSS property that changed.
+        </approach>
+        <analysis>
+          Visual comparison confirms title is shifted 20px left on staging.
+          Computed style comparison shows:
+          - Production: margin-left: auto, margin-right: auto, text-align: center
+          - Staging: margin-left: 0, margin-right: 0, text-align: left
+          The staging CSS file shows the hero-title class lost its margin properties.
+          Root cause: a CSS selector specificity change caused the centering rules
+          to be overridden by a less specific rule.
+        </analysis>
+      </step>
+
+      <step number="4">
+        <description>Trace the CSS cascade</description>
+        <approach>
+          Use page.evaluate to check which CSS rules apply to the element:
+          const rules = [...document.styleSheets].flatMap(sheet =>
+            [...sheet.cssRules].filter(r => r.selectorText?.includes('hero-title'))
+          );
+          Outcome: identified the conflicting rule and its source file.
+        </approach>
+        <expected_outcome>
+          Found that a new CSS file loads after the main stylesheet and overrides
+          the centering rules due to cascade order.
+        </expected_outcome>
+      </step>
+    </workflow>
+
+    <completion>
+      Root cause identified: The new CSS file (sticky-header.css) loads after
+      the main stylesheet and contains a rule that resets margin on all h1 elements,
+      overriding the hero-title centering. Evidence documented with screenshots
+      showing the visual difference and computed style comparison.
+    </completion>
+
+    <key_takeaways>
+      <takeaway>
+        Computed style extraction is faster and more precise than screenshot
+        comparison for CSS value bugs. Use both for complete confidence.
+      </takeaway>
+      <takeaway>
+        CSS cascade tracing via styleSheets API reveals the source of
+        specificity conflicts.
+      </takeaway>
+    </key_takeaways>
+  </example>
+
+  <example name="debugging_rest_api_flow">
+    <scenario>
+      An e-commerce checkout flow is broken. The user completes the form,
+      clicks "Submit Order", but the order confirmation page never appears.
+      Instead, the page shows a generic error toast.
+    </scenario>
+
+    <user_request>
+      "I'm trying to place an order on https://shop.example.com/checkout but after submitting, I just get a 'Something went wrong' toast. Can you trace the API calls?"
+    </user_request>
+
+    <workflow>
+      <step number="1">
+        <description>Set up network interception</description>
+        <approach>
+          Register page.on('response') to capture all API responses.
+          Filter for /api/ endpoints.
+          Create evidence/api-flow/ directory.
+          Outcome: network capture ready.
+        </approach>
+        <expected_outcome>Clean interception setup</expected_outcome>
+      </step>
+
+      <step number="2">
+        <description>Navigate to checkout and fill form</description>
+        <approach>
+          page.goto('https://shop.example.com/checkout', { waitUntil: 'networkidle' })
+          Fill shipping form fields.
+          Screenshot before submission.
+          Outcome: form filled, baseline captured.
+        </approach>
+        <expected_outcome>Checkout page loaded, form fields visible</expected_outcome>
+      </step>
+
+      <step number="3">
+        <description>Submit order and capture API chain</description>
+        <approach>
+          Click submit button.
+          Wait for network idle.
+          Screenshot of resulting page.
+          Review captured API responses.
+          Outcome: API chain documented.
+        </approach>
+        <analysis>
+          Screenshot shows error toast. API responses show:
+          - POST /api/orders → 201 Created (success)
+          - POST /api/payments → 402 Payment Required (failure)
+          - GET /api/orders/{id} → never called
+          The payment API returned 402 because the test credit card number
+          was declined. The client displays a generic error instead of
+          showing the payment failure reason.
+          Root cause: insufficient error handling for payment failures.
+        </analysis>
+      </step>
+    </workflow>
+
+    <completion>
+      Root cause identified: The checkout flow creates the order successfully
+      but the payment step fails with 402. The client-side error handler
+      maps all non-200 responses to a generic message. Evidence includes
+      screenshots of the error toast, the full API response chain, and the
+      payment API response body showing the decline reason.
+    </completion>
+
+    <key_takeaways>
+      <takeaway>
+        API chain analysis reveals where in the flow the failure occurs.
+        Without network capture, you only see the symptom (error toast),
+        not the failing step (payment).
+      </takeaway>
+      <takeaway>
+        Response body capture is critical for payment/debugging flows.
+        Status codes alone don't reveal decline reasons.
+      </takeaway>
+    </key_takeaways>
+  </example>
+
+  <example name="debugging_user_interaction_flow">
+    <scenario>
+      A multi-step form wizard breaks at step 3. The user can complete steps
+      1 and 2, but step 3's dropdown for "Shipping Method" doesn't show any
+      options. The dropdown trigger is visible but clicking it does nothing.
+    </scenario>
+
+    <user_request>
+      "The shipping method dropdown on step 3 of the checkout wizard doesn't show any options when I click it. Steps 1 and 2 work fine."
+    </user_request>
+
+    <workflow>
+      <step number="1">
+        <description>Navigate and progress through steps 1-2</description>
+        <approach>
+          page.goto wizard URL.
+          Complete step 1 fields, click Continue.
+          Complete step 2 fields, click Continue.
+          Screenshot at each transition.
+          Outcome: reached step 3 with screenshots of steps 1-2 working.
+        </approach>
+        <expected_outcome>
+          Steps 1 and 2 complete successfully. Console shows no errors.
+        </expected_outcome>
+      </step>
+
+      <step number="2">
+        <description>Investigate step 3 dropdown</description>
+        <approach>
+          Screenshot before clicking dropdown trigger.
+          Click the dropdown trigger element.
+          Wait 500ms for any animation.
+          Screenshot after click.
+          Check console for errors during the click.
+          Outcome: captured the click interaction.
+        </approach>
+        <analysis>
+          Screenshot after click shows no dropdown menu.
+          Console shows: "TypeError: Cannot read properties of null (reading 'map')"
+          Network shows: GET /api/shipping-methods returned 200 with data.
+          The dropdown component received the API data but failed to render
+          because the data format changed (API now returns array of objects
+          instead of array of strings, and the component's .map() call
+          expects strings).
+          Root cause: API response schema changed without updating the frontend.
+        </analysis>
+      </step>
+    </workflow>
+
+    <completion>
+      Root cause identified: The shipping methods API changed its response
+      format. The dropdown component calls .map() on the response expecting
+      strings, but now receives objects. The console error points directly
+      to the line number where the .map() fails. Evidence includes screenshots
+      of the non-functional dropdown, the API response showing the new format,
+      and the console error stack trace.
+    </completion>
+
+    <key_takeaways>
+      <takeaway>
+        Console errors are the fastest path to root cause for interaction bugs.
+        The screenshot showed the symptom, but the console error identified
+        the exact code failure.
+      </takeaway>
+      <takeaway>
+        Always capture network responses even for seemingly client-side bugs.
+        The API response revealed the schema change that caused the crash.
+      </takeaway>
+    </key_takeaways>
+  </example>
+
+  <example name="accessibility_audit_complete">
+    <scenario>
+      A user reports that text on the dashboard is hard to read, especially
+      the card subtitles and status badges. The elements are visible in the DOM
+      but appear nearly invisible to human eyes.
+    </scenario>
+
+    <user_request>
+      "The text on https://hellodj.celestium.life looks fine in the browser inspector but I can barely read it with my eyes. The subtitles and badges are especially bad. Can you do a full accessibility and visual polish audit?"
+    </user_request>
+
+    <workflow>
+      <step number="1">
+        <description>Extract contrast ratios for all text elements</description>
+        <approach>
+          Use page.evaluate() to extract computed color, background-color, opacity,
+          font-size, and font-weight for every text element on the page.
+          Compute WCAG contrast ratios and effective contrast (accounting for opacity).
+          Outcome: contrast data for all text elements.
+        </approach>
+        <expected_outcome>
+          Contrast results showing:
+          - Card background: rgb(45, 45, 68), text: rgb(33, 37, 41), ratio: 1.36:1
+          - Subtitles at 75% opacity: effective contrast 1.02:1
+          - Status badges: ratio varies from 1.2:1 to 3.8:1
+          - Most body text FAILS WCAG AA (4.5:1)
+        </expected_outcome>
+      </step>
+
+      <step number="2">
+        <description>Check font legibility</description>
+        <approach>
+          Extract font-size, font-weight, line-height, and letter-spacing for all text.
+          Flag text below 14px or with line-height < 1.4.
+          Outcome: font legibility report.
+        </approach>
+        <expected_outcome>
+          Most text is 14-16px with adequate line-height.
+          Subtitles at 13px with 1.2 line-height are borderline.
+        </expected_outcome>
+      </step>
+
+      <step number="3">
+        <description>Check opacity as contrast multiplier</description>
+        <approach>
+          Identify all elements with opacity < 0.8.
+          Compute effective contrast = raw_contrast × opacity.
+          Flag elements where effective contrast < 4.5:1.
+          Outcome: opacity-adjusted contrast report.
+        </approach>
+        <analysis>
+          Subtitles at 75% opacity with 4.5:1 raw contrast have only 3.375:1 effective contrast.
+          This is the primary cause of the "barely visible" complaint.
+        </analysis>
+      </step>
+
+      <step number="4">
+        <description>Check layout and visual polish</description>
+        <approach>
+          Verify alignment consistency across cards (margin comparison within 10px).
+          Check typography hierarchy (h1 ≥ h2 ≥ h3).
+          Verify border/shadow consistency.
+          Detect overflow and truncation issues.
+          Outcome: visual polish report.
+        </approach>
+        <expected_outcome>
+          Layout alignment is consistent.
+          Typography hierarchy is visually distinct.
+          Border and shadow treatments are consistent across cards.
+          No overflow or truncation issues detected.
+        </expected_outcome>
+      </step>
+
+      <step number="5">
+        <description>Mobile verification at all breakpoints</description>
+        <approast>
+          Resize viewport to 375x667 (iPhone SE), capture screenshot.
+          Resize to 768x1024 (iPad), capture screenshot.
+          Resize to 1280x720 (desktop), capture screenshot.
+          Check touch target sizes (minimum 44x44px).
+          Check for horizontal overflow at each breakpoint.
+          Outcome: mobile verification with screenshots.
+        </approast>
+        <expected_outcome>
+          All breakpoints render correctly.
+          Touch targets meet Apple HIG (44x44px minimum).
+          No horizontal overflow at any breakpoint.
+        </expected_outcome>
+      </step>
+    </workflow>
+
+    <completion>
+      Accessibility audit complete. Key findings:
+      1. Card text contrast ratio of 1.36:1 is 3.3x below WCAG AA (4.5:1) — PRIMARY ISSUE
+      2. Subtitles at 75% opacity have effective contrast of 1.02:1 — nearly invisible
+      3. Status badges range from 1.2:1 to 3.8:1 — some pass, some fail
+      4. Layout alignment, typography hierarchy, and border/shadow consistency are good
+      5. Mobile verification passes at all breakpoints with screenshots captured
+      Evidence documented in evidence/accessibility-audit/ with contrast data, screenshots, and task list.
+    </completion>
+
+    <key_takeaways>
+      <takeaway>
+        DOM visibility ≠ human readability. An element can pass Playwright's "visible" check
+        (offsetParent !== null) while being nearly invisible due to low contrast.
+      </takeaway>
+      <takeaway>
+        Always compute effective contrast = raw_contrast × opacity. Opacity is a multiplier,
+        not an additive factor.
+      </takeaway>
+      <takeaway>
+        Visual polish (layout, typography, borders, shadows) is a pass/fail gate, not optional.
+        Document specific failures with screenshot evidence.
+      </takeaway>
+      <takeaway>
+        Mobile verification must include screenshots at all breakpoints (375x667, 768x1024, 1280x720)
+        and touch target validation (44x44px minimum).
+      </takeaway>
+    </key_takeaways>
+  </example>
+
+  <example name="theming_verification">
+    <scenario>
+      A dark mode toggle is not applying correctly. The user clicks the
+      theme toggle button, but the page colors don't change to dark mode.
+      Some elements change, others don't.
+    </scenario>
+
+    <user_request>
+      "The dark mode toggle on https://blog.example.com doesn't work properly. Some parts of the page stay light even after toggling."
+    </user_request>
+
+    <workflow>
+      <step number="1">
+        <description>Capture light mode baseline</description>
+        <approach>
+          Navigate to page in light mode (default).
+          Extract CSS custom properties from :root.
+          Screenshot full page.
+          Outcome: light mode baseline.
+        </approach>
+        <expected_outcome>
+          Light mode: --bg-color: #fff, --text-color: #333, --card-bg: #f5f5f5
+        </expected_outcome>
+      </step>
+
+      <step number="2">
+        <description>Toggle to dark mode and capture</description>
+        <approach>
+          Click the theme toggle button.
+          Wait for theme transition (waitForSelector or fixed delay).
+          Screenshot full page.
+          Extract CSS custom properties from :root.
+          Outcome: dark mode state captured.
+        </approach>
+        <expected_outcome>
+          Screenshot shows mixed theme: header and sidebar are dark,
+          but main content area is still light.
+        </expected_outcome>
+      </step>
+
+      <step number="3">
+        <description>Compare CSS custom property application</description>
+        <approach>
+          Compare computed styles of elements that changed vs those that didn't.
+          Check which elements use CSS custom properties vs hardcoded colors.
+          Outcome: identified the discrepancy.
+        </approach>
+        <analysis>
+          Elements that changed: they use var(--bg-color), var(--text-color).
+          Elements that stayed light: they use hardcoded #fff, #333 instead of variables.
+          Root cause: the main content area was built with hardcoded color values
+          instead of CSS custom properties. The theme toggle changes the variables
+          but the hardcoded elements ignore them.
+        </analysis>
+      </step>
+    </workflow>
+
+    <completion>
+      Root cause identified: Three components in the main content area use
+      hardcoded CSS color values instead of CSS custom properties. When the
+      theme toggle updates --bg-color and --text-color, those components
+      don't respond because they don't reference the variables. Evidence
+      includes screenshots showing the mixed theme state and computed style
+      comparison showing which elements use variables vs hardcoded values.
+    </completion>
+
+    <key_takeaways>
+      <takeaway>
+        CSS custom property extraction via page.evaluate() is the fastest
+        way to identify theme application gaps.
+      </takeaway>
+      <takeaway>
+        Screenshot comparison shows the visual symptom; computed style
+        analysis reveals the code-level root cause.
+      </takeaway>
+    </key_takeaways>
+  </example>
+</complete_examples>
