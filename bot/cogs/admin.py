@@ -1,4 +1,4 @@
-"""Admin cog: system administration commands for the bot."""
+"""HelloDJ — Admin cog: system administration commands for the bot."""
 
 import logging
 import os
@@ -31,7 +31,7 @@ class Admin(commands.Cog):
             return perms.administrator
         return False
 
-    @app_commands.command(name="restart", description="Soft reboot the bot application")
+    @app_commands.command(name="restart", description="Soft reboot HelloDJ")
     async def restart(self, interaction: discord.Interaction):
         if not self._is_admin(interaction):
             await interaction.response.send_message(
@@ -39,10 +39,10 @@ class Admin(commands.Cog):
             )
             return
 
-        await interaction.response.send_message("🔄 Restarting bot...")
+        await interaction.response.send_message("🔄 HelloDJ restarting...")
         os._exit(42)
 
-    @app_commands.command(name="kill", description="Safely shut down the bot process (Admin only)")
+    @app_commands.command(name="kill", description="Safely shut down HelloDJ (Admin only)")
     async def kill(self, interaction: discord.Interaction):
         if not self._is_admin(interaction):
             await interaction.response.send_message(
@@ -50,10 +50,10 @@ class Admin(commands.Cog):
             )
             return
 
-        await interaction.response.send_message("🛑 Shutting down...")
+        await interaction.response.send_message("🛑 HelloDJ shutting down...")
         sys.exit(0)
 
-    @app_commands.command(name="revoke", description="Prevent a user from using the bot")
+    @app_commands.command(name="revoke", description="Prevent a user from using HelloDJ")
     @app_commands.describe(user="User to revoke access from")
     async def revoke(self, interaction: discord.Interaction, user: discord.User):
         if not self._is_admin(interaction):
@@ -70,7 +70,7 @@ class Admin(commands.Cog):
             blacklist[gid].append(user.id)
 
         await interaction.response.send_message(
-            f"Revoked **{user.name}** from using the bot.", ephemeral=True
+            f"Revoked **{user.name}** from using HelloDJ.", ephemeral=True
         )
 
 

@@ -15,5 +15,8 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY bot.py player.py session.py storage.py blacklist.py ./
 COPY cogs/ ./cogs/
 
-# Run the bot
+# Create data directory for persistent storage
+RUN mkdir -p /app/data
+
+# Run HelloDJ
 CMD ["python", "bot.py"]

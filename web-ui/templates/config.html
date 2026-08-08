@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+{% block title %}Configuration{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2 class="mb-4">
+            <i class="bi bi-gear"></i> HelloDJ Configuration
+            <small class="text-muted fs-6">— Edit bot settings</small>
+        </h2>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-discord"></i> Discord
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label" for="discord-token">Bot Token</label>
+                    <input type="password" class="form-control" id="discord-token" placeholder="DISCORD_TOKEN">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="discord-appid">Application ID</label>
+                    <input class="form-control" id="discord-appid" placeholder="DISCORD_APPID">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="discord-pubkey">Public Key</label>
+                    <input class="form-control" id="discord-pubkey" placeholder="DISCORD_PUBKEY">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-speaker"></i> Lavalink
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label" for="lavalink-host">Host</label>
+                    <input class="form-control" id="lavalink-host" placeholder="losingtime.dpaste.org">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="lavalink-port">Port</label>
+                    <input type="number" class="form-control" id="lavalink-port" placeholder="2124">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="lavalink-password">Password</label>
+                    <input type="password" class="form-control" id="lavalink-password" placeholder="SleepingOnTrains">
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-spotify"></i> Spotify
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label" for="spotify-id">Client ID</label>
+                    <input class="form-control" id="spotify-id" placeholder="SPOTIFY_CLIENT_ID">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="spotify-secret">Client Secret</label>
+                    <input type="password" class="form-control" id="spotify-secret" placeholder="SPOTIFY_CLIENT_SECRET">
+                </div>
+            </div>
+        </div>
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="bi bi-magic"></i> Genius (Lyrics)
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label" for="genius-key">API Key</label>
+                    <input type="password" class="form-control" id="genius-key" placeholder="GENIUS_API_KEY">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-wrench"></i> Bot Settings
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label" for="bot-default-source">Default Source Provider</label>
+                    <select class="form-select" id="bot-default-source">
+                        <option value="youtube">YouTube</option>
+                        <option value="youtube_music">YouTube Music</option>
+                        <option value="soundcloud">SoundCloud</option>
+                        <option value="spotify">Spotify</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="bot-autoplay">Default Autoplay</label>
+                    <select class="form-select" id="bot-autoplay">
+                        <option value="true">Enabled</option>
+                        <option value="false">Disabled</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="bot-repeat">Default Repeat Mode</label>
+                    <select class="form-select" id="bot-repeat">
+                        <option value="off">Off</option>
+                        <option value="single">Single Track</option>
+                        <option value="queue">Full Queue</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-12">
+        <button class="btn btn-hellodj btn-lg" onclick="saveConfig()">
+            <i class="bi bi-check-circle"></i> Save Configuration
+        </button>
+        <button class="btn btn-outline-hellodj btn-lg" onclick="loadConfig()">
+            <i class="bi bi-arrow-clockwise"></i> Reload
+        </button>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(async function() {
+    await loadConfig();
+});
+
+async function loadConfig() {
+    const cfg = await apiFetch('/api/config');
+    if (!cfg) return;
+
+    $('#discord-token').val(cfg.discord.token || '');
+    $('#discord-appid').val(cfg.discord.app_id || '');
+    $('#discord-pubkey').val(cfg.discord.pub_key || '');
+    $('#lavalink-host').val(cfg.lavalink.host || '');
+    $('#lavalink-port').val(cfg.lavalink.port || '2124');
+    $('#lavalink-password').val(cfg.lavalink.password || '');
+    $('#spotify-id').val(cfg.spotify.client_id || '');
+    $('#spotify-secret').val(cfg.spotify.client_secret || '');
+    $('#genius-key').val(cfg.genius.api_key || '');
+    if (cfg.bot) {
+        $('#bot-default-source').val(cfg.bot.default_source || 'youtube');
+        $('#bot-autoplay').val(cfg.bot.autoplay ? 'true' : 'false');
+        $('#bot-repeat').val(cfg.bot.repeat || 'off');
+    }
+}
+
+async function saveConfig() {
+    const data = {
+        discord: {
+            token: $('#discord-token').val(),
+            app_id: $('#discord-appid').val(),
+            pub_key: $('#discord-pubkey').val(),
+        },
+        lavalink: {
+            host: $('#lavalink-host').val(),
+            port: parseInt($('#lavalink-port').val()) || 2124,
+            password: $('#lavalink-password').val(),
+        },
+        spotify: {
+            client_id: $('#spotify-id').val(),
+            client_secret: $('#spotify-secret').val(),
+        },
+        genius: {
+            api_key: $('#genius-key').val(),
+        },
+        bot: {
+            default_source: $('#bot-default-source').val(),
+            autoplay: $('#bot-autoplay').val() === 'true',
+            repeat: $('#bot-repeat').val(),
+        }
+    };
+
+    const result = await apiFetch('/api/config', {
+        method: 'POST',
+        body: JSON.stringify(data),
+    });
+
+    if (result && result.status === 'ok') {
+        showToast(result.message, 'success');
+    }
+}
+</script>
+{% endblock %}

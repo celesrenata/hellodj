@@ -1,4 +1,4 @@
-"""Filters cog: audio effects via Lavalink's built-in EQ/filter API.
+"""HelloDJ — Filters cog: audio effects via Lavalink's built-in EQ/filter API.
 
 Uses wavelink 3.5's Filters API directly (no dismusic dependency).
 """
@@ -19,7 +19,7 @@ class Filters(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    filter_group = app_commands.Group(name="filter", description="Apply audio filters to playback")
+    filter_group = app_commands.Group(name="filter", description="Apply audio filters to HelloDJ playback")
 
     # ── Bassboost ───────────────────────────────────────────
 
@@ -32,11 +32,10 @@ class Filters(commands.Cog):
     async def bassboost(self, interaction: discord.Interaction, level: str = "moderate"):
         player_obj = player.get_player(interaction.guild.id)
         if not player_obj:
-            await interaction.response.send_message("Bot is not connected to voice.")
+            await interaction.response.send_message("HelloDJ is not connected to voice.")
             return
 
         # Lavalink EQ: boost 60-200Hz bands (15 bands total, 0-14)
-        # wavelink 3.5 uses Filters.from_filters with Equalizer objects
         eq_levels = {
             "low": [0.0, 0.05, 0.1, 0.05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
             "moderate": [0.0, 0.1, 0.15, 0.1, 0.05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0],
@@ -57,7 +56,7 @@ class Filters(commands.Cog):
         state["filters"]["bassboost"] = {"level": level, "gains": gains}
         player.persist(interaction.guild.id)
 
-        await interaction.response.send_message(f"Bassboost **{level}** applied.")
+        await interaction.response.send_message(f"HelloDJ bassboost **{level}** applied.")
 
     # ── Nightcore ───────────────────────────────────────────
 
@@ -65,7 +64,7 @@ class Filters(commands.Cog):
     async def nightcore(self, interaction: discord.Interaction):
         player_obj = player.get_player(interaction.guild.id)
         if not player_obj:
-            await interaction.response.send_message("Bot is not connected to voice.")
+            await interaction.response.send_message("HelloDJ is not connected to voice.")
             return
 
         # Lavalink timescale filter: speed 1.25x, pitch shift
@@ -79,7 +78,7 @@ class Filters(commands.Cog):
         state["filters"]["nightcore"] = {"speed": 1.25, "pitch": 1.25}
         player.persist(interaction.guild.id)
 
-        await interaction.response.send_message("Nightcore filter applied.")
+        await interaction.response.send_message("HelloDJ nightcore filter applied.")
 
     # ── 8D ──────────────────────────────────────────────────
 
@@ -87,7 +86,7 @@ class Filters(commands.Cog):
     async def eightd(self, interaction: discord.Interaction):
         player_obj = player.get_player(interaction.guild.id)
         if not player_obj:
-            await interaction.response.send_message("Bot is not connected to voice.")
+            await interaction.response.send_message("HelloDJ is not connected to voice.")
             return
 
         # Lavalink rotation filter: oscillate pan at 0.2 Hz
@@ -101,7 +100,7 @@ class Filters(commands.Cog):
         state["filters"]["8d"] = {"rotation": 0.2}
         player.persist(interaction.guild.id)
 
-        await interaction.response.send_message("8D filter applied.")
+        await interaction.response.send_message("HelloDJ 8D filter applied.")
 
     # ── Equalizer ───────────────────────────────────────────
 
@@ -134,7 +133,7 @@ class Filters(commands.Cog):
     ):
         player_obj = player.get_player(interaction.guild.id)
         if not player_obj:
-            await interaction.response.send_message("Bot is not connected to voice.")
+            await interaction.response.send_message("HelloDJ is not connected to voice.")
             return
 
         # Lavalink has 15 bands (0-14). Map our 10 bands to Lavalink's bands.
@@ -155,7 +154,7 @@ class Filters(commands.Cog):
         state["filters"]["equalizer"] = {"gains": gains}
         player.persist(interaction.guild.id)
 
-        await interaction.response.send_message("Equalizer applied with custom band levels.")
+        await interaction.response.send_message("HelloDJ equalizer applied with custom band levels.")
 
     # ── Filter reset ────────────────────────────────────────
 
@@ -163,7 +162,7 @@ class Filters(commands.Cog):
     async def filter_reset(self, interaction: discord.Interaction):
         player_obj = player.get_player(interaction.guild.id)
         if not player_obj:
-            await interaction.response.send_message("Bot is not connected to voice.")
+            await interaction.response.send_message("HelloDJ is not connected to voice.")
             return
 
         # Reset all filters using wavelink 3.5 API
@@ -175,7 +174,7 @@ class Filters(commands.Cog):
         state["filters"] = {}
         player.persist(interaction.guild.id)
 
-        await interaction.response.send_message("All filters reset to default.")
+        await interaction.response.send_message("HelloDJ all filters reset to default.")
 
 
 async def setup(bot: commands.Bot):

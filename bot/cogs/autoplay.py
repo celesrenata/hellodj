@@ -1,4 +1,4 @@
-"""Autoplay cog: auto-recommendation engine with genre management.
+"""HelloDJ — Autoplay cog: auto-recommendation engine with genre management.
 
 When the queue empties and autoplay is enabled, the bot automatically adds
 recommended tracks based on genres or the current track's metadata.
@@ -31,7 +31,7 @@ class Autoplay(commands.Cog):
         player.persist(interaction.guild.id)
 
         status = "ON" if enabled else "OFF"
-        await interaction.response.send_message(f"Autoplay: **{status}**")
+        await interaction.response.send_message(f"HelloDJ autoplay: **{status}**")
 
     # ── Genre management group ──────────────────────────────
 
@@ -39,7 +39,7 @@ class Autoplay(commands.Cog):
         name="genre", description="Manage autoplay genres",
         parent=app_commands.Group(
             name="autoplay",
-            description="Autoplay commands",
+            description="HelloDJ autoplay commands",
         ),
     )
 
@@ -56,7 +56,7 @@ class Autoplay(commands.Cog):
             player.persist(interaction.guild.id)
 
         await interaction.response.send_message(
-            f"Genre **{genre_lower}** added. Current genres: {', '.join(genres) or 'none'}",
+            f"HelloDJ genre **{genre_lower}** added. Current genres: {', '.join(genres) or 'none'}",
             ephemeral=True,
         )
 
@@ -73,7 +73,7 @@ class Autoplay(commands.Cog):
             player.persist(interaction.guild.id)
 
         await interaction.response.send_message(
-            f"Genre **{genre_lower}** removed. Current genres: {', '.join(genres) or 'none'}",
+            f"HelloDJ genre **{genre_lower}** removed. Current genres: {', '.join(genres) or 'none'}",
             ephemeral=True,
         )
 
@@ -83,7 +83,7 @@ class Autoplay(commands.Cog):
         state["autoplay_genres"] = []
         player.persist(interaction.guild.id)
         await interaction.response.send_message(
-            "All genres cleared. Autoplay will use song-based recommendations.",
+            "HelloDJ all genres cleared. Autoplay will use song-based recommendations.",
             ephemeral=True,
         )
 
@@ -93,11 +93,11 @@ class Autoplay(commands.Cog):
         genres = state.get("autoplay_genres", [])
         if genres:
             await interaction.response.send_message(
-                f"Current genres: {', '.join(genres)}", ephemeral=True
+                f"HelloDJ current genres: {', '.join(genres)}", ephemeral=True
             )
         else:
             await interaction.response.send_message(
-                "No genres set. Autoplay will recommend based on the current song.", ephemeral=True
+                "No genres set. HelloDJ will recommend based on the current song.", ephemeral=True
             )
 
 

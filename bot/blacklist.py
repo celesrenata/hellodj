@@ -1,4 +1,4 @@
-"""Shared blacklist module — imported by bot.py and cogs/admin.py."""
+"""HelloDJ — Shared blacklist module — imported by bot.py and cogs/admin.py."""
 
 # Guild → list of user IDs
 blacklist: dict[int, list[int]] = {}

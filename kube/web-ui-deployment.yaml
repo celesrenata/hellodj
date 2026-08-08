@@ -1,0 +1,97 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hellodj-web-ui
+  namespace: hellodj-service
+  labels:
+    app.kubernetes.io/instance: hellodj
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/name: hellodj-web-ui
+    app.kubernetes.io/version: latest
+    app.kubernetes.io/component: web-ui
+    helm.sh/chart: hellodj-0.1.0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: hellodj
+      app.kubernetes.io/name: hellodj-web-ui
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: hellodj
+        app.kubernetes.io/managed-by: kubectl
+        app.kubernetes.io/name: hellodj-web-ui
+        app.kubernetes.io/version: latest
+        app.kubernetes.io/component: web-ui
+        helm.sh/chart: hellodj-0.1.0
+    spec:
+      imagePullSecrets:
+        - name: harbor-credentials
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsUser: 1000
+      containers:
+        - name: web-ui
+          image: registry.celestium.life/hellodj/web-ui:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8080
+              name: http
+              protocol: TCP
+          env:
+            - name: HELLODJ_DATA_DIR
+              value: /app/data
+            - name: HELLODJ_CONFIG_DIR
+              value: /app/config
+            - name: HELLODJ_BACKUP_DIR
+              value: /app/config-backups
+            - name: DISCORD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: DISCORD_TOKEN
+                  optional: true
+            - name: DISCORD_APPID
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: DISCORD_APPID
+                  optional: true
+            - name: DISCORD_PUBKEY
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: DISCORD_PUBKEY
+                  optional: true
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          volumeMounts:
+            - mountPath: /app/data
+              name: hellodj-data
+              readOnly: true
+            - mountPath: /app/config
+              name: hellodj-config
+            - mountPath: /app/config-backups
+              name: hellodj-config-backups
+      volumes:
+        - name: hellodj-data
+          persistentVolumeClaim:
+            claimName: hellodj-data-pvc
+            readOnly: true
+        - name: hellodj-config
+          persistentVolumeClaim:
+            claimName: hellodj-config-pvc
+        - name: hellodj-config-backups
+          emptyDir: {}

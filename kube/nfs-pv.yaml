@@ -1,0 +1,23 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: hellodj-config-nfs-pv
+  namespace: hellodj-service
+  labels:
+    app.kubernetes.io/instance: hellodj
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/name: hellodj
+    app.kubernetes.io/component: config-storage
+spec:
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteMany
+  persistentVolumeReclaimPolicy: Retain
+  storageClassName: nfs
+  mountOptions:
+    - vers=4.1
+  nfs:
+    server: 192.168.42.8
+    path: /volume1/Kubernetes/HelloDJ/data
+    readOnly: false

@@ -26,11 +26,38 @@ services:
       LAVALINK_PASSWORD: "youshallnotpass"
     volumes:
       - ./bot:/app
+      - hellodj-data:/app/data
     networks:
       - hellodj-net
     depends_on:
       - lavalink
 
+  web-ui:
+    build:
+      context: ./web-ui
+      dockerfile: Dockerfile
+    container_name: hellodj-web-ui
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    env_file:
+      - ./bot/.env
+    environment:
+      HELLODJ_DATA_DIR: /app/data
+      HELLODJ_CONFIG_DIR: /app/config
+      HELLODJ_BACKUP_DIR: /app/config-backups
+    volumes:
+      - hellodj-data:/app/data
+      - hellodj-config:/app/config
+      - hellodj-backups:/app/config-backups
+    networks:
+      - hellodj-net
+
 networks:
   hellodj-net:
     driver: bridge
+
+volumes:
+  hellodj-data:
+  hellodj-config:
+  hellodj-backups:

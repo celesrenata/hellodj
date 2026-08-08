@@ -1,0 +1,28 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+
+namespace: hellodj-service
+
+commonLabels:
+  app.kubernetes.io/instance: hellodj
+  app.kubernetes.io/managed-by: kubectl
+  helm.sh/chart: hellodj-0.1.0
+
+resources:
+  - namespace.yaml
+  - configmap.yaml
+  - pvc.yaml
+  - nfs-pv.yaml
+  - nfs-pvc.yaml
+  - service.yaml
+  - deployment.yaml
+  - web-ui-service.yaml
+  - web-ui-deployment.yaml
+  - ingress.yaml
+
+# Image tags — override with actual digests after build
+images:
+  - name: registry.celestium.life/hellodj/bot
+    newTag: "@sha256:latest"
+  - name: registry.celestium.life/hellodj/web-ui
+    newTag: "@sha256:latest"

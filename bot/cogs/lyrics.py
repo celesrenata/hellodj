@@ -1,4 +1,4 @@
-"""Lyrics cog: fetch and display song lyrics from Genius API."""
+"""HelloDJ — Lyrics cog: fetch and display song lyrics from Genius API."""
 
 import logging
 import os
@@ -26,7 +26,7 @@ class LyricsPaginatedView(discord.ui.View):
     def _embed(self) -> discord.Embed:
         current = self.pages[self.page]
         embed = discord.Embed(
-            title="📝 Lyrics",
+            title="📝 HelloDJ Lyrics",
             description=current[:2000],
             colour=discord.Colour.blurple(),
         )
@@ -97,7 +97,7 @@ class Lyrics(commands.Cog):
                 await interaction.followup.send(embed=view._embed(), view=view)
 
         except Exception as exc:
-            log.error("Lyrics fetch failed: %s", exc)
+            log.error("HelloDJ lyrics fetch failed: %s", exc)
             await interaction.followup.send("Could not fetch lyrics.")
 
     async def _fetch_lyrics(self, title: str, artist: str) -> str | None:

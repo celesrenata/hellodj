@@ -1,4 +1,4 @@
-"""Persistent, guild-scoped playback-session storage backed by a JSON file.
+"""HelloDJ — Persistent, guild-scoped playback-session storage backed by a JSON file.
 
 Unlike playlists (``storage.py``), this captures the *live* state — the current
 track, the pending queue, and the voice/text channels — so the bot can resume
@@ -17,7 +17,7 @@ from datetime import datetime, timezone
 
 log = logging.getLogger(__name__)
 
-SESSIONS_FILE = "sessions.json"
+SESSIONS_FILE = "data/sessions.json"
 
 # { "<guild_id>": {voice_channel_id, text_channel_id, current, queue, auto_resume, updated_at,
 #                   autoplay_enabled, autoplay_genres, source_provider, repeat_mode, filters} }
@@ -28,6 +28,7 @@ _lock = asyncio.Lock()
 def load() -> None:
     """Load sessions from disk into memory. Safe to call once at startup."""
     global _data
+    os.makedirs("data", exist_ok=True)
     if not os.path.exists(SESSIONS_FILE):
         _data = {}
         return
@@ -35,7 +36,7 @@ def load() -> None:
         with open(SESSIONS_FILE, "r", encoding="utf-8") as f:
             _data = json.load(f)
     except (json.JSONDecodeError, OSError) as exc:
-        log.error("Could not read %s (%s); starting with no saved sessions.", SESSIONS_FILE, exc)
+        log.error("HelloDJ could not read %s (%s); starting with no saved sessions.", SESSIONS_FILE, exc)
         _data = {}
 
 

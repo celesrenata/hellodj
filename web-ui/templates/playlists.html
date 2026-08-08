@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% block title %}Playlists{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2 class="mb-4">
+            <i class="bi bi-queue-music"></i> Playlists
+            <small class="text-muted fs-6">— All guild playlists</small>
+        </h2>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-queue-music"></i> Playlist Inventory
+                <button class="btn btn-sm btn-outline-hellodj float-end" onclick="refreshPlaylists()">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+            </div>
+            <div class="card-body">
+                <div id="playlists-content">
+                    <p class="text-muted">Loading...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(async function() {
+    await refreshPlaylists();
+});
+
+async function refreshPlaylists() {
+    const data = await apiFetch('/api/playlists');
+    if (!data) return;
+
+    const container = $('#playlists-content');
+    const pl = data.playlists;
+
+    if (!pl || Object.keys(pl).length === 0) {
+        container.html('<p class="text-muted">No playlists found</p>');
+        return;
+    }
+
+    let html = '';
+    for (const [gid, guild] of Object.entries(pl)) {
+        const names = Object.keys(guild);
+        if (names.length === 0) continue;
+
+        html += `<div class="mb-3">
+            <h6><code>Guild ${gid}</code> — ${names.length} playlist(s)</h6>
+            <div class="table-responsive">
+                <table class="table table-sm">
+                    <thead><tr><th>Name</th><th>Tracks</th><th>Visibility</th><th>Actions</th></tr></thead>
+                    <tbody>`;
+
+        for (const [name, pldata] of Object.entries(guild)) {
+            html += `<tr>
+                <td><strong>${name}</strong></td>
+                <td>${pldata.tracks?.length || 0} track(s)</td>
+                <td><span class="badge ${pldata.visibility === 'private' ? 'bg-warning' : 'badge-hellodj'}">${pldata.visibility || 'public'}</span></td>
+                <td>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deletePlaylist('${gid}', '${name}')">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            </tr>`;
+        }
+
+        html += `</tbody></table></div></div>`;
+    }
+    container.html(html);
+}
+
+async function deletePlaylist(gid, name) {
+    if (!confirm(`Delete playlist "${name}" from guild ${gid}?`)) return;
+    const result = await apiFetch(`/api/playlists/${gid}/${name}`, { method: 'DELETE' });
+    if (result && result.status === 'ok') {
+        showToast(result.message, 'success');
+        await refreshPlaylists();
+    }
+}
+</script>
+{% endblock %}

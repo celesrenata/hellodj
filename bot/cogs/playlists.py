@@ -1,4 +1,4 @@
-"""Playlist cog: the /playlist command group (shared, per-guild playlists)."""
+"""HelloDJ — Playlist cog: the /playlist command group (shared, per-guild playlists)."""
 
 import discord
 from discord import app_commands
@@ -101,7 +101,7 @@ class Playlists(commands.Cog):
         except storage.PlaylistError as exc:
             await interaction.response.send_message(str(exc), ephemeral=True)
             return
-        await interaction.response.send_message(f"Created playlist **{name}**.", ephemeral=True)
+        await interaction.response.send_message(f"HelloDJ created playlist **{name}**.", ephemeral=True)
 
     @group.command(name="delete", description="Delete a playlist")
     @app_commands.describe(name="Playlist to delete")
@@ -121,7 +121,7 @@ class Playlists(commands.Cog):
         if view.confirmed:
             try:
                 await storage.delete(interaction.guild.id, name)
-                msg = f"Deleted **{name}**."
+                msg = f"HelloDJ deleted **{name}**."
             except storage.PlaylistError as exc:
                 msg = str(exc)
         else:
@@ -159,7 +159,7 @@ class Playlists(commands.Cog):
                 async def on_pick(info: dict, picker: discord.Interaction):
                     key = await storage.add_track(gid, name, _track_from_info(info))
                     await picker.response.edit_message(
-                        content=f"Added **{info.get('title', 'Unknown')}** to **{key}**.", view=None
+                        content=f"HelloDJ added **{info.get('title', 'Unknown')}** to **{key}**.", view=None
                     )
 
                 view = player.SearchSelectView(results, interaction.user.id, on_pick)
@@ -175,7 +175,7 @@ class Playlists(commands.Cog):
             }
             key = await storage.add_track(gid, name, info)
             await interaction.followup.send(
-                f"Added **{info['title']}** to **{key}**.", ephemeral=True
+                f"HelloDJ added **{info['title']}** to **{key}**.", ephemeral=True
             )
         except Exception as exc:
             await interaction.followup.send(f"Could not add: {exc}", ephemeral=True)
@@ -190,7 +190,7 @@ class Playlists(commands.Cog):
             return
         key = await storage.add_track(interaction.guild.id, name, _track_from_info(current))
         await interaction.response.send_message(
-            f"Added **{current.get('title', 'Unknown')}** to **{key}**.", ephemeral=True
+            f"HelloDJ added **{current.get('title', 'Unknown')}** to **{key}**.", ephemeral=True
         )
 
     @group.command(name="remove", description="Remove a track from a playlist")
@@ -208,7 +208,7 @@ class Playlists(commands.Cog):
             await interaction.response.send_message(str(exc), ephemeral=True)
             return
         await interaction.response.send_message(
-            f"Removed **{removed.get('title', 'Unknown')}** from **{name}**.", ephemeral=True
+            f"HelloDJ removed **{removed.get('title', 'Unknown')}** from **{name}**.", ephemeral=True
         )
 
     @group.command(name="edit", description="Edit playlist metadata (name, visibility, description)")
@@ -238,7 +238,7 @@ class Playlists(commands.Cog):
                 visibility=visibility,
                 description=description,
             )
-            msg = f"Updated playlist **{result}**."
+            msg = f"HelloDJ updated playlist **{result}**."
         except storage.PlaylistError as exc:
             msg = str(exc)
         await interaction.response.send_message(msg, ephemeral=True)
@@ -249,7 +249,7 @@ class Playlists(commands.Cog):
         if not playlists:
             await interaction.response.send_message("No playlists yet. Use `/playlist create`.")
             return
-        embed = discord.Embed(title="Playlists", colour=discord.Colour.blurple())
+        embed = discord.Embed(title="HelloDJ Playlists", colour=discord.Colour.blurple())
         for name in sorted(playlists, key=str.casefold):
             count = len(playlists[name]["tracks"])
             vis = playlists[name].get("visibility", "public")
@@ -281,7 +281,7 @@ class Playlists(commands.Cog):
         if len(tracks) > limit:
             lines.append(f"…and {len(tracks) - limit} more")
         embed = discord.Embed(
-            title=f"{name} — {len(tracks)} track(s)",
+            title=f"HelloDJ — {name} — {len(tracks)} track(s)",
             description="\n".join(lines),
             colour=discord.Colour.blurple(),
         )
@@ -333,7 +333,7 @@ class Playlists(commands.Cog):
             replace=(mode == "replace"),
             shuffle=shuffle,
         )
-        verb = "Replaced queue with" if mode == "replace" else "Queued"
+        verb = "HelloDJ replaced queue with" if mode == "replace" else "HelloDJ queued"
         extra = " (shuffled)" if shuffle else ""
         await interaction.followup.send(f"{verb} **{count}** track(s) from **{name}**{extra}.")
 

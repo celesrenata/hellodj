@@ -1,4 +1,4 @@
-"""Info cog: /info dashboard showing current playback state."""
+"""HelloDJ — Info cog: /info dashboard showing current playback state."""
 
 import logging
 import time
@@ -16,13 +16,13 @@ class Info(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    @app_commands.command(name="info", description="Show information about current playback")
+    @app_commands.command(name="info", description="Show HelloDJ playback information")
     async def info_cmd(self, interaction: discord.Interaction):
         state = player.get_state(interaction.guild.id)
         player_obj = player.get_player(interaction.guild.id)
 
         embed = discord.Embed(
-            title="🎵 Playback Information",
+            title="🎵 HelloDJ — Playback Information",
             colour=discord.Colour.blurple(),
         )
 

@@ -1,4 +1,4 @@
-"""Shared playback engine: queue orchestrator bridging wavelink events to persistence & UI.
+"""HelloDJ — Shared playback engine: queue orchestrator bridging wavelink events to persistence & UI.
 
 Uses wavelink 3.5+ directly (no dismusic dependency).
 """
@@ -329,11 +329,11 @@ def _build_now_playing_embed(track: wavelink.Playable) -> discord.Embed:
     duration = track.duration or 0
     mins, secs = divmod(duration // 1000, 60) if duration > 1000 else divmod(duration, 60)
 
-    embed = discord.Embed(title="🎵 Now Playing", colour=discord.Colour.blurple())
+    embed = discord.Embed(title="🎵 HelloDJ — Now Playing", colour=discord.Colour.blurple())
     embed.add_field(name="Song", value=title, inline=True)
     embed.add_field(name="Artist", value=author, inline=True)
     embed.add_field(name="Duration", value=f"{mins}:{secs:02d}", inline=True)
-    embed.set_footer(text="Use the buttons below to control playback")
+    embed.set_footer(text="HelloDJ — Use the buttons below to control playback")
     return embed
 
 
@@ -358,7 +358,7 @@ async def _now_playing_updater(guild_id: int, player: wavelink.Player, track: wa
             pos_m, pos_s = divmod(position // 1000, 60)
             dur_m, dur_s = divmod(duration // 1000, 60)
 
-            embed = msg.embeds[0] if msg.embeds else discord.Embed(title="🎵 Now Playing", colour=discord.Colour.blurple())
+            embed = msg.embeds[0] if msg.embeds else discord.Embed(title="🎵 HelloDJ — Now Playing", colour=discord.Colour.blurple())
             embed.description = f"`{bar}`  {pos_m}:{pos_s:02d} / {dur_m}:{dur_s:02d}"
             try:
                 await msg.edit(embed=embed)
@@ -442,10 +442,10 @@ class NowPlayingView(discord.ui.View):
         current = state["repeat_mode"]
         next_mode = modes[(modes.index(current) + 1) % len(modes)] if current in modes else "off"
         state["repeat_mode"] = next_mode
-        await interaction.response.send_message(f"Repeat: **{next_mode}**", ephemeral=True)
+        await interaction.response.send_message(f"HelloDJ Repeat: **{next_mode}**", ephemeral=True)
 
     async def _shuffle(self, interaction: discord.Interaction) -> None:
         state = get_state(self.guild_id)
         shuffle_queue(state)
         persist(self.guild_id)
-        await interaction.response.send_message("Queue shuffled.", ephemeral=True)
+        await interaction.response.send_message("HelloDJ queue shuffled.", ephemeral=True)

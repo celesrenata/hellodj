@@ -1,0 +1,145 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: hellodj
+  namespace: hellodj-service
+  labels:
+    app.kubernetes.io/instance: hellodj
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/name: hellodj
+    app.kubernetes.io/version: latest
+    app.kubernetes.io/component: bot
+    helm.sh/chart: hellodj-0.1.0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: hellodj
+      app.kubernetes.io/name: hellodj
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: hellodj
+        app.kubernetes.io/managed-by: kubectl
+        app.kubernetes.io/name: hellodj
+        app.kubernetes.io/version: latest
+        app.kubernetes.io/component: bot
+        helm.sh/chart: hellodj-0.1.0
+    spec:
+      imagePullSecrets:
+        - name: harbor-credentials
+      securityContext:
+        fsGroup: 1000
+        runAsGroup: 1000
+        runAsUser: 1000
+      containers:
+        # ── Discord Bot ─────────────────────────────────────────────
+        - name: bot
+          image: registry.celestium.life/hellodj/bot:latest
+          imagePullPolicy: Always
+          env:
+            - name: DISCORD_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: DISCORD_TOKEN
+            - name: DISCORD_APPID
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: DISCORD_APPID
+                  optional: true
+            - name: DISCORD_PUBKEY
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: DISCORD_PUBKEY
+                  optional: true
+            - name: LAVALINK_HOST
+              value: localhost
+            - name: LAVALINK_PORT
+              value: "2333"
+            - name: LAVALINK_PASSWORD
+              value: youshallnotpass
+            - name: SPOTIFY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: SPOTIFY_CLIENT_ID
+                  optional: true
+            - name: SPOTIFY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: SPOTIFY_CLIENT_SECRET
+                  optional: true
+            - name: GENIUS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: GENIUS_API_KEY
+                  optional: true
+          resources:
+            limits:
+              cpu: "2"
+              memory: 1Gi
+            requests:
+              cpu: 500m
+              memory: 256Mi
+          volumeMounts:
+            - mountPath: /app/data
+              name: hellodj-data
+            - mountPath: /app/config
+              name: hellodj-config
+            - mountPath: /app/config-backups
+              name: hellodj-config-backups
+
+        # ── Lavalink sidecar ───────────────────────────────────────
+        - name: lavalink
+          image: ghcr.io/lavalink-devs/lavalink:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 2333
+              name: lavalink
+              protocol: TCP
+          env:
+            - name: LAVALINK_HOST
+              value: 0.0.0.0
+            - name: LAVALINK_PORT
+              value: "2333"
+            - name: LAVALINK_PASSWORD
+              value: youshallnotpass
+          resources:
+            limits:
+              cpu: "2"
+              memory: 1Gi
+            requests:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - mountPath: /opt/Lavalink/application.yml
+              name: lavalink-config
+              readOnly: true
+              subPath: application.yml
+
+      volumes:
+        - name: hellodj-data
+          persistentVolumeClaim:
+            claimName: hellodj-data-pvc
+        - name: hellodj-config
+          persistentVolumeClaim:
+            claimName: hellodj-config-pvc
+        - name: hellodj-config-backups
+          emptyDir: {}
+        - configMap:
+            defaultMode: 420
+            items:
+              - key: application.yml
+                path: application.yml
+            name: lavalink-config
+          name: lavalink-config

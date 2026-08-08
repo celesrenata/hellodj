@@ -1,4 +1,4 @@
-"""Persistent, guild-scoped playlist storage backed by a JSON file.
+"""HelloDJ — Persistent, guild-scoped playlist storage backed by a JSON file.
 
 Playlists are *shared* within a guild: anyone may view, edit, play, or delete
 any playlist. All mutations are serialized behind a lock and written atomically.
@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 log = logging.getLogger(__name__)
 
-PLAYLISTS_FILE = "playlists.json"
+PLAYLISTS_FILE = "data/playlists.json"
 
 # { "<guild_id>": { "<playlist name>": {tracks, created_by, created_at, visibility, description} } }
 _data: dict[str, dict] = {}
@@ -26,6 +26,7 @@ class PlaylistError(Exception):
 def load() -> None:
     """Load playlists from disk into memory. Safe to call once at startup."""
     global _data
+    os.makedirs("data", exist_ok=True)
     if not os.path.exists(PLAYLISTS_FILE):
         _data = {}
         return
@@ -33,7 +34,7 @@ def load() -> None:
         with open(PLAYLISTS_FILE, "r", encoding="utf-8") as f:
             _data = json.load(f)
     except (json.JSONDecodeError, OSError) as exc:
-        log.error("Could not read %s (%s); starting with empty playlists.", PLAYLISTS_FILE, exc)
+        log.error("HelloDJ could not read %s (%s); starting with empty playlists.", PLAYLISTS_FILE, exc)
         _data = {}
 
 

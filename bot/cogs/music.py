@@ -1,4 +1,4 @@
-"""Music cog: voice playback and queue commands — builds on wavelink 3.5."""
+"""HelloDJ — Music cog: voice playback and queue commands — builds on wavelink 3.5."""
 
 import asyncio
 
@@ -56,7 +56,7 @@ class QueuePaginatedView(discord.ui.View):
         items = player.get_queue_page(state, self.page, self.page_size)
         total_pages = max(1, (len(state["queue"]) + self.page_size - 1) // self.page_size)
 
-        embed = discord.Embed(title="🎶 Queue", colour=discord.Colour.blurple())
+        embed = discord.Embed(title="🎶 HelloDJ Queue", colour=discord.Colour.blurple())
         if current:
             embed.add_field(name="Now Playing", value=f"**{current.get('title', 'Unknown')}**", inline=False)
 
@@ -67,7 +67,7 @@ class QueuePaginatedView(discord.ui.View):
         else:
             embed.add_field(name="Up Next", value="Empty", inline=False)
 
-        embed.set_footer(text=f"{len(state['queue'])} track(s) total")
+        embed.set_footer(text=f"{len(state['queue'])} track(s) total — HelloDJ")
         return embed
 
     @discord.ui.button(label="◀ Prev", style=discord.ButtonStyle.secondary, custom_id="q_prev")
@@ -88,7 +88,7 @@ class QueuePaginatedView(discord.ui.View):
 
 
 class SearchSelectView(discord.ui.View):
-    """Dropdown of search results. Reuses the pattern from original player.py."""
+    """Dropdown of search results."""
 
     def __init__(self, results: list[dict], invoker_id: int, on_pick):
         super().__init__(timeout=60)
@@ -159,7 +159,7 @@ class Music(commands.Cog):
         player_obj = await wavelink.Player.connect(channel)
         state["player"] = player_obj
 
-        await interaction.followup.send(f"Joined **{channel.name}**.")
+        await interaction.followup.send(f"HelloDJ joined **{channel.name}**.")
 
     # ── Play ────────────────────────────────────────────────
 
@@ -223,9 +223,9 @@ class Music(commands.Cog):
                     p = player.get_player(interaction.guild.id)
                     if p and p.connected and not p.playing and not p.paused:
                         await player._play_next_from_queue(interaction.guild.id)
-                        content = f"Loading: **{title}**"
+                        content = f"HelloDJ loading: **{title}**"
                     else:
-                        content = f"Added to queue (#{len(state['queue'])}): **{title}**"
+                        content = f"HelloDJ added to queue (#{len(state['queue'])}): **{title}**"
                     await picker.response.edit_message(content=content, view=None)
 
                 view = SearchSelectView(results, interaction.user.id, on_pick)
@@ -242,7 +242,7 @@ class Music(commands.Cog):
                 "duration": track.duration or 0,
             }
             await player.add_track(state, interaction.guild.id, info)
-            await interaction.followup.send(f"Added to queue: **{info['title']}**")
+            await interaction.followup.send(f"HelloDJ added to queue: **{info['title']}**")
 
         except Exception as exc:
             await interaction.followup.send(f"Could not play: {exc}")
@@ -254,18 +254,18 @@ class Music(commands.Cog):
         player_obj = player.get_player(interaction.guild.id)
         if player_obj and player_obj.playing:
             await player_obj.pause()
-            await interaction.response.send_message("Paused.")
+            await interaction.response.send_message("HelloDJ paused.")
         else:
-            await interaction.response.send_message("Nothing is playing.")
+            await interaction.response.send_message("HelloDJ: Nothing is playing.")
 
     @app_commands.command(name="resume", description="Resume playback")
     async def resume(self, interaction: discord.Interaction):
         player_obj = player.get_player(interaction.guild.id)
         if player_obj and player_obj.paused:
             await player_obj.resume()
-            await interaction.response.send_message("Resumed.")
+            await interaction.response.send_message("HelloDJ resumed.")
         else:
-            await interaction.response.send_message("Nothing is paused.")
+            await interaction.response.send_message("HelloDJ: Nothing is paused.")
 
     @app_commands.command(name="start", description="Alias for /resume")
     async def start(self, interaction: discord.Interaction):
@@ -278,9 +278,9 @@ class Music(commands.Cog):
         player_obj = player.get_player(interaction.guild.id)
         if player_obj and (player_obj.playing or player_obj.paused):
             await player_obj.stop()
-            await interaction.response.send_message("Skipped.")
+            await interaction.response.send_message("HelloDJ skipped.")
         else:
-            await interaction.response.send_message("Nothing to skip.")
+            await interaction.response.send_message("HelloDJ: Nothing to skip.")
 
     @app_commands.command(name="next", description="Alias for /skip")
     async def next_cmd(self, interaction: discord.Interaction):
@@ -303,20 +303,20 @@ class Music(commands.Cog):
 
         if not had_content:
             await session.clear(gid)
-            await interaction.response.send_message("Stopped and cleared the queue.")
+            await interaction.response.send_message("HelloDJ stopped and cleared the queue.")
             return
 
         view = SaveQueueView(interaction.user.id)
         await interaction.response.send_message(
-            "Stopped. Save this queue so you can `/continue` later?", view=view
+            "HelloDJ stopped. Save this queue so you can `/continue` later?", view=view
         )
         await view.wait()
         if view.save:
             await session.save_guild(gid, auto_resume=False, **snap)
-            msg = "Saved — use `/continue` to resume this queue."
+            msg = "HelloDJ saved — use `/continue` to resume this queue."
         else:
             await session.clear(gid)
-            msg = "Stopped and cleared the queue."
+            msg = "HelloDJ stopped and cleared the queue."
         await interaction.edit_original_response(content=msg, view=None)
 
     @app_commands.command(name="clear", description="Stop and discard the queue (no save prompt)")
@@ -330,7 +330,7 @@ class Music(commands.Cog):
             await player_obj.stop()
         state["current"] = None
         await session.clear(gid)
-        await interaction.response.send_message("Cleared the queue.")
+        await interaction.response.send_message("HelloDJ cleared the queue.")
 
     # ── Queue display ───────────────────────────────────────
 
@@ -352,11 +352,11 @@ class Music(commands.Cog):
             return
 
         if not current and not items:
-            await interaction.response.send_message("The queue is empty.")
+            await interaction.response.send_message("HelloDJ queue is empty.")
             return
         lines = []
         if current:
-            lines.append(f"Now playing: **{current.get('title', 'Unknown')}**")
+            lines.append(f"HelloDJ now playing: **{current.get('title', 'Unknown')}**")
         lines += [f"{i + 1}. **{item.get('title', 'Unknown')}**" for i, item in enumerate(items)]
         await interaction.response.send_message("\n".join(lines))
 
@@ -405,7 +405,7 @@ class Music(commands.Cog):
                     title = info.get("title") or "Unknown"
                     await player.add_track(state, interaction.guild.id, info)
                     await picker.response.edit_message(
-                        content=f"Added to queue (#{len(state['queue'])}): **{title}**", view=None
+                        content=f"HelloDJ added to queue (#{len(state['queue'])}): **{title}**", view=None
                     )
 
                 view = SearchSelectView(results, interaction.user.id, on_pick)
@@ -421,7 +421,7 @@ class Music(commands.Cog):
                 "duration": track.duration or 0,
             }
             await player.add_track(state, interaction.guild.id, info)
-            await interaction.followup.send(f"Added to queue (#{len(state['queue'])}): **{info['title']}**")
+            await interaction.followup.send(f"HelloDJ added to queue (#{len(state['queue'])}): **{info['title']}**")
 
         except Exception as exc:
             await interaction.followup.send(f"Could not add: {exc}")
@@ -433,14 +433,14 @@ class Music(commands.Cog):
     async def remove(self, interaction: discord.Interaction, index: int):
         state = player.get_state(interaction.guild.id)
         if not state["queue"]:
-            await interaction.response.send_message("The queue is empty.")
+            await interaction.response.send_message("HelloDJ queue is empty.")
             return
         removed = player.remove_from_queue(state, index - 1)
         if removed is None:
             await interaction.response.send_message(f"Invalid index. Queue has {len(state['queue'])} track(s).")
             return
         player.persist(interaction.guild.id)
-        await interaction.response.send_message(f"Removed **{removed.get('title', 'Unknown')}** from the queue.")
+        await interaction.response.send_message(f"HelloDJ removed **{removed.get('title', 'Unknown')}** from the queue.")
 
     @app_commands.command(name="delete", description="Alias for /remove")
     @app_commands.describe(index="Track number to delete (1-based)")
@@ -454,14 +454,14 @@ class Music(commands.Cog):
     async def move(self, interaction: discord.Interaction, from_index: int, to_index: int):
         state = player.get_state(interaction.guild.id)
         if not state["queue"]:
-            await interaction.response.send_message("The queue is empty.")
+            await interaction.response.send_message("HelloDJ queue is empty.")
             return
         ok = player.move_in_queue(state, from_index - 1, to_index - 1)
         if not ok:
             await interaction.response.send_message(f"Invalid indices. Queue has {len(state['queue'])} track(s).")
             return
         player.persist(interaction.guild.id)
-        await interaction.response.send_message("Track moved.")
+        await interaction.response.send_message("HelloDJ track moved.")
 
     # ── Shuffle ─────────────────────────────────────────────
 
@@ -469,11 +469,11 @@ class Music(commands.Cog):
     async def shuffle(self, interaction: discord.Interaction):
         state = player.get_state(interaction.guild.id)
         if not state["queue"]:
-            await interaction.response.send_message("The queue is empty.")
+            await interaction.response.send_message("HelloDJ queue is empty.")
             return
         player.shuffle_queue(state)
         player.persist(interaction.guild.id)
-        await interaction.response.send_message("Queue shuffled.")
+        await interaction.response.send_message("HelloDJ queue shuffled.")
 
     # ── Repeat ──────────────────────────────────────────────
 
@@ -494,7 +494,7 @@ class Music(commands.Cog):
             player.set_repeat(state, next_mode)
             mode = next_mode
         player.persist(interaction.guild.id)
-        await interaction.response.send_message(f"Repeat: **{mode}**")
+        await interaction.response.send_message(f"HelloDJ repeat: **{mode}**")
 
     # ── Source ──────────────────────────────────────────────
 
@@ -509,17 +509,17 @@ class Music(commands.Cog):
         state = player.get_state(interaction.guild.id)
         state["source_provider"] = provider
         player.persist(interaction.guild.id)
-        await interaction.response.send_message(f"Source set to **{provider}**.")
+        await interaction.response.send_message(f"HelloDJ source set to **{provider}**.")
 
     # ── Leave ───────────────────────────────────────────────
 
-    @app_commands.command(name="leave", description="Disconnect the bot from voice")
+    @app_commands.command(name="leave", description="Disconnect HelloDJ from voice")
     async def leave(self, interaction: discord.Interaction):
         gid = interaction.guild.id
         state = player.get_state(gid)
         player_obj = player.get_player(gid)
         if not player_obj or not player_obj.connected:
-            await interaction.response.send_message("I'm not in a voice channel.")
+            await interaction.response.send_message("HelloDJ is not in a voice channel.")
             return
 
         had_content = bool(state.get("current")) or bool(state["queue"])
@@ -531,20 +531,20 @@ class Music(commands.Cog):
 
         if not had_content:
             await session.clear(gid)
-            await interaction.response.send_message("Disconnected.")
+            await interaction.response.send_message("HelloDJ disconnected.")
             return
 
         view = SaveQueueView(interaction.user.id)
         message = await interaction.response.send_message(
-            "Disconnected. Save this queue so you can `/continue` later?", view=view
+            "HelloDJ disconnected. Save this queue so you can `/continue` later?", view=view
         )
         await view.wait()
         if view.save:
             await session.save_guild(gid, auto_resume=False, **snap)
-            text = "Saved — use `/continue` to resume this queue."
+            text = "HelloDJ saved — use `/continue` to resume this queue."
         else:
             await session.clear(gid)
-            text = "Disconnected."
+            text = "HelloDJ disconnected."
         await message.edit(content=text, view=None)
 
     # ── Continue ────────────────────────────────────────────
@@ -571,7 +571,7 @@ class Music(commands.Cog):
             entries.append(saved["current"])
         entries.extend(saved.get("queue", []))
         count = await player.enqueue_and_start(interaction.guild, interaction.channel, entries, replace=True)
-        await interaction.followup.send(f"Resuming **{count}** track(s) from your saved queue.")
+        await interaction.followup.send(f"HelloDJ resuming **{count}** track(s) from your saved queue.")
 
     # ── Voice state listener ────────────────────────────────
 
@@ -617,9 +617,9 @@ class Music(commands.Cog):
                     text_ch = state.get("text_channel")
                     if text_ch:
                         if had_content:
-                            await text_ch.send("Everyone left — I saved the queue. Use `/continue` to resume.")
+                            await text_ch.send("HelloDJ: Everyone left — I saved the queue. Use `/continue` to resume.")
                         else:
-                            await text_ch.send("Everyone left — disconnected from voice.")
+                            await text_ch.send("HelloDJ: Everyone left — disconnected from voice.")
             state["alone_task"] = None
 
         state["alone_task"] = asyncio.ensure_future(_leave_if_alone())

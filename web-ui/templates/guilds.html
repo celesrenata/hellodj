@@ -1,0 +1,94 @@
+{% extends "base.html" %}
+{% block title %}Guilds{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2 class="mb-4">
+            <i class="bi bi-people"></i> Active Guilds
+            <small class="text-muted fs-6">— Connected Discord servers</small>
+        </h2>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-people"></i> Guild Sessions
+                <button class="btn btn-sm btn-outline-hellodj float-end" onclick="refreshGuilds()">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover" id="guilds-table">
+                        <thead>
+                            <tr>
+                                <th>Guild ID</th>
+                                <th>Voice Channel</th>
+                                <th>Text Channel</th>
+                                <th>Queue</th>
+                                <th>Autoplay</th>
+                                <th>Repeat</th>
+                                <th>Source</th>
+                                <th>Auto Resume</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="guilds-body">
+                            <tr><td colspan="9" class="text-muted text-center">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(async function() {
+    await refreshGuilds();
+});
+
+async function refreshGuilds() {
+    const data = await apiFetch('/api/guilds');
+    if (!data) return;
+
+    const tbody = $('#guilds-body');
+    if (!data.guilds || data.guilds.length === 0) {
+        tbody.html('<tr><td colspan="9" class="text-muted text-center">No active guild sessions</td></tr>');
+        return;
+    }
+
+    tbody.html(data.guilds.map(g => `
+        <tr>
+            <td><code>${g.id}</code></td>
+            <td>${g.voice_channel || '—'}</td>
+            <td>${g.text_channel || '—'}</td>
+            <td>${g.queue_length} track(s)</td>
+            <td><span class="badge ${g.autoplay ? 'badge-hellodj' : 'bg-secondary'}">${g.autoplay ? 'ON' : 'OFF'}</span></td>
+            <td><span class="badge bg-info">${g.repeat}</span></td>
+            <td>${g.source}</td>
+            <td><span class="status-dot ${g.auto_resume ? 'ok' : 'warn'}"></span>${g.auto_resume ? 'Yes' : 'No'}</td>
+            <td>
+                <button class="btn btn-sm btn-outline-danger" onclick="clearGuild('${g.id}')">
+                    <i class="bi bi-x-circle"></i>
+                </button>
+            </td>
+        </tr>
+    `).join(''));
+}
+
+async function clearGuild(gid) {
+    if (!confirm(`Clear session for guild ${gid}?`)) return;
+    const result = await apiFetch(`/api/guilds/${gid}`, { method: 'DELETE' });
+    if (result && result.status === 'ok') {
+        showToast(result.message, 'success');
+        await refreshGuilds();
+    }
+}
+</script>
+{% endblock %}

@@ -1,4 +1,4 @@
-"""Entry point: loads cogs, configures Lavalink/wavelink, syncs slash commands, runs the bot."""
+"""HelloDJ — Entry point: loads cogs, configures Lavalink/wavelink, syncs slash commands, runs the bot."""
 
 import logging
 import os
@@ -47,7 +47,7 @@ async def connect_lavalink():
         password=LAVALINK_PASSWORD,
     )
     await wavelink.Pool.connect(nodes=[node], client=bot)
-    log.info("Connected to Lavalink at %s", LAVALINK_URI)
+    log.info("HelloDJ connected to Lavalink at %s", LAVALINK_URI)
 
 
 async def disconnect_lavalink():
@@ -55,7 +55,7 @@ async def disconnect_lavalink():
     if wavelink.Pool.nodes:
         for node in wavelink.Pool.nodes.values():
             await node.close()
-    log.info("Disconnected from Lavalink")
+    log.info("HelloDJ disconnected from Lavalink")
 
 
 # ── setup hook ─────────────────────────────────────────────
@@ -77,7 +77,7 @@ async def setup_hook():
     await bot.load_extension("cogs.info")
 
     await bot.tree.sync()
-    print("Slash commands synced.")
+    print("HelloDJ slash commands synced.")
 
 
 bot.setup_hook = setup_hook
@@ -87,7 +87,7 @@ bot.setup_hook = setup_hook
 async def blacklist_check(interaction: discord.Interaction) -> bool:
     if interaction.guild and is_blacklisted(interaction.guild.id, interaction.user.id):
         await interaction.response.send_message(
-            "You have been revoked from using this bot.", ephemeral=True
+            "You have been revoked from using HelloDJ.", ephemeral=True
         )
         return False
     return True
@@ -131,14 +131,14 @@ async def _resume_sessions():
             entries.extend(saved.get("queue", []))
             if entries:
                 await player.enqueue_and_start(guild, text_channel, entries, replace=True)
-                await text_channel.send("Reconnected after a restart — resuming the queue.")
+                await text_channel.send("HelloDJ reconnected after a restart — resuming the queue.")
         except Exception as exc:
             log.warning("Could not resume session for guild %s: %s", gid_str, exc)
 
 
 @bot.event
 async def on_ready():
-    print(f"Logged in as {bot.user} ({bot.user.id})")
+    print(f"HelloDJ logged in as {bot.user} ({bot.user.id})")
     global _resumed
     if not _resumed:
         _resumed = True
