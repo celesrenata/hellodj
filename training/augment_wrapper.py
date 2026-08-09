@@ -90,10 +90,31 @@ def wrapped_cv1d(waveform, kernel, **kw):
 sp.convolve1d = wrapped_cv1d
 
 # Suppress debug logging from onnxscript (causes massive slowdown / verbose output)
-import logging
+import logging, re
+
 logging.getLogger('onnxscript').setLevel(logging.WARNING)
 logging.getLogger('onnx_ir').setLevel(logging.WARNING)
 logging.getLogger('torch.onnx').setLevel(logging.WARNING)
+
+# Throttle generate_samples batch progress to every 100th line
+_generate_samples_batch_count = [0]
+_generate_samples_batch_total = [0]
+_generate_samples_emitted_last = [False]
+
+def _throttle_batch(record):
+    m = re.search(r'^Batch (\d+)/(\d+) complete$', record.getMessage())
+    if not m:
+        return True
+    n, total = int(m.group(1)), int(m.group(2))
+    _generate_samples_batch_count[0] += 1
+    _generate_samples_batch_total[0] = total
+    c = _generate_samples_batch_count[0]
+    # Emit first, every 100th, and last
+    if c == 1 or c % 100 == 0 or n == total:
+        return True
+    return False
+
+logging.getLogger('generate_samples').addFilter(_throttle_batch)
 
 
 # ---------------------------------------------------------------------------
