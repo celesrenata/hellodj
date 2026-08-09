@@ -42,8 +42,9 @@ logging.getLogger('torch.onnx').setLevel(logging.WARNING)
 # Reduced batch output filter
 # ============================================================
 # Wraps stdout so that batch iteration prints are coalesced:
-#   - Prints status every N iterations as a single line
-#   - Uses carriage return (\\r) for live output that doesn't create new lines
+#   - All writes go through summary logic (no bypass for newlines)
+#   - Uses carriage return (\\r) so updates rewrite the SAME line
+#   - Progress updates accumulate on one line until flushed
 # ============================================================
 _BATCH_OUTPUT_ENABLED = True  # Set False to disable all reduced output logic
 _BATCH_EVERY = 100            # Report every N iterations
@@ -53,13 +54,10 @@ if _BATCH_OUTPUT_ENABLED:
         """Filter batch output: coalesce multiple tiny prints into every_n status lines."""
         def __init__(self, raw_stream):
             self.raw = raw_stream
-            self.count = 0              # global iteration counter (incremented per write)
-            self.phase_count = 0        # reset counter per "phase" (e.g. per train/augment epoch)
-            self.phase_name = "iter"
-            self.prev_phase = None
+            self.phase_count = 0
+            self._prev_phase = None
 
         def write(self, text):
-            self.count += 1
             self.phase_count += 1
 
             # Detect phase change by looking for key prefixes
@@ -73,35 +71,44 @@ if _BATCH_OUTPUT_ENABLED:
                 elif 'batch' in stripped.lower() and 'processed' in stripped.lower():
                     new_phase = 'batch'
 
-            if new_phase and new_phase != self.prev_phase:
-                # End previous phase summary line
+            # Phase boundary: end previous line with \\n
+            if new_phase and new_phase != self._prev_phase:
                 self.raw.write('\n')
-                self.prev_phase = new_phase
+                self._prev_phase = new_phase
 
-            # Print every _BATCH_EVERY iterations, or if newline is present
-            if self.phase_count % _BATCH_EVERY == 0 or '\n' in text:
-                if '\n' in text and not stripped:
-                    # Pure newline: emit the current summary line
-                    self.raw.write('\n')
-                    self.raw.flush()
-                elif not stripped:
-                    # Nothing on this line, report phase progress
-                    phase_label = self.phase_name if self.phase_name else new_phase or self.prev_phase or "iter"
-                    summary = f"{phase_label} {self.phase_count}/{_BATCH_EVERY}"
-                    self.raw.write('\r' + summary.ljust(20) + '    \n')
-                    self.raw.flush()
-                else:
-                    # Regular batch output: report on the same line
-                    phase_label = self.phase_name if self.phase_name else new_phase or self.prev_phase or "batch"
-                    # Truncate the text so it fits on one line
-                    display_text = stripped.rstrip(' \t\r\n.,')
-                    if len(display_text) > 80:
-                        display_text = display_text[:77] + '...'
-                    summary = f"{phase_label} {self.phase_count}/{_BATCH_EVERY}: {display_text}"
-                    self.raw.write('\r' + summary.ljust(60) + '\n')
-                    self.raw.flush()
+            # Collect meaningful text (ignore bare newlines/carriage returns)
+            # Always go through summary logic (don't bypass via raw.write)
+            phase_label = str(getattr(self, '_prev_phase', 'batch'))
+            if not stripped:
+                display_text = ""
+            else:
+                # Strip trailing dots, commas, spaces, carriage returns
+                display_text = stripped.rstrip(' \t\r\n.,')
+            if len(display_text) > 80:
+                display_text = display_text[:77] + '...'
+            
+            # Track whether we hit a natural boundary (every _BATCH_EVEN iterations)
+            should_emit = self.phase_count % _BATCH_EVERY == 0
+            
+            # Write summary: \\r moves cursor to start of line (overwrites in place)
+            # When emitting: add \\n to finish the line
+            # When not emitting: no \\n so subsequent writes stay on same line
+            if should_emit:
+                # Flush: write summary AND finish the line
+                summary = f"[{phase_label} {self.phase_count}/{_BATCH_EVERY}] {display_text}"
+                self.raw.write('\r' + summary.ljust(80) + '\n')
+            elif stripped:
+                # Partial update: rewrite same line (no \\n kept)
+                # Only update if there's actual content to show
+                summary = f"[{phase_label} {self.phase_count}/{_BATCH_EVERY}] {display_text}"
+                self.raw.write('\r' + summary.ljust(80) + ' ')  # trailing space
+            # If no stripped text but not emitting: do nothing (keep current state)
+
+            self.raw.flush()
 
         def flush(self):
+            # Terminate any active summary line
+            self.raw.write('\n')
             self.raw.flush()
 
         def isatty(self):
