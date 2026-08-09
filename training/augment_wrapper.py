@@ -108,7 +108,7 @@ def main():
     # Build sys.path from available paths (always include these)
     # Our training dir is first so our webrtcvad.py shim overrides system package
     our_dir = os.path.dirname(os.path.abspath(__file__))
-    for p in [our_dir, '/home/jovyan/openwakeword', '/home/jovyan/piper-sample-generator']:
+    for p in [our_dir, '/home/jovyan/openwakeword/openwakeword', '/home/jovyan/openwakeword', '/home/jovyan/piper-sample-generator']:
         if os.path.isdir(p) and p not in sys.path:
             sys.path.insert(0, p)
 
