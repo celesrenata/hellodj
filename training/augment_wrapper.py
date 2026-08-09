@@ -70,15 +70,25 @@ _compat, _cuda_home = _inject_cuda_paths()
 # Apply patches needed by openwakeword on modern systems
 # ---------------------------------------------------------------------------
 
-# Patch torchaudio.info (avoids librosa fallback issues)
+# Patch torchaudio.info and load (avoids librosa/torchcodec fallback issues)
 import torchaudio
 import soundfile
+import numpy as np
 
 def patched_info(path):
     with soundfile.SoundFile(path) as sf:
         return type('Info', (), {'num_frames': sf.frames, 'sample_rate': sf.samplerate})()
 
+def patched_load(path, *args, **kwargs):
+    data, sr = soundfile.read(path)
+    if data.ndim == 1:
+        data = data.reshape(1, -1)
+    else:
+        data = data.T.reshape(1, -1)
+    return torch.from_numpy(data.astype(np.float32)), sr
+
 torchaudio.info = patched_info
+torchaudio.load = patched_load
 
 # Patch speechbrain convolve1d tensor indexing (rotation_index must be int, not tensor)
 import torch
