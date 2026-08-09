@@ -3,6 +3,11 @@
 import sys
 import os
 
+# Suppress tqdm globally (the 100k-line firehose comes from tqdm progress bars)
+os.environ['TQDM_DISABLE'] = '1'
+os.environ['TQDM_MIN_INTERVAL'] = '999999'
+os.environ['TQDM_POSITION'] = '-1'
+
 # Patch torchaudio.info
 import torchaudio
 import soundfile
@@ -38,7 +43,7 @@ logging.getLogger('torch.onnx').setLevel(logging.WARNING)
 sys.path.insert(0, '/home/jovyan/openwakeword')
 sys.path.insert(0, '/home/jovyan/piper-sample-generator')
 
-# Run train.py
+# Run train.py with all output suppressed
 train_path = '/home/jovyan/openwakeword/openwakeword/train.py'
 with open(train_path) as f:
     code = f.read()
@@ -49,4 +54,5 @@ ns = {
     '__builtins__': __builtins__,
 }
 sys.argv = [train_path] + sys.argv[1:]
+
 exec(code, ns)
