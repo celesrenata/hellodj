@@ -169,8 +169,15 @@ class Music(commands.Cog):
             "youtube_music": TrackSource.YouTubeMusic,
             "soundcloud": TrackSource.SoundCloud,
             "spotify": TrackSource.Spotify,
+            "tidal": "tidal",
         }
         source = source_map.get(provider, TrackSource.YouTube)
+        if provider == "tidal":
+            tidal_query = f"tdsearch:{query}" if not query.startswith("http") else query
+            tracks = await Playable.search(tidal_query, source=TrackSource.YouTube)  # source ignored; prefix drives routing
+            if not tracks:
+                tracks = await Playable.search(query, source=TrackSource.YouTube)  # fallback
+            return tracks
         tracks = await Playable.search(query, source=source)
         if not tracks:
             # Fallback
@@ -504,6 +511,7 @@ class Music(commands.Cog):
         app_commands.Choice(name="YouTube Music", value="youtube_music"),
         app_commands.Choice(name="SoundCloud", value="soundcloud"),
         app_commands.Choice(name="Spotify", value="spotify"),
+        app_commands.Choice(name="Tidal", value="tidal"),
     ])
     async def source(self, interaction: discord.Interaction, provider: str):
         state = player.get_state(interaction.guild.id)

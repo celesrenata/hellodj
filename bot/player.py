@@ -199,11 +199,17 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
             "youtube_music": TrackSource.YouTubeMusic,
             "soundcloud": TrackSource.SoundCloud,
             "spotify": TrackSource.Spotify,
+            "tidal": "tidal",
         }
         source = source_map.get(state.get("source_provider", "youtube"), TrackSource.YouTube)
 
         # For URLs, try to parse directly; for search, use Playable.search
-        if url and ("http://" in url or "https://" in url):
+        if state.get("source_provider") == "tidal":
+            tidal_query = f"tdsearch:{title}" if not (url and ("http://" in url or "https://" in url)) else (url or title)
+            tracks = await Playable.search(tidal_query, source=TrackSource.YouTube)
+            if not tracks:
+                tracks = await Playable.search(title or url, source=TrackSource.YouTube)
+        elif url and ("http://" in url or "https://" in url):
             # Direct URL — try to get as a Playable
             tracks = await Playable.search(url, source=source)
         else:
@@ -217,6 +223,11 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
             log.warning("No track found for %s in guild %s", title, guild_id)
             await _play_next_from_queue(guild_id)
             return
+
+        # Prefer explicit/original versions over remixes, covers, live versions
+        if isinstance(tracks, list):
+            tracks = _prefer_explicit_original(tracks, title)
+            tracks = _prefer_highest_quality(tracks)
 
         track = tracks[0] if isinstance(tracks, list) else tracks
         await player.play(track)
@@ -368,12 +379,61 @@ async def _now_playing_updater(guild_id: int, player: wavelink.Player, track: wa
         pass
 
 
-def _progress_bar(position: int, duration: int, width: int = 20) -> str:
+def _progress_bar(position: int, duration: int, width: int = 9) -> str:
     if duration <= 0:
         return "?" * width
     filled = int(position / duration * width)
-    filled = max(0, min(filled, width))
-    return "█" * filled + "░" * (width - filled)
+    filled = max(0, min(filled, width - 1))
+    bar = ["▬"] * width
+    bar[filled] = "🔘"
+    return "".join(bar)
+
+
+def _prefer_explicit_original(tracks: list, query: str) -> list:
+    """Filter and sort tracks to prefer explicit/original versions.
+    Removes or deprioritizes remixes, covers, live versions."""
+    keywords_to_avoid = ['cover', 'remix', 'live', 'edit', 'acoustic', 'rehearsal', 'demo']
+    preferred_keywords = ['explicit', 'original']
+
+    def score(track):
+        title_lower = track.name.lower() if hasattr(track, 'name') else ''
+        artist_lower = track.author.lower() if hasattr(track, 'author') else ''
+        score = 0
+        # Boost if title has explicit/original
+        for kw in preferred_keywords:
+            if kw in title_lower:
+                score += 10
+        # Penalize if title has avoid keywords
+        for kw in keywords_to_avoid:
+            if kw in title_lower:
+                score -= 10
+        # Boost if artist name matches query closely
+        if query.lower() in artist_lower:
+            score += 5
+        return score
+
+    # Sort by score descending (best first)
+    tracks.sort(key=score, reverse=True)
+    return tracks
+
+
+def _prefer_highest_quality(tracks: list) -> list:
+    """Filter and sort tracks to prefer highest quality sources.
+    Lavalink may return multiple tracks at different qualities."""
+    # Track objects may have isrc or quality hints
+    # Prefer tracks that are marked as highest quality
+    def quality_score(track):
+        # wavelink tracks may have 'quality' metadata
+        if hasattr(track, 'quality'):
+            quality_map = {'lossless': 100, 'high': 50, 'medium': 20, 'low': 0}
+            return quality_map.get(track.quality, 10)
+        # If no quality info, check bitrate or other hints
+        if hasattr(track, 'bitrate') and track.bitrate:
+            return track.bitrate // 100  # higher bitrate = higher score
+        return 50  # default middle
+
+    tracks.sort(key=quality_score, reverse=True)
+    return tracks
 
 
 # ── now-playing button view ────────────────────────────────
@@ -385,9 +445,9 @@ class NowPlayingView(discord.ui.View):
         super().__init__(timeout=300)
         self.guild_id = guild_id
 
-    @discord.ui.button(label="⏮", style=discord.ButtonStyle.secondary, custom_id="np_prev")
-    async def prev_track(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        await self._skip_to_previous(interaction)
+    @discord.ui.button(label="▶️", style=discord.ButtonStyle.secondary, custom_id="np_play")
+    async def play_resume(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        await self._play_resume(interaction)
 
     @discord.ui.button(label="⏸", style=discord.ButtonStyle.primary, custom_id="np_toggle")
     async def pause_resume(self, interaction: discord.Interaction, _button: discord.ui.Button):
@@ -397,28 +457,25 @@ class NowPlayingView(discord.ui.View):
     async def next_track(self, interaction: discord.Interaction, _button: discord.ui.Button):
         await self._skip_next(interaction)
 
-    @discord.ui.button(label="🔄", style=discord.ButtonStyle.success, custom_id="np_repeat")
-    async def repeat_toggle(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        await self._cycle_repeat(interaction)
-
     @discord.ui.button(label="🔀", style=discord.ButtonStyle.success, custom_id="np_shuffle")
     async def shuffle_tracks(self, interaction: discord.Interaction, _button: discord.ui.Button):
         await self._shuffle(interaction)
+
+    @discord.ui.button(label="⏹️", style=discord.ButtonStyle.danger, custom_id="np_stop")
+    async def stop_playback(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        await self._stop(interaction)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
         # Allow any guild member to use buttons
         return True
 
-    async def _skip_to_previous(self, interaction: discord.Interaction) -> None:
-        state = get_state(self.guild_id)
-        if state.get("current"):
-            state["queue"].insert(0, state["current"])
-        if len(state["queue"]) >= 2:
-            prev = state["queue"].pop(-1)
-            state["queue"].insert(0, prev)
-        player = state.get("player")
+    async def _play_resume(self, interaction: discord.Interaction) -> None:
+        player = get_player(self.guild_id)
         if player:
-            await player.stop()
+            if player.paused:
+                await player.resume()
+            elif not player.playing:
+                await _play_next_from_queue(self.guild_id)
         await interaction.response.defer()
 
     async def _toggle_pause(self, interaction: discord.Interaction) -> None:
@@ -436,13 +493,11 @@ class NowPlayingView(discord.ui.View):
             await player.stop()
         await interaction.response.defer()
 
-    async def _cycle_repeat(self, interaction: discord.Interaction) -> None:
-        state = get_state(self.guild_id)
-        modes = ["off", "single", "queue"]
-        current = state["repeat_mode"]
-        next_mode = modes[(modes.index(current) + 1) % len(modes)] if current in modes else "off"
-        state["repeat_mode"] = next_mode
-        await interaction.response.send_message(f"HelloDJ Repeat: **{next_mode}**", ephemeral=True)
+    async def _stop(self, interaction: discord.Interaction) -> None:
+        player = get_player(self.guild_id)
+        if player:
+            await player.stop()
+        await interaction.response.defer()
 
     async def _shuffle(self, interaction: discord.Interaction) -> None:
         state = get_state(self.guild_id)

@@ -7,6 +7,9 @@ services:
     restart: unless-stopped
     volumes:
       - ./bot/lavalink/application.yml:/opt/Lavalink/application.yml:ro
+      - ./bot/lavalink/plugins/:/opt/Lavalink/plugins/
+    environment:
+      TIDAL_TOKEN: "${TIDAL_TOKEN}"
     networks:
       - hellodj-net
     expose:

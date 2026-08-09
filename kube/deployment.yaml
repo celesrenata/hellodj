@@ -84,6 +84,12 @@ spec:
                   name: hellodj-secret
                   key: GENIUS_API_KEY
                   optional: true
+            - name: TIDAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: TIDAL_TOKEN
+                  optional: true
           resources:
             limits:
               cpu: "2"
@@ -114,6 +120,12 @@ spec:
               value: "2333"
             - name: LAVALINK_PASSWORD
               value: youshallnotpass
+            - name: TIDAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: TIDAL_TOKEN
+                  optional: true
           resources:
             limits:
               cpu: "2"
@@ -126,6 +138,8 @@ spec:
               name: lavalink-config
               readOnly: true
               subPath: application.yml
+            - mountPath: /opt/Lavalink/plugins/
+              name: lavalink-plugins
 
       volumes:
         - name: hellodj-data
@@ -143,3 +157,5 @@ spec:
                 path: application.yml
             name: lavalink-config
           name: lavalink-config
+        - name: lavalink-plugins
+          emptyDir: {}

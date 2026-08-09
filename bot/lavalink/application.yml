@@ -6,12 +6,27 @@ lavalink:
     host: "0.0.0.0"
     port: 2333
     password: "youshallnotpass"
+    pluginsDir: "./plugins"
   buffer:
     period: 500
     periodMilliseconds: 500
   limits:
     memory: 0
     cpu: 0
+
+  plugins:
+    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.0.3"
+      repository: "https://maven.lavalink.dev/releases"
+      snapshot: false
+
+plugins:
+  lavasrc:
+    sources:
+      tidal: true
+    tidal:
+      countryCode: "US"
+      searchLimit: 6
+      token: "${TIDAL_TOKEN}"
 
 sources:
   youtube:

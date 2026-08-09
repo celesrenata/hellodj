@@ -12,7 +12,8 @@
             --hellodj-secondary: #212529;
         }
         body {
-            background-color: #1a1a2e;
+            background: linear-gradient(180deg, rgb(15, 15, 25), rgb(25, 25, 40)) !important;
+            background-attachment: fixed;
             color: #e0e0e0;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
         }
@@ -27,13 +28,17 @@
         }
         .nav-link {
             color: #e0e0e0 !important;
+            position: relative;
             transition: color 0.2s;
         }
         .nav-link.active, .nav-link:hover {
-            color: #bb86fc !important;
+            color: rgb(187, 134, 252) !important;
+            text-shadow: 0 0 8px rgba(187, 134, 252, 0.3);
         }
         .card {
-            background-color: #2d2d44;
+            background: rgba(30, 30, 45, 0.6) !important;
+            backdrop-filter: blur(10px) !important;
+            -webkit-backdrop-filter: blur(10px) !important;
             border: 1px solid #3a3a5c;
             border-radius: 12px;
             box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
@@ -55,8 +60,8 @@
             box-shadow: 0 0 0 0.2rem rgba(187, 134, 252, 0.25);
         }
         .btn-hellodj {
-            background-color: #6f42c1;
-            border-color: #6f42c1;
+            background: linear-gradient(135deg, rgb(111,66,193), rgb(140,90,210)) !important;
+            border: none;
             color: #fff;
         }
         .btn-hellodj:hover {
@@ -114,12 +119,41 @@
             border-top: 1px solid #3a3a5c;
             background-color: var(--hellodj-secondary);
         }
+        /* Change 1: Card text color (fix WCAG contrast) */
+        h5.card-title, h2.display-4, p.text-muted, span.text-muted {
+            color: rgb(200, 200, 215) !important;
+        }
+        /* Change 2: Card title typography */
+        h5.card-title {
+            font-weight: 600 !important;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            font-size: 14px !important;
+        }
+        /* Change 3: Button minimum height (Apple HIG 44px touch target) */
+        /* Change 8: Display-4 value weight for typography hierarchy */
+        h2.display-4 {
+            font-weight: 600 !important;
+        }
+        .btn, button.btn {
+            min-height: 44px !important;
+            padding: 10px 16px !important;
+        }
+        /* Change 4: Button hover effects */
+        .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3) !important;
+        }
+        /* Change 7: Card hover border glow */
+        .card:hover {
+            border-color: rgba(187, 134, 252, 0.3) !important;
+        }
     </style>
 </head>
 <body>
     <nav class="navbar navbar-expand-lg navbar-dark">
         <div class="container-fluid">
-            <a class="navbar-brand" href="{{ url_for('index') }}">
+            <a class="navbar-brand brand-link" href="{{ url_for('index') }}">
                 <i class="bi bi-music-note-beamed"></i> HelloDJ
             </a>
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
@@ -163,7 +197,9 @@
     </nav>
 
     <main class="container-fluid py-4">
-        {% block content %}{% endblock %}
+        <form id="main-form" method="POST" action="#" onsubmit="return false;">
+            {% block content %}{% endblock %}
+        </form>
     </main>
 
     <footer class="text-center py-3 mt-4">

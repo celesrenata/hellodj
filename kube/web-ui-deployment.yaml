@@ -80,7 +80,6 @@ spec:
           volumeMounts:
             - mountPath: /app/data
               name: hellodj-data
-              readOnly: true
             - mountPath: /app/config
               name: hellodj-config
             - mountPath: /app/config-backups
@@ -89,7 +88,6 @@ spec:
         - name: hellodj-data
           persistentVolumeClaim:
             claimName: hellodj-data-pvc
-            readOnly: true
         - name: hellodj-config
           persistentVolumeClaim:
             claimName: hellodj-config-pvc

@@ -123,6 +123,10 @@ def create_backup(name=None):
 
 # ── Routes ─────────────────────────────────────────────────
 
+@app.route("/favicon.ico")
+def favicon():
+    return app.send_static_file("favicon.ico")
+
 @app.route("/")
 def index():
     return render_template("index.html", active="dashboard")
