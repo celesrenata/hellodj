@@ -98,10 +98,10 @@ if _BATCH_OUTPUT_ENABLED:
                 summary = f"[{phase_label} {self.phase_count}/{_BATCH_EVERY}] {display_text}"
                 self.raw.write('\r' + summary.ljust(80) + '\n')
             elif stripped:
-                # Partial update: rewrite same line (no \\n kept)
-                # Only update if there's actual content to show
+                # Partial update: clear line and rewrite (removes ghost text)
+                CLREOL = chr(27) + "[K"  # ANSI clear to end of line
                 summary = f"[{phase_label} {self.phase_count}/{_BATCH_EVERY}] {display_text}"
-                self.raw.write('\r' + summary.ljust(80) + ' ')  # trailing space
+                self.raw.write(chr(13) + CLREOL + summary.ljust(80) + ' ')
             # If no stripped text but not emitting: do nothing (keep current state)
 
             self.raw.flush()
