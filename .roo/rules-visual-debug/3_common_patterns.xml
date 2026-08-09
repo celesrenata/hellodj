@@ -707,4 +707,266 @@ for (const bp of breakpoints) {
       </grade>
     </human_readability_scorecard>
   </pattern>
+
+  <pattern name="color_design_audit">
+    <description>
+      Perform a comprehensive color design audit covering dark-theme anti-patterns,
+      WCAG contrast compliance, status indicator visibility, palette coherence,
+      and color hierarchy. This pattern proactively detects common dark design
+      mistakes WITHOUT being told what's wrong — it automatically flags issues
+      like black text on dark backgrounds, pure white text causing glare, invisible
+      status dots, and inconsistent palette lightness steps.
+    </description>
+
+    <prerequisites>
+      <prerequisite>Page fully loaded with networkidle</prerequisite>
+      <prerequisite>Browser context is clean (no cached state)</prerequisite>
+      <prerequisite>Viewport set to target size (desktop default)</prerequisite>
+    </prerequisites>
+
+    <steps>
+      <step number="1">
+        <title>Extract All Color Pairs</title>
+        <code>
+const colorPairs = await page.evaluate(() => {
+  const elements = document.querySelectorAll('h1, h2, h3, h4, h5, h6, p, span, a, button, li, td, th, label, .badge, .status, [class*="card"], [class*="panel"]');
+  return Array.from(elements).map(el => {
+    const style = getComputedStyle(el);
+    return {
+      text: el.textContent.trim().substring(0, 60),
+      tag: el.tagName,
+      className: el.className.substring(0, 60),
+      textColor: style.color,
+      bgColor: style.backgroundColor,
+      fontSize: parseFloat(style.fontSize),
+      fontWeight: parseInt(style.fontWeight),
+      opacity: parseFloat(style.opacity),
+      isLarge: parseFloat(style.fontSize) >= 22 || (parseFloat(style.fontSize) >= 18 && parseInt(style.fontWeight) >= 700),
+    };
+  });
+});
+        </code>
+      </step>
+
+      <step number="2">
+        <title>Compute WCAG Contrast and Apply Correct Threshold</title>
+        <code>
+const contrastResults = colorPairs.map(pair => {
+  const ratio = computeContrast(pair.textColor, pair.bgColor);
+  let threshold = 4.5; // AA normal text
+  let thresholdName = 'AA_normal (4.5:1)';
+  if (pair.isLarge) {
+    threshold = 3.0;
+    thresholdName = 'AA_large (3:1)';
+  }
+  if (pair.tag === 'svg' || pair.tag === 'i' || pair.tag === 'path' ||
+      pair.className.includes('icon') || pair.className.includes('border')) {
+    threshold = 3.0;
+    thresholdName = 'UI_component (3:1)';
+  }
+  return {
+    ...pair,
+    contrastRatio: ratio.toFixed(2),
+    threshold: threshold,
+    thresholdName: thresholdName,
+    passes: ratio >= threshold,
+    effectiveRatio: (ratio * pair.opacity).toFixed(2),
+    effectivePasses: (ratio * pair.opacity) >= threshold,
+  };
+});
+        </code>
+      </step>
+
+      <step number="3">
+        <title>Flag Dark Theme Anti-Patterns</title>
+        <code>
+const darkThemeIssues = await page.evaluate(() => {
+  const issues = [];
+
+  // Check background colors for pure black
+  document.querySelectorAll('*').forEach(el => {
+    const bg = getComputedStyle(el).backgroundColor;
+    const bgRgb = parseRgb(bg);
+    if (bgRgb && bgRgb.r === 0 && bgRgb.g === 0 && bgRgb.b === 0) {
+      issues.push({
+        type: 'pure_black_bg',
+        severity: 'high',
+        element: el.tagName,
+        class: el.className.substring(0, 40),
+        text: el.textContent.trim().substring(0, 50),
+        message: 'Pure black background (#000) causes eye strain. Use #212529, #0a0f12, or #111820 instead.',
+      });
+    }
+
+    // Check text colors for pure white on dark bg
+    const textColor = getComputedStyle(el).color;
+    const textRgb = parseRgb(textColor);
+    if (textRgb && textRgb.r === 255 && textRgb.g === 255 && textRgb.b === 255 && bgRgb) {
+      const bgLuminance = luminance(bgRgb);
+      if (bgLuminance < 0.2) {
+        issues.push({
+          type: 'pure_white_text',
+          severity: 'high',
+          element: el.tagName,
+          class: el.className.substring(0, 40),
+          text: el.textContent.trim().substring(0, 50),
+          message: 'Pure white text (#fff) on dark bg causes glare. Use #dee2e6 or #e0e8f0 instead.',
+        });
+      }
+    }
+  });
+
+  // Check status indicators
+  document.querySelectorAll('.badge, .status, [class*="badge"], [class*="status"]').forEach(el => {
+    const bg = getComputedStyle(el).backgroundColor;
+    const parentBg = getComputedStyle(el.parentElement).backgroundColor;
+    const ratio = computeContrast(bg, parentBg);
+    const isColorOnly = el.children.length === 0 ||
+      Array.from(el.children).every(c => c.tagName === 'I' || c.tagName === 'SVG');
+    if (ratio < 3.0) {
+      issues.push({
+        type: 'invisible_indicator',
+        severity: 'high',
+        element: el.tagName,
+        class: el.className.substring(0, 40),
+        text: el.textContent.trim().substring(0, 50),
+        contrastRatio: ratio.toFixed(2),
+        message: `Status indicator contrast ${ratio.toFixed(2)}:1 — below 3:1 minimum. Invisible to low-vision users.`,
+      });
+    }
+    if (isColorOnly) {
+      issues.push({
+        type: 'color_only_indicator',
+        severity: 'medium',
+        element: el.tagName,
+        class: el.className.substring(0, 40),
+        message: 'Status indicator relies solely on color — not accessible to color-blind users. Add icon or text label.',
+      });
+    }
+  });
+
+  // Check semantic colors against dark-mode references
+  const darkRefs = {
+    success: { r: 117, g: 183, b: 152 },  // #75b798
+    danger: { r: 234, g: 134, b: 143 },   // #ea868f
+    warning: { r: 255, g: 218, b: 106 },  // #ffda6a
+  };
+  document.querySelectorAll('[class*="success"], [class*="danger"], [class*="warning"]').forEach(el => {
+    const bg = getComputedStyle(el).backgroundColor;
+    const bgRgb = parseRgb(bg);
+    if (bgRgb && bgRgb.r < 100 && bgRgb.g < 100 && bgRgb.b < 100) {
+      issues.push({
+        type: 'semantic_color_too_dark',
+        severity: 'medium',
+        element: el.tagName,
+        class: el.className.substring(0, 40),
+        message: 'Semantic color too dark for dark mode. Use lighter variants: success #75b798, danger #ea868f, warning #ffda6a.',
+      });
+    }
+  });
+
+  return issues;
+});
+        </code>
+      </step>
+
+      <step number="4">
+        <title>Evaluate Palette Coherence and Hierarchy</title>
+        <code>
+const paletteAudit = await page.evaluate(() => {
+  // Collect all distinct background colors
+  const backgrounds = new Set();
+  document.querySelectorAll('.card, [class*="card"], [class*="panel"], body, .container, .section').forEach(el => {
+    const bg = getComputedStyle(el).backgroundColor;
+    if (bg && bg !== 'rgba(0, 0, 0, 0)') backgrounds.add(bg);
+  });
+
+  // Convert to HSL and check lightness progression
+  const bgHSL = Array.from(backgrounds).map(c => {
+    const rgb = parseRgb(c);
+    return rgbToHsl(rgb.r, rgb.g, rgb.b);
+  }).sort((a, b) => a.l - b.l);
+
+  // Check if lightness steps are consistent (5-8% apart)
+  const stepDiffs = bgHSL.slice(1).map((hsl, i) => Math.abs(hsl.l - bgHSL[i].l));
+  const consistentSteps = stepDiffs.every(d => d >= 5 && d <= 20);
+
+  // Check text hierarchy (body text off-white, secondary ~75% opacity, muted ~50%)
+  const textColors = new Set();
+  document.querySelectorAll('p, span, .card-text, .body').forEach(el => {
+    const color = getComputedStyle(el).color;
+    if (color && color !== 'rgba(0, 0, 0, 0)') textColors.add(color);
+  });
+
+  return {
+    distinctBackgrounds: backgrounds.size,
+    bgLightnessSteps: bgHSL.map(h => h.l.toFixed(1)),
+    lightnessConsistent: consistentSteps,
+    distinctTextColors: textColors.size,
+    hasOffWhiteBody: Array.from(textColors).some(c => {
+      const rgb = parseRgb(c);
+      return rgb.r >= 200 && rgb.r <= 230;
+    }),
+  };
+});
+        </code>
+        <palette_criteria>
+          <criterion name="lightness_consistency">
+            Background lightness should increase in 5-20% steps for surface hierarchy
+          </criterion>
+          <criterion name="body_text_color">
+            Body text should be off-white (200-230 range) in dark mode, not pure white
+          </criterion>
+          <criterion name="accent_color_count">
+            Limit accent colors to primary + danger + success + warning; flag more than 4-5
+          </criterion>
+          <criterion name="grey_temperature">
+            Neutral greys should contain 2-5% brand hue tint for visual warmth
+          </criterion>
+        </palette_criteria>
+      </step>
+
+      <step number="5">
+        <title>Generate Color Design Scorecard</title>
+        <code>
+const scorecard = {
+  contrastPassRate: contrastResults.filter(r => r.passes).length / contrastResults.length,
+  contrastFailCount: contrastResults.filter(r => !r.passes).length,
+  darkThemeIssueCount: darkThemeIssues.length,
+  paletteCoherent: paletteAudit.lightnessConsistent,
+  hasOffWhiteBody: paletteAudit.hasOffWhiteBody,
+  statusIndicatorIssues: darkThemeIssues.filter(i => i.type === 'invisible_indicator').length,
+  colorOnlyIndicatorIssues: darkThemeIssues.filter(i => i.type === 'color_only_indicator').length,
+};
+        </code>
+      </step>
+    </steps>
+
+    <color_design_scorecard>
+      <scoring>
+        <metric name="contrast_compliance" weight="30">
+          Score 1.0 if all text passes WCAG AA, 0.5 if 80% pass, 0.0 if <80%
+        </metric>
+        <metric name="dark_theme_anti_patterns" weight="25">
+          Score 1.0 if no anti-patterns detected, -0.2 per violation
+        </metric>
+        <metric name="status_indicator_visibility" weight="15">
+          Score 1.0 if all indicators ≥ 3:1 contrast and include icon/text
+        </metric>
+        <metric name="palette_coherence" weight="15">
+          Score 1.0 if lightness steps consistent, body text off-white, accents limited
+        </metric>
+        <metric name="semantic_color_accuracy" weight="15">
+          Score 1.0 if semantic colors match dark-mode reference values
+        </metric>
+      </scoring>
+      <grade scale="A,B,C,D,F">
+        <grade value="A" min="0.9">Excellent — color design is professional and accessible</grade>
+        <grade value="B" min="0.75">Good — minor color design issues</grade>
+        <grade value="C" min="0.6">Fair — some anti-patterns need correction</grade>
+        <grade value="D" min="0.4">Poor — significant color design problems</grade>
+        <grade value="F" min="0">Critical — most color choices violate best practices</grade>
+      </grade>
+    </color_design_scorecard>
+  </pattern>
 </common_patterns>

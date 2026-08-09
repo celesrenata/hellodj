@@ -212,6 +212,82 @@
     </template>
   </accessibility_reporting_templates>
 
+  <color_design_reporting_templates>
+    <template name="contrast_failure">
+      **[Element]** ([class]): "[text]" — text [textColor] on [bgColor]
+      Contrast ratio: [X.XX:1] — [PASSES/FAILS] WCAG AA ([threshold]:1)
+      Effective contrast: [X.XX:1] at [opacity]% opacity
+      Severity: [high/medium/low]
+      Suggested fix: [recommendation]
+      Evidence: [screenshot path]
+    </template>
+
+    <template name="dark_theme_anti_pattern">
+      **[Anti-Pattern]** [type]: [description]
+      Element: [tag].[class] — "[text excerpt]"
+      Colors: [color values]
+      Severity: [critical/high/medium/low]
+      Suggested fix: [specific color recommendation]
+      Evidence: [screenshot path]
+    </template>
+
+    <template name="status_indicator_issue">
+      **[Status Indicator]** ([tag].[class]): "[text]"
+      Background color: [bgColor]
+      Indicator color: [indicatorColor]
+      Contrast ratio: [X.XX:1] — [PASSES/FAILS] 3:1 minimum
+      Color-only: [YES/NO] — [PASSES/FAILS] accessibility check
+      Grayscale distinguishable: [YES/NO]
+      Severity: [high/medium]
+      Evidence: [screenshot path]
+    </template>
+
+    <template name="palette_coherence">
+      **[Palette Analysis]**
+      Distinct backgrounds: [count]
+      Lightness steps: [values] — [CONSISTENT/INCONSISTENT]
+      Body text color: [value] — [off-white/pure white/other]
+      Accent color count: [count] — [ACCEPTABLE/TOO MANY]
+      Grey hue tint: [PRESENT/ABSENT] — [PASSES/FAILS] temperature guideline
+      Overall palette: [COHERENT/INCOHERENT]
+    </template>
+
+    <template name="semantic_color_check">
+      **[Semantic Color]** [color role] on [element]
+      Current value: [color]
+      Dark-mode reference: [reference value]
+      Match: [YES/NO]
+      Suggested fix: [recommendation]
+    </template>
+
+    <template name="color_design_summary">
+      ## Color Design Audit Summary
+
+      **Color Design Score**: [A/B/C/D/F] ([score]/1.0)
+
+      | Metric | Score | Weight | Weighted | Status |
+      |--------|-------|--------|----------|--------|
+      | Contrast Compliance | [X.XX] | 30% | [X.XX] | [PASS/FAIL] |
+      | Dark Theme Anti-Patterns | [X.XX] | 25% | [X.XX] | [PASS/FAIL] |
+      | Status Indicator Visibility | [X.XX] | 15% | [X.XX] | [PASS/FAIL] |
+      | Palette Coherence | [X.XX] | 15% | [X.XX] | [PASS/FAIL] |
+      | Semantic Color Accuracy | [X.XX] | 15% | [X.XX] | [PASS/FAIL] |
+
+      **Key Findings**:
+      1. [Finding with contrast ratio and severity]
+      2. [Finding with anti-pattern type and severity]
+      3. [Finding with palette or status indicator detail]
+
+      **Critical Violations** (must fix):
+      - [Critical violation 1]
+      - [Critical violation 2]
+
+      **Recommended Fixes**:
+      - [Specific color change recommendation]
+      - [Specific CSS property change]
+    </template>
+  </color_design_reporting_templates>
+
   <handoff_tasklist_generation>
     <principle priority="critical">
       At the end of every debugging session, generate two task lists:

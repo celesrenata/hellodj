@@ -527,4 +527,130 @@
       </takeaway>
     </key_takeaways>
   </example>
+
+  <example name="color_design_audit">
+    <scenario>
+      A user reports that status text on the dashboard is hard to read — specifically
+      "Discord Token: ❌ Missing" appears as black text on a dark blue background.
+      The user did NOT specify what the color problem is; the mode must detect it
+      automatically.
+    </scenario>
+
+    <user_request>
+      "The status indicators on https://example.com/dashboard are hard to read. Can you audit the page?"
+    </user_request>
+
+    <workflow>
+      <step number="1">
+        <description>Extract all text and background color pairs</description>
+        <approach>
+          Use page.evaluate() to extract computed color and background-color for
+          every visible text element. Build a complete color inventory.
+          Outcome: color pairs for all text elements on the page.
+        </approach>
+        <expected_outcome>
+          Color inventory reveals:
+          - Status label "Discord Token": text rgb(33,37,41) on bg rgb(26,26,46)
+          - Status label "Music Bot": text rgb(33,37,41) on bg rgb(26,26,46)
+          - Several other status items with similar dark-on-dark patterns
+        </expected_outcome>
+      </step>
+
+      <step number="2">
+        <description>Compute WCAG contrast and apply correct thresholds</description>
+        <approach>
+          For each color pair, compute WCAG contrast ratio. Apply the correct
+          threshold: 4.5:1 for normal text, 3:1 for large text, 3:1 for UI components.
+          Outcome: element-by-element contrast pass/fail report.
+        </approach>
+        <expected_outcome>
+          "Discord Token" text on background: ratio 1.36:1 — FAILS WCAG AA (4.5:1).
+          This is 3.3x below the minimum threshold — nearly invisible.
+        </expected_outcome>
+      </step>
+
+      <step number="3">
+        <description>Flag dark theme anti-patterns automatically</description>
+        <approach>
+          Without being told what's wrong, check for:
+          - Pure black backgrounds → none found
+          - Pure white text on dark bg → none found
+          - Dark text on dark background → FOUND: multiple status labels
+          - Status indicators with contrast < 3:1 → FOUND: ❌ and ✅ symbols
+          - Semantic colors matching dark-mode references → CHECK
+          Outcome: auto-detected anti-pattern list.
+        </approach>
+        <analysis>
+          Dark text (rgb(33,37,41) = #212529) on dark background (rgb(26,26,46) = #1a1a2e)
+          produces a contrast ratio of 1.36:1 — this is the classic "black text on
+          dark blue background" mistake. The text is technically visible in the DOM
+          but functionally unreadable to humans.
+        </analysis>
+      </step>
+
+      <step number="4">
+        <description>Check status indicator visibility</description>
+        <approach>
+          Extract background color of ❌ and ✅ status symbols.
+          Compute contrast against parent background.
+          Check if indicators include text/icon labels beyond color.
+          Outcome: status indicator visibility report.
+        </approach>
+        <expected_outcome>
+          ❌ symbol has contrast 1.36:1 against dark background — FAILS 3:1 minimum.
+          ✅ symbol has contrast 1.36:1 against dark background — FAILS 3:1 minimum.
+          Both symbols include text labels ("Missing", "Connected") — PASSES color-blind check.
+        </expected_outcome>
+      </step>
+
+      <step number="5">
+        <description>Evaluate palette coherence and hierarchy</description>
+        <approach>
+          Collect all background colors and convert to HSL.
+          Check lightness progression for surface hierarchy.
+          Verify body text is off-white, not pure white.
+          Count distinct accent colors.
+          Outcome: palette coherence report.
+        </approach>
+        <expected_outcome>
+          Background lightness steps are inconsistent — some cards at L=10%, others at L=15%.
+          Body text is off-white (rgb(200-230)) — PASSES dark-mode guideline.
+          Only 3 accent colors used — PASSES accent color limit.
+        </expected_outcome>
+      </step>
+    </workflow>
+
+    <completion>
+      Color design audit complete. Key findings:
+      1. PRIMARY ISSUE: 6 status labels use dark text (#212529) on dark background (#1a1a2e)
+         with contrast ratio 1.36:1 — 3.3x below WCAG AA (4.5:1). These labels are nearly invisible.
+      2. Status symbols (❌, ✅) also fail 3:1 UI component threshold but include text labels.
+      3. Background lightness steps are inconsistent (10%, 15%, 8%) — use systematic scale.
+      4. Semantic colors for success/danger match dark-mode reference values.
+      5. No pure black backgrounds or pure white text found.
+      Evidence documented in evidence/color-audit/ with color inventory, contrast data,
+      anti-pattern flags, and palette analysis.
+    </completion>
+
+    <key_takeaways>
+      <takeaway>
+        The mode must proactively detect "dark text on dark background" without
+        the user specifying the problem. WCAG contrast computation catches this
+        automatically — the 1.36:1 ratio is unambiguous proof of the issue.
+      </takeaway>
+      <takeaway>
+        Status indicators must be checked for both contrast (≥ 3:1) and
+        color-blindness safety (icon/text present). Even if contrast fails,
+        a text label can salvage accessibility.
+      </takeaway>
+      <takeaway>
+        Palette coherence (lightness steps, body text color, accent count) is
+        a separate dimension from contrast — both must be reported.
+      </takeaway>
+      <takeaway>
+        The user's vague "hard to read" complaint is sufficient trigger for
+        a full color design audit. The mode does not need specific instructions.
+      </takeaway>
+    </key_takeaways>
+  </example>
 </complete_examples>

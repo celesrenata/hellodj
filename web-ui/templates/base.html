@@ -112,15 +112,15 @@
             border-radius: 50%;
             display: inline-block;
         }
-        .status-dot.ok { background-color: #4caf50; }
-        .status-dot.warn { background-color: #ff9800; }
-        .status-dot.err { background-color: #f44336; }
+        .status-dot.ok { background-color: #2ecc71 !important; }
+        .status-dot.warn { background-color: #f39c12 !important; }
+        .status-dot.err { background-color: #e74c3c !important; }
         footer {
             border-top: 1px solid #3a3a5c;
             background-color: var(--hellodj-secondary);
         }
-        /* Change 1: Card text color (fix WCAG contrast) */
-        h5.card-title, h2.display-4, p.text-muted, span.text-muted {
+        /* Override text-muted to use light color for readability on dark cards */
+        .text-muted, p.text-muted, span.text-muted, h5.card-title, h2.display-4, .card-text {
             color: rgb(200, 200, 215) !important;
         }
         /* Change 2: Card title typography */

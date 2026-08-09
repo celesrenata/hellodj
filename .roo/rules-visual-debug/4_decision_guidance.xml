@@ -135,6 +135,73 @@
         <threshold name="mobile_touch" severity="high">Touch targets < 44x44px on mobile</threshold>
       </fail_thresholds>
     </rule>
+
+    <rule name="color_design_validation">
+      After every visual debugging session, validate color design and dark-theme
+      compliance:
+      <checks>
+        <check>
+          <condition>All text passes WCAG AA contrast ratio (4.5:1 normal, 3:1 large/UI)</condition>
+          <action>If any text fails, add to task list with specific contrast ratio, color values, and suggested fix</action>
+        </check>
+        <check>
+          <condition>No pure black backgrounds (#000000) exist on visible elements</condition>
+          <action>Flag each occurrence: "Pure black background causes eye strain. Use #212529, #0a0f12, or #111820 instead."</action>
+        </check>
+        <check>
+          <condition>No pure white text (#ffffff) on dark backgrounds</condition>
+          <action>Flag each occurrence: "Pure white text on dark bg causes glare. Use #dee2e6 or #e0e8f0 instead."</action>
+        </check>
+        <check>
+          <condition>No dark/black text on dark backgrounds (contrast < 4.5:1)</condition>
+          <action>Flag each occurrence: "Dark text on dark bg fails WCAG AA — nearly invisible. Compute suggested alternative color."</action>
+        </check>
+        <check>
+          <condition>Status indicators have contrast ≥ 3:1 against background</condition>
+          <action>Flag indicators below 3:1 as "invisible to low-vision users"</action>
+        </check>
+        <check>
+          <condition>Status indicators include icon/text label, not color alone</condition>
+          <action>Flag color-only indicators as "not accessible to color-blind users"</action>
+        </check>
+        <check>
+          <condition>Semantic colors (success, danger, warning) match dark-mode reference values</condition>
+          <action>Flag mismatches with suggested dark-mode values (#75b798, #ea868f, #ffda6a)</action>
+        </check>
+        <check>
+          <condition>Neutral greys contain 2-5% brand hue tint</condition>
+          <action>Flag pure greys: "Add 2-5% brand hue tint for visual warmth"</action>
+        </check>
+        <check>
+          <condition>Background lightness steps are consistent (5-20% apart)</condition>
+          <action>Flag inconsistent steps: "Use systematic 10-step or 12-step scale for surface hierarchy"</action>
+        </check>
+        <check>
+          <condition>Accent color count ≤ 4-5 (primary + danger + success + warning)</condition>
+          <action>Flag excess: "Too many accent colors dilutes visual hierarchy"</action>
+        </check>
+      </checks>
+      <fail_thresholds>
+        <threshold name="contrast_failure" severity="critical">
+          Any body text with effective contrast < 3:1 — critical failure
+        </threshold>
+        <threshold name="pure_black_bg" severity="high">
+          Any pure black background on visible elements — high severity
+        </threshold>
+        <threshold name="invisible_indicator" severity="high">
+          Any status indicator with contrast < 3:1 — high severity
+        </threshold>
+        <threshold name="color_only_indicator" severity="medium">
+          Any status indicator without icon/text — medium severity
+        </threshold>
+        <threshold name="palette_inconsistency" severity="medium">
+          Lightness steps inconsistent or body text not off-white — medium severity
+        </threshold>
+        <threshold name="semantic_color_mismatch" severity="medium">
+          Semantic colors not matching dark-mode references — medium severity
+        </threshold>
+      </fail_thresholds>
+    </rule>
   </validation>
 
   <tool_selection_guidance>

@@ -413,6 +413,183 @@ const contrast = await page.evaluate(() => {
     </principle>
   </visual_polish_best_practices>
 
+  <color_design_best_practices>
+    <principle priority="high">
+      <name>Flag Dark Theme Anti-Patterns Automatically</name>
+      <description>
+        Without being told what's wrong, detect common dark design mistakes by
+        extracting all text/background color pairs and comparing against known
+        good dark-mode reference values.
+      </description>
+      <rationale>
+        Many dark themes use pure black backgrounds (#000), pure white text (#fff),
+        or dark text on dark backgrounds — all of which cause eye strain or
+        readability failures. The mode must proactively flag these without the
+        user specifying the problem.
+      </rationale>
+      <dark_theme_violations>
+        <violation severity="high">
+          <pattern>Pure black background (#000000)</pattern>
+          <why>Causes eye strain; use #212529, #0a0f12, or #111820 instead</why>
+          <detection>Extract background-color and compare against known-good dark values</detection>
+        </violation>
+        <violation severity="high">
+          <pattern>Pure white text (#ffffff) on dark background</pattern>
+          <why>Causes glare; use #dee2e6 or #e0e8f0 instead</why>
+          <detection>Extract text color and compare against known-good dark text values</detection>
+        </violation>
+        <violation severity="critical">
+          <pattern>Dark/black text on dark background (e.g., #212529 text on #1a1a2e bg)</pattern>
+          <why>Fails WCAG contrast — text is nearly invisible</why>
+          <detection>Compute WCAG contrast ratio; flag any pair below 4.5:1</detection>
+        </violation>
+        <violation severity="high">
+          <pattern>Inverting light mode colors without dark-mode adjustment</pattern>
+          <why>Dark mode needs specific color rethinking, not simple inversion</why>
+          <detection>Check if dark-mode palette matches Bootstrap 5.3 dark reference values</detection>
+        </violation>
+        <violation severity="high">
+          <pattern>Invisible status indicators (dots, badges) on dark backgrounds</pattern>
+          <why>Status dots with contrast < 3:1 against dark background are invisible</why>
+          <detection>Extract indicator background-color, compute contrast against parent bg</detection>
+        </violation>
+        <violation severity="medium">
+          <pattern>Low-saturation success/warning colors on dark surfaces</pattern>
+          <why>Without sufficient luminance boost, semantic colors blend into dark bg</why>
+          <detection>Compare semantic colors against dark-mode reference values</detection>
+        </violation>
+        <violation severity="medium">
+          <pattern>Pure grey without temperature tint</pattern>
+          <why>Add 2-5% brand hue tint to neutral greys for visual warmth</why>
+          <detection>Check if neutral greys contain any hue component (HSL h !== 0)</detection>
+        </violation>
+        <violation severity="medium">
+          <pattern>Inconsistent lightness steps in color palette</pattern>
+          <why>Use systematic scales (10-step, 12-step) for cohesive hierarchy</why>
+          <detection>Extract background lightness values; check if steps are evenly spaced</detection>
+        </violation>
+        <violation severity="low">
+          <pattern>Too many accent colors</pattern>
+          <why>Most interfaces need only primary + danger red + success green + warning orange</why>
+          <detection>Count distinct accent colors used; flag if more than 4-5</detection>
+        </violation>
+      </dark_theme_violations>
+    </principle>
+
+    <principle priority="high">
+      <name>Status Indicator Design Rules</name>
+      <description>
+        Status indicators (badges, dots, icons) must never rely on color alone.
+        Always pair with shape, symbol, or text label. Test in grayscale to
+        verify color-blind safety.
+      </description>
+      <checks>
+        <check>Indicator uses color + icon/text → PASS</check>
+        <check>Indicator uses color only → FAIL "not accessible to color-blind users"</check>
+        <check>Indicator contrast ≥ 3:1 against background → PASS</check>
+        <check>Indicator contrast < 3:1 → FAIL "invisible to users with low-vision"</check>
+        <check>Indicator distinguishable in grayscale → PASS</check>
+        <check>Indicator indistinguishable in grayscale → FAIL "relies solely on color"</check>
+      </checks>
+      <dark_mode_semantic_colors>
+        <color name="success" reference="#75b798">
+          Dark-mode success green — lighter than light-mode variant
+        </color>
+        <color name="danger" reference="#ea868f">
+          Dark-mode danger red — lighter than light-mode variant
+        </color>
+        <color name="warning" reference="#ffda6a">
+          Dark-mode warning orange — lighter than light-mode variant
+        </color>
+      </dark_mode_semantic_colors>
+    </principle>
+
+    <principle priority="high">
+      <name>WCAG Contrast Requirement Hierarchy</name>
+      <description>
+        Apply the correct WCAG threshold based on element type, not just a
+        single 4.5:1 rule. Different element types have different requirements.
+      </description>
+      <thresholds>
+        <threshold name="normal_text" min="4.5:1" aa_min="4.5" aaa_min="7.0">
+          Text < 18pt or < 14pt bold — WCAG AA requires 4.5:1
+        </threshold>
+        <threshold name="large_text" min="3:1" aa_min="3.0" aaa_min="4.5">
+          Text ≥ 18pt bold or ≥ 22pt regular — WCAG AA requires 3:1
+        </threshold>
+        <threshold name="ui_components" min="3:1">
+          Icons, borders, status indicators — require 3:1 against adjacent colors
+        </threshold>
+        <threshold name="decorative" min="0">
+          Decorative elements with no information — no contrast requirement
+        </threshold>
+      </thresholds>
+    </principle>
+
+    <principle priority="high">
+      <name>Color Harmony and Palette Coherence</name>
+      <description>
+        Evaluate whether the page's color palette follows design principles:
+        hue family coherence, brand color adherence, surface hierarchy, and
+        text hierarchy.
+      </description>
+      <checks>
+        <check>All colors belong to the same hue family or complementary palette → PASS</check>
+        <check>Primary/accent colors match brand guidelines → PASS</check>
+        <check>Accent colors used sparingly (not diluted across too many elements) → PASS</check>
+        <check>Background surfaces incrementally lighter in dark mode (5-8% lightness steps) → PASS</check>
+        <check>Body text is off-white, secondary text at ~75% opacity, muted text at ~50% opacity → PASS</check>
+      </checks>
+      <computation>
+        const paletteCheck = await page.evaluate(() => {
+          const elements = document.querySelectorAll('*');
+          const colors = new Set();
+          elements.forEach(el => {
+            const bg = getComputedStyle(el).backgroundColor;
+            const color = getComputedStyle(el).color;
+            if (bg && bg !== 'rgba(0, 0, 0, 0)') colors.add(bg);
+            if (color && color !== 'rgba(0, 0, 0, 0)') colors.add(color);
+          });
+          // Convert each color to HSL, group by hue proximity
+          // Flag if more than 3 distinct hue families exist
+          // Flag if lightness steps are inconsistent
+          return { paletteSize: colors.size, /* hueClusters, lightnessSteps */ };
+        });
+      </computation>
+    </principle>
+
+    <principle priority="medium">
+      <name>Bootstrap 5.3 Dark Mode Reference Values</name>
+      <description>
+        Use these reference values as a "known good" baseline when auditing
+        dark-themed interfaces. Flag deviations that reduce readability.
+      </description>
+      <reference_values>
+        <value name="--bs-body-bg" expected="#212529">
+          Standard dark background — not pure black
+        </value>
+        <value name="--bs-body-color" expected="#dee2e6">
+          Standard dark text — off-white, not pure white
+        </value>
+        <value name="--bs-secondary-bg" expected="#343a40">
+          Slightly lighter background for cards/surfaces
+        </value>
+        <value name="--bs-border-color" expected="#495057">
+          Subtle border that remains visible on dark bg
+        </value>
+        <value name="--bs-success-text-emphasis" expected="#75b798">
+          Dark-mode success green
+        </value>
+        <value name="--bs-danger-text-emphasis" expected="#ea868f">
+          Dark-mode danger red
+        </value>
+        <value name="--bs-warning-text-emphasis" expected="#ffda6a">
+          Dark-mode warning orange
+        </value>
+      </reference_values>
+    </principle>
+  </color_design_best_practices>
+
   <quality_checklist>
     <category name="before_session">
       <item>Confirm Playwright is installed and accessible</item>
