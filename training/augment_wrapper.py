@@ -50,6 +50,11 @@ def _inject_cuda_paths():
         cuda_lib_in_path = any(os.path.isdir(p) and (os.path.exists(os.path.join(p, 'libcuda.so')) or
                                any(f.startswith('libcuda.so') for f in os.listdir(p)))
                                for p in ld.split(':') if p)
+        # Also check torch's bundled CUDA lib (common on NGC/container envs)
+        if not cuda_lib_in_path:
+            torch_cuda = '/usr/local/lib/python3.12/dist-packages/torch/lib/libcuda.so'
+            if os.path.exists(torch_cuda):
+                cuda_lib_in_path = True
         if not cuda_lib_in_path:
             env_val = f"{compat_dir}:{ld}"
             os.environ['CUDA_HOME'] = cuda_home or os.path.dirname(compat_dir)
