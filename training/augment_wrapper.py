@@ -98,73 +98,38 @@ logging.getLogger('torch.onnx').setLevel(logging.WARNING)
 
 import threading as _threading
 
-_BULK_EVERY = 100  # emit full line every N writes; partials use \r + clear-to-EOL
+_BULK_EVERY = 100  # emit exactly ONE status line every N writes
 
 class OutputFilter:
-    """Thin stream wrapper that coalesces per-batch output into single-line status lines.
-
-    - Writes via carriage return (\\r) so each update overwrites the same line.
-    - ANSI \\x1b[K clears remaining characters so previous longer lines don't leave ghost text.
-    - Emits a newline after every ``_BULK_EVERY`` writes to avoid filling stdout buffers.
+    """Coalesces per-batch output into single status lines for Jupyter compatibility.
+    
+    Key difference from terminal-style filters:
+    - NO \\r or ANSI escapes (not rendered inline in Jupyter cell output)
+    - Silently drops ALL intermediate batch prints 
+    - Emits exactly ONE newline-terminated status line every _BULK_EVERY writes
+    
+    Result: one clean progress update, no ghost text, no duplicates.
     """
     def __init__(self, raw_stream):
         self.raw = raw_stream
         self.phase_count = 0
-        self._prev_phase = None
-        self._phase_buf = ""
-        self.CLREOL = chr(27) + "[K"   # clear from cursor to end of line
-        self.CR  = chr(13)              # carriage return
 
     def write(self, text):
-        self.phase_count += 1
-        phase_label = str(getattr(self, '_prev_phase', ''))
         stripped = text.strip()
-
-        # Detect phase changes (e.g., "Generating positive clips" → "Augmenting with RIRs")
-        new_phase = None
-        if stripped:
-            if any(stripped.startswith(p) for p in ('Step', 'Epoch', 'Train', 'Augment',
-                                                       'Positive', 'Negative', 'Batch',
-                                                       'Processing')):
-                new_phase = stripped.split(',')[0].split(':')[0]
-            elif 'batch' in stripped.lower() and 'processed' in stripped.lower():
-                new_phase = 'batch'
-
-        if new_phase and new_phase != self._prev_phase:
-            self.raw.write('\n')
-            self._prev_phase = new_phase
-            self._phase_buf = ""
-
         if not stripped:
-            self._phase_buf += text
             return
 
-        # Truncate long lines to avoid terminal overflow
-        display_text = stripped.rstrip(' \t\r\n.,')
-        if len(display_text) > 80:
-            display_text = display_text[:77] + '...'
+        # Count this write regardless of content
+        self.phase_count += 1
 
-        summary = f"[{phase_label} {self.phase_count}/{_BULK_EVERY}] {display_text}"
-
-        if self.phase_count % _BULK_EVERY == 0:
-            # Emit complete line, flush buffer
-            self.raw.write(self.CR + summary.ljust(80) + '\n')
-            if self._phase_buf:
-                self.raw.write(self._phase_buf)
-                self._phase_buf = ""
-        else:
-            # Partial update - rewrites same line + clears ghost text
-            self.raw.write(self.CR + self.CLREOL + summary.ljust(80) + ' ')
-
-        if self.phase_count % 50 == 0:
+        # ONLY emit a status line when count hits _BULK_EVERY
+        if self.phase_count % _BULK_EVERY == 0 and stripped:
+            display_text = stripped.rstrip(' \t\r\n.,')
+            if len(display_text) > 80:
+                display_text = display_text[:77] + '...'
+            summary = f"[Step {self.phase_count}/{_BULK_EVERY}] {display_text}"
+            self.raw.write(summary + '\n')
             self.raw.flush()
-
-    def flush(self):
-        if self._phase_buf:
-            self.raw.write(self._phase_buf)
-            self._phase_buf = ""
-        self.raw.write('\n')
-        self.raw.flush()
 
     def isatty(self):
         return getattr(self.raw, 'isatty', lambda: False)()
