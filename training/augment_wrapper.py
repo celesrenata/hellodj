@@ -91,57 +91,6 @@ logging.getLogger('onnxscript').setLevel(logging.WARNING)
 logging.getLogger('onnx_ir').setLevel(logging.WARNING)
 logging.getLogger('torch.onnx').setLevel(logging.WARNING)
 
-# ---------------------------------------------------------------------------
-# OUTPUT filter - replaces inline NotebookOutputFilter entirely.
-# All subsequent calls to sys.stdout write through this single class.
-# ---------------------------------------------------------------------------
-
-import threading as _threading
-
-_BULK_EVERY = 100  # emit exactly ONE status line every N writes
-
-class OutputFilter:
-    """Coalesces per-batch output into single status lines for Jupyter compatibility.
-    
-    Key difference from terminal-style filters:
-    - NO \\r or ANSI escapes (not rendered inline in Jupyter cell output)
-    - Silently drops ALL intermediate batch prints 
-    - Emits exactly ONE newline-terminated status line every _BULK_EVERY writes
-    
-    Result: one clean progress update, no ghost text, no duplicates.
-    """
-    def __init__(self, raw_stream):
-        self.raw = raw_stream
-        self.phase_count = 0
-
-    def write(self, text):
-        stripped = text.strip()
-        if not stripped:
-            return
-
-        # Count this write regardless of content
-        self.phase_count += 1
-
-        # ONLY emit a status line when count hits _BULK_EVERY
-        if self.phase_count % _BULK_EVERY == 0 and stripped:
-            display_text = stripped.rstrip(' \t\r\n.,')
-            if len(display_text) > 80:
-                display_text = display_text[:77] + '...'
-            summary = f"[Step {self.phase_count}/{_BULK_EVERY}] {display_text}"
-            self.raw.write(summary + '\n')
-            self.raw.flush()
-
-    def isatty(self):
-        return getattr(self.raw, 'isatty', lambda: False)()
-
-
-# Apply output filter early so all print/write goes through it
-if hasattr(sys.stdout, 'raw'):
-    sys.stdout = OutputFilter(sys.stdout.raw)
-else:
-    sys.stdout = OutputFilter(sys.stdout)
-
-print(f"OutputFilter applied (reports every {_BULK_EVERY} writes)")
 
 # ---------------------------------------------------------------------------
 # Main: dispatch to generate / augment / train sub-tasks
