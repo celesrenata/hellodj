@@ -153,15 +153,15 @@ def main():
         '__builtins__': __builtins__,
     }
 
-    # Pass the right sys.argv so openWakeWord picks up the correct --config key
+    # Pass the right sys.argv so openWakeWord picks up the correct flags
     if args.generate_clips:
-        sys.argv = [train_path, '--training_config', args.training_config]
+        sys.argv = [train_path, '--training_config', args.training_config, '--generate_clips']
         print("Generating clips (Step 4a)...")
     elif args.augment_clips:
-        sys.argv = [train_path, '--training_config', args.training_config, '--augment']
+        sys.argv = [train_path, '--training_config', args.training_config, '--augment_clips']
         print("Augmenting clips (Step 4b)...")
     else:
-        sys.argv = [train_path, '--training_config', args.training_config, '--train']
+        sys.argv = [train_path, '--training_config', args.training_config, '--train_model']
         print(f"Training model (Step 5a)...\n")
 
     exec(_code, _ns)
