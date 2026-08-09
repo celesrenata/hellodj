@@ -42,15 +42,19 @@ def _probe_cuda_libs():
 
 
 def _inject_cuda_paths():
-    """Prepend auto-detected CUDA paths to LD_LIBRARY_PATH."""
+    """Prepend auto-detected CUDA paths to LD_LIBRARY_PATH only if CUDA isn't already working."""
     compat_dir, cuda_home = _probe_cuda_libs()
     if compat_dir:
-        env_val = f"{compat_dir}:{os.environ.get('LD_LIBRARY_PATH', '')}"
-        os.environ['CUDA_HOME'] = cuda_home or os.path.dirname(compat_dir)
-        # Only inject if not already set by cell-level command
-        if 'CUDA13_INJECTED' not in os.environ:
-            os.environ['LD_LIBRARY_PATH'] = env_val
-            os.environ['CUDA13_INJECTED'] = '1'
+        # Check if a CUDA lib is already reachable via current LD_LIBRARY_PATH
+        ld = os.environ.get('LD_LIBRARY_PATH', '')
+        cuda_lib_in_path = any(os.path.isdir(p) and os.path.exists(os.path.join(p, 'libcuda.so'))
+                               for p in ld.split(':') if p)
+        if not cuda_lib_in_path:
+            env_val = f"{compat_dir}:{ld}"
+            os.environ['CUDA_HOME'] = cuda_home or os.path.dirname(compat_dir)
+            if 'CUDA13_INJECTED' not in os.environ:
+                os.environ['LD_LIBRARY_PATH'] = env_val
+                os.environ['CUDA13_INJECTED'] = '1'
     return compat_dir, cuda_home
 
 
