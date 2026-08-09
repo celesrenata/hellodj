@@ -47,7 +47,8 @@ def _inject_cuda_paths():
     if compat_dir:
         # Check if a CUDA lib is already reachable via current LD_LIBRARY_PATH
         ld = os.environ.get('LD_LIBRARY_PATH', '')
-        cuda_lib_in_path = any(os.path.isdir(p) and os.path.exists(os.path.join(p, 'libcuda.so'))
+        cuda_lib_in_path = any(os.path.isdir(p) and (os.path.exists(os.path.join(p, 'libcuda.so')) or
+                               any(f.startswith('libcuda.so') for f in os.listdir(p)))
                                for p in ld.split(':') if p)
         if not cuda_lib_in_path:
             env_val = f"{compat_dir}:{ld}"
