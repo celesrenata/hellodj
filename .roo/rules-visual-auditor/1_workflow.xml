@@ -6,6 +6,21 @@
     PASS/FAIL verdicts backed by screenshot paths in evidence.md.
   </mode_overview>
 
+  <environment_paths>
+    The Playwright MCP server runs inside a Docker container. Screenshots it
+    saves to container paths must be translated to host paths before reading:
+
+    Container path: /home/node/.playwright-mcp/
+    Host path:      /home/celes/.local/share/playwright-mcp/
+
+    When you receive a screenshot reference like:
+      /home/node/.playwright-mcp/screenshot-1.png
+    Read it from:
+      /home/celes/.local/share/playwright-mcp/screenshot-1.png
+
+    Always apply this translation before attempting to open any screenshot file.
+  </environment_paths>
+
   <initialization_steps>
     <step number="1">
       <action>Receive the screenshot set and evidence context</action>

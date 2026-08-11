@@ -7,6 +7,19 @@
     mode (a vision-capable model such as Qwen3.6 Abliterated / qwen3-vl).
   </mode_overview>
 
+  <environment_paths>
+    The Playwright MCP server runs inside a Docker container. Screenshots are
+    saved inside the container but accessible on the host via a bind mount:
+
+    Container path: /home/node/.playwright-mcp/
+    Host path:      /home/celes/.local/share/playwright-mcp/
+
+    When handing screenshot paths to the visual-auditor mode, translate them
+    to host paths so the auditor can read the files directly:
+      /home/node/.playwright-mcp/screenshot.png
+      → /home/celes/.local/share/playwright-mcp/screenshot.png
+  </environment_paths>
+
   <initialization_steps>
     <step number="1">
       <action>Parse the user's request</action>
