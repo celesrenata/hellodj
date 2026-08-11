@@ -11,9 +11,12 @@ commonLabels:
 resources:
   - namespace.yaml
   - configmap.yaml
+  - bot-configmap.yaml
   - pvc.yaml
   - nfs-pv.yaml
   - nfs-pvc.yaml
+  - models-nfs-pv.yaml
+  - models-pvc.yaml
   - service.yaml
   - deployment.yaml
   - web-ui-service.yaml

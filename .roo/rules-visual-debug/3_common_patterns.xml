@@ -131,10 +131,11 @@ const candidateStyles = await candidatePage.evaluate(() => {
       </step>
 
       <step number="4">
-        <title>Verify Screenshots via Vision</title>
+        <title>Hand Off Screenshots to Visual Auditor</title>
         <description>
-          Use Qwen3.6 Abliterated vision capabilities to read both screenshots
-          and identify visual differences that computed styles may miss
+          Save both screenshots with clear paths in evidence.md and hand them
+          to the visual-auditor mode, which uses its vision capabilities to
+          identify visual differences that computed styles may miss
           (layout shifts, overlapping elements, missing images).
         </description>
       </step>
@@ -409,8 +410,8 @@ for (const browserType of browsers) {
       <step number="2">
         <title>Analyze Differences</title>
         <description>
-          Use Qwen3.6 Abliterated vision to compare screenshots across browsers.
-          Look for:
+          Hand the cross-browser screenshots to the visual-auditor mode, which
+          uses its vision capabilities to compare them. Look for:
           - Font rendering differences
           - Layout shift differences
           - Missing/extra elements

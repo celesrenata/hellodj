@@ -593,10 +593,10 @@ const contrast = await page.evaluate(() => {
   <quality_checklist>
     <category name="before_session">
       <item>Confirm Playwright is installed and accessible</item>
-      <item>Set model to qwen3.6-abliterated for vision verification</item>
+      <item>Confirm the gathering model is DeepSeek V4 Flash</item>
       <item>Identify the exact URL and any credentials needed</item>
       <item>Decide browser engine (chromium/firefox/webkit)</item>
-      <item>Plan the interaction sequence in advance</item>
+      <item>Plan which captured screenshots will be handed to the visual-auditor mode</item>
     </category>
     <category name="during_session">
       <item>Register console/error/network listeners before navigation</item>

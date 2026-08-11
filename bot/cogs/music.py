@@ -155,8 +155,8 @@ class Music(commands.Cog):
         state["voice_channel"] = channel
         state["text_channel"] = interaction.channel
 
-        # Create wavelink Player for this guild
-        player_obj = await wavelink.Player.connect(channel)
+        # Create wavelink Player for this guild (HybridPlayer when voice_recv is present)
+        player_obj = await player.connect_player(channel)
         state["player"] = player_obj
 
         await interaction.followup.send(f"HelloDJ joined **{channel.name}**.")
@@ -198,10 +198,10 @@ class Music(commands.Cog):
         state["text_channel"] = interaction.channel
         state["persist_enabled"] = True
 
-        # Connect wavelink player if not present
+        # Connect wavelink player if not present (HybridPlayer when voice_recv is present)
         player_obj = state.get("player")
         if not player_obj or not player_obj.connected:
-            player_obj = await wavelink.Player.connect(voice_channel)
+            player_obj = await player.connect_player(voice_channel)
             state["player"] = player_obj
 
         provider = state.get("source_provider", "youtube")

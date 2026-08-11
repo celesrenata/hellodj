@@ -214,10 +214,13 @@
       </recovery_steps>
     </scenario>
 
-    <scenario name="vision_verification_failure">
-      <description>The Qwen3.6 Abliterated model cannot verify screenshots</description>
+    <scenario name="visual_auditor_failure">
+      <description>
+        The visual-auditor mode cannot verify screenshots (vision model
+        unavailable, screenshot unreadable, or analysis inaccurate).
+      </description>
       <symptoms>
-        <symptom>Model reports it cannot see the screenshot</symptom>
+        <symptom>Visual-auditor reports it cannot see the screenshot</symptom>
         <symptom>Vision analysis is inaccurate or hallucinated</symptom>
       </symptoms>
       <recovery_steps>
@@ -226,11 +229,18 @@
           <code>Check file size (non-zero). Try to open/view the screenshot.</code>
         </step>
         <step number="2">
-          <action>Fall back to programmatic analysis</action>
+          <action>Fall back to programmatic analysis in the gathering mode</action>
           <code>
             Use pixel comparison tools (pixelmatch, resemble).
             Compare computed styles via page.evaluate.
             Use structural DOM comparison.
+          </code>
+        </step>
+        <step number="3">
+          <action>Document the vision limitation in evidence.md</action>
+          <code>
+            Record that visual-auditor verification was unavailable and that
+            programmatic evidence was used as a fallback.
           </code>
         </step>
       </recovery_steps>

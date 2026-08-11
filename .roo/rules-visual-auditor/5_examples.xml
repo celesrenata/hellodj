@@ -1,0 +1,182 @@
+<complete_examples>
+  <overview>
+    Complete workflow examples demonstrating the Visual Auditor mode handling
+    real visual verification scenarios from start to finish. In each example,
+    the visual-debug mode captures the screenshots and hands them off, and the
+    visual-auditor reads them and records verdicts.
+  </overview>
+
+  <example name="ui_match_verification">
+    <scenario>
+      The visual-debug mode captured screenshots of a newly rendered config card
+      and wants confirmation that the rendered UI matches the intended design.
+    </scenario>
+
+    <user_request>
+      "Verify the rendered config card matches the intended design values."
+    </user_request>
+
+    <workflow>
+      <step number="1">
+        <description>Receive screenshots and intended values</description>
+        <approach>
+          Receive screenshot paths and the intended CSS/design values from the
+          gathering mode. Confirm each screenshot is readable.
+          Outcome: readable screenshot set and a list of intended values.
+        </approach>
+        <expected_outcome>
+          Screenshots open correctly; intended values list available.
+        </expected_outcome>
+      </step>
+
+      <step number="2">
+        <description>Read the screenshots with the vision model</description>
+        <approach>
+          Inspect element positions, colors, typography, spacing, and states.
+          Correlate with the programmatic computed-style evidence.
+          Outcome: a record of what is actually visible.
+        </approach>
+        <analysis>
+          The card renders with the correct background, border, and field layout.
+          Text contrast matches the computed ratios supplied. One label color
+          differs slightly from the intended value — flagged for review.
+        </analysis>
+      </step>
+
+      <step number="3">
+        <description>Record verdicts in evidence.md</description>
+        <approach>
+          Write a per-check verdict table with screenshot paths, expected vs
+          observed, and PASS/FAIL/INVESTIGATE. Include severity and a suggested
+          fix for the flagged label color.
+          Outcome: structured verdict report.
+        </approach>
+        <expected_outcome>
+          Most checks PASS; the label color mismatch is a FAIL with a suggested
+          color correction.
+        </expected_outcome>
+      </step>
+    </workflow>
+
+    <completion>
+      Visual audit complete. The config card matches intended values except for
+      one label color that fails contrast. Verdicts recorded in evidence.md with
+      screenshot paths and a suggested fix, handed back to the gathering mode.
+    </completion>
+
+    <key_takeaways>
+      <takeaway>Pair visual reading with programmatic evidence for confidence.</takeaway>
+      <takeaway>Every verdict must cite a screenshot path.</takeaway>
+    </key_takeaways>
+  </example>
+
+  <example name="regression_comparison">
+    <scenario>
+      The visual-debug mode captured before/after screenshots across a CSS
+      change and wants to know if a visual regression occurred.
+    </scenario>
+
+    <user_request>
+      "Compare the before and after screenshots to detect any visual regression."
+    </user_request>
+
+    <workflow>
+      <step number="1">
+        <description>Read both screenshots</description>
+        <approach>
+          Open the before and after screenshots side by side with the vision
+          model. Note all visible differences.
+          Outcome: a list of observed differences.
+        </approach>
+        <expected_outcome>
+          The hero title shifted off-center and a padding value changed.
+        </expected_outcome>
+      </step>
+
+      <step number="2">
+        <description>Correlate with computed-style evidence</description>
+        <approach>
+          Compare the supplied computed styles (margin, text-align, padding)
+          between the two states to quantify the difference.
+          Outcome: the exact property that changed.
+        </approach>
+        <analysis>
+          Visual difference confirms the title moved 20px left; computed styles
+          show margin-left changed from auto to 0. This is an unintended regression.
+        </analysis>
+      </step>
+
+      <step number="3">
+        <description>Record the regression verdict</description>
+        <approach>
+          Write the regression verdict with both screenshot paths, the observed
+          difference, and the computed-style confirmation.
+          Outcome: a FAIL verdict with evidence.
+        </approach>
+        <expected_outcome>
+          FAIL: unintended layout regression in the hero title with both
+          screenshot paths and computed-style confirmation.
+        </expected_outcome>
+      </step>
+    </workflow>
+
+    <completion>
+      Regression confirmed: the hero title shifted off-center due to a
+      margin-left change. Verdict recorded with before/after screenshot paths
+      and computed-style evidence, handed back for a fix.
+    </completion>
+
+    <key_takeaways>
+      <takeaway>Vision detects the symptom; computed styles confirm the cause.</takeaway>
+      <takeaway>Always pair before/after paths in the verdict.</takeaway>
+    </key_takeaways>
+  </example>
+
+  <example name="unreadable_screenshot">
+    <scenario>
+      A screenshot provided by the gathering mode is blank or black and cannot
+      be interpreted.
+    </scenario>
+
+    <user_request>
+      "Verify the rendered state from this screenshot."
+    </user_request>
+
+    <workflow>
+      <step number="1">
+        <description>Attempt to read the screenshot</description>
+        <approach>
+          Open the screenshot with the vision model. Confirm it shows no
+          rendered page content.
+          Outcome: identified as unreadable.
+        </approach>
+        <expected_outcome>
+          The image is blank/black/truncated; no content is interpretable.
+        </expected_outcome>
+      </step>
+
+      <step number="2">
+        <description>Record INVESTIGATE and request a fresh capture</description>
+        <approach>
+          Mark the check INVESTIGATE with the reason (blank/black/truncated).
+          Hand back to the visual-debug mode requesting a fresh capture.
+          Outcome: no fabricated verdict.
+        </approach>
+        <expected_outcome>
+          INVESTIGATE recorded; fresh capture requested; no guess made.
+        </expected_outcome>
+      </step>
+    </workflow>
+
+    <completion>
+      The screenshot was unreadable, so the check was marked INVESTIGATE and a
+      fresh capture was requested. No verdict was fabricated from the unusable
+      image.
+    </completion>
+
+    <key_takeaways>
+      <takeaway>Never guess on an unreadable screenshot.</takeaway>
+      <takeaway>INVESTIGATE with a reason is more useful than a false PASS/FAIL.</takeaway>
+    </key_takeaways>
+  </example>
+</complete_examples>

@@ -13,6 +13,7 @@ import wavelink
 from wavelink import Playable, TrackSource
 
 import session
+from voice.hybrid_player import HybridPlayer
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +67,20 @@ def get_state(guild_id: int) -> dict:
 
 def get_player(guild_id: int) -> wavelink.Player | None:
     return get_state(guild_id).get("player")
+
+
+async def connect_player(channel: discord.abc.Connectable) -> wavelink.Player:
+    """Connect a player to a voice channel.
+
+    Prefers :class:`voice.hybrid_player.HybridPlayer` (a wavelink Player that
+    also supports ``discord.ext.voice_recv``) so the voice-activation pipeline
+    can receive incoming Opus frames via ``listen()``. Falls back to a plain
+    ``wavelink.Player`` when voice_recv is unavailable.
+    """
+    if HybridPlayer is not None:
+        # HybridPlayer is both a wavelink.Player and a VoiceRecvClient.
+        return await channel.connect(cls=HybridPlayer)
+    return await wavelink.Player.connect(channel)
 
 
 # ── persistence ────────────────────────────────────────────

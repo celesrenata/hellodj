@@ -1,0 +1,21 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: hellodj-models-pvc
+  namespace: hellodj-service
+  labels:
+    app.kubernetes.io/instance: hellodj
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/name: hellodj
+    app.kubernetes.io/component: models
+    helm.sh/chart: hellodj-0.1.0
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: nfs
+  resources:
+    requests:
+      storage: 1Gi
+  # Bind to the shared NFS volume so operators can place Hello_DJ.onnx on
+  # the NFS share and have it appear at /app/models/Hello_DJ.onnx at runtime.
+  volumeName: hellodj-models-nfs-pv

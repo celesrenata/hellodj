@@ -1,0 +1,126 @@
+<workflow_instructions>
+  <mode_overview>
+    Visual Auditor mode specializes in reading and interpreting screenshots
+    captured by the visual-debug mode (or other gathering modes). It runs on a
+    vision-capable model (qwen3.6-abliterated / qwen3-vl) and produces
+    PASS/FAIL verdicts backed by screenshot paths in evidence.md.
+  </mode_overview>
+
+  <initialization_steps>
+    <step number="1">
+      <action>Receive the screenshot set and evidence context</action>
+      <details>
+        The visual-debug mode hands off:
+        - Screenshot file paths (before/after, per-step, per-breakpoint)
+        - Programmatic evidence (computed styles, contrast data, network results)
+        - The expected behavior / intended design values to verify
+        Identify what needs to be visually confirmed for each screenshot.
+      </details>
+    </step>
+
+    <step number="2">
+      <action>Confirm the screenshots are readable</action>
+      <details>
+        Open each screenshot and verify it is a valid, readable image:
+        - Non-zero file size
+        - Contains actual rendered page content (not blank/black)
+        - Viewport/full-page framing is correct for the check
+        If a screenshot is unreadable, record it as INVESTIGATE and do not guess.
+      </details>
+    </step>
+
+    <step number="3">
+      <action>Plan the visual verification</action>
+      <details>
+        Define what to check per screenshot:
+        1. Does the rendered UI match the intended CSS/design values?
+        2. Are there layout, spacing, alignment, or typography issues?
+        3. Do contrast, legibility, and opacity meet WCAG thresholds?
+        4. Do before/after screenshots show unintended regressions?
+        5. Is the dark-theme color design and status indicator visibility correct?
+        6. Does the feature appear visually complete?
+      </details>
+    </step>
+  </initialization_steps>
+
+  <main_workflow>
+    <phase name="screenshot_inspection">
+      <description>Read each screenshot with the vision model and record observations</description>
+      <steps>
+        <step>
+          <title>Read the Screenshot</title>
+          <description>
+            Examine the full screenshot carefully. Describe what is actually
+            visible: element positions, colors, text, spacing, states.
+            Do not assume; report only what the image shows.
+          </description>
+        </step>
+
+        <step>
+          <title>Correlate with Programmatic Evidence</title>
+          <description>
+            Combine the visual reading with the programmatic evidence supplied
+            by the gathering mode (computed styles, contrast ratios, network
+            results) to reach a confident verdict.
+          </description>
+        </step>
+
+        <step>
+          <title>Record Observations</title>
+          <description>
+            Log each observation in evidence.md with:
+            - Screenshot path
+            - What was expected
+            - What was actually visible
+            - Verdict: PASS / FAIL / INVESTIGATE
+            - Suggested fix when FAIL
+          </description>
+        </step>
+      </steps>
+    </phase>
+
+    <phase name="verdict_reporting">
+      <description>Compile structured PASS/FAIL verdicts</description>
+      <steps>
+        <step>
+          <title>Classify Findings</title>
+          <description>
+            Classify each finding as:
+            - PASS: rendered UI matches intended values
+            - FAIL: a concrete mismatch with evidence (contrast, layout, color, regression)
+            - INVESTIGATE: screenshot unreadable, or evidence insufficient
+          </description>
+        </step>
+
+        <step>
+          <title>Produce a Structured Report</title>
+          <description>
+            Output a per-check verdict table referencing screenshot paths.
+            Include severity and a suggested fix for FAIL findings.
+          </description>
+        </step>
+      </steps>
+    </phase>
+
+    <phase name="handback">
+      <description>Return findings to the calling mode</description>
+      <steps>
+        <step>
+          <title>Return Verdicts to visual-debug (or orchestrator)</title>
+          <description>
+            Hand back the structured verdicts and any FAIL findings so the
+            gathering mode can continue debugging or the orchestrator can
+            route the fix to Code mode.
+          </description>
+        </step>
+      </steps>
+    </phase>
+  </main_workflow>
+
+  <completion_criteria>
+    <criterion>Every provided screenshot has a recorded verdict in evidence.md</criterion>
+    <criterion>Verdicts cite screenshot paths and supporting programmatic evidence</criterion>
+    <criterion>FAIL findings include severity and a suggested fix</criterion>
+    <criterion>Unreadable screenshots are marked INVESTIGATE, never guessed</criterion>
+  </completion_criteria>
+</workflow_instructions>

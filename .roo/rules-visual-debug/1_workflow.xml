@@ -1,8 +1,10 @@
 <workflow_instructions>
   <mode_overview>
     Visual Debug mode specializes in debugging web pages through Playwright browser automation,
-    combining console log analysis, network interception, and visual screenshot comparison.
-    Uses the Qwen3.6 Abliterated model for vision-based verification.
+    combining console log analysis, network interception, DOM extraction, and screenshot capture.
+    Uses the DeepSeek V4 Flash model for all gathering/automation work. It does NOT interpret
+    screenshots itself — it delegates vision-based screenshot inspection to the visual-auditor
+    mode (a vision-capable model such as Qwen3.6 Abliterated / qwen3-vl).
   </mode_overview>
 
   <initialization_steps>
@@ -23,7 +25,8 @@
       <details>
         Establish the URL, expected credentials (if auth needed), and browser context.
         Verify Playwright is available in the environment.
-        Set the model to qwen3.6-abliterated for screenshot verification steps.
+        Confirm the gathering model is DeepSeek V4 Flash.
+        Plan which captured screenshots will be handed to the visual-auditor mode.
       </details>
     </step>
 
@@ -379,18 +382,23 @@
         <step number="3">
           <title>Verify Action Result</title>
           <description>
-            Use the Qwen3.6 Abliterated model's vision capabilities to read screenshots and verify:
-            - Visual state matches expected outcome
+            Verify programmatically where possible:
             - Console errors are not present
             - Network requests completed successfully
             - CSS computed values match intended styles
+            Then hand the captured screenshots to the visual-auditor mode for
+            vision-based verification of the visual state.
           </description>
         </step>
       </steps>
     </phase>
 
-    <phase name="visual_verification">
-      <description>Compare intended CSS/design values against rendered reality</description>
+    <phase name="visual_verification_handoff">
+      <description>
+        Compare intended CSS/design values against rendered reality. This phase
+        gathers programmatic evidence and then hands off screenshots to the
+        visual-auditor mode for vision-based inspection.
+      </description>
       <steps>
         <step number="1">
           <title>Extract Computed Styles</title>
@@ -398,15 +406,16 @@
             Use page.evaluate() to get computedStyle for target elements:
             - Compare intended CSS values (from stylesheets or design specs) with computed values
             - Check for layout shifts, incorrect colors, spacing, fonts
+            Record these programmatic values in evidence.md as supporting data.
           </description>
         </step>
 
         <step number="2">
-          <title>Screenshot Diff Analysis</title>
+          <title>Prepare Screenshot Evidence for Visual Auditor</title>
           <description>
-            Compare before/after screenshots to identify unintended visual changes:
-            - Use pixel comparison or structural diff
-            - Highlight regions with unexpected differences
+            Ensure before/after screenshots are saved with clear paths in evidence.md.
+            Hand off the screenshot set and the programmatic evidence to the
+            visual-auditor mode for vision-based comparison and PASS/FAIL verdicts.
           </description>
         </step>
 
@@ -416,6 +425,8 @@
             Verify CSS custom properties resolve to expected values:
             - Check --var-name values against theme specification
             - Verify dark/light mode toggle renders correctly
+            Record computed values; visual confirmation of the rendered toggle
+            is delegated to the visual-auditor mode.
           </description>
         </step>
       </steps>

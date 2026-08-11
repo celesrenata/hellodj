@@ -88,6 +88,79 @@
 </div>
 
 <div class="row mt-3">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-mic"></i> Voice Activation
+            </div>
+            <div class="card-body">
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="voice-enabled">
+                    <label class="form-check-label" for="voice-enabled">Enabled (wake word + voice commands)</label>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="voice-model-path">Wake Word Model Path</label>
+                    <input class="form-control" id="voice-model-path" placeholder="/app/models/Hello_DJ.onnx">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="voice-stt-size">STT Model Size</label>
+                    <select class="form-select" id="voice-stt-size">
+                        <option value="base">base</option>
+                        <option value="small">small</option>
+                        <option value="medium">medium</option>
+                        <option value="large-v3">large-v3</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="voice-tts-engine">TTS Engine</label>
+                    <select class="form-select" id="voice-tts-engine">
+                        <option value="kokoro">kokoro</option>
+                        <option value="speaches">speaches</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="voice-tts-voice">TTS Voice</label>
+                    <input class="form-control" id="voice-tts-voice" placeholder="af_heart">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="voice-speaches-url">Speaches URL (TTS_ENGINE=speaches)</label>
+                    <input class="form-control" id="voice-speaches-url" placeholder="https://...">
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-stars"></i> Voice LLM & Data
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label" for="voice-llm-url">LLM API URL</label>
+                    <input class="form-control" id="voice-llm-url" placeholder="https://api.openai.com/v1">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="voice-llm-model">LLM Model</label>
+                    <input class="form-control" id="voice-llm-model" placeholder="gpt-4o-mini">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="voice-llm-key">LLM API Key</label>
+                    <input type="password" class="form-control" id="voice-llm-key" placeholder="LLM_API_KEY">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="voice-news-key">News API Key</label>
+                    <input type="password" class="form-control" id="voice-news-key" placeholder="NEWS_API_KEY">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="voice-stocks-key">Stocks API Key</label>
+                    <input type="password" class="form-control" id="voice-stocks-key" placeholder="STOCKS_API_KEY">
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-3">
     <div class="col-12">
         <div class="card">
             <div class="card-header">
@@ -154,6 +227,19 @@ async function loadConfig() {
     $('#spotify-id').val(cfg.spotify.client_id || '');
     $('#spotify-secret').val(cfg.spotify.client_secret || '');
     $('#genius-key').val(cfg.genius.api_key || '');
+    if (cfg.voice) {
+        $('#voice-enabled').prop('checked', cfg.voice.enabled);
+        $('#voice-model-path').val(cfg.voice.model_path || '');
+        $('#voice-stt-size').val(cfg.voice.stt_model_size || 'base');
+        $('#voice-tts-engine').val(cfg.voice.tts_engine || 'kokoro');
+        $('#voice-tts-voice').val(cfg.voice.tts_voice || '');
+        $('#voice-speaches-url').val(cfg.voice.speaches_url || '');
+        $('#voice-llm-url').val(cfg.voice.llm_api_url || '');
+        $('#voice-llm-model').val(cfg.voice.llm_model || '');
+        $('#voice-llm-key').val(cfg.voice.llm_api_key || '');
+        $('#voice-news-key').val(cfg.voice.news_api_key || '');
+        $('#voice-stocks-key').val(cfg.voice.stocks_api_key || '');
+    }
     if (cfg.bot) {
         $('#bot-default-source').val(cfg.bot.default_source || 'youtube');
         $('#bot-autoplay').val(cfg.bot.autoplay ? 'true' : 'false');
@@ -179,6 +265,19 @@ async function saveConfig() {
         },
         genius: {
             api_key: $('#genius-key').val(),
+        },
+        voice: {
+            model_path: $('#voice-model-path').val(),
+            stt_model_size: $('#voice-stt-size').val(),
+            tts_engine: $('#voice-tts-engine').val(),
+            tts_voice: $('#voice-tts-voice').val(),
+            speaches_url: $('#voice-speaches-url').val(),
+            enabled: $('#voice-enabled').prop('checked'),
+            llm_api_url: $('#voice-llm-url').val(),
+            llm_model: $('#voice-llm-model').val(),
+            llm_api_key: $('#voice-llm-key').val(),
+            news_api_key: $('#voice-news-key').val(),
+            stocks_api_key: $('#voice-stocks-key').val(),
         },
         bot: {
             default_source: $('#bot-default-source').val(),

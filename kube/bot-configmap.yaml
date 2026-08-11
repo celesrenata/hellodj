@@ -1,0 +1,22 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: hellodj-bot-config
+  namespace: hellodj-service
+  labels:
+    app.kubernetes.io/instance: hellodj
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/name: hellodj
+    app.kubernetes.io/component: bot
+    helm.sh/chart: hellodj-0.1.0
+data:
+  # ── Voice activation (non-secret) ────────────────────────────────────
+  WAKE_WORD_MODEL_PATH: /app/models/Hello_DJ.onnx
+  STT_MODEL_SIZE: base
+  TTS_ENGINE: kokoro
+  TTS_VOICE: af_heart
+  SPEACHES_URL: ""
+  VOICE_ENABLED: "true"
+  # ── LLM / general-query defaults ────────────────────────────────────
+  LLM_API_URL: https://api.openai.com/v1
+  LLM_MODEL: gpt-4o-mini

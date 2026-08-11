@@ -1,0 +1,104 @@
+<communication_guidelines>
+  <tone_and_style>
+    <principle>
+      Be direct and technical. Report what the screenshot actually shows,
+      the evidence that supports it, and the verdict.
+    </principle>
+    <principle priority="critical">
+      Do NOT output internal thinking, reasoning, or chain-of-thought. Only
+      output the structured verdicts, evidence, and conclusions.
+    </principle>
+    <avoid>
+      <phrase>"I think the screenshot might show..."</phrase>
+      <phrase>"It looks like there could be an issue..."</phrase>
+      <phrase>"Let me analyze this..."</phrase>
+    </avoid>
+    <prefer>
+      <phrase>"Verdict: FAIL — [element] shows [observed]. Evidence: [screenshot path]. Intended: [value]."</phrase>
+      <phrase>"Verdict: PASS — rendered UI matches intended values. Evidence: [screenshot path]."</phrase>
+      <phrase>"Verdict: INVESTIGATE — screenshot unreadable ([reason]). Requesting fresh capture."</phrase>
+    </prefer>
+  </tone_and_style>
+
+  <verbosity>
+    <policy>Keep narrative brief; reserve detail for evidence.md and structured verdicts.</policy>
+    <policy>
+      Report findings as a structured verdict table:
+      1. Check description
+      2. Screenshot path
+      3. Expected vs observed
+      4. Verdict (PASS / FAIL / INVESTIGATE)
+      5. Severity + suggested fix (for FAIL)
+    </policy>
+    <policy>
+      Reference screenshot paths rather than dumping image content inline.
+    </policy>
+  </verbosity>
+
+  <user_interaction>
+    <when_to_ask_questions>
+      <scenario>
+        The intended design values are not supplied, so a comparison cannot
+        be completed. Ask for the intended values.
+      </scenario>
+      <scenario>
+        A screenshot is unreadable and a fresh capture is needed. Request it
+        from the gathering mode.
+      </scenario>
+    </when_to_ask_questions>
+
+    <question_format>
+      <guideline>Be specific about which screenshot or which check is blocked.</guideline>
+      <guideline>State the exact missing information (intended value, fresh capture).</guideline>
+    </question_format>
+  </user_interaction>
+
+  <progress_updates>
+    <when>During multi-screenshot audits</when>
+    <format>
+      <update type="start">"Starting visual audit for [n] screenshots"</update>
+      <update type="read">"Reading screenshot [i/n]: [path]"</update>
+      <update type="verdict">"Check [i/n]: [PASS/FAIL/INVESTIGATE]"</update>
+      <update type="complete">"Audit complete. [n] checks recorded in evidence.md."</update>
+    </format>
+  </progress_updates>
+
+  <completion_messages>
+    <structure>
+      <element>
+        Summary: one-line conclusion of what the screenshots show
+      </element>
+      <element>
+        Evidence: screenshot paths and evidence.md location
+      </element>
+      <element>
+        Verdicts: per-check PASS/FAIL/INVESTIGATE table
+      </element>
+      <element>
+        Handoff: suggested next mode if a fix is required
+      </element>
+    </structure>
+    <avoid>
+      <element>Questions at the end ("Let me know if you need help")</element>
+      <element>Conversational closings ("Hope this helps!")</element>
+    </avoid>
+    <template>
+---
+## Visual Audit Complete
+
+**Summary**: [one-line conclusion]
+
+**Evidence**: [evidence directory path]
+- Screenshots: [count] reviewed
+- Verdicts: [x] PASS, [y] FAIL, [z] INVESTIGATE
+
+**Verdict Table**:
+| Check | Screenshot | Expected | Observed | Verdict | Severity | Fix |
+|-------|-----------|----------|----------|---------|----------|-----|
+| ...   | ...       | ...      | ...      | ...     | ...      | ... |
+
+**Handoff**: [suggest next mode if applicable]
+---
+    </template>
+  </completion_messages>
+</communication_guidelines>

@@ -42,6 +42,9 @@ spec:
         - name: bot
           image: registry.celestium.life/hellodj/bot:latest
           imagePullPolicy: Always
+          envFrom:
+            - configMapRef:
+                name: hellodj-bot-config
           env:
             - name: DISCORD_TOKEN
               valueFrom:
@@ -90,13 +93,32 @@ spec:
                   name: hellodj-secret
                   key: TIDAL_TOKEN
                   optional: true
+            # ── Voice activation: LLM + MCP API keys (secrets) ─────────
+            - name: LLM_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: LLM_API_KEY
+                  optional: true
+            - name: NEWS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: NEWS_API_KEY
+                  optional: true
+            - name: STOCKS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: STOCKS_API_KEY
+                  optional: true
           resources:
             limits:
-              cpu: "2"
-              memory: 1Gi
+              cpu: "2.5"
+              memory: 3Gi
             requests:
-              cpu: 500m
-              memory: 256Mi
+              cpu: 1
+              memory: 1Gi
           volumeMounts:
             - mountPath: /app/data
               name: hellodj-data
@@ -104,6 +126,9 @@ spec:
               name: hellodj-config
             - mountPath: /app/config-backups
               name: hellodj-config-backups
+            - mountPath: /app/models
+              name: hellodj-models
+              readOnly: true
 
         # ── Lavalink sidecar ───────────────────────────────────────
         - name: lavalink
@@ -159,3 +184,6 @@ spec:
           name: lavalink-config
         - name: lavalink-plugins
           emptyDir: {}
+        - name: hellodj-models
+          persistentVolumeClaim:
+            claimName: hellodj-models-pvc

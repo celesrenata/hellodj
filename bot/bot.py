@@ -75,6 +75,7 @@ async def setup_hook():
     await bot.load_extension("cogs.admin")
     await bot.load_extension("cogs.lyrics")
     await bot.load_extension("cogs.info")
+    await bot.load_extension("cogs.voice")
 
     await bot.tree.sync()
     print("HelloDJ slash commands synced.")

@@ -131,8 +131,8 @@
       <step number="3">
         <description>Compare screenshots and styles</description>
         <approach>
-          Use Qwen3.6 Abliterated vision to visually compare both screenshots.
-          Compare computed style objects.
+          Hand both screenshots to the visual-auditor mode for vision-based
+          comparison. Compare computed style objects programmatically.
           Outcome: identified the specific CSS property that changed.
         </approach>
         <analysis>

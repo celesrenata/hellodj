@@ -190,6 +190,19 @@ def api_get_config():
         "genius": {
             "api_key": env.get("GENIUS_API_KEY", ""),
         },
+        "voice": {
+            "model_path": env.get("WAKE_WORD_MODEL_PATH", "/app/models/Hello_DJ.onnx"),
+            "stt_model_size": env.get("STT_MODEL_SIZE", "base"),
+            "tts_engine": env.get("TTS_ENGINE", "kokoro"),
+            "tts_voice": env.get("TTS_VOICE", "af_heart"),
+            "speaches_url": env.get("SPEACHES_URL", ""),
+            "enabled": env.get("VOICE_ENABLED", "true") == "true",
+            "llm_api_url": env.get("LLM_API_URL", "https://api.openai.com/v1"),
+            "llm_model": env.get("LLM_MODEL", "gpt-4o-mini"),
+            "llm_api_key": env.get("LLM_API_KEY", ""),
+            "news_api_key": env.get("NEWS_API_KEY", ""),
+            "stocks_api_key": env.get("STOCKS_API_KEY", ""),
+        },
         "bot": config.get("bot", {}),
     }
     return jsonify(full)
@@ -233,6 +246,31 @@ def api_update_config():
         g = data["genius"]
         if "api_key" in g:
             env["GENIUS_API_KEY"] = g["api_key"]
+
+    if "voice" in data:
+        v = data["voice"]
+        if "model_path" in v:
+            env["WAKE_WORD_MODEL_PATH"] = v["model_path"]
+        if "stt_model_size" in v:
+            env["STT_MODEL_SIZE"] = v["stt_model_size"]
+        if "tts_engine" in v:
+            env["TTS_ENGINE"] = v["tts_engine"]
+        if "tts_voice" in v:
+            env["TTS_VOICE"] = v["tts_voice"]
+        if "speaches_url" in v:
+            env["SPEACHES_URL"] = v["speaches_url"]
+        if "enabled" in v:
+            env["VOICE_ENABLED"] = "true" if v["enabled"] else "false"
+        if "llm_api_url" in v:
+            env["LLM_API_URL"] = v["llm_api_url"]
+        if "llm_model" in v:
+            env["LLM_MODEL"] = v["llm_model"]
+        if "llm_api_key" in v:
+            env["LLM_API_KEY"] = v["llm_api_key"]
+        if "news_api_key" in v:
+            env["NEWS_API_KEY"] = v["news_api_key"]
+        if "stocks_api_key" in v:
+            env["STOCKS_API_KEY"] = v["stocks_api_key"]
 
     write_env(env)
 

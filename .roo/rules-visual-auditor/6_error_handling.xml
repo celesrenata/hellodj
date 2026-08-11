@@ -1,0 +1,124 @@
+<error_handling>
+  <overview>
+    Error scenarios and recovery procedures for Visual Auditor mode. These
+    cover unreadable screenshots, missing evidence, conflicting readings, and
+    handoff failures.
+  </overview>
+
+  <error_scenarios>
+    <scenario name="unreadable_screenshot">
+      <description>The screenshot cannot be interpreted (blank, black, truncated, or corrupt)</description>
+      <symptoms>
+        <symptom>Image contains no rendered page content</symptom>
+        <symptom>Image is black, blank, or partially truncated</symptom>
+        <symptom>Vision model cannot identify any elements</symptom>
+      </symptoms>
+      <recovery_steps>
+        <step number="1">
+          <action>Verify the screenshot file is valid</action>
+          <code>Check file size is non-zero and the image opens correctly.</code>
+        </step>
+        <step number="2">
+          <action>Mark INVESTIGATE with the specific reason</action>
+          <code>Record the check as INVESTIGATE and state why (blank/black/truncated/corrupt).</code>
+        </step>
+        <step number="3">
+          <action>Request a fresh capture from the gathering mode</action>
+          <code>
+            Hand back to visual-debug mode requesting a new screenshot with
+            correct framing and viewport.
+          </code>
+        </step>
+      </recovery_steps>
+    </scenario>
+
+    <scenario name="missing_intended_values">
+      <description>The intended design values are not supplied for comparison</description>
+      <symptoms>
+        <symptom>No expected CSS/design values provided with the screenshots</symptom>
+        <symptom>No expected behavior description for feature completion checks</symptom>
+      </symptoms>
+      <recovery_steps>
+        <step number="1">
+          <action>Record INVESTIGATE for checks that require intended values</action>
+          <code>Without a reference, mark the comparison checks as INVESTIGATE.</code>
+        </step>
+        <step number="2">
+          <action>Request the intended values from the gathering mode</action>
+          <code>
+            Ask for the expected design values or behavior so comparisons can be completed.
+          </code>
+        </step>
+      </recovery_steps>
+    </scenario>
+
+    <scenario name="conflicting_evidence">
+      <description>Vision reading conflicts with programmatic evidence</description>
+      <symptoms>
+        <symptom>Visual observation differs from computed-style or contrast data</symptom>
+        <symptom>Contrast ratio says PASS but the screenshot appears unreadable</symptom>
+      </symptoms>
+      <recovery_steps>
+        <step number="1">
+          <action>Re-examine both the screenshot and the programmatic data</action>
+          <code>
+            Re-read the screenshot carefully and re-check the computed values
+            for accuracy (element mismatch, wrong selector, opacity effect).
+          </code>
+        </step>
+        <step number="2">
+          <action>Reconcile or flag the discrepancy</action>
+          <code>
+            If the discrepancy is resolved (e.g., opacity reduces effective
+            contrast), report the corrected verdict. Otherwise mark INVESTIGATE
+            and note the conflicting evidence.
+          </code>
+        </step>
+      </recovery_steps>
+    </scenario>
+
+    <scenario name="vision_model_unavailable">
+      <description>The vision-capable model is unavailable or degraded</description>
+      <symptoms>
+        <symptom>The model cannot accept or interpret image content</symptom>
+        <symptom>Vision analysis is inaccurate or hallucinated</symptom>
+      </symptoms>
+      <recovery_steps>
+        <step number="1">
+          <action>Confirm the vision model is selected and reachable</action>
+          <code>Verify the model (qwen3.6-abliterated / qwen3-vl) is available.</code>
+        </step>
+        <step number="2">
+          <action>Document the limitation and fall back</action>
+          <code>
+            Record in evidence.md that visual verification was unavailable and
+            rely on programmatic evidence from the gathering mode, clearly
+            labeled as a fallback.
+          </code>
+        </step>
+      </recovery_steps>
+    </scenario>
+  </error_scenarios>
+
+  <recovery_protocols>
+    <protocol name="evidence_resume">
+      <description>Resume an interrupted audit from evidence.md</description>
+      <steps>
+        <step>1. Read evidence.md for the audit state</step>
+        <step>2. Identify which screenshots still lack a verdict</step>
+        <step>3. Re-open those screenshots and record verdicts</step>
+        <step>4. Update evidence.md with the completed checks</step>
+      </steps>
+    </protocol>
+
+    <protocol name="fresh_capture">
+      <description>Request and use a fresh screenshot capture</description>
+      <steps>
+        <step>1. Identify the specific screenshot that is unreadable</step>
+        <step>2. Hand back to visual-debug with the reason and desired framing</step>
+        <step>3. On receipt of the fresh capture, re-run the affected checks</step>
+        <step>4. Record both the old and new paths in evidence.md</step>
+      </steps>
+    </protocol>
+  </recovery_protocols>
+</error_handling>

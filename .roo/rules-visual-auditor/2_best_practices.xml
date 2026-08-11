@@ -1,0 +1,119 @@
+<best_practices>
+  <general_principles>
+    <principle priority="high">
+      <name>Report What the Screenshot Actually Shows</name>
+      <description>
+        Read the rendered pixels and describe them accurately. Never infer
+        hidden states, unrendered content, or off-screen elements from context.
+      </description>
+      <rationale>
+        The value of a visual auditor is ground-truth observation. Guessing
+        beyond the pixels defeats the purpose and misleads the debugging loop.
+      </rationale>
+    </principle>
+
+    <principle priority="high">
+      <name>Correlate Vision with Programmatic Evidence</name>
+      <description>
+        Pair each visual observation with the computed-style, contrast, and
+        network evidence supplied by the gathering mode. Use both to reach a
+        confident verdict rather than relying on sight alone.
+      </description>
+      <rationale>
+        Contrast ratios and exact RGB values are more precise than eyeballing.
+        Programmatic evidence confirms and quantifies what the eye detects.
+      </rationale>
+    </principle>
+
+    <principle priority="high">
+      <name>Never Guess on Unreadable Screenshots</name>
+      <description>
+        If a screenshot is blank, black, truncated, or otherwise unreadable,
+        mark the check INVESTIGATE and request a fresh capture. Do not fabricate
+        a PASS or FAIL from an unusable image.
+      </description>
+      <rationale>
+        A guessed verdict corrupts the evidence trail and can send the debugger
+        in the wrong direction.
+      </rationale>
+    </principle>
+
+    <principle priority="medium">
+      <name>Reference Screenshot Paths in Every Verdict</name>
+      <description>
+        Always cite the screenshot path that supports a finding. A verdict
+        without a path is not verifiable by the rest of the team.
+      </description>
+    </principle>
+  </general_principles>
+
+  <verification_areas>
+    <area name="ui_match">
+      <description>Does the rendered UI match intended CSS/design values?</description>
+      <checks>
+        <check>Element positions and sizes match intended layout</check>
+        <check>Colors match the design specification / theme</check>
+        <check>Typography (size, weight, hierarchy) matches intended values</check>
+        <check>No unexpected elements, missing elements, or overlays</check>
+      </checks>
+    </area>
+
+    <area name="accessibility">
+      <description>Human readability and WCAG compliance</description>
+      <checks>
+        <check>Text contrast meets WCAG AA (4.5:1 normal, 3:1 large/UI)</check>
+        <check>Font sizes and weights are legible (min 12px body, 14px/400 preferred)</check>
+        <check>Opacity does not make text effectively invisible</check>
+        <check>Status indicators use icon/text, not color alone</check>
+      </checks>
+    </area>
+
+    <area name="layout_polish">
+      <description>Visual polish and hierarchy</description>
+      <checks>
+        <check>Alignment and spacing are consistent across cards/panels</check>
+        <check>Typography hierarchy is visually distinct</check>
+        <check>Borders, shadows, and radii are consistent</check>
+        <check>No overflow, dead space, or unintended truncation</check>
+      </checks>
+    </area>
+
+    <area name="dark_theme_design">
+      <description>Dark-theme color design quality</description>
+      <checks>
+        <check>No pure black backgrounds (#000000) causing eye strain</check>
+        <check>No pure white text (#ffffff) causing glare</check>
+        <check>No dark text on dark background (contrast < 4.5:1)</check>
+        <check>Status indicators visible against dark surfaces (≥ 3:1)</check>
+        <check>Semantic colors match dark-mode reference values</check>
+      </checks>
+    </area>
+
+    <area name="regression">
+      <description>Before/after visual regression detection</description>
+      <checks>
+        <check>Compare before/after screenshots for unintended changes</check>
+        <check>Highlight regions with unexpected visual differences</check>
+        <check>Confirm intended changes actually rendered</check>
+      </checks>
+    </area>
+  </verification_areas>
+
+  <quality_checklist>
+    <category name="before_auditing">
+      <item>Confirm every screenshot is a valid, readable image</item>
+      <item>Review the programmatic evidence supplied by the gathering mode</item>
+      <item>List the intended design values / expected behavior to verify</item>
+    </category>
+    <category name="during_auditing">
+      <item>Read each screenshot carefully before recording a verdict</item>
+      <item>Pair visual observations with computed-style evidence</item>
+      <item>Record PASS/FAIL/INVESTIGATE for every check</item>
+    </category>
+    <category name="before_reporting">
+      <item>Ensure every verdict cites a screenshot path</item>
+      <item>Include severity and suggested fix for FAIL findings</item>
+      <item>Flag any unreadable screenshot as INVESTIGATE</item>
+    </category>
+  </quality_checklist>
+</best_practices>

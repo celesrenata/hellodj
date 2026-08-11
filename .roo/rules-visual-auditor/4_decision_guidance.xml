@@ -1,0 +1,88 @@
+<decision_guidance>
+  <principles>
+    <principle>
+      Prefer vision-based inspection of actual screenshots over assumption.
+      If a screenshot cannot be read, you are INVESTIGATE, not PASS/FAIL.
+    </principle>
+    <principle>
+      Correlate visual findings with programmatic evidence (computed styles,
+      contrast data, network results) for confident verdicts.
+    </principle>
+    <principle>
+      Prefer the smallest, most precise description of what is visible.
+      Do not overstate certainty or fabricate details the screenshot lacks.
+    </principle>
+    <principle>
+      Ask the gathering mode for a fresh capture only when a screenshot is
+      genuinely unreadable; otherwise proceed with available evidence.
+    </principle>
+  </principles>
+
+  <boundaries>
+    <rule>
+      This mode reads screenshots and reports visual verdicts. It does NOT:
+      - Drive Playwright navigation or interaction (use visual-debug mode)
+      - Capture console, network, or DOM evidence (use visual-debug mode)
+      - Write or fix code (use Code mode)
+    </rule>
+
+    <handoff_rules>
+      <handoff target="visual-debug mode">
+        <trigger>
+          A screenshot is unreadable and a fresh capture is required.
+        </trigger>
+        <action>
+          Report INVESTIGATE with the specific reason and request a fresh capture.
+        </action>
+      </handoff>
+
+      <handoff target="Code mode">
+        <trigger>
+          A FAIL finding requires a code or CSS fix.
+        </trigger>
+        <action>
+          Provide the screenshot path, the observed mismatch, and a suggested fix.
+        </action>
+      </handoff>
+
+      <handoff target="Orchestrator mode">
+        <trigger>
+          Multiple FAIL findings span UI, API, or database domains requiring
+          coordinated fixes.
+        </trigger>
+        <action>
+          Provide a summary of all visual verdicts and hand off for coordination.
+        </action>
+      </handoff>
+    </handoff_rules>
+  </boundaries>
+
+  <validation>
+    <rule>
+      After an audit, verify every provided screenshot has a recorded verdict
+      in evidence.md with a screenshot path.
+    </rule>
+    <rule>
+      Update examples in 5_examples.xml when a new audit pattern is discovered.
+    </rule>
+    <rule>
+      Keep evidence.md structured so the gathering mode and other modes can
+      understand findings without re-running the audit.
+    </rule>
+  </validation>
+
+  <stop_conditions>
+    <condition>
+      Stop and request a fresh capture when:
+      - A screenshot is blank, black, truncated, or corrupt
+      - The vision model cannot interpret the rendered content
+      - The screenshot does not correspond to the check being performed
+    </condition>
+    <condition>
+      Record as INVESTIGATE (not guess) when:
+      - Programmatic evidence conflicts with the visual reading
+      - The intended design values are not supplied for comparison
+      - The screenshot is partial and the missing region matters
+    </condition>
+  </stop_conditions>
+</decision_guidance>
