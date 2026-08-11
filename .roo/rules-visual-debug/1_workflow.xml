@@ -1,24 +1,79 @@
 <workflow_instructions>
   <mode_overview>
-    Visual Debug mode specializes in debugging web pages through Playwright browser automation,
+    Visual Debug mode specializes in debugging web pages through the Playwright MCP server,
     combining console log analysis, network interception, DOM extraction, and screenshot capture.
     Uses the DeepSeek V4 Flash model for all gathering/automation work. It does NOT interpret
     screenshots itself — it delegates vision-based screenshot inspection to the visual-auditor
-    mode (a vision-capable model such as Qwen3.6 Abliterated / qwen3-vl).
+    mode (a vision-capable model such as EvoCUA-32B / Qwen3.6 Abliterated).
   </mode_overview>
 
-  <environment_paths>
-    The Playwright MCP server runs inside a Docker container. Screenshots are
-    saved inside the container but accessible on the host via a bind mount:
+  <environment>
+    <playwright_mcp>
+      The Playwright MCP server runs at http://localhost:19105/mcp inside a Docker container.
+      It provides browser automation via MCP tool calls — NOT raw Playwright Node.js API.
 
-    Container path: /home/node/.playwright-mcp/
-    Host path:      /home/celes/.local/share/playwright-mcp/
+      Screenshots are saved inside the container at /home/node/.playwright-mcp/ but are
+      accessible on the host via a bind mount:
+        Container path: /home/node/.playwright-mcp/
+        Host path:      /home/celes/.local/share/playwright-mcp/
 
-    When handing screenshot paths to the visual-auditor mode, translate them
-    to host paths so the auditor can read the files directly:
-      /home/node/.playwright-mcp/screenshot.png
-      → /home/celes/.local/share/playwright-mcp/screenshot.png
-  </environment_paths>
+      When handing screenshot paths to the visual-auditor mode, always use host paths.
+    </playwright_mcp>
+
+    <available_tools>
+      These are the ONLY tools you have for browser interaction. Use them by name:
+
+      browser_navigate     — Navigate to a URL. Params: url (string)
+      browser_take_screenshot — Capture screenshot. Params: filename (optional, defaults to page-{timestamp}.png),
+                               fullPage (bool), type (png|jpeg), scale (css|device),
+                               target (element selector, for element screenshots)
+      browser_snapshot     — Get page accessibility snapshot (DOM tree with roles/names).
+                            Better than screenshot for finding elements to interact with.
+                            Params: target (optional, scope to element), depth (optional)
+      browser_click        — Click an element. Params: target (element ref from snapshot or CSS selector),
+                            element (human-readable description), button (left|right|middle)
+      browser_fill_form    — Fill multiple form fields. Params: fields (array of {target, name, type, value})
+      browser_type         — Type text into an element. Params: target, text, slowly (bool), submit (bool)
+      browser_evaluate     — Run JavaScript on the page. Params: function (JS code string),
+                            target (optional element), filename (optional, save result to file)
+      browser_console_messages — Get console messages. Params: level (error|warning|info|debug)
+      browser_network_requests — List network requests. Params: filter (regexp), static (bool)
+      browser_network_request  — Get full details of one request. Params: index (from network_requests list)
+      browser_wait_for     — Wait for condition. Params: text (wait for text to appear),
+                            textGone (wait for text to disappear), time (seconds to wait)
+      browser_resize       — Resize viewport. Params: width, height
+      browser_tabs         — Manage tabs. Params: action (list|new|close|select), url, index
+      browser_close        — Close the current page.
+      browser_hover        — Hover over element. Params: target
+      browser_select_option — Select dropdown option. Params: target, values (array)
+      browser_press_key    — Press keyboard key. Params: key (e.g. "Enter", "ArrowDown")
+      browser_run_code_unsafe — Run arbitrary Playwright code. Params: code (JS function string).
+                               Use this for complex operations not covered by other tools.
+    </available_tools>
+
+    <tool_usage_patterns>
+      IMPORTANT: You interact with the browser ONLY through these MCP tools.
+      Do NOT write raw Playwright scripts expecting a Node.js runtime.
+      Do NOT use page.goto(), page.click(), etc. directly — use the MCP tools.
+
+      Typical flow:
+      1. browser_navigate to the target URL
+      2. browser_snapshot to see the page structure (get element refs)
+      3. browser_take_screenshot to capture visual state
+      4. browser_console_messages to check for errors
+      5. browser_network_requests to see API calls
+      6. browser_click / browser_fill_form to interact
+      7. browser_wait_for to wait for page updates
+      8. Repeat screenshot + snapshot for next state
+
+      For computed styles and DOM inspection, use browser_evaluate:
+        function: "() => { const el = document.querySelector('.target'); const s = getComputedStyle(el); return { color: s.color, bg: s.backgroundColor, fontSize: s.fontSize }; }"
+
+      For bulk extraction, use browser_evaluate with filename to save results:
+        function: "() => { ... large extraction logic ... }"
+        filename: "evidence/hellodj-site-review/computed-styles.json"
+    </tool_usage_patterns>
+  </environment>
 
   <initialization_steps>
     <step number="1">
@@ -34,471 +89,205 @@
     </step>
 
     <step number="2">
-      <action>Determine target environment</action>
+      <action>Navigate and establish baseline</action>
       <details>
-        Establish the URL, expected credentials (if auth needed), and browser context.
-        Verify Playwright is available in the environment.
-        Confirm the gathering model is DeepSeek V4 Flash.
-        Plan which captured screenshots will be handed to the visual-auditor mode.
+        1. Use browser_navigate to go to the target URL
+        2. Use browser_console_messages level="error" to check for load errors
+        3. Use browser_snapshot to get the page structure
+        4. Use browser_take_screenshot filename="evidence/{slug}/00-baseline.png" fullPage=true
+        5. Use browser_network_requests to see what loaded
       </details>
     </step>
 
     <step number="3">
       <action>Plan the debugging session</action>
       <details>
-        Define the sequence of browser actions needed:
-        1. Launch browser with appropriate configuration
-        2. Navigate to target URL
-        3. Capture initial state (console, network, screenshot)
-        4. Execute the interaction flow step by step
-        5. Capture post-action state at each step
-        6. Compare screenshots and console output against expectations
-        7. Document findings in evidence.md
+        Based on the page structure from browser_snapshot, plan the interaction sequence.
+        Each step should follow: snapshot → interact → wait → screenshot → console check.
       </details>
     </step>
   </initialization_steps>
 
   <main_workflow>
-    <phase name="browser_setup">
-      <description>Configure and launch the Playwright browser instance</description>
-      <steps>
-        <step>
-          <title>Select Browser Engine</title>
-          <description>Choose chromium (default), firefox, or webkit based on the debugging target</description>
-          <heuristics>
-            <heuristic>Chromium for general web debugging and Chrome-specific issues</heuristic>
-            <heuristic>Firefox for cross-browser compatibility checks</heuristic>
-            <heuristic>WebKit for Safari-specific rendering issues</heuristic>
-          </heuristics>
-        </step>
-
-        <step>
-          <title>Configure Browser Context</title>
-          <description>
-            Set viewport size, user agent, and any required storage state (cookies, localStorage).
-            Enable console capture via page.on('console').
-            Enable network interception via page.route() or page.on('request'/'response').
-          </description>
-        </step>
-
-        <step>
-          <title>Set Up Error Capture</title>
-          <description>
-            Register listeners for:
-            - page.on('console') → collect all console.log/warn/error
-            - page.on('pageerror') → capture uncaught JS exceptions
-            - page.on('requestfailed') → capture failed network requests
-            - page.on('response') → capture response status and bodies
-          </description>
-        </step>
-      </steps>
-    </phase>
-
-    <phase name="human_readability_audit">
-      <description>
-        CRITICAL: Verify that text content is actually readable by human eyes, not just
-        present in the DOM. An element can pass Playwright's "visible" check (offsetParent !== null)
-        while being nearly invisible to a person due to low contrast, tiny font size, or
-        poor color choices. This phase bridges the gap between "element exists" and "human can read it."
-      </description>
-      <rationale>
-        The gap between "visible in DOM" and "human-readable" is vast. Elements may:
-        - Pass visibility checks but have contrast ratios as low as 1.36:1 (WCAG AA requires 4.5:1)
-        - Use font sizes below 10px that are illegible on most screens
-        - Apply opacity or color that makes text indistinguishable from background
-        - Use colors that are indistinguishable for color-blind users
-      </rationale>
-      <steps>
-        <step>
-          <title>Extract Contrast Ratios</title>
-          <description>
-            For every text-bearing element, compute the WCAG contrast ratio between text color
-            and background color. Use the WCAG 2.1 formula:
-            L = 0.2126 * R + 0.7152 * G + 0.0722 * B (where R/G/B are linearized sRGB values)
-            Contrast ratio = (L_lighter + 0.05) / (L_darker + 0.05)
-          </description>
-          <thresholds>
-            <threshold name="AA_normal" min="4.5:1">
-              Required for body text under WCAG AA. Below this → FAIL for normal-sized text.
-            </threshold>
-            <threshold name="AA_large" min="3:1">
-              Required for text ≥ 18pt bold or ≥ 22pt regular. Below this → FAIL for large text.
-            </threshold>
-            <threshold name="AAA_normal" min="7:1">
-              WCAG AAA enhanced standard. Below this → WARN, not critical but non-optimal.
-            </threshold>
-            <threshold name="AAA_large" min="4.5:1">
-              WCAG AAA for large text. Below this → WARN for large elements.
-            </threshold>
-          </thresholds>
-          <code_template>
-            await page.evaluate(() => {
-              const el = document.querySelector('.target');
-              const textColor = getComputedStyle(el).color;
-              const bgColor = getComputedStyle(el).backgroundColor;
-              // Parse RGB, linearize, compute luminance, compute ratio
-              // Returns { ratio: 1.36, passesAA: false, passesAALarge: false }
-            });
-          </code_template>
-        </step>
-
-        <step>
-          <title>Check Font Legibility</title>
-          <description>
-            Verify font size, weight, and family are suitable for reading:
-            - Minimum readable font size: 12px for body text, 10px for UI labels
-            - Font weight below 400 (normal) at small sizes may be illegible
-            - Light font weights (100-300) below 16px are often unreadable
-          </description>
-          <checks>
-            <check>fontSize < 12px for body text → WARN "potentially illegible"</check>
-            <check>fontWeight < 400 AND fontSize < 14px → WARN "light weight too small"</check>
-            <check>fontWeight < 300 AND fontSize < 16px → FAIL "very light text unreadable"</check>
-            <check>fontSize < 10px ANY text → FAIL "below minimum readable size"</check>
-          </checks>
-        </step>
-
-        <step>
-          <title>Check Opacity/Alpha Transparency</title>
-          <description>
-            Text with reduced opacity (rgba with alpha < 1.0) further reduces readability.
-            Combined opacity + low contrast can make text effectively invisible.
-          </description>
-          <checks>
-            <check>opacity < 0.5 → FAIL "text is semi-transparent"</check>
-            <check>opacity < 0.75 AND contrastRatio < 3.0 → FAIL "nearly invisible"</check>
-            <check>rgba alpha < 0.5 → FAIL "color transparency obscures text"</check>
-          </checks>
-        </step>
-
-        <step>
-          <title>Color Blindness Simulation (Conceptual)</title>
-          <description>
-            Assess whether color-dependent information is distinguishable for common
-            color vision deficiencies (deuteranopia, protanopia, tritanopia):
-            - Red/green status indicators (✅/❌) are readable even without color
-            - Color-only conveyors (e.g., "red = error" without icon/text) fail accessibility
-          </description>
-          <checks>
-            <check>Status conveyed only by color → FAIL "add icon or text label"</check>
-            <check>Red/green comparison is sole differentiator → FAIL "use shapes or text"</check>
-          </checks>
-        </step>
-
-        <step>
-          <title>Human Readability Scorecard</title>
-          <description>
-            Compile all readability metrics into a structured scorecard for evidence.md.
-            Include element-by-element pass/fail for contrast, size, opacity, and color blindness.
-          </description>
-          <output_format>
-            | Element | Text | fg | bg | Ratio | Pass AA | Pass AAA | Font | Opacity | Verdict |
-            |---------|------|----|----|-------|---------|----------|------|---------|---------|
-          </output_format>
-        </step>
-      </steps>
-    </phase>
-
-    <phase name="color_design_audit">
-      <description>
-        CRITICAL: Audit the page's color design for dark-theme anti-patterns,
-        WCAG contrast compliance, palette coherence, status indicator visibility,
-        and overall color hierarchy. This phase detects common dark design mistakes
-        WITHOUT being told what's wrong — it proactively flags issues like black
-        text on dark backgrounds, pure white text, invisible status dots, and
-        inconsistent palette lightness steps.
-      </description>
-      <rationale>
-        Dark-themed interfaces frequently contain classic dark design mistakes:
-        pure black backgrounds that cause eye strain, pure white text that causes
-        glare, dark text on dark backgrounds that fails WCAG contrast, and status
-        indicators that are invisible against dark surfaces. The mode must
-        automatically detect and report these issues.
-      </rationale>
-      <steps>
-        <step>
-          <title>Extract All Text and Background Color Pairs</title>
-          <description>
-            For every visible text-bearing element, extract the exact RGB values
-            of text color and background color. Build a complete color inventory
-            of the page.
-          </description>
-          <code_template>
-            await page.evaluate(() => {
-              const elements = document.querySelectorAll('h1, h2, h3, h4, h5, h6, p, span, a, button, li, td, th, label, .badge, .status, [class*="card"], [class*="panel"]');
-              return Array.from(elements).map(el => {
-                const style = getComputedStyle(el);
-                return {
-                  text: el.textContent.trim().substring(0, 60),
-                  tag: el.tagName,
-                  class: el.className.substring(0, 60),
-                  textColor: style.color,
-                  bgColor: style.backgroundColor,
-                  fontSize: style.fontSize,
-                  fontWeight: style.fontWeight,
-                  opacity: style.opacity,
-                };
-              });
-            });
-          </code_template>
-        </step>
-
-        <step>
-          <title>Compute WCAG Contrast and Check Thresholds</title>
-          <description>
-            For each color pair, compute the WCAG 2.1 contrast ratio. Apply the
-            correct threshold based on element type (normal text, large text,
-            UI component, decorative).
-          </description>
-          <checks>
-            <check>Normal text (< 18pt) → requires ≥ 4.5:1 — FAIL if below</check>
-            <check>Large text (≥ 18pt bold or ≥ 22pt regular) → requires ≥ 3:1 — FAIL if below</check>
-            <check>UI components (icons, borders, status dots) → requires ≥ 3:1 — FAIL if below</check>
-            <check>Decorative elements → no requirement — skip</check>
-          </checks>
-        </step>
-
-        <step>
-          <title>Flag Dark Theme Anti-Patterns</title>
-          <description>
-            Without being told what's wrong, proactively detect and report these
-            common dark design mistakes:
-          </description>
-          <anti_pattern_checks>
-            <check>Pure black background (#000000) → FLAG "causes eye strain; use #212529 instead"</check>
-            <check>Pure white text (#ffffff) on dark background → FLAG "causes glare; use #dee2e6 instead"</check>
-            <check>Dark text on dark background (contrast < 4.5:1) → FLAG "nearly invisible"</check>
-            <check>Status indicators with contrast < 3:1 → FLAG "invisible to low-vision users"</check>
-            <check>Semantic colors not matching dark-mode reference values → FLAG "needs dark-mode adjustment"</check>
-            <check>Neutral greys without hue tint → FLAG "add 2-5% brand hue for visual warmth"</check>
-            <check>Inconsistent lightness steps → FLAG "use systematic 10-step or 12-step scale"</check>
-            <check>More than 4-5 accent colors → FLAG "too many accents; limit to primary + danger + success + warning"</check>
-          </anti_pattern_checks>
-        </step>
-
-        <step>
-          <title>Verify Status Indicator Visibility</title>
-          <description>
-            Check that status indicators (badges, dots, icons) are visible on
-            dark backgrounds. Extract their background color, compute contrast
-            against parent background, and verify they include non-color cues.
-          </description>
-          <checks>
-            <check>Indicator contrast ≥ 3:1 against parent background → PASS</check>
-            <check>Indicator contrast < 3:1 → FAIL "invisible"</check>
-            <check>Indicator uses color + icon/text → PASS</check>
-            <check>Indicator uses color only → FAIL "not accessible to color-blind users"</check>
-            <check>Indicator distinguishable in grayscale → PASS</check>
-            <check>Indicator indistinguishable in grayscale → FAIL "relies solely on color"</check>
-          </checks>
-        </step>
-
-        <step>
-          <title>Evaluate Palette Coherence and Hierarchy</title>
-          <description>
-            Analyze the page's overall color palette for coherence, brand
-            adherence, surface hierarchy, and text hierarchy.
-          </description>
-          <checks>
-            <check>All colors belong to same hue family or complementary palette → PASS/FAIL</check>
-            <check>Primary/accent colors match brand guidelines → PASS/FAIL</check>
-            <check>Background surfaces incrementally lighter (5-8% lightness steps) → PASS/FAIL</check>
-            <check>Body text off-white, secondary text ~75% opacity, muted text ~50% opacity → PASS/FAIL</check>
-          </checks>
-        </step>
-
-        <step>
-          <title>Color Design Scorecard</title>
-          <description>
-            Compile all color design findings into a structured scorecard for
-            evidence.md. Include element-by-element pass/fail for contrast,
-            dark-theme anti-patterns, status indicator visibility, and palette
-            coherence.
-          </description>
-          <output_format>
-            | Element | Text Color | BG Color | Ratio | Threshold | Passes | Anti-Pattern | Verdict |
-            |---------|------------|----------|-------|-----------|--------|--------------|---------|
-          </output_format>
-        </step>
-      </steps>
-    </phase>
-
     <phase name="navigation_and_capture">
       <description>Navigate to the target page and capture baseline state</description>
       <steps>
-        <step number="1">
-          <title>Navigate to URL</title>
-          <description>
-            Use page.goto(url, { waitUntil: 'networkidle' }) for full page load.
-            For SPAs, wait for specific element to be visible after navigation.
-          </description>
-          <validation>
-            Verify page loaded successfully (status code, no crash)
-            Capture the URL after any redirects
-          </validation>
+        <step>
+          <title>Navigate</title>
+          <tool>browser_navigate</tool>
+          <params>url: the target URL</params>
+          <follow_up>Wait for page to be ready, then snapshot</follow_up>
         </step>
 
-        <step number="2">
-          <title>Capture Baseline Screenshot</title>
-          <description>
-            Take a full-page screenshot or viewport screenshot depending on the bug type.
-            Save to evidence/ directory with descriptive filename.
-          </description>
-          <naming_convention>
-            evidence/{feature-slug}/00-baseline.png
-          </naming_convention>
+        <step>
+          <title>Baseline Snapshot</title>
+          <tool>browser_snapshot</tool>
+          <purpose>Get the accessibility tree to identify interactive elements by their refs</purpose>
+          <note>Element refs from the snapshot are used as "target" in click/type/etc tools</note>
         </step>
 
-        <step number="3">
-          <title>Dump Console Log</title>
-          <description>
-            Collect all console messages logged during page load.
-            Filter for warnings, errors, and suspicious messages.
-          </description>
+        <step>
+          <title>Baseline Screenshot</title>
+          <tool>browser_take_screenshot</tool>
+          <params>filename: "evidence/{slug}/00-baseline.png", fullPage: true, type: "png", scale: "css"</params>
+          <note>Screenshot files are saved INSIDE the container. The host path is:
+            /home/celes/.local/share/playwright-mcp/{filename}</note>
         </step>
 
-        <step number="4">
-          <title>Capture Network Activity</title>
-          <description>
-            Record all API requests and responses made during page load.
-            Identify failed requests and unexpected status codes.
-          </description>
+        <step>
+          <title>Check Console</title>
+          <tool>browser_console_messages</tool>
+          <params>level: "warning"</params>
+          <purpose>Capture any load-time errors or warnings</purpose>
+        </step>
+
+        <step>
+          <title>Check Network</title>
+          <tool>browser_network_requests</tool>
+          <params>static: false</params>
+          <purpose>See API calls, failed requests, status codes</purpose>
         </step>
       </steps>
     </phase>
 
     <phase name="interaction_execution">
-      <description>Execute the user interaction flow step by step with state capture at each step</description>
-      <steps>
-        <step number="1">
-          <title>Plan Interaction Sequence</title>
-          <description>
-            Break the user's requested flow into individual atomic actions:
-            - Click, type, scroll, hover, select, submit
-            - Each action is a separate step with before/after screenshots
-          </description>
-        </step>
+      <description>Execute the interaction flow step by step with state capture</description>
+      <pattern>
+        For each interaction step:
+        1. browser_snapshot — find the element to interact with (get its ref)
+        2. browser_click / browser_fill_form / browser_type — perform the action
+        3. browser_wait_for — wait for result (text appears, loading disappears)
+        4. browser_take_screenshot — capture the new state
+        5. browser_console_messages — check for new errors
+        6. browser_network_requests — check for new API calls
+      </pattern>
 
-        <step number="2">
-          <title>Execute Action and Capture</title>
-          <description>
-            For each atomic action:
-            1. Capture screenshot BEFORE the action
-            2. Perform the action using Playwright locator API
-            3. Wait for any resulting state changes (DOM mutations, network responses)
-            4. Capture screenshot AFTER the action
-            5. Capture console output generated by the action
-            6. Capture any network requests triggered by the action
-          </description>
-        </step>
+      <finding_elements>
+        Use browser_snapshot to get the page's accessibility tree. Each element has a
+        "ref" that you pass as "target" to click/type/etc tools. Example:
 
-        <step number="3">
-          <title>Verify Action Result</title>
-          <description>
-            Verify programmatically where possible:
-            - Console errors are not present
-            - Network requests completed successfully
-            - CSS computed values match intended styles
-            Then hand the captured screenshots to the visual-auditor mode for
-            vision-based verification of the visual state.
-          </description>
-        </step>
-      </steps>
+        Snapshot shows: button "Submit" [ref=submit-btn-1]
+        Then use: browser_click target="submit-btn-1" element="Submit button"
+
+        If you can't find an element in the snapshot, use a CSS selector as target:
+          browser_click target="css=button.submit-btn"
+      </finding_elements>
+    </phase>
+
+    <phase name="computed_style_extraction">
+      <description>Extract CSS computed values for comparison against design specs</description>
+      <tool>browser_evaluate</tool>
+      <example>
+        function: "() => {
+          const elements = document.querySelectorAll('h1, h2, h3, p, a, button, .card, .badge');
+          return Array.from(elements).slice(0, 50).map(el => {
+            const s = getComputedStyle(el);
+            return {
+              tag: el.tagName,
+              class: el.className.substring(0, 40),
+              text: el.textContent.trim().substring(0, 40),
+              color: s.color,
+              backgroundColor: s.backgroundColor,
+              fontSize: s.fontSize,
+              fontWeight: s.fontWeight,
+              opacity: s.opacity
+            };
+          });
+        }"
+      </example>
+      <note>For large results, use the "filename" param to save to a file instead of inline</note>
+    </phase>
+
+    <phase name="contrast_audit">
+      <description>Compute WCAG contrast ratios for text elements</description>
+      <tool>browser_evaluate</tool>
+      <example>
+        function: "() => {
+          function luminance(r, g, b) {
+            const [rs, gs, bs] = [r/255, g/255, b/255].map(c =>
+              c <= 0.03928 ? c/12.92 : Math.pow((c+0.055)/1.055, 2.4));
+            return 0.2126*rs + 0.7152*gs + 0.0722*bs;
+          }
+          function parseColor(str) {
+            const m = str.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/);
+            return m ? [+m[1], +m[2], +m[3]] : [0,0,0];
+          }
+          function contrast(fg, bg) {
+            const l1 = luminance(...fg), l2 = luminance(...bg);
+            const [lighter, darker] = l1 > l2 ? [l1, l2] : [l2, l1];
+            return (lighter + 0.05) / (darker + 0.05);
+          }
+
+          const results = [];
+          document.querySelectorAll('h1,h2,h3,h4,p,span,a,button,li,td,th,label,.badge').forEach(el => {
+            const s = getComputedStyle(el);
+            const fg = parseColor(s.color);
+            const bg = parseColor(s.backgroundColor);
+            const ratio = contrast(fg, bg);
+            if (ratio < 4.5) {
+              results.push({
+                text: el.textContent.trim().substring(0, 30),
+                fg: s.color, bg: s.backgroundColor,
+                ratio: ratio.toFixed(2),
+                passesAA: ratio >= 4.5
+              });
+            }
+          });
+          return results;
+        }"
+      </example>
     </phase>
 
     <phase name="visual_verification_handoff">
-      <description>
-        Compare intended CSS/design values against rendered reality. This phase
-        gathers programmatic evidence and then hands off screenshots to the
-        visual-auditor mode for vision-based inspection.
-      </description>
+      <description>Hand off screenshots and evidence to the visual-auditor mode</description>
       <steps>
-        <step number="1">
-          <title>Extract Computed Styles</title>
+        <step>
+          <title>Compile Evidence</title>
           <description>
-            Use page.evaluate() to get computedStyle for target elements:
-            - Compare intended CSS values (from stylesheets or design specs) with computed values
-            - Check for layout shifts, incorrect colors, spacing, fonts
-            Record these programmatic values in evidence.md as supporting data.
+            Write evidence.md with:
+            - Each step's action, expected result, observed result
+            - Screenshot host paths (translate container paths!)
+            - Console errors/warnings
+            - Network request results
+            - Computed style data
+            - Contrast audit results
           </description>
         </step>
 
-        <step number="2">
-          <title>Prepare Screenshot Evidence for Visual Auditor</title>
+        <step>
+          <title>Request Visual Auditor Review</title>
           <description>
-            Ensure before/after screenshots are saved with clear paths in evidence.md.
-            Hand off the screenshot set and the programmatic evidence to the
-            visual-auditor mode for vision-based comparison and PASS/FAIL verdicts.
-          </description>
-        </step>
-
-        <step number="3">
-          <title>Theme Consistency Check</title>
-          <description>
-            Verify CSS custom properties resolve to expected values:
-            - Check --var-name values against theme specification
-            - Verify dark/light mode toggle renders correctly
-            Record computed values; visual confirmation of the rendered toggle
-            is delegated to the visual-auditor mode.
-          </description>
-        </step>
-      </steps>
-    </phase>
-
-    <phase name="evidence_documentation">
-      <description>Record all findings in structured evidence files</description>
-      <steps>
-        <step number="1">
-          <title>Create Evidence Directory</title>
-          <description>
-            evidence/{feature-slug}/ with descriptive slug for the current debugging session
-          </description>
-        </step>
-
-        <step number="2">
-          <title>Write evidence.md</title>
-          <description>
-            Record for each step:
-            - Action performed
-            - Expected outcome
-            - Observed outcome
-            - Console log excerpt
-            - Network activity summary
-            - Screenshot path
-            - Verdict: PASS / FAIL / INVESTIGATE
-          </description>
-        </step>
-
-        <step number="3">
-          <title>Annotate Screenshots</title>
-          <description>
-            For failed verifications, annotate screenshots to highlight the discrepancy.
-            Include bounding boxes around mismatched regions.
+            Switch to visual-auditor mode (or ask user to switch) and provide:
+            - The evidence.md path
+            - Screenshot host paths to inspect
+            - What to verify visually in each screenshot
+            - Any programmatic data that supports/contradicts what's rendered
           </description>
         </step>
       </steps>
     </phase>
   </main_workflow>
 
+  <screenshot_path_rules>
+    CRITICAL: The Playwright MCP browser_take_screenshot tool saves files relative to its
+    working directory inside the container. The actual host paths are:
+
+    If you specify filename="my-screenshot.png":
+      Container saves to: /home/node/.playwright-mcp/my-screenshot.png (or similar)
+      Host path:          /home/celes/.local/share/playwright-mcp/my-screenshot.png
+
+    If you don't specify a filename, it auto-generates one like "page-{timestamp}.png".
+
+    In evidence.md, ALWAYS record the HOST path so the visual-auditor can read the files.
+  </screenshot_path_rules>
+
   <completion_criteria>
     <criterion>All requested interaction steps have been executed and captured</criterion>
-    <criterion>Screenshots exist for every distinct action step</criterion>
+    <criterion>Screenshots exist for every distinct action step (verified via host paths)</criterion>
     <criterion>Console logs have been captured and analyzed</criterion>
     <criterion>Network activity has been captured and validated</criterion>
-    <criterion>Visual state has been compared against expected CSS values</criterion>
-    <criterion>Evidence document (evidence.md) is complete and structured</criterion>
-    <criterion>Root cause is identified and documented, or explicitly marked as inconclusive</criterion>
-    <criterion priority="critical">
-      Handoff task list generated in evidence.md with:
-      - Session state (steps completed, steps remaining)
-      - All evidence paths
-      - Remaining work sorted by priority
-      - Instructions for continuation in a new chat
-    </criterion>
-    <criterion priority="critical">
-      Project-level TODO list updated with any follow-up work discovered
-      during the debugging session (e.g., fix permissions, add missing files,
-      configure environment).
-    </criterion>
+    <criterion>Computed styles extracted for relevant elements</criterion>
+    <criterion>Evidence document (evidence.md) is complete with host-accessible screenshot paths</criterion>
+    <criterion>Visual-auditor handoff is prepared with clear instructions</criterion>
   </completion_criteria>
 </workflow_instructions>
