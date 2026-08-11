@@ -2,16 +2,16 @@
   <pattern name="full_page_audit">
     <description>Audit all pages of a web app for visual/functional issues</description>
     <steps>
-      <step>browser_navigate url="https://target-site.com"</step>
-      <step>browser_console_messages level="error"</step>
-      <step>browser_network_requests static=false</step>
-      <step>browser_take_screenshot filename="01-homepage.png" fullPage=true</step>
-      <step>browser_snapshot (get page structure and nav links)</step>
+      <step>mcp--playwright--browser_navigate url="https://target-site.com"</step>
+      <step>mcp--playwright--browser_console_messages level="error"</step>
+      <step>mcp--playwright--browser_network_requests static=false</step>
+      <step>mcp--playwright--browser_take_screenshot filename="01-homepage.png" fullPage=true</step>
+      <step>mcp--playwright--browser_snapshot (get page structure and nav links)</step>
       <step>For each nav link found in snapshot:
-        - browser_click target="{ref}" element="Nav link: {name}"
-        - browser_wait_for time=1
-        - browser_take_screenshot filename="0{N}-{page-name}.png" fullPage=true
-        - browser_console_messages level="error"
+        - mcp--playwright--browser_click target="{ref}" element="Nav link: {name}"
+        - mcp--playwright--browser_wait_for time=1
+        - mcp--playwright--browser_take_screenshot filename="0{N}-{page-name}.png" fullPage=true
+        - mcp--playwright--browser_console_messages level="error"
       </step>
     </steps>
   </pattern>
@@ -19,49 +19,49 @@
   <pattern name="form_interaction">
     <description>Fill and submit a form, verify result</description>
     <steps>
-      <step>browser_snapshot (find form fields and submit button)</step>
-      <step>browser_fill_form fields=[{target: "ref", name: "field", type: "textbox", value: "input"}]</step>
-      <step>browser_take_screenshot filename="form-filled.png"</step>
-      <step>browser_click target="{submit-ref}" element="Submit button"</step>
-      <step>browser_wait_for text="Success" OR browser_wait_for time=2</step>
-      <step>browser_take_screenshot filename="form-submitted.png"</step>
-      <step>browser_network_requests static=false (verify POST succeeded)</step>
-      <step>browser_console_messages level="error"</step>
+      <step>mcp--playwright--browser_snapshot (find form fields and submit button)</step>
+      <step>mcp--playwright--browser_fill_form fields=[{target: "ref", name: "field", type: "textbox", value: "input"}]</step>
+      <step>mcp--playwright--browser_take_screenshot filename="form-filled.png"</step>
+      <step>mcp--playwright--browser_click target="{submit-ref}" element="Submit button"</step>
+      <step>mcp--playwright--browser_wait_for text="Success" OR mcp--playwright--browser_wait_for time=2</step>
+      <step>mcp--playwright--browser_take_screenshot filename="form-submitted.png"</step>
+      <step>mcp--playwright--browser_network_requests static=false (verify POST succeeded)</step>
+      <step>mcp--playwright--browser_console_messages level="error"</step>
     </steps>
   </pattern>
 
   <pattern name="modal_dialog">
     <description>Trigger and interact with a modal</description>
     <steps>
-      <step>browser_click target="{trigger-ref}" element="Button that opens modal"</step>
-      <step>browser_wait_for text="modal title or content"</step>
-      <step>browser_take_screenshot filename="modal-open.png"</step>
-      <step>browser_snapshot (get modal contents and buttons)</step>
+      <step>mcp--playwright--browser_click target="{trigger-ref}" element="Button that opens modal"</step>
+      <step>mcp--playwright--browser_wait_for text="modal title or content"</step>
+      <step>mcp--playwright--browser_take_screenshot filename="modal-open.png"</step>
+      <step>mcp--playwright--browser_snapshot (get modal contents and buttons)</step>
       <step>Interact with modal controls...</step>
-      <step>browser_click target="{close-ref}" element="Close/confirm button"</step>
-      <step>browser_wait_for textGone="modal title"</step>
-      <step>browser_take_screenshot filename="modal-closed.png"</step>
+      <step>mcp--playwright--browser_click target="{close-ref}" element="Close/confirm button"</step>
+      <step>mcp--playwright--browser_wait_for textGone="modal title"</step>
+      <step>mcp--playwright--browser_take_screenshot filename="modal-closed.png"</step>
     </steps>
   </pattern>
 
   <pattern name="responsive_check">
     <description>Test mobile and tablet layouts</description>
     <steps>
-      <step>browser_take_screenshot filename="desktop-view.png" (current size)</step>
-      <step>browser_resize width=768 height=1024</step>
-      <step>browser_take_screenshot filename="tablet-view.png"</step>
-      <step>browser_resize width=375 height=667</step>
-      <step>browser_take_screenshot filename="mobile-view.png"</step>
-      <step>browser_snapshot (check for hamburger menu)</step>
-      <step>If hamburger found: browser_click → browser_take_screenshot filename="mobile-menu-open.png"</step>
-      <step>browser_resize width=1280 height=720 (restore desktop)</step>
+      <step>mcp--playwright--browser_take_screenshot filename="desktop-view.png" (current size)</step>
+      <step>mcp--playwright--browser_resize width=768 height=1024</step>
+      <step>mcp--playwright--browser_take_screenshot filename="tablet-view.png"</step>
+      <step>mcp--playwright--browser_resize width=375 height=667</step>
+      <step>mcp--playwright--browser_take_screenshot filename="mobile-view.png"</step>
+      <step>mcp--playwright--browser_snapshot (check for hamburger menu)</step>
+      <step>If hamburger found: mcp--playwright--browser_click → mcp--playwright--browser_take_screenshot filename="mobile-menu-open.png"</step>
+      <step>mcp--playwright--browser_resize width=1280 height=720 (restore desktop)</step>
     </steps>
   </pattern>
 
   <pattern name="contrast_extraction">
     <description>Extract WCAG contrast data for all text elements</description>
     <steps>
-      <step>browser_evaluate function="() => {
+      <step>mcp--playwright--browser_evaluate function="() => {
         function lum(r,g,b) {
           const [rs,gs,bs] = [r/255,g/255,b/255].map(c => c&lt;=0.03928 ? c/12.92 : Math.pow((c+0.055)/1.055,2.4));
           return 0.2126*rs + 0.7152*gs + 0.0722*bs;
@@ -83,17 +83,17 @@
   <pattern name="auth_flow">
     <description>Test login/authentication flow</description>
     <steps>
-      <step>browser_navigate url="https://target/login"</step>
-      <step>browser_snapshot (find username/password fields)</step>
-      <step>browser_fill_form fields=[
+      <step>mcp--playwright--browser_navigate url="https://target/login"</step>
+      <step>mcp--playwright--browser_snapshot (find username/password fields)</step>
+      <step>mcp--playwright--browser_fill_form fields=[
         {target: "username-ref", name: "username", type: "textbox", value: "user"},
         {target: "password-ref", name: "password", type: "textbox", value: "pass"}
       ]</step>
-      <step>browser_take_screenshot filename="login-filled.png"</step>
-      <step>browser_click target="{login-btn-ref}" element="Login button"</step>
-      <step>browser_wait_for text="Dashboard" OR browser_wait_for time=3</step>
-      <step>browser_take_screenshot filename="after-login.png"</step>
-      <step>browser_network_requests (check for auth token/cookie)</step>
+      <step>mcp--playwright--browser_take_screenshot filename="login-filled.png"</step>
+      <step>mcp--playwright--browser_click target="{login-btn-ref}" element="Login button"</step>
+      <step>mcp--playwright--browser_wait_for text="Dashboard" OR mcp--playwright--browser_wait_for time=3</step>
+      <step>mcp--playwright--browser_take_screenshot filename="after-login.png"</step>
+      <step>mcp--playwright--browser_network_requests (check for auth token/cookie)</step>
     </steps>
   </pattern>
 </common_patterns>

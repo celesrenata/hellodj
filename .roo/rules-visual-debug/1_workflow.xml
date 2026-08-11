@@ -21,55 +21,60 @@
     </playwright_mcp>
 
     <available_tools>
-      These are the ONLY tools you have for browser interaction. Use them by name:
+      These are the ONLY tools you have for browser interaction. They are MCP tools
+      from the "playwright" server. Call them with the EXACT names shown below
+      (the mcp--playwright-- prefix is required):
 
-      browser_navigate     — Navigate to a URL. Params: url (string)
-      browser_take_screenshot — Capture screenshot. Params: filename (optional, defaults to page-{timestamp}.png),
+      mcp--playwright--browser_navigate     — Navigate to a URL. Params: url (string)
+      mcp--playwright--browser_take_screenshot — Capture screenshot. Params: filename (optional, defaults to page-{timestamp}.png),
                                fullPage (bool), type (png|jpeg), scale (css|device),
                                target (element selector, for element screenshots)
-      browser_snapshot     — Get page accessibility snapshot (DOM tree with roles/names).
+      mcp--playwright--browser_snapshot     — Get page accessibility snapshot (DOM tree with roles/names).
                             Better than screenshot for finding elements to interact with.
                             Params: target (optional, scope to element), depth (optional)
-      browser_click        — Click an element. Params: target (element ref from snapshot or CSS selector),
+      mcp--playwright--browser_click        — Click an element. Params: target (element ref from snapshot or CSS selector),
                             element (human-readable description), button (left|right|middle)
-      browser_fill_form    — Fill multiple form fields. Params: fields (array of {target, name, type, value})
-      browser_type         — Type text into an element. Params: target, text, slowly (bool), submit (bool)
-      browser_evaluate     — Run JavaScript on the page. Params: function (JS code string),
+      mcp--playwright--browser_fill_form    — Fill multiple form fields. Params: fields (array of {target, name, type, value})
+      mcp--playwright--browser_type         — Type text into an element. Params: target, text, slowly (bool), submit (bool)
+      mcp--playwright--browser_evaluate     — Run JavaScript on the page. Params: function (JS code string),
                             target (optional element), filename (optional, save result to file)
-      browser_console_messages — Get console messages. Params: level (error|warning|info|debug)
-      browser_network_requests — List network requests. Params: filter (regexp), static (bool)
-      browser_network_request  — Get full details of one request. Params: index (from network_requests list)
-      browser_wait_for     — Wait for condition. Params: text (wait for text to appear),
+      mcp--playwright--browser_console_messages — Get console messages. Params: level (error|warning|info|debug)
+      mcp--playwright--browser_network_requests — List network requests. Params: filter (regexp), static (bool)
+      mcp--playwright--browser_network_request  — Get full details of one request. Params: index (from network_requests list)
+      mcp--playwright--browser_wait_for     — Wait for condition. Params: text (wait for text to appear),
                             textGone (wait for text to disappear), time (seconds to wait)
-      browser_resize       — Resize viewport. Params: width, height
-      browser_tabs         — Manage tabs. Params: action (list|new|close|select), url, index
-      browser_close        — Close the current page.
-      browser_hover        — Hover over element. Params: target
-      browser_select_option — Select dropdown option. Params: target, values (array)
-      browser_press_key    — Press keyboard key. Params: key (e.g. "Enter", "ArrowDown")
-      browser_run_code_unsafe — Run arbitrary Playwright code. Params: code (JS function string).
+      mcp--playwright--browser_resize       — Resize viewport. Params: width, height
+      mcp--playwright--browser_tabs         — Manage tabs. Params: action (list|new|close|select), url, index
+      mcp--playwright--browser_close        — Close the current page.
+      mcp--playwright--browser_hover        — Hover over element. Params: target
+      mcp--playwright--browser_select_option — Select dropdown option. Params: target, values (array)
+      mcp--playwright--browser_press_key    — Press keyboard key. Params: key (e.g. "Enter", "ArrowDown")
+      mcp--playwright--browser_run_code_unsafe — Run arbitrary Playwright code. Params: code (JS function string).
                                Use this for complex operations not covered by other tools.
     </available_tools>
 
     <tool_usage_patterns>
       IMPORTANT: You interact with the browser ONLY through these MCP tools.
       Do NOT write raw Playwright scripts expecting a Node.js runtime.
+      Do NOT use execute_command with "thv mcp call" — call the tools directly.
       Do NOT use page.goto(), page.click(), etc. directly — use the MCP tools.
 
+      The tool names MUST include the mcp--playwright-- prefix.
+
       Typical flow:
-      1. browser_navigate to the target URL
-      2. browser_snapshot to see the page structure (get element refs)
-      3. browser_take_screenshot to capture visual state
-      4. browser_console_messages to check for errors
-      5. browser_network_requests to see API calls
-      6. browser_click / browser_fill_form to interact
-      7. browser_wait_for to wait for page updates
+      1. mcp--playwright--browser_navigate to the target URL
+      2. mcp--playwright--browser_snapshot to see the page structure (get element refs)
+      3. mcp--playwright--browser_take_screenshot to capture visual state
+      4. mcp--playwright--browser_console_messages to check for errors
+      5. mcp--playwright--browser_network_requests to see API calls
+      6. mcp--playwright--browser_click / browser_fill_form to interact
+      7. mcp--playwright--browser_wait_for to wait for page updates
       8. Repeat screenshot + snapshot for next state
 
-      For computed styles and DOM inspection, use browser_evaluate:
+      For computed styles and DOM inspection, use mcp--playwright--browser_evaluate:
         function: "() => { const el = document.querySelector('.target'); const s = getComputedStyle(el); return { color: s.color, bg: s.backgroundColor, fontSize: s.fontSize }; }"
 
-      For bulk extraction, use browser_evaluate with filename to save results:
+      For bulk extraction, use mcp--playwright--browser_evaluate with filename to save results:
         function: "() => { ... large extraction logic ... }"
         filename: "evidence/hellodj-site-review/computed-styles.json"
     </tool_usage_patterns>

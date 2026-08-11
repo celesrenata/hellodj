@@ -7,24 +7,24 @@
 
   <principles>
     <principle name="snapshot_first">
-      Always call browser_snapshot before interacting with elements.
-      The snapshot returns element refs you pass as "target" to browser_click, browser_type, etc.
+      Always call mcp--playwright--browser_snapshot before interacting with elements.
+      The snapshot returns element refs you pass as "target" to mcp--playwright--browser_click, mcp--playwright--browser_type, etc.
       Without a snapshot, you cannot reliably target elements.
     </principle>
 
     <principle name="screenshot_every_action">
-      Call browser_take_screenshot after every interaction that changes page state.
+      Call mcp--playwright--browser_take_screenshot after every interaction that changes page state.
       Use descriptive filenames: "01-baseline.png", "02-after-login.png", etc.
       Screenshots save to /home/celes/.local/share/playwright-mcp/ on the host.
     </principle>
 
     <principle name="check_console_after_actions">
-      Call browser_console_messages level="error" after navigation and major interactions.
+      Call mcp--playwright--browser_console_messages level="error" after navigation and major interactions.
       This catches JS errors, failed assertions, and runtime warnings.
     </principle>
 
     <principle name="use_evaluate_for_extraction">
-      Use browser_evaluate to run JS on the page for:
+      Use mcp--playwright--browser_evaluate to run JS on the page for:
       - Extracting computed styles (colors, sizes, fonts)
       - Computing WCAG contrast ratios
       - Reading DOM state that isn't in the accessibility snapshot
@@ -32,17 +32,17 @@
     </principle>
 
     <principle name="network_before_and_after">
-      Call browser_network_requests after page loads and after form submissions
+      Call mcp--playwright--browser_network_requests after page loads and after form submissions
       to verify API calls succeeded (status 200) and responses are valid.
     </principle>
 
     <principle name="wait_for_state_changes">
-      After clicking buttons that trigger async operations, use browser_wait_for
+      After clicking buttons that trigger async operations, use mcp--playwright--browser_wait_for
       with text="Success" or textGone="Loading" before taking the next screenshot.
     </principle>
 
     <principle name="mobile_testing">
-      Use browser_resize width=375 height=667 to test mobile layout.
+      Use mcp--playwright--browser_resize width=375 height=667 to test mobile layout.
       Take screenshots at mobile size, then resize back for desktop.
     </principle>
 
@@ -55,10 +55,12 @@
 
   <anti_patterns>
     <never>Write a .js file and execute it with execute_command</never>
+    <never>Use execute_command with "thv mcp call" — call mcp--playwright--* tools directly</never>
     <never>Use page.goto(), page.click(), or any raw Playwright Node.js API</never>
     <never>Try to install playwright or check for browser binaries</never>
     <never>Reference /home/node/ paths in evidence (use host paths)</never>
     <never>Take a single screenshot at the end instead of per-step</never>
-    <never>Skip browser_snapshot and guess at CSS selectors</never>
+    <never>Skip mcp--playwright--browser_snapshot and guess at CSS selectors</never>
+    <never>Use bare tool names like "browser_navigate" — always use "mcp--playwright--browser_navigate"</never>
   </anti_patterns>
 </best_practices>

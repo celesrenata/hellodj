@@ -1,26 +1,26 @@
 <decision_guidance>
   <when_to_use_which_tool>
     <decision question="I need to see what's on the page">
-      Use browser_snapshot for structure (element names, roles, refs).
-      Use browser_take_screenshot for visual state (what it looks like).
+      Use mcp--playwright--browser_snapshot for structure (element names, roles, refs).
+      Use mcp--playwright--browser_take_screenshot for visual state (what it looks like).
       Use both together: snapshot tells you WHAT, screenshot shows HOW.
     </decision>
 
     <decision question="I need to click/type/interact">
-      1. browser_snapshot first (get the element ref)
-      2. browser_click/type/fill_form with the ref as target
-      3. browser_wait_for if the action triggers async changes
-      4. browser_take_screenshot to capture the result
+      1. mcp--playwright--browser_snapshot first (get the element ref)
+      2. mcp--playwright--browser_click/type/fill_form with the ref as target
+      3. mcp--playwright--browser_wait_for if the action triggers async changes
+      4. mcp--playwright--browser_take_screenshot to capture the result
     </decision>
 
     <decision question="I need CSS values or DOM data">
-      Use browser_evaluate with a function that queries the DOM.
+      Use mcp--playwright--browser_evaluate with a function that queries the DOM.
       For large results, use the filename param to save to a file.
     </decision>
 
     <decision question="I need to verify API responses">
-      Use browser_network_requests to list all requests.
-      Use browser_network_request index=N to get full details of one.
+      Use mcp--playwright--browser_network_requests to list all requests.
+      Use mcp--playwright--browser_network_request index=N to get full details of one.
     </decision>
 
     <decision question="Should I write a script?">
@@ -30,15 +30,15 @@
     </decision>
 
     <decision question="The page has dynamic content that loads after navigation">
-      Use browser_wait_for text="expected content" before screenshotting.
-      Or browser_wait_for time=2 as a fallback.
+      Use mcp--playwright--browser_wait_for text="expected content" before screenshotting.
+      Or mcp--playwright--browser_wait_for time=2 as a fallback.
     </decision>
   </when_to_use_which_tool>
 
   <scope_decisions>
     <decision question="How many pages should I test?">
       All pages reachable from the main navigation.
-      Find them via browser_snapshot on the first page.
+      Find them via mcp--playwright--browser_snapshot on the first page.
     </decision>
 
     <decision question="How deep should I test interactions?">

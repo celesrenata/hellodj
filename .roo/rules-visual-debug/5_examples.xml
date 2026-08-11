@@ -3,35 +3,35 @@
     <description>Complete site review using MCP tools</description>
     <transcript>
       <!-- Step 1: Navigate and capture baseline -->
-      Tool: browser_navigate url="https://hellodj.celestium.life"
-      Tool: browser_console_messages level="error"
+      Tool: mcp--playwright--browser_navigate url="https://hellodj.celestium.life"
+      Tool: mcp--playwright--browser_console_messages level="error"
       → Result: No errors
-      Tool: browser_take_screenshot filename="01-baseline.png" fullPage=true type="png" scale="css"
-      Tool: browser_snapshot
+      Tool: mcp--playwright--browser_take_screenshot filename="01-baseline.png" fullPage=true type="png" scale="css"
+      Tool: mcp--playwright--browser_snapshot
       → Result: Shows nav links: Dashboard, Config, Guilds, Playlists, Backups, Blacklist
 
       <!-- Step 2: Check each page -->
-      Tool: browser_click target="ref-config-link" element="Config nav link"
-      Tool: browser_wait_for time=1
-      Tool: browser_take_screenshot filename="02-config.png" fullPage=true
-      Tool: browser_console_messages level="error"
+      Tool: mcp--playwright--browser_click target="ref-config-link" element="Config nav link"
+      Tool: mcp--playwright--browser_wait_for time=1
+      Tool: mcp--playwright--browser_take_screenshot filename="02-config.png" fullPage=true
+      Tool: mcp--playwright--browser_console_messages level="error"
 
-      Tool: browser_click target="ref-guilds-link" element="Guilds nav link"
-      Tool: browser_wait_for time=1
-      Tool: browser_take_screenshot filename="03-guilds.png" fullPage=true
+      Tool: mcp--playwright--browser_click target="ref-guilds-link" element="Guilds nav link"
+      Tool: mcp--playwright--browser_wait_for time=1
+      Tool: mcp--playwright--browser_take_screenshot filename="03-guilds.png" fullPage=true
 
       <!-- Step 3: Extract contrast data -->
-      Tool: browser_navigate url="https://hellodj.celestium.life"
-      Tool: browser_evaluate function="() => { /* contrast extraction JS */ }"
+      Tool: mcp--playwright--browser_navigate url="https://hellodj.celestium.life"
+      Tool: mcp--playwright--browser_evaluate function="() => { /* contrast extraction JS */ }"
       → Result: [{text:"Active Guilds", fg:"rgb(108,117,125)", bg:"rgb(33,37,41)", ratio:"1.36", pass:false}]
 
       <!-- Step 4: Mobile test -->
-      Tool: browser_resize width=375 height=667
-      Tool: browser_take_screenshot filename="10-mobile.png"
-      Tool: browser_snapshot → find hamburger menu
-      Tool: browser_click target="ref-hamburger" element="Mobile menu toggle"
-      Tool: browser_take_screenshot filename="11-mobile-menu.png"
-      Tool: browser_resize width=1280 height=720
+      Tool: mcp--playwright--browser_resize width=375 height=667
+      Tool: mcp--playwright--browser_take_screenshot filename="10-mobile.png"
+      Tool: mcp--playwright--browser_snapshot → find hamburger menu
+      Tool: mcp--playwright--browser_click target="ref-hamburger" element="Mobile menu toggle"
+      Tool: mcp--playwright--browser_take_screenshot filename="11-mobile-menu.png"
+      Tool: mcp--playwright--browser_resize width=1280 height=720
 
       <!-- Step 5: Write evidence -->
       Tool: write_to_file path="evidence/hellodj-site-review/evidence.md"
@@ -45,7 +45,7 @@
   <example name="finding_elements">
     <description>How to find and interact with elements</description>
     <transcript>
-      <!-- browser_snapshot returns something like: -->
+      <!-- mcp--playwright--browser_snapshot returns something like: -->
       navigation:
         link "Dashboard" [ref=nav-dash]
         link "Config" [ref=nav-config]
@@ -55,12 +55,12 @@
         textbox "Search" [ref=input-search]
 
       <!-- Use the refs directly: -->
-      Tool: browser_click target="nav-config" element="Config navigation link"
-      Tool: browser_click target="btn-backup" element="Create Backup button"
-      Tool: browser_type target="input-search" text="my query" submit=true
+      Tool: mcp--playwright--browser_click target="nav-config" element="Config navigation link"
+      Tool: mcp--playwright--browser_click target="btn-backup" element="Create Backup button"
+      Tool: mcp--playwright--browser_type target="input-search" text="my query" submit=true
 
       <!-- If element not in snapshot, use CSS selector: -->
-      Tool: browser_click target="css=.modal .btn-primary" element="Modal confirm button"
+      Tool: mcp--playwright--browser_click target="css=.modal .btn-primary" element="Modal confirm button"
     </transcript>
   </example>
 </examples>

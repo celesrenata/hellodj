@@ -6,10 +6,10 @@
        /home/celes/.local/share/playwright-mcp/{filename}
 
     2. Include programmatic evidence alongside screenshots:
-       - Contrast ratios from browser_evaluate
-       - Console errors from browser_console_messages
-       - Network failures from browser_network_requests
-       - Computed style values from browser_evaluate
+       - Contrast ratios from mcp--playwright--browser_evaluate
+       - Console errors from mcp--playwright--browser_console_messages
+       - Network failures from mcp--playwright--browser_network_requests
+       - Computed style values from mcp--playwright--browser_evaluate
 
     3. In your attempt_completion or handoff message, provide:
        - Summary of what was tested
@@ -36,7 +36,7 @@
     - [ ] All pages/flows have been navigated and screenshotted
     - [ ] Console messages captured (no hidden errors)
     - [ ] Network requests validated (no silent failures)
-    - [ ] Contrast data extracted via browser_evaluate
+    - [ ] Contrast data extracted via mcp--playwright--browser_evaluate
     - [ ] evidence.md written with host-accessible screenshot paths
     - [ ] Clear handoff message for visual-auditor with screenshot list
   </completion_checklist>

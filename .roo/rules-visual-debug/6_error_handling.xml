@@ -1,25 +1,25 @@
 <error_handling>
   <rule name="tool_failure">
     If a browser_* tool call fails:
-    1. Check if the page is still loaded (browser_snapshot)
-    2. If page crashed, browser_navigate back to the URL
-    3. If element not found, re-run browser_snapshot to get fresh refs
-    4. If timeout, use browser_wait_for time=3 then retry
+    1. Check if the page is still loaded (mcp--playwright--browser_snapshot)
+    2. If page crashed, mcp--playwright--browser_navigate back to the URL
+    3. If element not found, re-run mcp--playwright--browser_snapshot to get fresh refs
+    4. If timeout, use mcp--playwright--browser_wait_for time=3 then retry
   </rule>
 
   <rule name="element_not_found">
-    If browser_click/type fails with "element not found":
+    If mcp--playwright--browser_click/type fails with "element not found":
     - The snapshot ref may be stale (page changed since last snapshot)
-    - Call browser_snapshot again to get updated refs
+    - Call mcp--playwright--browser_snapshot again to get updated refs
     - If element is in a modal/dropdown that appeared, the new snapshot will have it
     - As fallback, use CSS selector: target="css=button.submit"
   </rule>
 
   <rule name="page_navigation_failed">
-    If browser_navigate fails or returns error:
+    If mcp--playwright--browser_navigate fails or returns error:
     - Check if the URL is correct
-    - Try browser_wait_for time=5 then browser_snapshot to see current state
-    - Check browser_console_messages for JS errors that may have blocked rendering
+    - Try mcp--playwright--browser_wait_for time=5 then mcp--playwright--browser_snapshot to see current state
+    - Check mcp--playwright--browser_console_messages for JS errors that may have blocked rendering
   </rule>
 
   <rule name="screenshot_location">
@@ -31,7 +31,7 @@
 
   <rule name="context_size_limits">
     If your context is getting large from many tool results:
-    - Use browser_evaluate with filename param to save large outputs to files
+    - Use mcp--playwright--browser_evaluate with filename param to save large outputs to files
     - Reference files by path instead of including full content
     - Summarize findings as you go in evidence.md rather than holding everything in context
   </rule>
