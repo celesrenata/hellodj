@@ -3,11 +3,6 @@ kind: Kustomization
 
 namespace: hellodj-service
 
-commonLabels:
-  app.kubernetes.io/instance: hellodj
-  app.kubernetes.io/managed-by: kubectl
-  helm.sh/chart: hellodj-0.1.0
-
 resources:
   - namespace.yaml
   - configmap.yaml
@@ -23,9 +18,9 @@ resources:
   - web-ui-deployment.yaml
   - ingress.yaml
 
-# Image tags — override with actual digests after build
+# Image tags
 images:
   - name: registry.celestium.life/hellodj/bot
-    newTag: "@sha256:latest"
+    newTag: latest
   - name: registry.celestium.life/hellodj/web-ui
-    newTag: "@sha256:latest"
+    newTag: latest
