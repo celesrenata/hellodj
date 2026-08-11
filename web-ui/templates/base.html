@@ -10,6 +10,19 @@
         :root {
             --hellodj-primary: #6f42c1;
             --hellodj-secondary: #212529;
+            --bs-body-color: #e0e0e0;
+            --bs-body-color-rgb: 224, 224, 224;
+        }
+        /* P0-1: Global dark-theme light text palette — override Bootstrap default #212529 */
+        .form-label, .form-check-label, label, .card, .btn, .modal, .form-control, .form-select {
+            color: #e0e0e0 !important;
+        }
+        /* P1-2: Light code text on dark backgrounds */
+        code {
+            color: #f48fb1 !important;
+            background: rgba(30, 30, 45, 0.6);
+            padding: 0.1rem 0.25rem;
+            border-radius: 4px;
         }
         body {
             background: linear-gradient(180deg, rgb(15, 15, 25), rgb(25, 25, 40)) !important;
@@ -71,11 +84,28 @@
         }
         .btn-outline-hellodj {
             border-color: #6f42c1;
-            color: #bb86fc;
+            color: #d4b3ff;
         }
         .btn-outline-hellodj:hover {
             background-color: #6f42c1;
             color: #fff;
+        }
+        /* P2-1: Filled red outline buttons with accessible contrast */
+        .btn-outline-danger {
+            border-color: #ff6b6b !important;
+            color: #ff8a8a !important;
+        }
+        .btn-outline-danger:hover, .btn-outline-danger:focus-visible {
+            background-color: #ff6b6b !important;
+            border-color: #ff6b6b !important;
+            color: #1a1a2e !important;
+        }
+        /* P2-2: Visible focus states for interactive elements */
+        .btn-outline-hellodj:focus-visible,
+        .navbar-toggler:focus-visible,
+        .btn-close:focus-visible {
+            outline: 3px solid #bb86fc;
+            outline-offset: 2px;
         }
         .badge-hellodj {
             background-color: #6f42c1;
@@ -102,6 +132,10 @@
         }
         .modal-footer {
             border-top: 1px solid #3a3a5c;
+        }
+        /* P1-3: Accessible warning text inside modals */
+        .modal .text-danger, #restoreModal .text-danger {
+            color: #ff6b6b !important;
         }
         .btn-close {
             filter: invert(1);
@@ -156,7 +190,7 @@
             <a class="navbar-brand brand-link" href="{{ url_for('index') }}">
                 <i class="bi bi-music-note-beamed"></i> HelloDJ
             </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-label="Toggle navigation">
                 <span class="navbar-toggler-icon"></span>
             </button>
             <div class="collapse navbar-collapse" id="navbarNav">
@@ -197,9 +231,7 @@
     </nav>
 
     <main class="container-fluid py-4">
-        <form id="main-form" method="POST" action="#" onsubmit="return false;">
-            {% block content %}{% endblock %}
-        </form>
+        {% block content %}{% endblock %}
     </main>
 
     <footer class="text-center py-3 mt-4">

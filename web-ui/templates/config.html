@@ -2,6 +2,13 @@
 {% block title %}Configuration{% endblock %}
 
 {% block content %}
+<style>
+    /* P3-1: Mobile config form label spacing */
+    @media (max-width: 576px) {
+        .form-label { margin-bottom: .5rem; }
+        .mb-3 { margin-bottom: 1rem; }
+    }
+</style>
 <div class="row">
     <div class="col-12">
         <h2 class="mb-4">

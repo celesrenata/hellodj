@@ -1,0 +1,23 @@
+{
+  "session": "2026-08-11T19:18-20:56Z",
+  "site": "https://hellodj.celestium.life",
+  "summary": "All API calls returned 200. No 4xx/5xx responses observed.",
+  "api_endpoints": {
+    "/api/status": {"method": "GET", "status": 200, "body": {"backup_dir":"/app/config-backups","backups_available":6,"config_dir":"/app/config","data_dir":"/app/data","env_configured":{"discord_token":true,"genius":false,"lavalink_host":true,"spotify":false},"guilds_active":0,"nfs_mounted":true,"playlists_total":0}},
+    "/api/nfs-status": {"method": "GET", "status": 200, "body": {"config_contents":["hellodj-config.json"],"config_dir":"/app/config","config_exists":true,"config_writable":true,"data_dir":"/app/data","data_exists":true,"data_writable":true,"nfs_mounted":true}},
+    "/api/config": {"method": "GET", "status": 200, "body": {"bot":{"autoplay":false,"default_source":"youtube","repeat":"off"},"discord":{"app_id":"123456789","pub_key":"abc123pubkey","token":"test-token-review2"},"genius":{"api_key":""},"lavalink":{"host":"losingtime.dpaste.org","password":"SleepingOnTrains","port":2124},"spotify":{"client_id":"","client_secret":""},"voice":{"enabled":true,"llm_api_key":"","llm_api_url":"https://api.openai.com/v1","llm_model":"gpt-4o-mini","model_path":"/app/models/Hello_DJ.onnx","news_api_key":"","speaches_url":"","stocks_api_key":"","stt_model_size":"base","tts_engine":"kokoro","tts_voice":"af_heart"}}},
+    "/api/guilds": {"method": "GET", "status": 200, "body": {"guilds":[]}},
+    "/api/playlists": {"method": "GET", "status": 200, "body": {"playlists":[]}},
+    "/api/backups": {"method": "GET", "status": 200, "body": {"backups":[{"name":"hellodj-backup-20260811-182502.tar.gz","size":652,"timestamp":"20260811-182502"},{"name":"hellodj-backup-20260811-141525.tar.gz","size":638},{"name":"hellodj-backup-20260811-123753.tar.gz","size":636},{"name":"hellodj-backup-20260811-123224.tar.gz","size":646},{"name":"hellodj-backup-20260811-122511.tar.gz","size":80},{"name":"hellodj-backup-20260811-122445.tar.gz","size":80}]}},
+    "/api/backups": {"method": "POST", "status": 200, "body": {"backup":"hellodj-backup-20260811-193233.tar.gz","message":"Backup hellodj-backup-20260811-193233.tar.gz created","status":"ok"}},
+    "/api/config": {"method": "POST", "status": 200, "body": {"message":"Configuration saved","status":"ok"}},
+    "/api/blacklist": {"method": "GET", "status": 200, "body": {"blacklist":[]}}
+  },
+  "static_resources": {
+    "bootstrap_css": "https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css [200]",
+    "bootstrap_js": "https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js [200]",
+    "bootstrap_icons": "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css [200]",
+    "jquery": "https://code.jquery.com/jquery-3.7.1.min.js [200]"
+  },
+  "failed_requests": "none"
+}

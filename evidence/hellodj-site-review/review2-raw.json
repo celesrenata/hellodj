@@ -1,0 +1,116 @@
+{
+  "review": "review2",
+  "generated_at": "2026-08-11T14:41:00Z",
+  "target": "https://hellodj.celestium.life",
+  "environment": {
+    "user_agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+    "server_header": "gunicorn"
+  },
+  "pages_visited": [
+    { "slug": "dashboard", "url": "/", "title": "HelloDJ Configuration — Dashboard", "api_calls": ["GET /api/status [200]", "GET /api/nfs-status [200]"], "console": { "errors": 0, "warnings": 0 } },
+    { "slug": "config", "url": "/config", "title": "HelloDJ Configuration — Configuration", "api_calls": ["GET /api/config [200]"], "console": { "errors": 0, "warnings": 0, "verbose": ["[DOM] Multiple forms should be contained in their own form elements; break up complex forms into ones that represent a single action @ /config:0"] } },
+    { "slug": "guilds", "url": "/guilds", "title": "HelloDJ Configuration — Guilds", "api_calls": ["GET /api/guilds [200]"], "console": { "errors": 0, "warnings": 0 } },
+    { "slug": "playlists", "url": "/playlists", "title": "HelloDJ Configuration — Playlists", "api_calls": ["GET /api/playlists [200]"], "console": { "errors": 0, "warnings": 0 } },
+    { "slug": "backups", "url": "/backups", "title": "HelloDJ Configuration — Backups", "api_calls": ["GET /api/backups [200]"], "console": { "errors": 0, "warnings": 0 } },
+    { "slug": "blacklist", "url": "/blacklist", "title": "HelloDJ Configuration — Blacklist", "api_calls": ["GET /api/blacklist [200]"], "console": { "errors": 0, "warnings": 0 } }
+  ],
+  "interactive_flows": [
+    {
+      "flow": "create_backup",
+      "action": "click Create Backup button (backups page)",
+      "network": ["GET /api/backups [200]", "POST /api/backups [200]", "GET /api/backups [200]"],
+      "result": "New backup hellodj-backup-20260811-141525.tar.gz appeared at top of table",
+      "console": { "errors": 0, "warnings": 0 }
+    },
+    {
+      "flow": "restore_modal",
+      "action": "click Restore button (newest backup)",
+      "result": "Bootstrap dialog opened: 'Restore Backup' with warning 'This cannot be undone!', Backup: hellodj-backup-20260811-141525.tar.gz, buttons Cancel/Restore",
+      "modal_cancel": "clicked Cancel to avoid mutating data (evidence-only)",
+      "console": { "errors": 0, "warnings": 0 }
+    },
+    {
+      "flow": "save_config",
+      "action": "fill Bot Token 'test-token-review2' then click Save Configuration",
+      "network": ["GET /api/config [200]", "POST /api/config [200]"],
+      "post_response_body": "{\"message\":\"Configuration saved\",\"status\":\"ok\"}",
+      "post_response_headers": { "content-length": 48, "content-type": "application/json", "server": "gunicorn" },
+      "result": "Save succeeded; NOTE: this MUTATED live config (Discord Token now '✅ Set' on dashboard) — review should flag that saving wrote a test value",
+      "console": { "errors": 0, "warnings": 0, "verbose": ["[DOM] Multiple forms... @ /config:0"] }
+    },
+    {
+      "flow": "mobile_menu",
+      "action": "resize to 390x844, click navbar-toggler button",
+      "result": "Nav list (Dashboard, Config, Guilds, Playlists, Backups, Blacklist) expanded; toggle button state=expanded",
+      "console": { "errors": 0, "warnings": 0 }
+    }
+  ],
+  "mobile_responsive": [
+    { "viewport": "390x844", "page": "dashboard", "horizontal_overflow": false, "docScrollWidth": 390, "viewportWidth": 390 },
+    { "viewport": "390x844", "page": "config", "horizontal_overflow": "not measured (full page screenshot captured)" },
+    { "viewport": "390x844", "page": "backups", "horizontal_overflow": false, "docScrollWidth": 390, "viewportWidth": 390 }
+  ],
+  "contrast_audit_dashboard": {
+    "method": "WCAG relative luminance, nearest opaque ancestor background (rgba(30,30,45,0.6) card bg)",
+    "failing_elements": [
+      { "text": "Mounted", "fg": "rgb(25,135,84)", "bg": "rgba(30,30,45,0.6)", "ratio": 3.62, "pass": false },
+      { "text": "Config Directory:", "fg": "rgb(33,37,41)", "bg": "rgba(30,30,45,0.6)", "ratio": 1.06, "pass": false },
+      { "text": "/app/config", "fg": "rgb(214,51,132)", "bg": "rgba(30,30,45,0.6)", "ratio": 3.65, "pass": false },
+      { "text": "Writable:", "fg": "rgb(33,37,41)", "bg": "rgba(30,30,45,0.6)", "ratio": 1.06, "pass": false },
+      { "text": "Data Directory:", "fg": "rgb(33,37,41)", "bg": "rgba(30,30,45,0.6)", "ratio": 1.06, "pass": false },
+      { "text": "/app/data", "fg": "rgb(214,51,132)", "bg": "rgba(30,30,45,0.6)", "ratio": 3.65, "pass": false },
+      { "text": "Writable:", "fg": "rgb(33,37,41)", "bg": "rgba(30,30,45,0.6)", "ratio": 1.06, "pass": false },
+      { "text": "Config Contents:", "fg": "rgb(33,37,41)", "bg": "rgba(30,30,45,0.6)", "ratio": 1.06, "pass": false },
+      { "text": "hellodj-config.json", "fg": "rgb(33,37,41)", "bg": "rgba(30,30,45,0.6)", "ratio": 1.06, "pass": false },
+      { "text": "hellodj-config.json (code)", "fg": "rgb(214,51,132)", "bg": "rgba(30,30,45,0.6)", "ratio": 3.65, "pass": false }
+    ]
+  },
+  "structural_findings": {
+    "single_form_wraps_all_pages": {
+      "file": "web-ui/templates/base.html",
+      "line": 200,
+      "detail": "<form id=\"main-form\" method=\"POST\" action=\"#\" onsubmit=\"return false;\"> wraps {% block content %}{% endblock %}. Every page's entire main content (all cards, tables, buttons) is nested inside ONE form element. This triggers the browser DOM warning 'Multiple forms should be contained in their own form elements'. Buttons inside the form default to submit-type, and nested interactive controls are inside a non-functional form.",
+      "affected_pages": ["dashboard", "config", "guilds", "playlists", "backups", "blacklist"]
+    },
+    "nfs_info_card_contrast": {
+      "file": "web-ui/templates/index.html",
+      "lines": "97-109 and 153-165",
+      "detail": "NFS Storage Info card body is populated via JS with <strong> labels using default dark text (rgb(33,37,41)) on a translucent dark card bg rgba(30,30,45,0.6). Contrast ~1.06:1 — fails WCAG AA. The pink <code> values (rgb(214,51,132)) at 3.65:1 also fail AA."
+    },
+    "config_page_dom_warning": {
+      "detail": "The DOM warning about multiple forms fires on /config because the entire form (all textboxes/comboboxes/buttons) is inside one <form id=main-form>. This is a structural/accessibility concern, not a JS runtime error."
+    },
+    "mobile_menu_toggle_unnamed": {
+      "detail": "The navbar-toggler button has no accessible name in the accessibility snapshot (shown as 'button' with no label). Works functionally but lacks aria-label."
+    }
+  },
+  "screenshots": [
+    { "name": "review2-dashboard.png", "host_path": "/home/celes/.local/share/playwright-mcp/review2-dashboard.png", "desc": "Dashboard baseline full-page" },
+    { "name": "review2-config.png", "host_path": "/home/celes/.local/share/playwright-mcp/review2-config.png", "desc": "Config page full-page" },
+    { "name": "review2-guilds.png", "host_path": "/home/celes/.local/share/playwright-mcp/review2-guilds.png", "desc": "Guilds page full-page" },
+    { "name": "review2-playlists.png", "host_path": "/home/celes/.local/share/playwright-mcp/review2-playlists.png", "desc": "Playlists page full-page" },
+    { "name": "review2-backups.png", "host_path": "/home/celes/.local/share/playwright-mcp/review2-backups.png", "desc": "Backups page full-page" },
+    { "name": "review2-blacklist.png", "host_path": "/home/celes/.local/share/playwright-mcp/review2-blacklist.png", "desc": "Blacklist page full-page" },
+    { "name": "review2-after-create-backup.png", "host_path": "/home/celes/.local/share/playwright-mcp/review2-after-create-backup.png", "desc": "Backups page after creating backup" },
+    { "name": "review2-restore-modal.png", "host_path": "/home/celes/.local/share/playwright-mcp/review2-restore-modal.png", "desc": "Restore modal open (full page)" },
+    { "name": "review2-restore-modal-target.png", "host_path": "/home/celes/.local/share/playwright-mcp/review2-restore-modal-target.png", "desc": "Restore modal targeted (.modal element)" },
+    { "name": "review2-config-filled.png", "host_path": "/home/celes/.local/share/playwright-mcp/review2-config-filled.png", "desc": "Config form filled with test token" },
+    { "name": "review2-after-save-config.png", "host_path": "/home/celes/.local/share/playwright-mcp/review2-after-save-config.png", "desc": "Config page after save" },
+    { "name": "review2-mobile-view.png", "host_path": "/home/celes/.local/share/playwright-mcp/review2-mobile-view.png", "desc": "Dashboard at 390x844" },
+    { "name": "review2-mobile-menu-open.png", "host_path": "/home/celes/.local/share/playwright-mcp/review2-mobile-menu-open.png", "desc": "Dashboard 390x844 with mobile menu expanded" },
+    { "name": "review2-mobile-config.png", "host_path": "/home/celes/.local/share/playwright-mcp/review2-mobile-config.png", "desc": "Config page at 390x844" },
+    { "name": "review2-mobile-backups.png", "host_path": "/home/celes/.local/share/playwright-mcp/review2-mobile-backups.png", "desc": "Backups page at 390x844" },
+    { "name": "review2-nfs-card.png", "host_path": "/home/celes/.local/share/playwright-mcp/review2-nfs-card.png", "desc": "Dashboard main region (NFS Storage Info card) targeted" },
+    { "name": "review2-dashboard-final.png", "host_path": "/home/celes/.local/share/playwright-mcp/review2-dashboard-final.png", "desc": "Dashboard final desktop full-page" }
+  ],
+  "contrast_raw_files": [
+    { "name": "review2-contrast-dashboard.json", "host_path": "/home/celes/.local/share/playwright-mcp/review2-contrast-dashboard.json", "note": "initial audit treating transparent as black (false positives)" },
+    { "name": "review2-contrast-dashboard-realbg.json", "host_path": "/home/celes/.local/share/playwright-mcp/review2-contrast-dashboard-realbg.json", "note": "refined audit with nearest opaque ancestor background" }
+  ],
+  "notes": [
+    "Evidence-gathering only; NO code fixes were made.",
+    "The save_config flow wrote a test value 'test-token-review2' into the live bot .env (DISCORD_TOKEN). The dashboard now shows Discord Token: ✅ Set. This was a mutation performed to exercise the save flow and should be reverted by the operator.",
+    "create_backup flow created a real backup file hellodj-backup-20260811-141525.tar.gz (0.6 KB).",
+    "No console ERRORS or WARNINGS (level warning/error) were observed on any page. Only a DOM VERBOSE warning about multiple forms inside one form element on /config."
+  ]
+}

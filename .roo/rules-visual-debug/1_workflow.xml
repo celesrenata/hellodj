@@ -275,15 +275,35 @@
 
   <screenshot_path_rules>
     CRITICAL: The Playwright MCP browser_take_screenshot tool saves files relative to its
-    working directory inside the container. The actual host paths are:
+    working directory inside the Docker container. The actual host paths are:
 
-    If you specify filename="my-screenshot.png":
-      Container saves to: /home/node/.playwright-mcp/my-screenshot.png (or similar)
+    If you specify filename="my-screenshot.png" or filename=".playwright-mcp/my-screenshot.png":
+      Container saves to: /home/node/.playwright-mcp/my-screenshot.png
       Host path:          /home/celes/.local/share/playwright-mcp/my-screenshot.png
 
     If you don't specify a filename, it auto-generates one like "page-{timestamp}.png".
 
-    In evidence.md, ALWAYS record the HOST path so the visual-auditor can read the files.
+    IMPORTANT — COPYING SCREENSHOTS TO THE PROJECT:
+    The Playwright MCP container can ONLY write to its own output directory
+    (/home/node/.playwright-mcp/ inside the container). It CANNOT write directly to the
+    project workspace. To get screenshots into the project evidence directory, you MUST
+    use execute_command to copy them from the host bind-mount path:
+
+      execute_command: cp /home/celes/.local/share/playwright-mcp/00-baseline.png /home/celes/sources/celesrenata/hellodj/evidence/hellodj-site-review/
+
+    Or to copy all PNG screenshots at once:
+      execute_command: cp /home/celes/.local/share/playwright-mcp/*.png /home/celes/sources/celesrenata/hellodj/evidence/hellodj-site-review/
+
+    To list what screenshots exist on the host:
+      execute_command: ls -la /home/celes/.local/share/playwright-mcp/*.png
+
+    DO NOT use list_files or read_file on /home/celes/.local/share/playwright-mcp/ — those
+    tools are restricted to the workspace. Use execute_command (shell) instead.
+
+    In evidence.md, record the HOST path so the visual-auditor can read the files:
+      /home/celes/.local/share/playwright-mcp/{filename}
+    Or after copying, the project-relative path:
+      evidence/hellodj-site-review/{filename}
   </screenshot_path_rules>
 
   <completion_criteria>

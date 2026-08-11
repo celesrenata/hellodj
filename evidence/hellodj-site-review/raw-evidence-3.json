@@ -1,0 +1,19 @@
+{
+  "consoleLogs": [],
+  "pageErrors": [],
+  "failedRequests": [],
+  "apiCalls": [
+    {
+      "url": "https://hellodj.celestium.life/api/backups",
+      "status": 200,
+      "method": "GET",
+      "body": "{\"backups\":[{\"name\":\"hellodj-backup-20260811-123753.tar.gz\",\"path\":\"/app/config-backups/hellodj-backup-20260811-123753.tar.gz\",\"size\":636,\"timestamp\":\"20260811-123753\"},{\"name\":\"hellodj-backup-20260811-123224.tar.gz\",\"path\":\"/app/config-backups/hellodj-backup-20260811-123224.tar.gz\",\"size\":646,\"time"
+    }
+  ],
+  "modal": {
+    "visible": true,
+    "restoreName": "Backup: hellodj-backup-20260811-123753.tar.gz"
+  },
+  "restoreNonexist": 404,
+  "deleteNonexist": 404
+}

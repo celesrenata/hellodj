@@ -2,6 +2,20 @@
 {% block title %}Dashboard{% endblock %}
 
 {% block content %}
+<style>
+    /* P1-4: Bright stat-card numbers for accessible contrast */
+    h2.display-4, #stat-guilds, #stat-playlists, #stat-backups, #stat-nfs {
+        color: #f5f5ff !important;
+    }
+    /* P0-3: NFS info labels — light palette on dark cards */
+    #nfs-info strong {
+        color: #e0e0e0 !important;
+    }
+    /* S-2: "Mounted" green badge — WCAG AA ≥4.5:1 on dark card */
+    #stat-nfs .text-success {
+        color: #6fcf7e !important;
+    }
+</style>
 <div class="row">
     <div class="col-12">
         <h2 class="mb-4">

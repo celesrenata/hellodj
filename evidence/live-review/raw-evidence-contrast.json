@@ -1,0 +1,30 @@
+{
+  "session": "2026-08-11T19:18-20:56Z",
+  "method": "WCAG contrast ratio computed via getComputedStyle (fg color vs nearest non-transparent ancestor background)",
+  "body_theme": {"bodyBg": "transparent (rgba(0,0,0,0))", "bodyColor": "rgb(224, 224, 224) #e0e0e0", "bodyFont": "-apple-system, BlinkMacSystemFont, Segoe UI, Roboto, Oxygen, Ubuntu, sans-serif"},
+  "critical_finding": "Dark-theme cards (bg rgba(30,30,45,0.6) / rgb(37,37,55) headers) but text inherits Bootstrap light-theme default #212529 (rgb(33,37,41)). Result: near-black text on near-black background.",
+  "dashboard_nfs_card_fails": [
+    {"text": "Mounted", "fg": "rgb(25,135,84) #198754", "bg": "rgba(30,30,45,0.6)", "ratio": 3.62},
+    {"text": "Config Directory:", "fg": "rgb(33,37,41) #212529", "bg": "rgba(30,30,45,0.6)", "ratio": 1.06},
+    {"text": "/app/config", "fg": "rgb(214,51,132) #d63384", "bg": "rgba(30,30,45,0.6)", "ratio": 3.65},
+    {"text": "Writable:", "fg": "rgb(33,37,41)", "bg": "rgba(30,30,45,0.6)", "ratio": 1.06},
+    {"text": "Data Directory:", "fg": "rgb(33,37,41)", "bg": "rgba(30,30,45,0.6)", "ratio": 1.06},
+    {"text": "/app/data", "fg": "rgb(214,51,132)", "bg": "rgba(30,30,45,0.6)", "ratio": 3.65},
+    {"text": "Writable:", "fg": "rgb(33,37,41)", "bg": "rgba(30,30,45,0.6)", "ratio": 1.06},
+    {"text": "Config Contents:", "fg": "rgb(33,37,41)", "bg": "rgba(30,30,45,0.6)", "ratio": 1.06},
+    {"text": "hellodj-config.json", "fg": "rgb(33,37,41)", "bg": "rgba(30,30,45,0.6)", "ratio": 1.06},
+    {"text": "hellodj-config.json (code)", "fg": "rgb(214,51,132)", "bg": "rgba(30,30,45,0.6)", "ratio": 3.65}
+  ],
+  "config_page_label_fails": [
+    "ALL form labels use fg rgb(33,37,41) #212529 on card bg rgba(30,30,45,0.6) => ratio 1.06 (FAIL). Labels: Bot Token, Application ID, Public Key, Host, Port, Password, Client ID, Client Secret, API Key, Enabled (wake word...), Wake Word Model Path, STT Model Size, TTS Engine, TTS Voice, Speaches URL, LLM API URL, LLM Model, LLM API Key, News API Key, Stocks API Key, Default Source Provider, Default Autoplay, Default Repeat Mode"
+  ],
+  "backups_page_fails": [
+    {"text": "Restore (button)", "fg": "rgb(187,134,252) #bb86fc", "bg": "rgb(255,255,255) (white card)", "ratio": 2.65},
+    {"text": "This cannot be undone!", "fg": "rgb(220,53,69) #dc3545", "bg": "rgb(45,45,68) (modal)", "ratio": 2.95}
+  ],
+  "accessibility_unnamed_buttons": [
+    {"class": "navbar-toggler", "aria-label": null, "title": null},
+    {"class": "btn btn-sm btn-outline-danger", "aria-label": null, "title": null, "count": 8},
+    {"class": "btn-close", "aria-label": null, "title": null}
+  ]
+}

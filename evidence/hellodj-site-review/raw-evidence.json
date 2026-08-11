@@ -1,0 +1,136 @@
+{
+  "baselineUrl": "https://hellodj.celestium.life",
+  "consoleLogs": [
+    {
+      "type": "verbose",
+      "text": "[DOM] Multiple forms should be contained in their own form elements; break up complex forms into ones that represent a single action: (More info: https://goo.gl/9p2vKq) %o",
+      "location": "",
+      "at": "console"
+    }
+  ],
+  "pageErrors": [],
+  "failedRequests": [],
+  "apiResponses": [
+    {
+      "url": "https://hellodj.celestium.life/api/status",
+      "status": 200,
+      "method": "GET",
+      "resourceType": "fetch",
+      "at": "response"
+    },
+    {
+      "url": "https://hellodj.celestium.life/api/nfs-status",
+      "status": 200,
+      "method": "GET",
+      "resourceType": "fetch",
+      "at": "response"
+    },
+    {
+      "url": "https://hellodj.celestium.life/api/backups",
+      "status": 200,
+      "method": "POST",
+      "resourceType": "fetch",
+      "at": "response"
+    },
+    {
+      "url": "https://hellodj.celestium.life/api/config",
+      "status": 200,
+      "method": "GET",
+      "resourceType": "fetch",
+      "at": "response"
+    },
+    {
+      "url": "https://hellodj.celestium.life/api/guilds",
+      "status": 200,
+      "method": "GET",
+      "resourceType": "fetch",
+      "at": "response"
+    },
+    {
+      "url": "https://hellodj.celestium.life/api/playlists",
+      "status": 200,
+      "method": "GET",
+      "resourceType": "fetch",
+      "at": "response"
+    },
+    {
+      "url": "https://hellodj.celestium.life/api/backups",
+      "status": 200,
+      "method": "GET",
+      "resourceType": "fetch",
+      "at": "response"
+    },
+    {
+      "url": "https://hellodj.celestium.life/api/blacklist",
+      "status": 200,
+      "method": "GET",
+      "resourceType": "fetch",
+      "at": "response"
+    },
+    {
+      "url": "https://hellodj.celestium.life/api/status",
+      "status": 200,
+      "method": "GET",
+      "resourceType": "fetch",
+      "at": "response"
+    },
+    {
+      "url": "https://hellodj.celestium.life/api/nfs-status",
+      "status": 200,
+      "method": "GET",
+      "resourceType": "fetch",
+      "at": "response"
+    }
+  ],
+  "apiChecks": {
+    "/api/status": {
+      "status": 200,
+      "body": "{\"backup_dir\":\"/app/config-backups\",\"backups_available\":2,\"config_dir\":\"/app/config\",\"data_dir\":\"/app/data\",\"env_configured\":{\"discord_token\":false,\"genius\":false,\"lavalink_host\":false,\"spotify\":false},\"guilds_active\":0,\"nfs_mounted\":true,\"playlists_total\":0}\n"
+    },
+    "/api/nfs-status": {
+      "status": 200,
+      "body": "{\"config_contents\":[],\"config_dir\":\"/app/config\",\"config_exists\":true,\"config_writable\":true,\"data_dir\":\"/app/data\",\"data_exists\":true,\"data_writable\":true,\"nfs_mount_info\":\"File: \\\"/app/config\\\"\\n    ID: 0        Namelen: 255     Type: nfs\\nBlock size: 131072     Fundamental block size: 131072\\nBlocks: Total: 527027405  Free: 116401013  Available: 116401013\\nInodes: Total: 0          Free: 0\"}\n"
+    },
+    "/api/backups": {
+      "status": 200,
+      "body": "{\"backups\":[{\"name\":\"hellodj-backup-20260811-122511.tar.gz\",\"path\":\"/app/config-backups/hellodj-backup-20260811-122511.tar.gz\",\"size\":80,\"timestamp\":\"20260811-122511\"},{\"name\":\"hellodj-backup-20260811-122445.tar.gz\",\"path\":\"/app/config-backups/hellodj-backup-20260811-122445.tar.gz\",\"size\":80,\"timestamp\":\"20260811-122445\"}]}\n"
+    },
+    "/api/guilds": {
+      "status": 200,
+      "body": "{\"guilds\":[]}\n"
+    },
+    "/api/playlists": {
+      "status": 200,
+      "body": "{\"playlists\":{}}\n"
+    }
+  },
+  "assetChecks": {
+    "/favicon.ico": {
+      "status": 200,
+      "type": "image/vnd.microsoft.icon"
+    },
+    "/static/favicon.ico": {
+      "status": 200,
+      "type": "image/vnd.microsoft.icon"
+    }
+  },
+  "domInfo": {
+    "forms": [
+      {
+        "action": "https://hellodj.celestium.life/#",
+        "method": "post",
+        "id": "main-form"
+      }
+    ],
+    "inputs": [],
+    "buttons": [
+      "Create Backup"
+    ],
+    "brokenImgs": [],
+    "brokenCss": [
+      "https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css",
+      "https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css"
+    ],
+    "title": "HelloDJ Configuration — Dashboard"
+  }
+}

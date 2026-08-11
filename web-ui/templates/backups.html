@@ -47,7 +47,7 @@
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title"><i class="bi bi-exclamation-triangle"></i> Restore Backup</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
             </div>
             <div class="modal-body">
                 <p>Restoring a backup will overwrite current configuration, sessions, and playlists.</p>
@@ -90,7 +90,7 @@ async function refreshBackups() {
                 <button class="btn btn-sm btn-outline-hellodj" onclick="restoreBackup('${b.name}')">
                     <i class="bi bi-arrow-counterclockwise"></i> Restore
                 </button>
-                <button class="btn btn-sm btn-outline-danger" onclick="deleteBackup('${b.name}')">
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteBackup('${b.name}')" aria-label="Delete backup" title="Delete ${b.name}">
                     <i class="bi bi-trash"></i>
                 </button>
             </td>
