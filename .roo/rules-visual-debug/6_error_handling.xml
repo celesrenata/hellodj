@@ -1,309 +1,38 @@
 <error_handling>
-  <overview>
-    Error scenarios and recovery procedures for Visual Debug mode.
-    These cover common Playwright failures, environment issues, and
-    debugging session problems.
-  </overview>
+  <rule name="tool_failure">
+    If a browser_* tool call fails:
+    1. Check if the page is still loaded (browser_snapshot)
+    2. If page crashed, browser_navigate back to the URL
+    3. If element not found, re-run browser_snapshot to get fresh refs
+    4. If timeout, use browser_wait_for time=3 then retry
+  </rule>
 
-  <error_scenarios>
-    <scenario name="playwright_not_installed">
-      <description>Playwright or browser binaries are not found in the environment</description>
-      <symptoms>
-        <symptom>"Error: browserType.launch: Executable doesn't exist"</symptom>
-        <symptom>"Module not found: 'playwright'"</symptom>
-      </symptoms>
-      <recovery_steps>
-        <step number="1">
-          <action>Check if playwright is installed</action>
-          <code>which playwright 2>/dev/null || npm list playwright 2>/dev/null || pip list 2>/dev/null | grep playwright</code>
-        </step>
-        <step number="2">
-          <action>Install Playwright and browser binaries</action>
-          <code>npm install playwright && npx playwright install chromium</code>
-          <alternative>pip install playwright && python -m playwright install chromium</alternative>
-        </step>
-        <step number="3">
-          <action>Verify installation</action>
-          <code>npx playwright --version</code>
-        </step>
-      </recovery_steps>
-    </scenario>
+  <rule name="element_not_found">
+    If browser_click/type fails with "element not found":
+    - The snapshot ref may be stale (page changed since last snapshot)
+    - Call browser_snapshot again to get updated refs
+    - If element is in a modal/dropdown that appeared, the new snapshot will have it
+    - As fallback, use CSS selector: target="css=button.submit"
+  </rule>
 
-    <scenario name="navigation_failure">
-      <description>page.goto fails to load the target URL</description>
-      <symptoms>
-        <symptom>"Timeout 30000ms exceeded" during navigation</symptom>
-        <symptom>"net::ERR_CONNECTION_REFUSED"</symptom>
-        <symptom>"net::ERR_NAME_NOT_RESOLVED"</symptom>
-        <symptom>Page loads but returns 4xx/5xx status</symptom>
-      </symptoms>
-      <diagnosis>
-        <cause type="timeout">
-          <reason>Page takes longer than 30s to load networkidle</reason>
-          <fix>
-            Reduce wait condition: use 'load' instead of 'networkidle'.
-            Or increase timeout: page.goto(url, { timeout: 60000 }).
-          </fix>
-        </cause>
-        <cause type="connection_refused">
-          <reason>The server is not running or not accepting connections</reason>
-          <fix>
-            Verify the server is running. If localhost, start the dev server
-            first. Check for port mismatches.
-          </fix>
-        </cause>
-        <cause type="dns_failure">
-          <reason>The hostname cannot be resolved</reason>
-          <fix>
-            Verify the URL is correct. If the site is behind a VPN or local
-            proxy, ensure the network configuration allows access.
-          </fix>
-        </cause>
-        <cause type="http_error">
-          <reason>Server returns 404, 500, etc.</reason>
-          <fix>
-            Capture the status code and body. The page may still be debugged
-            for error page rendering. Use page.goto with failOnHttpStatus: false.
-          </fix>
-        </cause>
-      </diagnosis>
-    </scenario>
+  <rule name="page_navigation_failed">
+    If browser_navigate fails or returns error:
+    - Check if the URL is correct
+    - Try browser_wait_for time=5 then browser_snapshot to see current state
+    - Check browser_console_messages for JS errors that may have blocked rendering
+  </rule>
 
-    <scenario name="element_interaction_failure">
-      <description>Click, type, or other interactions fail</description>
-      <symptoms>
-        <symptom>"Element is not visible"</symptom>
-        <symptom>"Element is not stable" (animation transition)"</symptom>
-        <symptom>"Element is not enabled"</symptom>
-        <symptom>"Target element is overlapped by another element"</symptom>
-      </symptoms>
-      <diagnosis>
-        <cause type="not_visible">
-          <reason>The element exists in DOM but is hidden (display:none, opacity:0, off-screen)</reason>
-          <fix>
-            Check computed style via page.evaluate.
-            Use page.locator. waitFor() with state: 'visible'.
-            If intentionally hidden, the interaction may need a different approach.
-          </fix>
-        </cause>
-        <cause type="not_stable">
-          <reason>The element is animating or has pending transitions</reason>
-          <fix>
-            Add a small delay before interaction.
-            Wait for specific CSS properties to settle.
-            Use page.waitForSelector with a stability check.
-          </fix>
-        </cause>
-        <cause type="overlapped">
-          <reason>Another element (modal overlay, sticky header) covers the target</reason>
-          <fix>
-            Screenshot to identify the overlapping element.
-            Use page.evaluate to check z-index and position.
-            Dismiss the overlay or scroll to bring target into clear view.
-          </fix>
-        </cause>
-      </diagnosis>
-    </scenario>
+  <rule name="screenshot_location">
+    Screenshots are saved inside the container. If you need to verify a screenshot
+    was captured, the host path is:
+      /home/celes/.local/share/playwright-mcp/{filename}
+    You can verify with: list_files at that directory
+  </rule>
 
-    <scenario name="console_capture_failure">
-      <description>Console listeners are not capturing expected output</description>
-      <symptoms>
-        <symptom>Console array is empty but page clearly logs data</symptom>
-        <symptom>Console capture misses early page-load messages</symptom>
-      </symptoms>
-      <diagnosis>
-        <cause type="late_registration">
-          <reason>Console listener was registered AFTER page navigation started</reason>
-          <fix>
-            Register page.on('console') before calling page.goto.
-            For SPA debugging, register before the SPA bootstraps.
-          </fix>
-        </cause>
-        <cause type="cross_origin">
-          <reason>Some cross-origin iframe console messages are not captured</reason>
-          <fix>
-            Use page.on('console') with page.on('framegot') to capture
-            iframe console output. Or navigate to the iframe's src directly.
-          </fix>
-        </cause>
-      </diagnosis>
-    </scenario>
-
-    <scenario name="screenshot_capture_failure">
-      <description>Screenshot capture fails or produces unexpected images</description>
-      <symptoms>
-        <symptom>"page.screenshot: Target page has been closed"</symptom>
-        <symptom>Blank or black screenshots</symptom>
-        <symptom>Partial screenshots (missing page sections)</symptom>
-      </symptoms>
-      <diagnosis>
-        <cause type="page_closed">
-          <reason>The page was closed before screenshot was taken</reason>
-          <fix>
-            Ensure the page is still open. Check for accidental browser.close().
-            Re-navigate if needed.
-          </fix>
-        </cause>
-        <cause type="blank_screenshot">
-          <reason>Page rendered in headless mode with GPU issues</reason>
-          <fix>
-            Launch with --headless=new (Chromium new headless mode).
-            Or use headed mode. Ensure viewport is set.
-          </fix>
-        </cause>
-        <cause type="partial_capture">
-          <reason>Full-page screenshot fails on infinite-scroll pages</reason>
-          <fix>
-            Use viewport screenshot instead of fullPage: true.
-            Or scroll and stitch screenshots manually.
-          </fix>
-        </cause>
-      </diagnosis>
-    </scenario>
-
-    <scenario name="authentication_required">
-      <description>The target page requires login but no credentials are available</description>
-      <symptoms>
-        <symptom>Page redirects to login page</symptom>
-        <symptom>API calls return 401</symptom>
-        <symptom>Page shows login form instead of expected content</symptom>
-      </symptoms>
-      <recovery_steps>
-        <step number="1">
-          <action>Check if credentials can be provided</action>
-          <code>Ask the user for credentials or session tokens.</code>
-        </step>
-        <step number="2">
-          <action>If no credentials available, debug the public-facing parts</action>
-          <code>
-            Debug the login page itself (is it rendering correctly?).
-            Debug any pages that don't require authentication.
-            Document the auth requirement for future sessions.
-          </code>
-        </step>
-      </recovery_steps>
-    </scenario>
-
-    <scenario name="intermittent_bug">
-      <description>The bug does not reproduce consistently across runs</description>
-      <symptoms>
-        <symptom>First run shows the bug, second run does not</symptom>
-        <symptom>Bug appears only under specific conditions (time of day, network speed)</symptom>
-      </symptoms>
-      <recovery_steps>
-        <step number="1">
-          <action>Run multiple times with clean state</action>
-          <code>Loop the navigation and capture 3-5 times, noting which runs show the bug.</code>
-        </step>
-        <step number="2">
-          <action>Identify the variable</action>
-          <code>
-            Check for timing-dependent issues (race conditions).
-            Check for A/B testing or feature flags.
-            Check for caching differences.
-          </code>
-        </step>
-        <step number="3">
-          <action>If irreproducible, document the conditions</action>
-          <code>
-            Record environment details (viewport, user agent, cookies).
-            Note that the bug is intermittent.
-            Suggest adding logging to production to capture it.
-          </code>
-        </step>
-      </recovery_steps>
-    </scenario>
-
-    <scenario name="visual_auditor_failure">
-      <description>
-        The visual-auditor mode cannot verify screenshots (vision model
-        unavailable, screenshot unreadable, or analysis inaccurate).
-      </description>
-      <symptoms>
-        <symptom>Visual-auditor reports it cannot see the screenshot</symptom>
-        <symptom>Vision analysis is inaccurate or hallucinated</symptom>
-      </symptoms>
-      <recovery_steps>
-        <step number="1">
-          <action>Verify screenshot file exists and is not corrupted</action>
-          <code>Check file size (non-zero). Try to open/view the screenshot.</code>
-        </step>
-        <step number="2">
-          <action>Fall back to programmatic analysis in the gathering mode</action>
-          <code>
-            Use pixel comparison tools (pixelmatch, resemble).
-            Compare computed styles via page.evaluate.
-            Use structural DOM comparison.
-          </code>
-        </step>
-        <step number="3">
-          <action>Document the vision limitation in evidence.md</action>
-          <code>
-            Record that visual-auditor verification was unavailable and that
-            programmatic evidence was used as a fallback.
-          </code>
-        </step>
-      </recovery_steps>
-    </scenario>
-  </error_scenarios>
-
-  <recovery_protocols>
-    <protocol name="session_resume">
-      <description>
-        If a debugging session is interrupted (terminal closed, timeout),
-        resume from the last known good state.
-      </description>
-      <steps>
-        <step>1. Check evidence/ directory for existing screenshots</step>
-        <step>2. Read evidence.md for the session state</step>
-        <step>3. Start a new browser session</step>
-        <step>4. Re-navigate to the target URL</step>
-        <step>5. Continue from the last completed step</step>
-      </steps>
-    </protocol>
-
-    <protocol name="clean_restart">
-      <description>
-        If the session state is corrupted or unrecoverable, start fresh.
-      </description>
-      <steps>
-        <step>1. Close any open browser contexts</step>
-        <step>2. Clear evidence/ directory for the current session</step>
-        <step>3. Launch fresh browser with clean context</step>
-        <step>4. Re-register all listeners</step>
-        <step>5. Begin from step 1 of the workflow</step>
-      </steps>
-    </protocol>
-  </recovery_protocols>
-
-  <fallback_techniques>
-    <technique name="api_only_verification">
-      <description>
-        When screenshots are impossible (headless CI, no display), use
-        API-level verification instead.
-      </description>
-      <steps>
-        <step>1. Call endpoints with curl or httpie</step>
-        <step>2. Dump raw JSON responses</step>
-        <step>3. Compare against expected schemas</step>
-        <step>4. Document the limitation in evidence.md</step>
-      </steps>
-      <note>
-        Screenshots are the gold standard. API dumps are acceptable only
-        when screenshots are impossible.
-      </note>
-    </technique>
-
-    <technique name="dom_snapshot">
-      <description>
-        When screenshot comparison is ambiguous, capture full DOM HTML
-        for offline comparison.
-      </description>
-      <steps>
-        <step>1. page.content() to get full HTML</step>
-        <step>2. Save to evidence/ as .html files</step>
-        <step>3. Use diff tools to compare DOM structure</step>
-      </steps>
-    </technique>
-  </fallback_techniques>
+  <rule name="context_size_limits">
+    If your context is getting large from many tool results:
+    - Use browser_evaluate with filename param to save large outputs to files
+    - Reference files by path instead of including full content
+    - Summarize findings as you go in evidence.md rather than holding everything in context
+  </rule>
 </error_handling>

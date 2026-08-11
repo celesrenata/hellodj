@@ -1,274 +1,54 @@
 <decision_guidance>
-  <principles>
-    <principle>
-      Prefer screenshot-based verification over assumption-based debugging.
-      If you cannot confirm the page state visually, you are guessing.
-    </principle>
-    <principle>
-      Prefer the smallest change that satisfies the debugging request.
-      Do not refactor or rewrite code unless it directly addresses the bug.
-    </principle>
-    <principle>
-      Prefer a single source of truth for debugging evidence.
-      All screenshots, console logs, and network activity go into the
-      evidence/ directory with structured documentation.
-    </principle>
-    <principle>
-      Ask a clarifying question only when critical ambiguity remains.
-      If the user's bug report is clear, proceed with the planned workflow.
-    </principle>
-  </principles>
+  <when_to_use_which_tool>
+    <decision question="I need to see what's on the page">
+      Use browser_snapshot for structure (element names, roles, refs).
+      Use browser_take_screenshot for visual state (what it looks like).
+      Use both together: snapshot tells you WHAT, screenshot shows HOW.
+    </decision>
 
-  <boundaries>
-    <rule>
-      This mode handles web debugging via browser automation.
-      It does NOT handle:
-      - Server-side debugging (use Debug mode)
-      - Database query debugging (use Debug mode)
-      - Unit test writing (use test-writer mode)
-      - Performance profiling without visual debugging (use a dedicated mode)
-    </rule>
+    <decision question="I need to click/type/interact">
+      1. browser_snapshot first (get the element ref)
+      2. browser_click/type/fill_form with the ref as target
+      3. browser_wait_for if the action triggers async changes
+      4. browser_take_screenshot to capture the result
+    </decision>
 
-    <handoff_rules>
-      <handoff target="Debug mode">
-        <trigger>
-          Root cause is identified as a server-side issue (API not returning
-          expected data, server crash, database query failure).
-        </trigger>
-        <action>
-          Document the evidence collected, then switch to Debug mode for
-          server-side investigation.
-        </action>
-      </handoff>
+    <decision question="I need CSS values or DOM data">
+      Use browser_evaluate with a function that queries the DOM.
+      For large results, use the filename param to save to a file.
+    </decision>
 
-      <handoff target="Code mode">
-        <trigger>
-          The fix requires modifying source code, not just identifying the bug.
-        </trigger>
-        <action>
-          Provide the Code mode with:
-          - Evidence summary (what was found)
-          - Screenshot paths showing the bug
-          - Console logs and network activity
-          - Suggested fix approach
-        </action>
-      </handoff>
+    <decision question="I need to verify API responses">
+      Use browser_network_requests to list all requests.
+      Use browser_network_request index=N to get full details of one.
+    </decision>
 
-      <handoff target="Orchestrator mode">
-        <trigger>
-          The debugging session reveals multiple issues spanning different
-          domains (UI, API, database) that require coordinated fixes.
-        </trigger>
-        <action>
-          Provide a summary of all findings and hand off for multi-mode
-          coordination.
-        </action>
-      </handoff>
-    </handoff_rules>
-  </boundaries>
+    <decision question="Should I write a script?">
+      NO. Never write and execute Node.js scripts.
+      Every operation is a direct MCP tool call.
+      If you need complex multi-step logic, make sequential tool calls.
+    </decision>
 
-  <validation>
-    <rule>
-      After completing a debugging session, scan the evidence directory for
-      completeness: every action step should have a screenshot pair (before/after).
-    </rule>
-    <rule>
-      Update examples in 5_examples.xml when you discover a new debugging
-      pattern that isn't already documented.
-    </rule>
-    <rule>
-      Ensure the evidence.md file is structured and self-contained so that
-      another developer (or another mode) can understand the findings
-      without re-running the session.
-    </rule>
-    <rule>
-      If the debugging session was inconclusive, document what was ruled out
-      so the next investigator doesn't repeat the same steps.
-    </rule>
-    <rule priority="critical">
-      At the end of every session, generate two task lists:
-      1. Workspace-level: Update the project TODO list with any follow-up work
-         discovered during debugging (e.g., fix data permissions, add favicon).
-      2. Handoff-level: Append a structured task list to evidence.md that can
-         be passed to a new chat for continuation. This must include the URL,
-         session state, evidence paths, and remaining work sorted by priority.
-    </rule>
+    <decision question="The page has dynamic content that loads after navigation">
+      Use browser_wait_for text="expected content" before screenshotting.
+      Or browser_wait_for time=2 as a fallback.
+    </decision>
+  </when_to_use_which_tool>
 
-    <rule name="accessibility_validation">
-      After any visual debugging session, validate accessibility and human readability:
-      <checks>
-        <check>
-          <condition>All text passes WCAG AA contrast ratio (4.5:1 for normal text, 3:1 for large text)</condition>
-          <action>If any text fails, add to task list with specific contrast ratio and suggested fix</action>
-        </check>
-        <check>
-          <condition>Effective contrast accounts for opacity (raw contrast × opacity ≥ 4.5)</condition>
-          <action>Report both raw and effective contrast in evidence</action>
-        </check>
-        <check>
-          <condition>Font sizes are ≥ 14px with line-height ≥ 1.4</condition>
-          <action>Flag text below thresholds as readability issues</action>
-        </check>
-        <check>
-          <condition>Color-only status indicators pass deuteranopia simulation</condition>
-          <action>Flag color-only indicators that fail</action>
-        </check>
-        <check>
-          <condition>Layout alignment, typography hierarchy, and border/shadow consistency are visually polished</condition>
-          <action>Document specific failures with screenshot evidence</action>
-        </check>
-        <check>
-          <condition>Mobile verification completed at all breakpoints (375x667, 768x1024, 1280x720)</condition>
-          <action>Include mobile screenshots and touch target validation in evidence</action>
-        </check>
-      </checks>
-    </rule>
+  <scope_decisions>
+    <decision question="How many pages should I test?">
+      All pages reachable from the main navigation.
+      Find them via browser_snapshot on the first page.
+    </decision>
 
-    <rule name="visual_polish_validation">
-      Visual polish is a pass/fail gate — not optional:
-      <fail_thresholds>
-        <threshold name="contrast" severity="high">Any body text with effective contrast < 3:1</threshold>
-        <threshold name="font_size" severity="medium">Any body text with font size < 12px</threshold>
-        <threshold name="alignment" severity="medium">Margin inconsistency > 20px between similar elements</threshold>
-        <threshold name="typography" severity="medium">h1 ≤ h2 or h2 ≤ h3 in font size</threshold>
-        <threshold name="overflow" severity="high">Text truncation without ellipsis on visible elements</threshold>
-        <threshold name="mobile_touch" severity="high">Touch targets < 44x44px on mobile</threshold>
-      </fail_thresholds>
-    </rule>
+    <decision question="How deep should I test interactions?">
+      Test every form submission, modal, and CRUD action.
+      But don't test every possible input combination — focus on happy path + one error case.
+    </decision>
 
-    <rule name="color_design_validation">
-      After every visual debugging session, validate color design and dark-theme
-      compliance:
-      <checks>
-        <check>
-          <condition>All text passes WCAG AA contrast ratio (4.5:1 normal, 3:1 large/UI)</condition>
-          <action>If any text fails, add to task list with specific contrast ratio, color values, and suggested fix</action>
-        </check>
-        <check>
-          <condition>No pure black backgrounds (#000000) exist on visible elements</condition>
-          <action>Flag each occurrence: "Pure black background causes eye strain. Use #212529, #0a0f12, or #111820 instead."</action>
-        </check>
-        <check>
-          <condition>No pure white text (#ffffff) on dark backgrounds</condition>
-          <action>Flag each occurrence: "Pure white text on dark bg causes glare. Use #dee2e6 or #e0e8f0 instead."</action>
-        </check>
-        <check>
-          <condition>No dark/black text on dark backgrounds (contrast < 4.5:1)</condition>
-          <action>Flag each occurrence: "Dark text on dark bg fails WCAG AA — nearly invisible. Compute suggested alternative color."</action>
-        </check>
-        <check>
-          <condition>Status indicators have contrast ≥ 3:1 against background</condition>
-          <action>Flag indicators below 3:1 as "invisible to low-vision users"</action>
-        </check>
-        <check>
-          <condition>Status indicators include icon/text label, not color alone</condition>
-          <action>Flag color-only indicators as "not accessible to color-blind users"</action>
-        </check>
-        <check>
-          <condition>Semantic colors (success, danger, warning) match dark-mode reference values</condition>
-          <action>Flag mismatches with suggested dark-mode values (#75b798, #ea868f, #ffda6a)</action>
-        </check>
-        <check>
-          <condition>Neutral greys contain 2-5% brand hue tint</condition>
-          <action>Flag pure greys: "Add 2-5% brand hue tint for visual warmth"</action>
-        </check>
-        <check>
-          <condition>Background lightness steps are consistent (5-20% apart)</condition>
-          <action>Flag inconsistent steps: "Use systematic 10-step or 12-step scale for surface hierarchy"</action>
-        </check>
-        <check>
-          <condition>Accent color count ≤ 4-5 (primary + danger + success + warning)</condition>
-          <action>Flag excess: "Too many accent colors dilutes visual hierarchy"</action>
-        </check>
-      </checks>
-      <fail_thresholds>
-        <threshold name="contrast_failure" severity="critical">
-          Any body text with effective contrast < 3:1 — critical failure
-        </threshold>
-        <threshold name="pure_black_bg" severity="high">
-          Any pure black background on visible elements — high severity
-        </threshold>
-        <threshold name="invisible_indicator" severity="high">
-          Any status indicator with contrast < 3:1 — high severity
-        </threshold>
-        <threshold name="color_only_indicator" severity="medium">
-          Any status indicator without icon/text — medium severity
-        </threshold>
-        <threshold name="palette_inconsistency" severity="medium">
-          Lightness steps inconsistent or body text not off-white — medium severity
-        </threshold>
-        <threshold name="semantic_color_mismatch" severity="medium">
-          Semantic colors not matching dark-mode references — medium severity
-        </threshold>
-      </fail_thresholds>
-    </rule>
-  </validation>
-
-  <tool_selection_guidance>
-    <scenario name="page_navigation">
-      <description>Need to navigate to a specific URL</description>
-      <recommended_tool>page.goto(url, options)</recommended_tool>
-      <why>Direct navigation with wait control. Use 'networkidle' for full load.</why>
-      <pitfall>Avoid using page.reload() for initial navigation; it assumes already loaded.</pitfall>
-    </scenario>
-
-    <scenario name="element_interaction">
-      <description>Need to click, type, or interact with a page element</description>
-      <recommended_tool>Playwright locator API (getByRole, getByText, getByTestId, locator)</recommended_tool>
-      <why>Auto-waits for element to be actionable. More reliable than raw selectors.</why>
-      <pitfall>
-        Avoid page.$eval or page.$$eval for interaction — they don't auto-wait.
-        Use locator.click() instead of page.evaluate(() => el.click()).
-      </pitfall>
-    </scenario>
-
-    <scenario name="state_extraction">
-      <description>Need to read page state (DOM content, computed styles, console logs)</description>
-      <recommended_tool>page.evaluate() for DOM/content; page.on('console') for logs</recommended_tool>
-      <why>page.evaluate() runs in browser context with full API access.</why>
-      <pitfall>
-        Do not use page.evaluate() to perform actions (clicks, form fills).
-        Use locator API for actions, evaluate only for reading.
-      </pitfall>
-    </scenario>
-
-    <scenario name="screenshot_capture">
-      <description>Need to capture visual state of the page</description>
-      <recommended_tool>page.screenshot()</recommended_tool>
-      <why>Built-in, captures exactly what the browser renders.</why>
-      <pitfall>
-        fullPage: true for full-page screenshots; omit for viewport-only.
-        Use element.screenshot() for individual element captures.
-        Headless screenshots may differ from headed; use headed for visual debugging.
-      </pitfall>
-    </scenario>
-
-    <scenario name="network_debugging">
-      <description>Need to inspect API requests and responses</description>
-      <recommended_tool>page.on('request') / page.on('response') listeners</recommended_tool>
-      <why>Captures all network activity without modifying behavior.</why>
-      <pitfall>
-        For request modification, use page.route() with handler.
-        For passive monitoring, use event listeners only.
-      </pitfall>
-    </scenario>
-  </tool_selection_guidance>
-
-  <stop_conditions>
-    <condition>
-      Stop and ask a clarifying question when:
-      - The target URL is ambiguous (multiple possible URLs)
-      - Credentials are needed and not provided
-      - The bug description is too vague to plan a session
-      - Multiple debugging approaches are equally valid
-    </condition>
-
-    <condition>
-      Stop and document as inconclusive when:
-      - The bug does not reproduce after 3 attempts with clean state
-      - Console and network show no anomalies but visual differs from expectations
-      - The page requires authentication that cannot be provided
-      - The bug is intermittent and not reliably reproducible
-    </condition>
-  </stop_conditions>
+    <decision question="When do I stop and hand off to visual-auditor?">
+      When you have: screenshots of all pages, contrast data, console/network evidence.
+      The auditor handles visual interpretation. You handle data gathering.
+    </decision>
+  </scope_decisions>
 </decision_guidance>
