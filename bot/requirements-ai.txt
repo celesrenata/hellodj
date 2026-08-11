@@ -1,0 +1,8 @@
+# Heavy AI stack (installed as its own image layer to keep pushes small)
+# - faster-whisper pulls ctranslate2 + torch + nvidia CUDA wheels
+# - kokoro pulls torch, transformers, spacy, phonemizer
+# - librosa pulls numba, scipy, soxr
+faster-whisper>=1.0.0
+kokoro>=0.9.4
+soundfile>=0.12.0
+librosa>=0.10.0

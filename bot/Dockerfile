@@ -8,9 +8,23 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy requirements first for better caching
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# ── Stage 1: core/light deps (small layer, fast to push) ──────────────
+# Split requirements so the heavy AI stack does not sit in a single
+# multi-GB layer that times out the registry ingress (504) on push.
+COPY requirements-core.txt .
+RUN pip install --no-cache-dir -r requirements-core.txt
+
+# ── Stage 2: PyTorch + CUDA (own layer) ───────────────────────────────
+# Installed separately so the CUDA/torch wheels are isolated from the rest
+# of the AI stack; each layer stays small enough to push reliably.
+COPY requirements-torch.txt .
+RUN pip install --no-cache-dir -r requirements-torch.txt
+
+# ── Stage 3: AI stack (kokoro, faster-whisper, librosa) ───────────────
+# These reuse the torch already installed above, so the heavy wheels land
+# in stage 2 and this layer only adds the smaller AI packages.
+COPY requirements-ai.txt .
+RUN pip install --no-cache-dir -r requirements-ai.txt
 
 # Copy source
 COPY bot.py player.py session.py storage.py blacklist.py ./
