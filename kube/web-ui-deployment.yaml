@@ -46,6 +46,10 @@ spec:
               name: http
               protocol: TCP
           env:
+            # HOME must point to a writable path; UID 1000 otherwise hits
+            # PermissionError on gunicorn's /.gunicorn control socket
+            - name: HOME
+              value: /app/data
             - name: HELLODJ_DATA_DIR
               value: /app/data
             - name: HELLODJ_CONFIG_DIR
