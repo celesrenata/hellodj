@@ -69,6 +69,12 @@ spec:
               value: "2333"
             - name: LAVALINK_PASSWORD
               value: youshallnotpass
+            # HF hub cache must live under the writable /app/data PVC;
+            # without a HOME/HF_HOME it tries /.cache (PermissionError as UID 1000)
+            - name: HF_HOME
+              value: /app/data/.huggingface
+            - name: HOME
+              value: /app/data
             - name: SPOTIFY_CLIENT_ID
               valueFrom:
                 secretKeyRef:

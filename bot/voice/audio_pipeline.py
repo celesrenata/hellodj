@@ -212,21 +212,24 @@ class OpusDecoder:
     """Decodes Opus frames to PCM using discord.py's built-in Opus decoder."""
 
     def __init__(self):
-        # discord.py provides `discord.opus.Decoder` for decode
+        # discord.py provides `discord.opus.Decoder` for decode.
+        # NOTE: discord.py >= 2.7 has no `set_format`; Decoder uses fixed Opus
+        # defaults (48 kHz) and decodes to STEREO (2ch) interleaved PCM.
         import discord
 
         self._decoder = discord.opus.Decoder()
-        self._decoder.set_format(
-            sampling_rate=OPUS_SAMPLE_RATE,
-            channels=1,  # mono
-            frame_size=OPUS_FRAME_MS,  # 20 ms
-        )
 
     def decode(self, opus_frame: bytes) -> np.ndarray:
-        """Decode one Opus frame → PCM int16 array (960 samples @ 48 kHz mono)."""
+        """Decode one Opus frame → PCM int16 MONO array (960 samples @ 48 kHz).
+
+        discord.py's Decoder emits stereo-interleaved PCM (1920 samples/frame);
+        Discord voice audio is mono, so we downmix L/R → mono.
+        """
         pcm = self._decoder.decode(opus_frame)
-        # pcm is a bytes object; convert to int16 array
-        return np.frombuffer(pcm, dtype=np.int16)
+        arr = np.frombuffer(pcm, dtype=np.int16)
+        # interleaved [L0,R0,L1,R1,...] → average each L/R pair → mono
+        mono = (arr[0::2].astype(np.int32) + arr[1::2].astype(np.int32)) // 2
+        return mono.astype(np.int16)
 
 
 # ── Audio Pipeline Orchestrator ───────────────────────────────────────────

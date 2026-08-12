@@ -256,7 +256,12 @@ class TTSPLayer:
                 frame_pcm = source.read()
                 if not frame_pcm:
                     break
-                opus = encoder.encode(frame_pcm, len(frame_pcm))
+                # discord.py's Encoder is stereo-only; upmix mono → stereo
+                frame_arr = np.frombuffer(frame_pcm, dtype=np.int16)
+                stereo = np.empty(frame_arr.shape[0] * 2, dtype=np.int16)
+                stereo[0::2] = frame_arr
+                stereo[1::2] = frame_arr
+                opus = encoder.encode(stereo.tobytes(), len(stereo) // 2)
                 self.voice_client.send_audio_packet(opus, encode=False)
                 # Wait one 20 ms frame interval so Discord keeps real-time pacing.
                 await asyncio.sleep(0.02)
@@ -281,16 +286,14 @@ class TTSPLayer:
 
 
 def _make_opus_encoder():
-    """Create a discord.py Opus encoder (48 kHz mono, 20 ms frames)."""
+    """Create a discord.py Opus encoder (48 kHz stereo, 20 ms frames).
+
+    discord.py >= 2.7 has no `set_format`; the Encoder uses fixed Opus
+    defaults (48 kHz stereo). We feed it stereo-interleaved PCM below.
+    """
     import discord
 
-    encoder = discord.opus.Encoder()
-    encoder.set_format(
-        sampling_rate=DISCORD_SAMPLE_RATE,
-        channels=1,  # mono
-        frame_size=20,  # ms
-    )
-    return encoder
+    return discord.opus.Encoder()
 
 
 def _resample(pcm: np.ndarray, from_rate: int, to_rate: int) -> np.ndarray:

@@ -28,7 +28,7 @@ data:
         cpu: 0
 
       plugins:
-        - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.0.3"
+        - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.2.0"
           repository: "https://maven.lavalink.dev/releases"
           snapshot: false
 
