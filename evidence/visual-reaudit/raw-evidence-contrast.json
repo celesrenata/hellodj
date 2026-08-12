@@ -1,0 +1,163 @@
+{
+  "page": "/",
+  "body": {
+    "bg": "rgba(0, 0, 0, 0)",
+    "color": "rgb(224, 224, 224)"
+  },
+  "sample": [
+    {
+      "sel": "stat-guilds",
+      "tag": "H2",
+      "text": "0",
+      "fg": "rgb(245, 245, 255)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "15.16",
+      "pass": true
+    },
+    {
+      "sel": "stat-playlists",
+      "tag": "H2",
+      "text": "0",
+      "fg": "rgb(245, 245, 255)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "15.16",
+      "pass": true
+    },
+    {
+      "sel": "stat-backups",
+      "tag": "H2",
+      "text": "1",
+      "fg": "rgb(245, 245, 255)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "15.16",
+      "pass": true
+    },
+    {
+      "sel": "stat-nfs",
+      "tag": "H2",
+      "text": "Mounted",
+      "fg": "rgb(245, 245, 255)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "15.16",
+      "pass": true
+    },
+    {
+      "sel": "text-success",
+      "tag": "SPAN",
+      "text": "Mounted",
+      "fg": "rgb(111, 207, 126)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "8.53",
+      "pass": true
+    },
+    {
+      "sel": "btn btn-hellodj",
+      "tag": "A",
+      "text": "Edit Config",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "sel": "btn btn-outline-hellodj",
+      "tag": "BUTTON",
+      "text": "Create Backup",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "sel": "btn btn-outline-hellodj",
+      "tag": "A",
+      "text": "Manage Backups",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "sel": "btn btn-outline-hellodj",
+      "tag": "A",
+      "text": "View Guilds",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "sel": "STRONG",
+      "tag": "STRONG",
+      "text": "Config Directory:",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "sel": "CODE",
+      "tag": "CODE",
+      "text": "/app/config",
+      "fg": "rgb(244, 143, 177)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "7.36",
+      "pass": true
+    },
+    {
+      "sel": "STRONG",
+      "tag": "STRONG",
+      "text": "Writable:",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "sel": "STRONG",
+      "tag": "STRONG",
+      "text": "Data Directory:",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "sel": "CODE",
+      "tag": "CODE",
+      "text": "/app/data",
+      "fg": "rgb(244, 143, 177)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "7.36",
+      "pass": true
+    },
+    {
+      "sel": "STRONG",
+      "tag": "STRONG",
+      "text": "Writable:",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "sel": "STRONG",
+      "tag": "STRONG",
+      "text": "Config Contents:",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "sel": "CODE",
+      "tag": "CODE",
+      "text": "hellodj-config.json",
+      "fg": "rgb(244, 143, 177)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "7.36",
+      "pass": true
+    }
+  ],
+  "failures": []
+}

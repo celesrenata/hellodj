@@ -1,0 +1,31 @@
+{
+  "modalBg": "rgb(45, 45, 68)",
+  "warning": {
+    "text": "This cannot be undone!",
+    "fg": "rgb(255, 107, 107)",
+    "bg": "rgb(45, 45, 68)",
+    "ratio": "4.82",
+    "pass": true
+  },
+  "restoreBtn": null,
+  "cancelBtn": {
+    "text": "Cancel",
+    "fg": "rgb(224, 224, 224)",
+    "bg": "rgb(108, 117, 125)",
+    "ratio": "3.55",
+    "pass": false
+  },
+  "deleteBtn": {
+    "text": "Delete backup",
+    "fg": "rgb(255, 138, 138)",
+    "border": "rgb(255, 107, 107)",
+    "bg": "rgb(255, 255, 255)",
+    "ratio": "2.27",
+    "pass": false
+  },
+  "closeBtn": {
+    "bgSelf": "rgba(0, 0, 0, 0)",
+    "fg": "rgb(0, 0, 0)",
+    "aria": "Close"
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "session": "2026-08-12T01:36-02:58Z",
+  "method": "browser_console_messages via Playwright MCP (level=warning/error/debug)",
+  "pages_checked": ["/", "/config", "/backups", "/blacklist", "/guilds", "/playlists", "mobile /"],
+  "summary": {
+    "errors": 0,
+    "warnings": 0
+  },
+  "detail": {
+    "dashboard": "0 messages (errors 0, warnings 0)",
+    "config": "7 messages, all [VERBOSE] [DOM] 'Password field is not contained in a form' — NOT a console error/warning (verbose info-level only), errors 0, warnings 0",
+    "backups": "0 messages (errors 0, warnings 0)",
+    "blacklist/guilds/playlists": "0 messages (errors 0, warnings 0)",
+    "mobile dashboard": "0 messages (errors 0, warnings 0)",
+    "final dashboard": "0 messages (errors 0, warnings 0)"
+  },
+  "note": "The prior DOM VERBOSE 'Password field is not contained in a form' warning is STILL PRESENT on /config (7 instances). It is logged at VERBOSE/info level, not as a console warning or error. Acceptance gate asked for this DOM VERBOSE warning to be GONE — it is NOT. This is a FAIL item."
+}

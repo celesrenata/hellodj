@@ -1,0 +1,318 @@
+{
+  "page": "/config",
+  "body": {
+    "bg": "rgba(0, 0, 0, 0)",
+    "color": "rgb(224, 224, 224)"
+  },
+  "formLabelFails": [],
+  "allFails": [
+    {
+      "tag": "BUTTON",
+      "cls": "btn btn-hellodj btn-lg",
+      "text": "Save Configuration",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "transparent",
+      "ratio": null,
+      "pass": false
+    },
+    {
+      "tag": "BUTTON",
+      "cls": "btn btn-outline-hellodj btn-lg",
+      "text": "Reload",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "transparent",
+      "ratio": null,
+      "pass": false
+    }
+  ],
+  "sample": [
+    {
+      "tag": "DIV",
+      "cls": "card",
+      "text": "Discord\n            \n         ",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "Bot Token",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "Application ID",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "Public Key",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "DIV",
+      "cls": "card",
+      "text": "Lavalink\n            \n        ",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "Host",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "Port",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "Password",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "DIV",
+      "cls": "card",
+      "text": "Spotify\n            \n         ",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "Client ID",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "Client Secret",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "DIV",
+      "cls": "card mt-3",
+      "text": "Genius (Lyrics)\n            \n ",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "API Key",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "DIV",
+      "cls": "card",
+      "text": "Voice Activation\n            \n",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-check-label",
+      "text": "Enabled (wake word + voice com",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "Wake Word Model Path",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "STT Model Size",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "TTS Engine",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "TTS Voice",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "Speaches URL (TTS_ENGINE=speac",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "DIV",
+      "cls": "card",
+      "text": "Voice LLM & Data\n            \n",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "LLM API URL",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "LLM Model",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "LLM API Key",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "News API Key",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "Stocks API Key",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "DIV",
+      "cls": "card",
+      "text": "Bot Settings\n            \n    ",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "Default Source Provider",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "Default Autoplay",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "LABEL",
+      "cls": "form-label",
+      "text": "Default Repeat Mode",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "rgba(30, 30, 45, 0.6)",
+      "ratio": "12.44",
+      "pass": true
+    },
+    {
+      "tag": "BUTTON",
+      "cls": "btn btn-hellodj btn-lg",
+      "text": "Save Configuration",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "transparent",
+      "ratio": null,
+      "pass": false
+    },
+    {
+      "tag": "BUTTON",
+      "cls": "btn btn-outline-hellodj btn-lg",
+      "text": "Reload",
+      "fg": "rgb(224, 224, 224)",
+      "bg": "transparent",
+      "ratio": null,
+      "pass": false
+    }
+  ]
+}

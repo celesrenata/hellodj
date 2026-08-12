@@ -1,0 +1,21 @@
+{
+  "session": "2026-08-12T01:36-02:58Z",
+  "method": "browser_network_requests via Playwright MCP (filter=api|config|backups, static excluded)",
+  "all_api_calls_200": true,
+  "requests": [
+    { "page": "/", "url": "GET /api/status", "status": 200 },
+    { "page": "/", "url": "GET /api/nfs-status", "status": 200 },
+    { "page": "/config", "url": "GET /api/config", "status": 200 },
+    { "page": "/config (save)", "url": "POST /api/config", "status": 200, "response": "{\"message\":\"Configuration saved\",\"status\":\"ok\"}" },
+    { "page": "/backups", "url": "GET /api/backups", "status": 200 },
+    { "page": "/backups (create)", "url": "POST /api/backups", "status": 200, "note": "new backup row appeared" },
+    { "page": "/backups", "url": "GET /api/backups", "status": 200 },
+    { "page": "/", "url": "GET /api/status", "status": 200 },
+    { "page": "/", "url": "GET /api/nfs-status", "status": 200 }
+  ],
+  "findings": {
+    "Create Backup": "POST /api/backups => 200, new backup row appears (2 backups total)",
+    "Save Configuration": "POST /api/config => 200 with {\"message\":\"Configuration saved\",\"status\":\"ok\"} (default_source set to SoundCloud)",
+    "Restore modal": "opens correctly with Cancel/Restore/Close; Close closes cleanly"
+  }
+}
