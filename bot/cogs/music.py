@@ -1,12 +1,15 @@
 """HelloDJ — Music cog: voice playback and queue commands — builds on wavelink 3.5."""
 
 import asyncio
+import logging
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 import wavelink
 from wavelink import Playable, TrackSource
+
+log = logging.getLogger(__name__)
 
 import player
 import session
@@ -168,7 +171,7 @@ class Music(commands.Cog):
             "youtube": TrackSource.YouTube,
             "youtube_music": TrackSource.YouTubeMusic,
             "soundcloud": TrackSource.SoundCloud,
-            "spotify": TrackSource.Spotify,
+            "spotify": "spsearch",
             "tidal": "tidal",
         }
         source = source_map.get(provider, TrackSource.YouTube)
@@ -198,16 +201,16 @@ class Music(commands.Cog):
         state["text_channel"] = interaction.channel
         state["persist_enabled"] = True
 
-        # Connect wavelink player if not present (HybridPlayer when voice_recv is present)
-        player_obj = state.get("player")
-        if not player_obj or not player_obj.connected:
-            player_obj = await player.connect_player(voice_channel)
-            state["player"] = player_obj
-
         provider = state.get("source_provider", "youtube")
         is_url = query.startswith("http://") or query.startswith("https://")
 
         try:
+            # Connect wavelink player if not present (HybridPlayer when voice_recv is present)
+            player_obj = state.get("player")
+            if not player_obj or not player_obj.connected:
+                player_obj = await player.connect_player(voice_channel)
+                state["player"] = player_obj
+
             tracks = await self._resolve_tracks(query, provider)
             if not tracks:
                 await interaction.followup.send("No results found.")
@@ -251,7 +254,11 @@ class Music(commands.Cog):
             await player.add_track(state, interaction.guild.id, info)
             await interaction.followup.send(f"HelloDJ added to queue: **{info['title']}**")
 
+        except (wavelink.LavalinkLoadException, wavelink.NodeException) as exc:
+            log.error("Play failed (%s): %s", type(exc).__name__, exc)
+            await interaction.followup.send("Could not play that track — the music source returned no results or was unavailable.")
         except Exception as exc:
+            log.error("Play failed (%s): %s", type(exc).__name__, exc)
             await interaction.followup.send(f"Could not play: {exc}")
 
     # ── Pause / Resume ──────────────────────────────────────

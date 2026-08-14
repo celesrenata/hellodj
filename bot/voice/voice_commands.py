@@ -819,11 +819,11 @@ class VoiceCommandOrchestrator:
 
 
 def _source_for(provider: str):
-    """Map a source provider string to a wavelink TrackSource."""
+    """Map a source provider string to a wavelink source (TrackSource or search-prefix string)."""
     from wavelink import TrackSource
     return {
         "youtube": TrackSource.YouTube,
         "youtube_music": TrackSource.YouTubeMusic,
         "soundcloud": TrackSource.SoundCloud,
-        "spotify": TrackSource.Spotify,
+        "spotify": "spsearch",
     }.get(provider, TrackSource.YouTube)

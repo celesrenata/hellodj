@@ -5,6 +5,7 @@ Uses wavelink 3.5+ directly (no dismusic dependency).
 
 import asyncio
 import logging
+import os
 import random
 import time
 
@@ -19,6 +20,65 @@ log = logging.getLogger(__name__)
 
 # Per-guild state
 guild_state: dict[int, dict] = {}
+
+# Per-guild connect locks: serialize voice-channel connects so the
+# wakeword/voice pipeline and /play cannot race and trigger
+# `ClientException('Already connected to a voice channel.')`.
+_connect_locks: dict[int, asyncio.Lock] = {}
+
+# ── raw-event handshake instrumentation (diagnosis only) ────
+# discord.py only forwards VOICE_STATE_UPDATE / VOICE_SERVER_UPDATE to the
+# wavelink player when a registered voice client exists in
+# ConnectionState._voice_clients[guild_id] at arrival time (state.py
+# parse_voice_state_update / parse_voice_server_update). If the event lands in
+# a registration-timing window, it is silently discarded and
+# Player.on_voice_state_update / on_voice_server_update never populate
+# session_id/token/endpoint. This hook logs, at INFO, whether the raw events
+# arrive and whether _get_voice_client(guild.id) is non-None when they do, so
+# the next live logs confirm recovery. Installed once per process.
+_instrumented = False
+
+
+def _install_voice_event_instrumentation(client: discord.Client) -> None:
+    """Wrap the gateway voice-event parsers with INFO logging (one-time).
+
+    Logs arrival of VOICE_STATE_UPDATE / VOICE_SERVER_UPDATE and whether a
+    registered voice client exists for the guild at arrival time — the exact
+    condition that gates forwarding to the wavelink player. Lightweight: two
+    log lines per voice handshake, no per-event spam.
+    """
+    global _instrumented
+    if _instrumented:
+        return
+    state = getattr(client, "_connection", None)
+    if state is None or not hasattr(state, "parsers"):
+        log.warning("voice event instrumentation skipped: no ConnectionState.parsers")
+        return
+
+    for name in ("VOICE_STATE_UPDATE", "VOICE_SERVER_UPDATE"):
+        orig = state.parsers.get(name)
+        if orig is None:
+            continue
+
+        def _wrapped(data, _orig=orig, _name=name):
+            guild_id = data.get("guild_id")
+            vc = None
+            try:
+                if guild_id is not None:
+                    vc = state._get_voice_client(int(guild_id))
+            except Exception:
+                pass
+            log.info(
+                "raw-event %s arrived guild_id=%s _get_voice_client(guild_id)=%s "
+                "(forwarded=%s)",
+                _name, guild_id, vc is not None, vc is not None,
+            )
+            return _orig(data)
+
+        state.parsers[name] = _wrapped
+        log.info("voice event instrumentation installed for %s", name)
+
+    _instrumented = True
 
 # ── helpers ───────────────────────────────────────────────
 
@@ -69,6 +129,102 @@ def get_player(guild_id: int) -> wavelink.Player | None:
     return get_state(guild_id).get("player")
 
 
+async def _handshake_complete(player) -> bool:
+    """True when wavelink has finished the Discord voice handshake.
+
+    Mirrors the checks wavelink uses: _connection_event set, and
+    session_id/token/endpoint populated in _voice_state["voice"] (which only
+    happens via on_voice_state_update / on_voice_server_update).
+    """
+    if player is None:
+        return False
+    ev = getattr(player, "_connection_event", None)
+    if ev is not None and ev.is_set():
+        return True
+    vs = getattr(player, "_voice_state", {}) or {}
+    voice = vs.get("voice", {}) or {}
+    return bool(voice.get("session_id") and voice.get("token") and voice.get("endpoint"))
+
+
+def _force_remove_stale(guild: discord.Guild | None, guild_id: int) -> None:
+    """Force-remove a stale _voice_clients[guild_id] entry (the compounding symptom).
+
+    discord.py registers the client in ConnectionState._voice_clients[guild_id]
+    at abc.py:2149 BEFORE voice.connect() runs, and only removes it on
+    `except asyncio.TimeoutError:` (abc.py:2153). wavelink raises
+    ChannelTimeoutException — a plain Exception, not asyncio.TimeoutError — when
+    the handshake times out, so discord.py's cleanup is skipped and a dead/stale
+    player stays keyed in _voice_clients[guild_id]. The next /play then hits the
+    "Already connected to a voice channel." guard at abc.py:2140 and never sends
+    voice_state_update, so the handshake can never complete. Force-remove the
+    stale registration so the next connect/re-issue can register a fresh player.
+    """
+    if not guild_id:
+        return
+    try:
+        state = getattr(guild, "_state", None) if guild is not None else None
+        if state is not None:
+            state._remove_voice_client(guild_id)
+            log.info(
+                "connect_player: force-removed stale _voice_clients[%s] "
+                "entry so a fresh connect can proceed",
+                guild_id,
+            )
+    except Exception:
+        log.exception(
+            "connect_player: could not clear stale _voice_clients entry "
+            "for guild_id=%s",
+            guild_id,
+        )
+
+
+async def _reissue_voice_join(channel, cls, guild, guild_id: int) -> wavelink.Player | None:
+    """Re-send opcode 4 on a fresh player so a dropped handshake self-recovers.
+
+    The dropped-event race is a registration-timing bug in discord.py: the
+    parse_voice_state_update / parse_voice_server_update handlers only forward
+    the event to the player via `_get_voice_client(guild.id)` if a registered
+    voice client exists at that instant. If the event arrives in a window where
+    registration is incomplete, it is silently discarded and on_voice_*_update
+    never populate session_id/token/endpoint. Simply re-issuing opcode 4 on the
+    SAME player would be re-dropped if the guild object isn't cached; so here we
+    construct a fresh player exactly like `channel.connect(cls=...)` does
+    (abc.py:2143-2149: cls(client, channel) then _add_voice_client) so that
+    registration is guaranteed BEFORE we send opcode 4 via guild.change_voice_state.
+
+    Returns the player on success (handshake complete), None on timeout.
+    """
+    if guild is None:
+        return None
+    try:
+        state = guild._state
+        client = state._get_client()
+        # Mirror abc.py connect(): construct the player, then register it.
+        player = cls(client, channel)
+        state._add_voice_client(guild_id, player)
+        # Mirror wavelink.Player.connect(): register in the node then send opcode 4.
+        if not getattr(player, "_guild", None):
+            player._guild = guild
+        player.node._players[guild.id] = player
+        await guild.change_voice_state(channel=channel)
+    except Exception:
+        log.exception(
+            "connect_player re-issue: could not construct/register player for "
+            "guild_id=%s — dropping to timeout",
+            guild_id,
+        )
+        return None
+
+    # Wait a short window for the handshake to complete.
+    try:
+        async with asyncio.timeout(3.0):
+            while not _handshake_complete(player):
+                await asyncio.sleep(0.25)
+    except asyncio.TimeoutError:
+        return None
+    return player
+
+
 async def connect_player(channel: discord.abc.Connectable) -> wavelink.Player:
     """Connect a player to a voice channel.
 
@@ -76,11 +232,130 @@ async def connect_player(channel: discord.abc.Connectable) -> wavelink.Player:
     also supports ``discord.ext.voice_recv``) so the voice-activation pipeline
     can receive incoming Opus frames via ``listen()``. Falls back to a plain
     ``wavelink.Player`` when voice_recv is unavailable.
+
+    Implements a robust handshake that self-recovers from dropped events:
+    instead of a single 30s connect that fails once, it retries with short
+    per-attempt windows and, when the handshake has not completed, force-removes
+    the stale registration and re-issues opcode 4 on a freshly registered player
+    (see _reissue_voice_join). The overall budget stays close to the existing
+    30s user-facing timeout; only the failure mode is made recoverable.
     """
-    if HybridPlayer is not None:
-        # HybridPlayer is both a wavelink.Player and a VoiceRecvClient.
-        return await channel.connect(cls=HybridPlayer)
-    return await wavelink.Player.connect(channel)
+    guild_id = getattr(getattr(channel, "guild", None), "id", None)
+    if guild_id is None:
+        # DM channels have no guild; use a shared lock under a sentinel key.
+        guild_id = 0
+    lock = _connect_locks.setdefault(guild_id, asyncio.Lock())
+    async with lock:
+        # Install the raw-event handshake instrumentation once so the next live
+        # logs confirm whether VOICE_STATE_UPDATE / VOICE_SERVER_UPDATE arrive
+        # and whether _get_voice_client(guild.id) is non-None at arrival time.
+        guild0 = getattr(channel, "guild", None)
+        if guild0 is not None:
+            try:
+                _install_voice_event_instrumentation(guild0._state._get_client())
+            except Exception:
+                log.exception("connect_player: could not install voice event instrumentation")
+
+        timeout = float(os.getenv("VOICE_CONNECT_TIMEOUT", "30.0"))
+        log.info(
+            "connect_player: connecting to voice channel %s (guild_id=%s) "
+            "timeout=%ss hybrid=%s",
+            channel, guild_id, timeout, HybridPlayer is not None,
+        )
+        guild = getattr(channel, "guild", None)
+        cls = HybridPlayer if HybridPlayer is not None else wavelink.Player
+        # Short per-attempt window; the outer loop enforces the overall ~30s budget.
+        attempt_timeout = min(5.0, timeout / 3.0)
+        deadline = time.monotonic() + timeout
+        last_exc: Exception | None = None
+        attempts = 0
+
+        while time.monotonic() < deadline:
+            attempts += 1
+            # ── stale voice-client cleanup (preserved) ──────────────
+            # A prior re-issue registers a fresh player in _voice_clients; clear
+            # any stale entry BEFORE channel.connect() so the next attempt can
+            # register a new player instead of hitting the "Already connected to
+            # a voice channel." guard (abc.py:2140).
+            _force_remove_stale(guild, guild_id)
+            log.info(
+                "connect_player attempt %d/%d (channel=%s guild_id=%s budget_left=%.1fs)",
+                attempts, max(1, int(timeout / attempt_timeout)), channel, guild_id,
+                deadline - time.monotonic(),
+            )
+            try:
+                player = await channel.connect(cls=cls, timeout=attempt_timeout)
+                if _handshake_complete(player):
+                    log.info(
+                        "connect_player handshake COMPLETE attempt=%d (guild_id=%s)",
+                        attempts, guild_id,
+                    )
+                    return player
+                # Handshake fields not populated despite connect() returning:
+                # the dropped-event race. Re-issue on a fresh registration below.
+                log.info(
+                    "connect_player handshake INCOMPLETE after connect() attempt=%d "
+                    "guild_id=%s — re-issuing opcode 4",
+                    attempts, guild_id,
+                )
+            except Exception as exc:
+                last_exc = exc
+                log.info(
+                    "connect_player attempt=%d failed (guild_id=%s): %s",
+                    attempts, guild_id, exc,
+                )
+
+            # ── re-issue opcode 4 on a fresh, registered player ─────
+            reissued = await _reissue_voice_join(channel, cls, guild, guild_id)
+            if reissued is not None and _handshake_complete(reissued):
+                log.info(
+                    "connect_player RECOVERED via re-issue attempt=%d (guild_id=%s)",
+                    attempts, guild_id,
+                )
+                return reissued
+
+            # Give the gateway a short breather before the next attempt.
+            await asyncio.sleep(0.5)
+
+        # ── final failure: diagnostics + fail-fast ─────────────────
+        # Handshake diagnostics: prove whether the gateway delivered the
+        # VOICE_STATE_UPDATE / VOICE_SERVER_UPDATE events. The ChannelTimeoutException
+        # fires when wavelink's _connection_event is never set, i.e. _update_player
+        # PATCH never ran. Dump the player handshake fields so the root cause is
+        # diagnosable, then re-raise.
+        try:
+            player = guild.voice_client if guild is not None else None
+            vs = {}
+            if player is not None:
+                vs = getattr(player, "_voice_state", {}) or {}
+                voice = vs.get("voice", {}) or {}
+                log.error(
+                    "connect_player TIMEOUT/FAILURE for channel=%s guild_id=%s "
+                    "connection_event.set=%s session_id=%r token=%r endpoint=%r "
+                    "voice_state=%r",
+                    channel, guild_id,
+                    getattr(player, "_connection_event", None) is not None
+                    and player._connection_event.is_set(),
+                    voice.get("session_id"), voice.get("token"),
+                    voice.get("endpoint"), vs,
+                )
+            else:
+                log.error(
+                    "connect_player FAILURE for channel=%s guild_id=%s "
+                    "guild.voice_client is None — cannot dump handshake state",
+                    channel, guild_id,
+                )
+        except Exception:
+            log.exception("connect_player: could not dump handshake diagnostics")
+
+        # Preserve the fail-fast user-facing error message: re-raise so callers
+        # still surface a specific error instead of the generic 30s timeout.
+        if last_exc is not None:
+            raise last_exc
+        raise RuntimeError(
+            f"Could not connect to voice channel {channel} after "
+            f"{timeout:.0f}s (handshake never completed; dropped VOICE_* events)."
+        )
 
 
 # ── persistence ────────────────────────────────────────────
@@ -213,7 +488,7 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
             "youtube": TrackSource.YouTube,
             "youtube_music": TrackSource.YouTubeMusic,
             "soundcloud": TrackSource.SoundCloud,
-            "spotify": TrackSource.Spotify,
+            "spotify": "spsearch",
             "tidal": "tidal",
         }
         source = source_map.get(state.get("source_provider", "youtube"), TrackSource.YouTube)
