@@ -90,6 +90,55 @@ def _to_entry(info: dict) -> dict:
     }
 
 
+# ── wavelink 3.5.2 track → dict conversion ─────────────────
+# Playable exposes `uri`/`title`/`author`/`length` — NOT `url`/`name`/`duration`.
+# Playable.search returns wavelink.Search = list[Playable] | Playlist. This
+# helper reads only the real 3.5.2 properties and logs the resolved type +
+# attributes + provider at DEBUG so each provider setup (yt/ytm/sc/spotify/tidal)
+# is diagnosable without guessing attribute names.
+
+def _track_entry(track, provider: str | None = None) -> dict:
+    """Convert a wavelink Playable (or Playlist) into a lightweight queue entry.
+
+    Logs the object type and the resolved fields so a new provider can be
+    validated from the bot log before it reaches the queue/embed layer.
+    """
+    uri = getattr(track, "uri", None)
+    title = getattr(track, "title", None) or "Unknown"
+    author = getattr(track, "author", None) or ""
+    length = getattr(track, "length", None) or 0
+
+    entry = {
+        "webpage_url": str(uri) if uri else None,
+        "title": title,
+        "author": author,
+        "duration": length,
+    }
+
+    log.debug(
+        "track_entry type=%s provider=%s uri=%r title=%r author=%r length=%r",
+        type(track).__name__, provider, uri, title, author, length,
+    )
+    return entry
+
+
+def _search_entries(search, provider: str | None = None) -> list:
+    """Convert a wavelink.Search result (list[Playable] | Playlist) to entries."""
+    if isinstance(search, wavelink.Playlist):
+        log.debug(
+            "search_entries got Playlist name=%r n=%d provider=%s",
+            search.name, len(search.tracks), provider,
+        )
+        return [_track_entry(t, provider) for t in search.tracks]
+    # Plain list of Playable (or empty list)
+    log.debug(
+        "search_entries got list n=%d provider=%s first=%r",
+        len(search), provider,
+        [type(t).__name__ for t in search[:1]] if search else None,
+    )
+    return [_track_entry(t, provider) for t in search]
+
+
 def _snapshot(state: dict) -> dict:
     current = state.get("current")
     voice_channel = state.get("voice_channel")
@@ -548,13 +597,7 @@ async def _on_queue_empty(guild_id: int) -> None:
             tracks = await Playable.search(query, source=TrackSource.YouTube)
 
         if tracks:
-            for t in tracks[:3]:
-                entry = {
-                    "webpage_url": str(t.url),
-                    "title": t.name,
-                    "author": t.author,
-                    "duration": t.duration,
-                }
+            for entry in _search_entries(tracks, provider="autoplay")[:3]:
                 state["queue"].append(entry)
             persist(guild_id)
             await _play_next_from_queue(guild_id)
@@ -568,12 +611,7 @@ async def on_track_start(guild_id: int, player: wavelink.Player, track: wavelink
     state = get_state(guild_id)
     state["player"] = player
 
-    info = {
-        "webpage_url": str(track.url) if track.url else None,
-        "title": track.name or "Unknown",
-        "author": track.author or "",
-        "duration": track.duration or 0,
-    }
+    info = _track_entry(track, provider="on_track_start")
     state["current"] = info
     persist(guild_id)
 
@@ -625,9 +663,9 @@ async def _send_now_playing(guild_id: int, player: wavelink.Player, track: wavel
 
 
 def _build_now_playing_embed(track: wavelink.Playable) -> discord.Embed:
-    title = track.name or "Unknown"
+    title = track.title or "Unknown"
     author = track.author or "Unknown Artist"
-    duration = track.duration or 0
+    duration = track.length or 0
     mins, secs = divmod(duration // 1000, 60) if duration > 1000 else divmod(duration, 60)
 
     embed = discord.Embed(title="🎵 HelloDJ — Now Playing", colour=discord.Colour.blurple())
@@ -651,7 +689,7 @@ async def _now_playing_updater(guild_id: int, player: wavelink.Player, track: wa
                 continue
 
             position = player.position
-            duration = track.duration
+            duration = track.length
             if duration <= 0:
                 continue
 
@@ -686,7 +724,7 @@ def _prefer_explicit_original(tracks: list, query: str) -> list:
     preferred_keywords = ['explicit', 'original']
 
     def score(track):
-        title_lower = track.name.lower() if hasattr(track, 'name') else ''
+        title_lower = track.title.lower() if hasattr(track, 'title') else ''
         artist_lower = track.author.lower() if hasattr(track, 'author') else ''
         score = 0
         # Boost if title has explicit/original

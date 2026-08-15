@@ -1,0 +1,8 @@
+=== AUTH GUARD TEST: /api/config ===
+%=== UNAUTHENTICATED GUILDS PAGE ===
+<!doctype html>
+<html lang=en>
+<title>Redirecting...</title>
+<h1>Redirecting...</h1>
+<p>You should be redirected automatically to the target URL: <a href="/auth/login">/auth/login</a>. If not, click the link.
+%

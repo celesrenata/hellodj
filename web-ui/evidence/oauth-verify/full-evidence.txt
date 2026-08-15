@@ -1,0 +1,20 @@
+=== FULL API VERIFICATION EVIDENCE ===
+HTTP/1.1 302 FOUND
+Server: gunicorn
+Date: Wed, 12 Aug 2026 19:33:34 GMT
+Connection: close
+Content-Type: text/html; charset=utf-8
+Content-Length: 209
+Location: /auth/login
+Vary: Cookie
+
+=
+> grep for Discord link ---
+HTTP/1.1 401 UNAUTHORIZED
+Server: gunicorn
+Date: Wed, 12 Aug 2026 19:33:34 GMT
+Connection: close
+Content-Type: application/json
+Content-Length: 36
+Vary: Cookie
+

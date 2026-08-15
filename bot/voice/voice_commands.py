@@ -294,12 +294,7 @@ class VoiceCommandOrchestrator:
         if not tracks:
             return "I couldn't find that song."
 
-        info = {
-            "webpage_url": str(tracks[0].url),
-            "title": tracks[0].name or "Unknown",
-            "author": tracks[0].author or "",
-            "duration": tracks[0].duration or 0,
-        }
+        info = player._track_entry(tracks[0], provider)
         was_playing = player_obj.playing or player_obj.paused
         await player.add_track(state, guild.id, info)
         p = player.get_player(guild.id)

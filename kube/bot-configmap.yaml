@@ -13,10 +13,22 @@ data:
   # ── Voice activation (non-secret) ────────────────────────────────────
   WAKE_WORD_MODEL_PATH: /app/models/Hello_DJ.onnx
   STT_MODEL_SIZE: base
-  TTS_ENGINE: kokoro
+  STT_ENGINE: local
+  STT_URL: ""
+  TTS_ENGINE: speaches
   TTS_VOICE: af_heart
-  SPEACHES_URL: ""
+  SPEACHES_URL: http://speaches.speaches-service.svc.cluster.local:8000
   VOICE_ENABLED: "true"
+  # ── Music providers (non-secret enable toggles; credentials in hellodj-secret) ─
+  PROVIDER_YOUTUBE: "true"
+  PROVIDER_YOUTUBEMUSIC: "true"
+  PROVIDER_SOUNDCLOUD: "true"
+  PROVIDER_SPOTIFY: "true"
+  PROVIDER_TIDAL: "true"
+  # ── Tidal (non-secret defaults; TIDAL_TOKEN lives in hellodj-secret) ─
+  TIDAL_ENABLED: "true"
+  TIDAL_COUNTRY_CODE: "US"
+  TIDAL_SEARCH_LIMIT: "6"
   # ── LLM / general-query defaults ────────────────────────────────────
   LLM_API_URL: https://api.openai.com/v1
   LLM_MODEL: gpt-4o-mini

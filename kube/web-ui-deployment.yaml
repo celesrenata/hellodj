@@ -74,6 +74,18 @@ spec:
                   name: hellodj-secret
                   key: DISCORD_PUBKEY
                   optional: true
+            - name: DISCORD_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: DISCORD_CLIENT_SECRET
+                  optional: true
+            - name: FLASK_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: FLASK_SECRET
+                  optional: true
           resources:
             limits:
               cpu: "1"

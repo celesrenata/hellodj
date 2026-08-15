@@ -158,6 +158,19 @@
             border-top: 1px solid #3a3a5c;
             background-color: var(--hellodj-secondary);
         }
+        .log-viewer {
+            background: #1a1a2e;
+            border: 1px solid #3a3a5c;
+            border-radius: 8px;
+            color: #e0e0e0;
+            font-family: 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;
+            font-size: 0.85rem;
+            padding: 0.75rem 1rem;
+            max-height: 70vh;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-all;
+        }
         /* Override text-muted to use light color for readability on dark cards */
         .text-muted, p.text-muted, span.text-muted, h5.card-title, h2.display-4, .card-text {
             color: rgb(200, 200, 215) !important;
@@ -230,6 +243,29 @@
                             <i class="bi bi-shield-exclamation"></i> Blacklist
                         </a>
                     </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active == 'logs' %}active{% endif %}" href="{{ url_for('logs_page') }}">
+                            <i class="bi bi-journal-text"></i> Logs
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active == 'admins' %}active{% endif %}" href="{{ url_for('admins_page') }}">
+                            <i class="bi bi-person-gear"></i> Admins
+                        </a>
+                    </li>
+                    {% if current_user %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('auth_logout') }}">
+                                <i class="bi bi-box-arrow-right"></i> Logout
+                            </a>
+                        </li>
+                    {% else %}
+                        <li class="nav-item">
+                            <a class="nav-link" href="{{ url_for('auth_login') }}">
+                                <i class="bi bi-discord"></i> Login
+                            </a>
+                        </li>
+                    {% endif %}
                 </ul>
             </div>
         </div>

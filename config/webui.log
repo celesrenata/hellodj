@@ -1,0 +1,3 @@
+WARNING:__main__:Could not persist generated FLASK_SECRET: [Errno 13] Permission denied: '/app'
+WARNING:__main__:Could not persist generated FLASK_SECRET: [Errno 13] Permission denied: '/app'
+WARNING:__main__:Could not persist generated FLASK_SECRET: [Errno 13] Permission denied: '/app'

@@ -53,11 +53,31 @@ class STTEngine:
 
     def __init__(self, model_size: str = "base"):
         self._model_size = model_size or os.getenv("STT_MODEL_SIZE", "base")
+        self._engine = os.getenv("STT_ENGINE", "local")
+        self._url = os.getenv("STT_URL", "")
         self._model = None
 
     def _ensure_model(self):
         if self._model is not None:
             return
+
+        if self._engine == "remote":
+            if not self._url:
+                log.error(
+                    "STT engine 'remote' selected but STT_URL is not set — STT disabled. "
+                    "Set STT_URL to a running remote STT server."
+                )
+                self._model = None
+                return
+            # Remote mode: no in-process faster-whisper model is loaded.
+            # Use a small marker so transcribe() branches to the remote call.
+            self._model = {"url": self._url, "model": self._model_size}
+            log.info(
+                "remote STT engine configured (url=%s, model=%s)",
+                self._url, self._model_size,
+            )
+            return
+
         try:
             from faster_whisper import WhisperModel
         except ImportError:
@@ -109,6 +129,9 @@ class STTEngine:
         if self._model is None:
             return ""
 
+        if self._engine == "remote":
+            return self._transcribe_remote(pcm, sample_rate)
+
         # Normalize volume
         pcm_float = pcm.astype(np.float32) / 32768.0
 
@@ -123,6 +146,72 @@ class STTEngine:
         log.info(
             "STT result (lang=%s, %.2fs audio): %s",
             info.language if info else "?",
+            len(pcm) / sample_rate if len(pcm) > 0 else 0,
+            text[:120],
+        )
+        return text
+
+    def _transcribe_remote(self, pcm: np.ndarray, sample_rate: int = 16000) -> str:
+        """Transcribe via a remote OpenAI-compatible ``/v1/audio/transcriptions`` endpoint.
+
+        Sends the PCM as a WAV file in a ``multipart/form-data`` POST with
+        ``file`` and ``model`` fields. Synchronous (urllib) — safe to call from
+        the bot's async loop. On failure, logs and returns "".
+        """
+        import io
+        import json
+        import uuid
+        import urllib.request
+        import wave
+
+        # Encode PCM int16 as a mono WAV in memory.
+        pcm_int16 = pcm.astype(np.int16) if pcm.dtype != np.int16 else pcm
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(sample_rate)
+            wav.writeframes(pcm_int16.tobytes())
+        wav_bytes = buf.getvalue()
+
+        boundary = uuid.uuid4().hex
+        crlf = b"\r\n"
+        body = (
+            b"--" + boundary.encode() + crlf
+            + b'Content-Disposition: form-data; name="file"; filename="audio.wav"' + crlf
+            + b"Content-Type: audio/wav" + crlf + crlf
+            + wav_bytes + crlf
+            + b"--" + boundary.encode() + crlf
+            + b'Content-Disposition: form-data; name="model"' + crlf + crlf
+            + self._model["model"].encode("utf-8") + crlf
+            + b"--" + boundary.encode() + b"--" + crlf
+        )
+
+        url = self._model["url"].rstrip("/") + "/v1/audio/transcriptions"
+        req = urllib.request.Request(
+            url,
+            data=body,
+            headers={
+                "Content-Type": "multipart/form-data; boundary=" + boundary,
+                "Content-Length": str(len(body)),
+            },
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=60) as resp:
+                data = resp.read()
+        except Exception as exc:
+            log.warning("remote STT request failed: %s", exc)
+            return ""
+
+        try:
+            payload = json.loads(data.decode("utf-8"))
+        except Exception as exc:
+            log.warning("remote STT response parse failed: %s", exc)
+            return ""
+
+        text = payload.get("text", "")
+        log.info(
+            "STT result (remote, %.2fs audio): %s",
             len(pcm) / sample_rate if len(pcm) > 0 else 0,
             text[:120],
         )

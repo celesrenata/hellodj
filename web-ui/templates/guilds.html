@@ -5,8 +5,8 @@
 <div class="row">
     <div class="col-12">
         <h2 class="mb-4">
-            <i class="bi bi-people"></i> Active Guilds
-            <small class="text-muted fs-6">— Connected Discord servers</small>
+            <i class="bi bi-people"></i> Connected Guilds
+            <small class="text-muted fs-6">— Live bot guild list</small>
         </h2>
     </div>
 </div>
@@ -15,7 +15,7 @@
     <div class="col-12">
         <div class="card">
             <div class="card-header">
-                <i class="bi bi-people"></i> Guild Sessions
+                <i class="bi bi-people"></i> Guilds
                 <button class="btn btn-sm btn-outline-hellodj float-end" onclick="refreshGuilds()">
                     <i class="bi bi-arrow-clockwise"></i> Refresh
                 </button>
@@ -26,18 +26,14 @@
                         <thead>
                             <tr>
                                 <th>Guild ID</th>
-                                <th>Voice Channel</th>
-                                <th>Text Channel</th>
-                                <th>Queue</th>
-                                <th>Autoplay</th>
-                                <th>Repeat</th>
-                                <th>Source</th>
-                                <th>Auto Resume</th>
+                                <th>Name</th>
+                                <th>Members</th>
+                                <th>Channels</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="guilds-body">
-                            <tr><td colspan="9" class="text-muted text-center">Loading...</td></tr>
+                            <tr><td colspan="5" class="text-muted text-center">Loading...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -59,20 +55,25 @@ async function refreshGuilds() {
 
     const tbody = $('#guilds-body');
     if (!data.guilds || data.guilds.length === 0) {
-        tbody.html('<tr><td colspan="9" class="text-muted text-center">No active guild sessions</td></tr>');
+        tbody.html('<tr><td colspan="5" class="text-muted text-center">No guilds connected</td></tr>');
         return;
     }
 
     tbody.html(data.guilds.map(g => `
         <tr>
             <td><code>${g.id}</code></td>
-            <td>${g.voice_channel || '—'}</td>
-            <td>${g.text_channel || '—'}</td>
-            <td>${g.queue_length} track(s)</td>
-            <td><span class="badge ${g.autoplay ? 'badge-hellodj' : 'bg-secondary'}">${g.autoplay ? 'ON' : 'OFF'}</span></td>
-            <td><span class="badge bg-info">${g.repeat}</span></td>
-            <td>${g.source}</td>
-            <td><span class="status-dot ${g.auto_resume ? 'ok' : 'warn'}"></span>${g.auto_resume ? 'Yes' : 'No'}</td>
+            <td>
+                ${g.icon
+                    ? `<img src="https://cdn.discordapp.com/icons/${g.id}/${g.icon}.png" alt="" style="width:24px;height:24px;border-radius:50%;vertical-align:middle;margin-right:6px;">`
+                    : ''}
+                ${g.name || '—'}
+            </td>
+            <td>${g.member_count} member(s)</td>
+            <td>
+                ${(g.channels || []).length
+                    ? g.channels.map(c => `<span class="badge bg-secondary me-1">${c.name}</span>`).join('')
+                    : '—'}
+            </td>
             <td>
                 <button class="btn btn-sm btn-outline-danger" onclick="clearGuild('${g.id}')">
                     <i class="bi bi-x-circle"></i>
@@ -87,7 +88,6 @@ async function clearGuild(gid) {
     const result = await apiFetch(`/api/guilds/${gid}`, { method: 'DELETE' });
     if (result && result.status === 'ok') {
         showToast(result.message, 'success');
-        await refreshGuilds();
     }
 }
 </script>

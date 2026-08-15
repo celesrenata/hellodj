@@ -147,14 +147,7 @@ class Playlists(commands.Cog):
                 return
 
             if not is_url and len(tracks) > 1:
-                results = []
-                for t in tracks[:5]:
-                    results.append({
-                        "webpage_url": str(t.url),
-                        "title": t.name,
-                        "duration": t.duration,
-                        "uploader": t.author,
-                    })
+                results = player._search_entries(tracks, "playlist")[:5]
 
                 async def on_pick(info: dict, picker: discord.Interaction):
                     key = await storage.add_track(gid, name, _track_from_info(info))
@@ -162,17 +155,14 @@ class Playlists(commands.Cog):
                         content=f"HelloDJ added **{info.get('title', 'Unknown')}** to **{key}**.", view=None
                     )
 
-                view = player.SearchSelectView(results, interaction.user.id, on_pick)
+                view = SearchSelectView(results, interaction.user.id, on_pick)
                 msg = await interaction.followup.send("Select a song to add:", view=view, ephemeral=True)
                 view.message = msg
                 return
 
             track = tracks[0]
-            info = {
-                "url": str(track.url),
-                "title": track.name or "Unknown",
-                "duration": track.duration or 0,
-            }
+            info = player._track_entry(track, "playlist")
+            info = {"url": info["webpage_url"], "title": info["title"], "duration": info["duration"]}
             key = await storage.add_track(gid, name, info)
             await interaction.followup.send(
                 f"HelloDJ added **{info['title']}** to **{key}**.", ephemeral=True

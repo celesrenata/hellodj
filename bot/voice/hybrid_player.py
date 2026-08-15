@@ -54,10 +54,30 @@ def _build_hybrid():
             self._recv_listeners = []
 
         def _init_recv(self) -> None:
-            """Initialise the VoiceRecvClient receive machinery once."""
+            """Initialise the VoiceRecvClient receive machinery once.
+
+            The wavelink ``Player.__init__`` chain already ran ``VoiceRecvClient.__init__``
+            via the cooperative ``super().__init__`` MRO (HybridPlayer → Player(wavelink)
+            → VoiceRecvClient → VoiceClient → VoiceProtocol), so ``self._connection``,
+            ``self._reader``, ``self._ssrc_to_id``, ``self._id_to_ssrc`` and
+            ``self._event_listeners`` are already set. Re-calling ``VoiceRecvClient.__init__``
+            here would recreate ``self._connection`` (fresh ``VoiceConnectionState`` + a new
+            ``SocketReader`` thread) and re-set ``self.client``/``self.channel`` — a
+            state-clobber/thread-leak latent bug. Only ensure the voice_recv-specific attrs
+            exist, and never touch ``_connection``.
+            """
             if self._recv_initialised:
                 return
-            voice_recv.VoiceRecvClient.__init__(self, self.client, self.channel)
+            # voice_recv-specific attrs are set by the wavelink init chain; only
+            # backfill them defensively if that chain did not run (e.g. exotic MRO).
+            if not hasattr(self, "_reader"):
+                self._reader = None
+            if not hasattr(self, "_ssrc_to_id"):
+                self._ssrc_to_id = {}
+            if not hasattr(self, "_id_to_ssrc"):
+                self._id_to_ssrc = {}
+            if not hasattr(self, "_event_listeners"):
+                self._event_listeners = {}
             self._recv_initialised = True
 
         def listen(self, sink, *, after=None) -> None:

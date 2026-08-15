@@ -20,6 +20,10 @@ data:
         port: 2333
         password: "youshallnotpass"
         pluginsDir: "./plugins"
+        # The legacy built-in YouTube source is deprecated and breaks against current
+        # YouTube. We use the maintained youtube-source plugin instead, so disable it.
+        sources:
+          youtube: false
       buffer:
         period: 500
         periodMilliseconds: 500
@@ -28,28 +32,56 @@ data:
         cpu: 0
 
       plugins:
+        - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
+          repository: "https://maven.lavalink.dev/releases"
+          snapshot: false
         - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.2.0"
           repository: "https://maven.lavalink.dev/releases"
           snapshot: false
 
     plugins:
+      # youtube-source plugin config (https://github.com/lavalink-devs/youtube-source#plugin)
+      # NOTE: this plugin does NOT support the built-in source's `email`/`password`
+      # keys — auth is done via OAuth refreshToken (see oauth block below).
+      youtube:
+        enabled: true
+        allowSearch: true
+        allowDirectVideoIds: true
+        allowDirectPlaylistIds: true
+        # Clients are queried in order; first that can load wins.
+        clients:
+          - MUSIC
+          - ANDROID_VR
+          - WEB
+          - WEBEMBEDDED
+        # Optional OAuth to reduce bot/age-restriction blocks. Fill the secret values
+        # in kube (youtube-secret) and set YOUTUBE_OAUTH_ENABLED=true.
+        oauth:
+          enabled: ${YOUTUBE_OAUTH_ENABLED}
+          refreshToken: "${YOUTUBE_OAUTH_REFRESH_TOKEN}"
       lavasrc:
         sources:
-          tidal: true
+          tidal: "${PROVIDER_TIDAL}"
+          spotify: "${PROVIDER_SPOTIFY}"
         tidal:
-          countryCode: "US"
-          searchLimit: 6
+          countryCode: "${TIDAL_COUNTRY_CODE}"
+          searchLimit: ${TIDAL_SEARCH_LIMIT}
+          clientId: "${TIDAL_CLIENT_ID}"
+          clientSecret: "${TIDAL_CLIENT_SECRET}"
           token: "${TIDAL_TOKEN}"
+        spotify:
+          clientId: "${SPOTIFY_CLIENT_ID}"
+          clientSecret: "${SPOTIFY_CLIENT_SECRET}"
 
     sources:
       youtube:
-        enabled: true
+        enabled: ${PROVIDER_YOUTUBE}
       youtubemusic:
-        enabled: true
+        enabled: ${PROVIDER_YOUTUBEMUSIC}
       soundcloud:
-        enabled: true
+        enabled: ${PROVIDER_SOUNDCLOUD}
       spotify:
-        enabled: false  # Requires Spotify credentials in the bot, not in Lavalink
+        enabled: ${PROVIDER_SPOTIFY}  # Uses global app credentials; per-user OAuth is a later feature
 
     filters:
       enabled: true

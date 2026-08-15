@@ -49,6 +49,9 @@ class LyricsPaginatedView(discord.ui.View):
 class Lyrics(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        self.client_id = os.getenv("GENIUS_CLIENT_ID", "")
+        self.client_secret = os.getenv("GENIUS_CLIENT_SECRET", "")
+        self.access_token = os.getenv("GENIUS_ACCESS_TOKEN", "")
         self.api_key = os.getenv("GENIUS_API_KEY", "")
 
     @app_commands.command(name="lyrics", description="Fetch lyrics for the current song")
@@ -62,9 +65,11 @@ class Lyrics(commands.Cog):
         song_title = current.get("title", "")
         artist = current.get("author", "")
 
-        if not self.api_key:
+        if not self.access_token and not self.api_key:
             await interaction.response.send_message(
-                "Genius API key not configured. Set `GENIUS_API_KEY` in `.env`.", ephemeral=True
+                "Genius API not configured. Set `GENIUS_CLIENT_ID`, `GENIUS_CLIENT_SECRET`, "
+                "and `GENIUS_ACCESS_TOKEN` in `.env` (or the legacy `GENIUS_API_KEY`).",
+                ephemeral=True,
             )
             return
 
@@ -102,7 +107,10 @@ class Lyrics(commands.Cog):
 
     async def _fetch_lyrics(self, title: str, artist: str) -> str | None:
         """Search Genius API for a song and return its lyrics text."""
-        headers = {"Authorization": f"Bearer {self.api_key}"}
+        # The access token is used as the Bearer token for API calls. Fall back to the
+        # legacy GENIUS_API_KEY if GENIUS_ACCESS_TOKEN is empty, for backward compatibility.
+        bearer_token = self.access_token or self.api_key
+        headers = {"Authorization": f"Bearer {bearer_token}"}
         params = {"q": f"{title} {artist}"}
 
         async with aiohttp.ClientSession() as session:

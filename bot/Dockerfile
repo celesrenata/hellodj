@@ -27,7 +27,7 @@ COPY requirements-ai.txt .
 RUN pip install --no-cache-dir -r requirements-ai.txt
 
 # Copy source
-COPY bot.py player.py session.py storage.py blacklist.py ./
+COPY bot.py player.py oauth_store.py session.py storage.py blacklist.py ./
 COPY cogs/ ./cogs/
 COPY voice/ ./voice/
 

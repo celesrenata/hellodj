@@ -10,6 +10,10 @@ services:
       - ./bot/lavalink/plugins/:/opt/Lavalink/plugins/
     environment:
       TIDAL_TOKEN: "${TIDAL_TOKEN}"
+      # youtube-source plugin OAuth (optional). Leave disabled until a real
+      # refresh token is set (see bot/lavalink/application.yml plugins.youtube).
+      YOUTUBE_OAUTH_ENABLED: "false"
+      YOUTUBE_OAUTH_REFRESH_TOKEN: "${YOUTUBE_OAUTH_REFRESH_TOKEN:-}"
     networks:
       - hellodj-net
     expose:
@@ -27,6 +31,9 @@ services:
       LAVALINK_HOST: lavalink
       LAVALINK_PORT: 2333
       LAVALINK_PASSWORD: "youshallnotpass"
+      # ── Spotify ──────────────────────────────────────────────────────
+      SPOTIFY_CLIENT_ID: "${SPOTIFY_CLIENT_ID:-}"
+      SPOTIFY_CLIENT_SECRET: "${SPOTIFY_CLIENT_SECRET:-}"
       # ── Voice activation ──────────────────────────────────────────────
       WAKE_WORD_MODEL_PATH: /app/models/Hello_DJ.onnx
       STT_MODEL_SIZE: base
@@ -64,6 +71,10 @@ services:
       HELLODJ_DATA_DIR: /app/data
       HELLODJ_CONFIG_DIR: /app/config
       HELLODJ_BACKUP_DIR: /app/config-backups
+      # ── Discord OAuth (web UI) ────────────────────────────────────────
+      DISCORD_APPID: "${DISCORD_APPID:-}"
+      DISCORD_CLIENT_SECRET: "${DISCORD_CLIENT_SECRET:-}"
+      FLASK_SECRET: "${FLASK_SECRET:-}"
     volumes:
       - hellodj-data:/app/data
       - hellodj-config:/app/config

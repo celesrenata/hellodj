@@ -1,8 +1,11 @@
 """HelloDJ — Entry point: loads cogs, configures Lavalink/wavelink, syncs slash commands, runs the bot."""
 
+import asyncio
 import logging
+import logging.handlers
 import os
 
+import aiohttp
 import discord
 from discord.ext import commands
 from dotenv import load_dotenv
@@ -12,12 +15,41 @@ import player
 import session
 import storage
 import blacklist as _blacklist
+import oauth_store
 
 load_dotenv()
-logging.basicConfig(level=logging.INFO)
+
+# ── Logging: console + rotating file under /app/config (NFS shared) ──
+def _setup_logging():
+    """Configure console + rotating-file logging. File path from BOT_LOG_FILE,
+    defaulting to the shared NFS mount /app/config/bot.log."""
+    handlers: list[logging.Handler] = [logging.StreamHandler()]
+
+    log_file = os.getenv("BOT_LOG_FILE", "/app/config/bot.log")
+    try:
+        log_dir = os.path.dirname(log_file)
+        if log_dir:
+            os.makedirs(log_dir, exist_ok=True)
+        handlers.append(
+            logging.handlers.RotatingFileHandler(
+                log_file, maxBytes=5 * 1024 * 1024, backupCount=3,
+                encoding="utf-8",
+            )
+        )
+    except OSError as exc:
+        # Fall back to console-only if the file can't be opened (e.g. read-only FS).
+        logging.getLogger(__name__).warning("Could not enable file logging to %s: %s", log_file, exc)
+
+    logging.basicConfig(level=logging.INFO, handlers=handlers)
+
+_setup_logging()
 log = logging.getLogger(__name__)
 
 intents = discord.Intents.default()
+intents.message_content = True
+intents.members = True
+intents.presences = True
+intents.guild_typing = False
 bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ── Lavalink config ────────────────────────────────────────
@@ -42,6 +74,43 @@ is_blacklisted = _blacklist.is_blacklisted
 
 async def connect_lavalink():
     """Connect to the Lavalink node using wavelink 3.5 Pool."""
+    # Wait for Lavalink to become reachable before connecting. The Lavalink
+    # sidecar shares the pod network namespace but may not be ready yet, so
+    # poll the REST API with retries instead of failing fast on
+    # connection-refused (Errno 111 on ::1 / 127.0.0.1).
+    max_attempts = 30
+    delay = 2
+    rest_url = f"http://{LAVALINK_HOST}:{LAVALINK_PORT}/v4/session"
+
+    for attempt in range(1, max_attempts + 1):
+        last_err: Exception | None = None
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    rest_url, timeout=aiohttp.ClientTimeout(total=2)
+                ) as resp:
+                    if resp.status < 500:
+                        log.info(
+                            "Lavalink is reachable at %s (attempt %d)",
+                            rest_url, attempt,
+                        )
+                        break
+                    last_err = RuntimeError(f"HTTP {resp.status}")
+        except Exception as exc:  # connection refused until sidecar is ready
+            last_err = exc
+
+        log.info(
+            "Lavalink not ready at %s (attempt %d/%d): %s",
+            rest_url, attempt, max_attempts,
+            last_err if last_err else "no response",
+        )
+        await asyncio.sleep(delay)
+    else:
+        log.warning(
+            "Lavalink still unreachable after %d attempts; connecting anyway",
+            max_attempts,
+        )
+
     node = wavelink.Node(
         uri=LAVALINK_URI,
         password=LAVALINK_PASSWORD,
@@ -63,6 +132,7 @@ async def disconnect_lavalink():
 async def setup_hook():
     storage.load()
     session.load()
+    oauth_store.load_oauth()
 
     # Connect to Lavalink
     await connect_lavalink()
@@ -137,13 +207,67 @@ async def _resume_sessions():
             log.warning("Could not resume session for guild %s: %s", gid_str, exc)
 
 
+def _build_guilds_data() -> dict:
+    """Snapshot the bot's live gateway guilds into the bot_guilds.json schema."""
+    data = {}
+    for guild in bot.guilds:
+        channels = []
+        for ch in guild.channels:
+            if ch.type in (discord.ChannelType.text, discord.ChannelType.voice):
+                channels.append(
+                    {"id": str(ch.id), "name": ch.name, "type": str(ch.type)}
+                )
+        icon = guild.icon.url if guild.icon else None
+        data[str(guild.id)] = {
+            "name": guild.name,
+            "icon": icon,
+            "member_count": guild.member_count or 0,
+            "channels": channels,
+        }
+    return data
+
+
 @bot.event
 async def on_ready():
     print(f"HelloDJ logged in as {bot.user} ({bot.user.id})")
+    await oauth_store.write_guilds(_build_guilds_data(), force=True)
     global _resumed
     if not _resumed:
         _resumed = True
         await _resume_sessions()
+
+
+@bot.event
+async def on_guild_join(guild: discord.Guild):
+    log.info("HelloDJ joined guild %s (%s)", guild.name, guild.id)
+    await oauth_store.write_guilds(_build_guilds_data())
+
+
+@bot.event
+async def on_guild_remove(guild: discord.Guild):
+    log.info("HelloDJ removed from guild %s (%s)", guild.name, guild.id)
+    await oauth_store.write_guilds(_build_guilds_data(), force=True)
+
+
+# ── global app-command error handler (safety net) ──────────
+# Prevents any deferred command from leaving Discord stuck at "thinking..."
+# when an unhandled exception escapes to the command tree.
+
+@bot.tree.error
+async def on_error(interaction: discord.Interaction, error: Exception) -> None:
+    log.exception("App-command error in %s: %s", interaction.command, error)
+    try:
+        if interaction.response.is_deferred():
+            await interaction.followup.send(
+                f"An error occurred: {error}", ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"An error occurred: {error}", ephemeral=True
+            )
+    except Exception:
+        # The interaction may already be expired or un-replyable; nothing more to do.
+        pass
 
 
 # ── wavelink event listeners ───────────────────────────────

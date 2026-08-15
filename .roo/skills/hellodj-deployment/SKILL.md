@@ -23,7 +23,7 @@ description: Deploy and manage the HelloDJ Discord bot and web UI service to Kub
 
 - **Service name**: `bot` or `web-ui` (or both for full deployment)
 - **Image tag**: defaults to `latest`
-- **Kubernetes namespace**: defaults to `hellodj`
+- **Kubernetes namespace**: `hellodj-service`
 
 ## Workflow
 
@@ -64,21 +64,21 @@ kubectl apply -f kube/ingress.yaml
 
 ```bash
 # Check pod status
-kubectl get pods -n hellodj
+kubectl get pods -n hellodj-service
 
 # Check service endpoints
-kubectl get svc -n hellodj
+kubectl get svc -n hellodj-service
 
 # View logs
-kubectl logs -n hellodj -l app=bot
-kubectl logs -n hellodj -l app=web-ui
+kubectl logs -n hellodj-service -l app=bot
+kubectl logs -n hellodj-service -l app=web-ui
 ```
 
 ### 5. Rolling update (optional)
 
 ```bash
-kubectl rollout restart deployment/bot -n hellodj
-kubectl rollout restart deployment/web-ui -n hellodj
+kubectl rollout restart deployment/bot -n hellodj-service
+kubectl rollout restart deployment/web-ui -n hellodj-service
 ```
 
 ## Harbor Credentials
@@ -123,15 +123,15 @@ docker build -t registry.celestium.life/hellodj/bot:$TAG bot/
 docker build -t registry.celestium.life/hellodj/web-ui:$TAG web-ui/
 docker push registry.celestium.life/hellodj/bot:$TAG
 docker push registry.celestium.life/hellodj/web-ui:$TAG
-kubectl set image deployment/bot bot=registry.celestium.life/hellodj/bot:$TAG -n hellodj
-kubectl set image deployment/web-ui web-ui=registry.celestium.life/hellodj/web-ui:$TAG -n hellodj
+kubectl set image deployment/bot bot=registry.celestium.life/hellodj/bot:$TAG -n hellodj-service
+kubectl set image deployment/web-ui web-ui=registry.celestium.life/hellodj/web-ui:$TAG -n hellodj-service
 ```
 
 ### Rollback to previous version
 
 ```bash
-kubectl rollout undo deployment/bot -n hellodj
-kubectl rollout undo deployment/web-ui -n hellodj
+kubectl rollout undo deployment/bot -n hellodj-service
+kubectl rollout undo deployment/web-ui -n hellodj-service
 ```
 
 ## Troubleshooting
@@ -140,16 +140,16 @@ kubectl rollout undo deployment/web-ui -n hellodj
 
 - Verify Harbor credentials: `docker info | grep Registry`
 - Check image exists: `docker pull registry.celestium.life/hellodj/bot:<tag>`
-- Verify imagePullSecret: `kubectl get secret harbor-credentials -n hellodj`
+- Verify imagePullSecret: `kubectl get secret harbor-credentials -n hellodj-service`
 
 ### Pod not starting
 
-- Check logs: `kubectl logs -n hellodj <pod-name>`
-- Check events: `kubectl describe pod -n hellodj <pod-name>`
-- Verify configmap: `kubectl get configmap -n hellodj`
+- Check logs: `kubectl logs -n hellodj-service <pod-name>`
+- Check events: `kubectl describe pod -n hellodj-service <pod-name>`
+- Verify configmap: `kubectl get configmap -n hellodj-service`
 
 ### Service not accessible
 
-- Verify service: `kubectl get svc -n hellodj`
-- Check ingress: `kubectl get ingress -n hellodj`
+- Verify service: `kubectl get svc -n hellodj-service`
+- Check ingress: `kubectl get ingress -n hellodj-service`
 - Test endpoint: `curl https://hellodj.celestium.life`

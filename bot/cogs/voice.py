@@ -7,6 +7,7 @@ to Discord voice events. Incoming audio is received via a hybrid voice player
 
 import asyncio
 import logging
+import os
 
 import discord
 from discord import app_commands
@@ -96,7 +97,27 @@ class VoiceCog(commands.Cog):
         self._orchestrator: VoiceCommandOrchestrator | None = None
         self._tick_task: asyncio.Task | None = None
         self._enabled_guilds: set[int] = set()
+        self._disabled_guilds: set[int] = set()
         self._sinks: dict[int, object] = {}
+        # Master switch: when VOICE_ENABLED=true the bot listens by default in
+        # every guild it joins; the per-guild /voice toggle can still override.
+        self._voice_enabled = os.getenv("VOICE_ENABLED", "false").strip().lower() == "true"
+        if self._voice_enabled:
+            log.info("VOICE_ENABLED=true — voice activation auto-enabled for all guilds")
+
+    def _should_listen(self, guild_id: int) -> bool:
+        """Effective listening decision for a guild.
+
+        Order of precedence:
+          1. A guild explicitly toggled off via /voice disable never listens.
+          2. VOICE_ENABLED=true enables listening by default everywhere.
+          3. Otherwise fall back to the per-guild /voice toggle (_enabled_guilds).
+        """
+        if guild_id in self._disabled_guilds:
+            return False
+        if self._voice_enabled:
+            return True
+        return guild_id in self._enabled_guilds
 
     async def setup_orchestrator(self) -> None:
         """Initialize the voice activation pipeline."""
@@ -137,6 +158,7 @@ class VoiceCog(commands.Cog):
 
         if state == "enable":
             self._enabled_guilds.add(guild_id)
+            self._disabled_guilds.discard(guild_id)
             self._start_receive(guild_id)
             await interaction.response.send_message(
                 "HelloDJ voice activation **enabled**. "
@@ -145,6 +167,7 @@ class VoiceCog(commands.Cog):
             )
         else:
             self._enabled_guilds.discard(guild_id)
+            self._disabled_guilds.add(guild_id)
             self._stop_receive(guild_id)
             await interaction.response.send_message(
                 "HelloDJ voice activation **disabled**.",
@@ -157,7 +180,7 @@ class VoiceCog(commands.Cog):
     )
     async def voice_status(self, interaction: discord.Interaction) -> None:
         guild_id = interaction.guild.id
-        enabled = guild_id in self._enabled_guilds
+        enabled = self._should_listen(guild_id)
         wakeword = (self._orchestrator.pipeline.wakeword.available
                      if self._orchestrator and self._orchestrator.pipeline.wakeword
                      else False)
@@ -187,7 +210,7 @@ class VoiceCog(commands.Cog):
             # Bot left voice — stop receiving
             self._stop_receive(member.guild.id)
             return
-        if member.guild.id in self._enabled_guilds:
+        if self._should_listen(member.guild.id):
             self._start_receive(member.guild.id)
 
     # ── sink wiring (uses the hybrid player's listen()) ─────────────────
@@ -238,6 +261,10 @@ class VoiceCog(commands.Cog):
         while not self.bot.is_closed():
             await asyncio.sleep(0.08)  # 80ms
             if self._orchestrator is None:
+                continue
+            # Only run wake-word inference when we're actually receiving voice
+            # audio somewhere — don't burn CPU when there's no voice connection.
+            if not self._sinks:
                 continue
             await self._orchestrator.tick()
 

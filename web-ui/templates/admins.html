@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Admins{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2 class="mb-4">
+            <i class="bi bi-person-gear"></i> Admin Management
+            <small class="text-muted fs-6">— Discord access control</small>
+        </h2>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-person-badge"></i> Bound Owner
+            </div>
+            <div class="card-body" id="owner-info">
+                <p class="text-muted">Loading...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-person-plus"></i> Add Admin
+            </div>
+            <div class="card-body">
+                <div class="d-flex gap-2 flex-wrap">
+                    <input class="form-control flex-grow-1" id="admin-user-id" placeholder="Discord User ID (snowflake)">
+                    <button class="btn btn-hellodj" onclick="addAdmin()">
+                        <i class="bi bi-person-plus"></i> Add
+                    </button>
+                </div>
+                <small class="text-muted">Enter the user's numeric Discord ID (right-click > Copy User ID with Developer Mode enabled).</small>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-person-check"></i> Admins
+                <button class="btn btn-sm btn-outline-hellodj float-end" onclick="refreshAdmins()">
+                    <i class="bi bi-arrow-clockwise"></i> Refresh
+                </button>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover" id="admins-table">
+                        <thead>
+                            <tr>
+                                <th>Discord User ID</th>
+                                <th>Role</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="admins-body">
+                            <tr><td colspan="3" class="text-muted text-center">Loading...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+$(async function() {
+    await refreshAdmins();
+});
+
+async function refreshAdmins() {
+    const data = await apiFetch('/api/admins');
+    if (!data) return;
+
+    const owner = data.owner_user_id;
+    $('#owner-info').html(`
+        <div class="row">
+            <div class="col-md-6">
+                <strong>Owner User ID:</strong> <code>${owner || '—'}</code><br>
+                <strong>Owner Username:</strong> ${data.owner_username || '—'}
+            </div>
+        </div>
+    `);
+
+    const tbody = $('#admins-body');
+    const admins = data.admin_user_ids || [];
+    if (admins.length === 0) {
+        tbody.html('<tr><td colspan="3" class="text-muted text-center">No admins configured yet</td></tr>');
+        return;
+    }
+
+    tbody.html(admins.map(a => `
+        <tr>
+            <td><code>${a}</code></td>
+            <td><span class="badge badge-hellodj">Admin</span></td>
+            <td>
+                <button class="btn btn-sm btn-outline-danger" onclick="removeAdmin('${a}')">
+                    <i class="bi bi-person-x"></i> Remove
+                </button>
+            </td>
+        </tr>
+    `).join(''));
+}
+
+async function addAdmin() {
+    const uid = $('#admin-user-id').val().trim();
+    if (!uid) {
+        showToast('Enter a Discord user ID', 'warning');
+        return;
+    }
+    const result = await apiFetch('/api/admins', {
+        method: 'POST',
+        body: JSON.stringify({ user_id: uid }),
+    });
+    if (result && result.status === 'ok') {
+        $('#admin-user-id').val('');
+        showToast(result.message, 'success');
+        await refreshAdmins();
+    }
+}
+
+async function removeAdmin(uid) {
+    if (!confirm(`Remove admin ${uid}?`)) return;
+    const result = await apiFetch(`/api/admins/${uid}`, { method: 'DELETE' });
+    if (result && result.status === 'ok') {
+        showToast(result.message, 'success');
+        await refreshAdmins();
+    }
+}
+</script>
+{% endblock %}

@@ -30,10 +30,11 @@ DISCORD_FRAME_SAMPLES = 960
 class TTSEngine:
     """TTS engine wrapper. Uses kokoro if available, fallback to speaches."""
 
-    def __init__(self, engine: str = "kokoro"):
+    def __init__(self, engine: str | None = None):
         self._engine = engine or os.getenv("TTS_ENGINE", "kokoro")
         self._model = None
         self._speaches_url = os.getenv("SPEACHES_URL", "")
+        self._kokoro_url = os.getenv("KOKORO_URL", "")
         self._voice = os.getenv("TTS_VOICE", "af_heart")
 
     def _ensure_model(self):
@@ -41,7 +42,16 @@ class TTSEngine:
             return
 
         if self._engine == "kokoro":
-            self._load_kokoro()
+            if self._kokoro_url:
+                # Remote kokoro: no in-process KPipeline is loaded. We lazily
+                # call its REST API per synthesize, like speaches.
+                self._model = {"url": self._kokoro_url, "voice": self._voice}
+                log.info(
+                    "kokoro TTS engine configured via remote URL (url=%s, voice=%s)",
+                    self._kokoro_url, self._voice,
+                )
+            else:
+                self._load_kokoro()
         elif self._engine == "speaches":
             self._load_speaches()
         else:
@@ -91,6 +101,8 @@ class TTSEngine:
 
         try:
             if self._engine == "kokoro":
+                if self._kokoro_url:
+                    return self._synthesize_kokoro_remote(text)
                 return self._synthesize_kokoro(text)
             elif self._engine == "speaches":
                 return self._synthesize_speaches(text)
@@ -114,6 +126,33 @@ class TTSEngine:
             return None
         pcm = np.concatenate(chunks).astype(np.float32)
         return pcm, KOKORO_SAMPLE_RATE
+
+    def _synthesize_kokoro_remote(self, text: str) -> tuple[np.ndarray, int] | None:
+        """Remote kokoro via an OpenAI-compatible ``/v1/audio/speech`` endpoint.
+
+        POST JSON body ``{"input": text, "voice": voice, "response_format": "wav"}``
+        returns a WAV file, decoded via the stdlib ``wave`` module.
+        Synchronous (urllib) — safe to call from the bot's async loop.
+        """
+        import json
+        import urllib.request
+
+        url = self._model["url"].rstrip("/") + "/v1/audio/speech"
+        payload = {
+            "input": text,
+            "voice": self._model["voice"],
+            "response_format": "wav",
+        }
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = resp.read()
+
+        pcm, sr = _decode_wav(data)
+        return pcm, sr
 
     def _synthesize_speaches(self, text: str) -> tuple[np.ndarray, int] | None:
         """speaches exposes an OpenAI-compatible ``/v1/audio/speech`` endpoint.

@@ -218,14 +218,7 @@ class Music(commands.Cog):
 
             # For search queries, show selection dropdown
             if not is_url and len(tracks) > 1:
-                results = []
-                for t in tracks[:5]:
-                    results.append({
-                        "webpage_url": str(t.url),
-                        "title": t.name,
-                        "duration": t.duration,
-                        "uploader": t.author,
-                    })
+                results = player._search_entries(tracks, provider)[:5]
 
                 async def on_pick(info: dict, picker: discord.Interaction):
                     title = info.get("title") or "Unknown"
@@ -245,18 +238,29 @@ class Music(commands.Cog):
 
             # Direct URL or single result
             track = tracks[0]
-            info = {
-                "webpage_url": str(track.url),
-                "title": track.name or "Unknown",
-                "author": track.author or "",
-                "duration": track.duration or 0,
-            }
+            info = player._track_entry(track, provider)
             await player.add_track(state, interaction.guild.id, info)
             await interaction.followup.send(f"HelloDJ added to queue: **{info['title']}**")
 
         except (wavelink.LavalinkLoadException, wavelink.NodeException) as exc:
             log.error("Play failed (%s): %s", type(exc).__name__, exc)
-            await interaction.followup.send("Could not play that track — the music source returned no results or was unavailable.")
+            severity = getattr(exc, "severity", None)
+            if severity == "fault":
+                # severity=fault means the source itself failed (e.g. the YouTube
+                # source could not extract/load the track), not that nothing matched.
+                cause = getattr(exc, "cause", None)
+                detail = f" ({cause})" if cause else ""
+                await interaction.followup.send(
+                    f"Could not play that track — the music source failed{detail}. "
+                    "If this is a YouTube request, the source may be temporarily unavailable "
+                    "or blocking automated requests."
+                )
+            elif severity == "noMatches":
+                await interaction.followup.send("Could not play that track — the music source returned no results.")
+            else:
+                await interaction.followup.send(
+                    "Could not play that track — the music source returned no results or was unavailable."
+                )
         except Exception as exc:
             log.error("Play failed (%s): %s", type(exc).__name__, exc)
             await interaction.followup.send(f"Could not play: {exc}")
@@ -406,14 +410,7 @@ class Music(commands.Cog):
                 return
 
             if not is_url and len(tracks) > 1:
-                results = []
-                for t in tracks[:5]:
-                    results.append({
-                        "webpage_url": str(t.url),
-                        "title": t.name,
-                        "duration": t.duration,
-                        "uploader": t.author,
-                    })
+                results = player._search_entries(tracks, provider)[:5]
 
                 async def on_pick(info: dict, picker: discord.Interaction):
                     title = info.get("title") or "Unknown"
@@ -428,12 +425,7 @@ class Music(commands.Cog):
                 return
 
             track = tracks[0]
-            info = {
-                "webpage_url": str(track.url),
-                "title": track.name or "Unknown",
-                "author": track.author or "",
-                "duration": track.duration or 0,
-            }
+            info = player._track_entry(track, provider)
             await player.add_track(state, interaction.guild.id, info)
             await interaction.followup.send(f"HelloDJ added to queue (#{len(state['queue'])}): **{info['title']}**")
 

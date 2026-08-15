@@ -11,6 +11,7 @@ from discord.ext import commands
 import player
 import session
 import blacklist as _blacklist
+import oauth_store
 
 log = logging.getLogger(__name__)
 
@@ -23,8 +24,11 @@ class Admin(commands.Cog):
         self.bot = bot
 
     def _is_admin(self, interaction: discord.Interaction) -> bool:
-        """Check if user has administrator permission or is the bot owner."""
+        """Check if user has administrator permission or is a bot/oauth owner."""
         if self.bot.owner_id is not None and interaction.user.id == self.bot.owner_id:
+            return True
+        # OAuth-bound owner/admin (from data/oauth.json, written by web-ui)
+        if oauth_store.is_bound_admin(interaction.user.id):
             return True
         if interaction.guild:
             perms = interaction.user.guild_permissions

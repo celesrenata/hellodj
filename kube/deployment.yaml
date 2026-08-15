@@ -17,10 +17,7 @@ spec:
       app.kubernetes.io/instance: hellodj
       app.kubernetes.io/name: hellodj
   strategy:
-    type: RollingUpdate
-    rollingUpdate:
-      maxSurge: 25%
-      maxUnavailable: 25%
+    type: Recreate
   template:
     metadata:
       labels:
@@ -31,16 +28,125 @@ spec:
         app.kubernetes.io/component: bot
         helm.sh/chart: hellodj-0.1.0
     spec:
+      # dnsPolicy: ClusterFirst (supported on this k3s cluster). dnsConfig lists
+      # explicit upstream nameservers so that if CoreDNS fails to resolve external
+      # hostnames (gateway.discord.gg / discord.gg), the bot falls back to host DNS.
+      # Fixes the `Temporary failure in name resolution` reconnect loop that
+      # starves the /play voice handshake (VOICE_STATE_UPDATE + VOICE_SERVER_UPDATE).
+      #
+      # NOTE: no custom `searches` are set. A `search celestium.life` entry hijacks
+      # short external hostnames (e.g. maven.lavalink.dev -> a wildcard *.celestium.life
+      # IP), breaking the lavalink sidecar's startup plugin download. Kube's own
+      # cluster search domains remain in place.
+      #
+      # Verified 2026-08-14 (live pod): DNS resolves correctly in-pod
+      # (gateway.discord.gg -> 162.159.13x.234, maven.lavalink.dev -> 89.58.40.223,
+      # no celestium.life search entry). The residual gateway reconnect loop is an
+      # idle/NAT timeout on the long-lived websocket, not a DNS failure: the kernel
+      # default tcp_keepalive_time=7200s never probes before a middlebox kills the
+      # idle socket, so the gateway stalls until a 30s voice handshake timeout.
+      # Lower the (namespaced, SAFE) sysctl to 60s so the kernel detects the dead
+      # peer promptly and the gateway tears down/reconnects cleanly instead of
+      # starving the /play handshake.
+      dnsPolicy: ClusterFirst
+      dnsConfig:
+        nameservers:
+          - 192.168.42.1
+          - 192.168.99.42
       imagePullSecrets:
         - name: harbor-credentials
       securityContext:
         fsGroup: 1000
         runAsGroup: 1000
         runAsUser: 1000
+        sysctls:
+          - name: net.ipv4.tcp_keepalive_time
+            value: "60"
+      initContainers:
+        # ── Render lavalink application.yml from the configmap ────────
+        # The configmap stores ${...} placeholders; lavalink's own image has no
+        # envsubst, so a busybox init container substitutes them from env into
+        # a writable emptyDir before the sidecar starts.
+        - name: render-lavalink-config
+          image: busybox:1.36
+          imagePullPolicy: IfNotPresent
+          env:
+            - name: TIDAL_COUNTRY_CODE
+              value: US
+            - name: TIDAL_SEARCH_LIMIT
+              value: "6"
+            - name: TIDAL_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: TIDAL_CLIENT_ID
+                  optional: true
+            - name: TIDAL_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: TIDAL_CLIENT_SECRET
+                  optional: true
+            - name: TIDAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: TIDAL_TOKEN
+                  optional: true
+            - name: SPOTIFY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: SPOTIFY_CLIENT_ID
+                  optional: true
+            - name: SPOTIFY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: SPOTIFY_CLIENT_SECRET
+                  optional: true
+            - name: PROVIDER_YOUTUBE
+              value: "true"
+            - name: PROVIDER_YOUTUBEMUSIC
+              value: "true"
+            - name: PROVIDER_SOUNDCLOUD
+              value: "true"
+            - name: PROVIDER_SPOTIFY
+              value: "true"
+            - name: PROVIDER_TIDAL
+              value: "true"
+            # ── youtube-source plugin OAuth (optional) ───────────────────
+            # The youtube-source plugin does NOT support email/password; it uses an
+            # OAuth refresh token instead. Leave enabled=false until real values are
+            # filled in the youtube-secret (see kube/youtube-secret.yaml).
+            - name: YOUTUBE_OAUTH_ENABLED
+              value: "false"
+            - name: YOUTUBE_OAUTH_REFRESH_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: youtube-secret
+                  key: YOUTUBE_OAUTH_REFRESH_TOKEN
+                  optional: true
+          command:
+            - /bin/sh
+            - -c
+            - |
+              set -e
+              cp /cfg/application.yml /out/application.yml
+              for v in TIDAL_COUNTRY_CODE TIDAL_SEARCH_LIMIT TIDAL_CLIENT_ID TIDAL_CLIENT_SECRET TIDAL_TOKEN SPOTIFY_CLIENT_ID SPOTIFY_CLIENT_SECRET PROVIDER_YOUTUBE PROVIDER_YOUTUBEMUSIC PROVIDER_SOUNDCLOUD PROVIDER_SPOTIFY PROVIDER_TIDAL YOUTUBE_OAUTH_ENABLED YOUTUBE_OAUTH_REFRESH_TOKEN; do
+                val=$(eval echo \${$v})
+                sed -i "s|\${$v}|$val|g" /out/application.yml
+              done
+          volumeMounts:
+            - name: lavalink-config-src
+              mountPath: /cfg
+              readOnly: true
+            - name: lavalink-config-rendered
+              mountPath: /out
       containers:
         # ── Discord Bot ─────────────────────────────────────────────
         - name: bot
-          image: registry.celestium.life/hellodj/bot:latest
+          image: registry.celestium.life/hellodj/bot:578368f
           imagePullPolicy: Always
           envFrom:
             - configMapRef:
@@ -64,7 +170,7 @@ spec:
                   key: DISCORD_PUBKEY
                   optional: true
             - name: LAVALINK_HOST
-              value: localhost
+              value: hellodj.hellodj-service.svc.cluster.local
             - name: LAVALINK_PORT
               value: "2333"
             - name: LAVALINK_PASSWORD
@@ -92,6 +198,24 @@ spec:
                 secretKeyRef:
                   name: hellodj-secret
                   key: GENIUS_API_KEY
+                  optional: true
+            - name: GENIUS_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: GENIUS_CLIENT_ID
+                  optional: true
+            - name: GENIUS_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: GENIUS_CLIENT_SECRET
+                  optional: true
+            - name: GENIUS_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: GENIUS_ACCESS_TOKEN
                   optional: true
             - name: TIDAL_TOKEN
               valueFrom:
@@ -151,6 +275,22 @@ spec:
               value: "2333"
             - name: LAVALINK_PASSWORD
               value: youshallnotpass
+            - name: TIDAL_COUNTRY_CODE
+              value: US
+            - name: TIDAL_SEARCH_LIMIT
+              value: "6"
+            - name: TIDAL_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: TIDAL_CLIENT_ID
+                  optional: true
+            - name: TIDAL_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: TIDAL_CLIENT_SECRET
+                  optional: true
             - name: TIDAL_TOKEN
               valueFrom:
                 secretKeyRef:
@@ -164,9 +304,39 @@ spec:
             requests:
               cpu: 500m
               memory: 512Mi
+          startupProbe:
+            httpGet:
+              path: /v4/info
+              port: lavalink
+              httpHeaders:
+                - name: Authorization
+                  value: youshallnotpass
+            periodSeconds: 3
+            timeoutSeconds: 3
+            failureThreshold: 40
+          readinessProbe:
+            httpGet:
+              path: /v4/info
+              port: lavalink
+              httpHeaders:
+                - name: Authorization
+                  value: youshallnotpass
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /v4/info
+              port: lavalink
+              httpHeaders:
+                - name: Authorization
+                  value: youshallnotpass
+            periodSeconds: 30
+            timeoutSeconds: 3
+            failureThreshold: 3
           volumeMounts:
             - mountPath: /opt/Lavalink/application.yml
-              name: lavalink-config
+              name: lavalink-config-rendered
               readOnly: true
               subPath: application.yml
             - mountPath: /opt/Lavalink/plugins/
@@ -187,7 +357,9 @@ spec:
               - key: application.yml
                 path: application.yml
             name: lavalink-config
-          name: lavalink-config
+          name: lavalink-config-src
+        - name: lavalink-config-rendered
+          emptyDir: {}
         - name: lavalink-plugins
           emptyDir: {}
         - name: hellodj-models

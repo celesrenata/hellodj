@@ -58,6 +58,9 @@ cp -r kube/ ~/sources/kube/HelloJD/
 kubectl create secret generic hellodj-secret \
   --namespace hellodj-service \
   --from-literal=DISCORD_TOKEN=your_token \
+  --from-literal=DISCORD_APPID=your_application_id \
+  --from-literal=DISCORD_CLIENT_SECRET=your_client_secret \
+  --from-literal=FLASK_SECRET=your_flask_secret \
   --from-literal=SPOTIFY_CLIENT_ID=... \
   --from-literal=SPOTIFY_CLIENT_SECRET=... \
   --from-literal=GENIUS_API_KEY=...

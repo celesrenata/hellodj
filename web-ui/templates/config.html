@@ -64,6 +64,57 @@
                 </div>
             </div>
         </div>
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="bi bi-collection-play"></i> Music Providers
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-2">
+                    Enable/disable each music source. Credentials for Spotify and Tidal are
+                    configured in their own cards below. YouTube, YouTube Music, and SoundCloud
+                    need no credentials.
+                </p>
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="provider-youtube">
+                    <label class="form-check-label" for="provider-youtube">YouTube</label>
+                </div>
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="provider-youtubemusic">
+                    <label class="form-check-label" for="provider-youtubemusic">YouTube Music</label>
+                </div>
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="provider-soundcloud">
+                    <label class="form-check-label" for="provider-soundcloud">SoundCloud</label>
+                </div>
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="provider-spotify">
+                    <label class="form-check-label" for="provider-spotify">Spotify</label>
+                </div>
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="provider-tidal">
+                    <label class="form-check-label" for="provider-tidal">Tidal</label>
+                </div>
+            </div>
+        </div>
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="bi bi-music-note"></i> Tidal
+            </div>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label class="form-label" for="tidal-token">Tidal Token</label>
+                    <input type="password" class="form-control" id="tidal-token" placeholder="TIDAL_TOKEN">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="tidal-country-code">Country Code</label>
+                    <input class="form-control" id="tidal-country-code" placeholder="TIDAL_COUNTRY_CODE">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="tidal-search-limit">Search Limit</label>
+                    <input type="number" class="form-control" id="tidal-search-limit" placeholder="TIDAL_SEARCH_LIMIT">
+                </div>
+            </div>
+        </div>
     </div>
     <div class="col-md-6">
         <div class="card">
@@ -83,12 +134,35 @@
         </div>
         <div class="card mt-3">
             <div class="card-header">
+                <i class="bi bi-cloud"></i> YouTube, YouTube Music & SoundCloud
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-0">
+                    These sources require no credentials and are controlled from the
+                    <strong>Music Providers</strong> card above.
+                </p>
+            </div>
+        </div>
+        <div class="card mt-3">
+            <div class="card-header">
                 <i class="bi bi-magic"></i> Genius (Lyrics)
             </div>
             <div class="card-body">
                 <div class="mb-3">
                     <label class="form-label" for="genius-key">API Key</label>
                     <input type="password" class="form-control" id="genius-key" placeholder="GENIUS_API_KEY">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="genius-client-id">Client ID</label>
+                    <input type="password" class="form-control" id="genius-client-id" placeholder="GENIUS_CLIENT_ID">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="genius-client-secret">Client Secret</label>
+                    <input type="password" class="form-control" id="genius-client-secret" placeholder="GENIUS_CLIENT_SECRET">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="genius-access-token">Access Token</label>
+                    <input type="password" class="form-control" id="genius-access-token" placeholder="GENIUS_ACCESS_TOKEN">
                 </div>
             </div>
         </div>
@@ -118,6 +192,17 @@
                         <option value="medium">medium</option>
                         <option value="large-v3">large-v3</option>
                     </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="voice-stt-engine">STT Engine</label>
+                    <select class="form-select" id="voice-stt-engine">
+                        <option value="local">local (faster-whisper)</option>
+                        <option value="remote">remote</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="voice-stt-url">STT URL (faster-whisper remote endpoint)</label>
+                    <input class="form-control" id="voice-stt-url" placeholder="STT_URL">
                 </div>
                 <div class="mb-3">
                     <label class="form-label" for="voice-tts-engine">TTS Engine</label>
@@ -236,10 +321,27 @@ async function loadConfig() {
     $('#spotify-id').val(cfg.spotify.client_id || '');
     $('#spotify-secret').val(cfg.spotify.client_secret || '');
     $('#genius-key').val(cfg.genius.api_key || '');
+    $('#genius-client-id').val(cfg.genius.client_id || '');
+    $('#genius-client-secret').val(cfg.genius.client_secret || '');
+    $('#genius-access-token').val(cfg.genius.access_token || '');
+    if (cfg.providers) {
+        $('#provider-youtube').prop('checked', cfg.providers.youtube !== 'false');
+        $('#provider-youtubemusic').prop('checked', cfg.providers.youtubemusic !== 'false');
+        $('#provider-soundcloud').prop('checked', cfg.providers.soundcloud !== 'false');
+        $('#provider-spotify').prop('checked', cfg.providers.spotify !== 'false');
+        $('#provider-tidal').prop('checked', cfg.providers.tidal !== 'false');
+    }
+    if (cfg.tidal) {
+        $('#tidal-token').val(cfg.tidal.token || '');
+        $('#tidal-country-code').val(cfg.tidal.country_code || 'US');
+        $('#tidal-search-limit').val(cfg.tidal.search_limit || '6');
+    }
     if (cfg.voice) {
         $('#voice-enabled').prop('checked', cfg.voice.enabled);
         $('#voice-model-path').val(cfg.voice.model_path || '');
         $('#voice-stt-size').val(cfg.voice.stt_model_size || 'base');
+        $('#voice-stt-engine').val(cfg.voice.stt_engine || 'local');
+        $('#voice-stt-url').val(cfg.voice.stt_url || '');
         $('#voice-tts-engine').val(cfg.voice.tts_engine || 'kokoro');
         $('#voice-tts-voice').val(cfg.voice.tts_voice || '');
         $('#voice-speaches-url').val(cfg.voice.speaches_url || '');
@@ -274,10 +376,27 @@ async function saveConfig() {
         },
         genius: {
             api_key: $('#genius-key').val(),
+            client_id: $('#genius-client-id').val(),
+            client_secret: $('#genius-client-secret').val(),
+            access_token: $('#genius-access-token').val(),
+        },
+        providers: {
+            youtube: $('#provider-youtube').prop('checked'),
+            youtubemusic: $('#provider-youtubemusic').prop('checked'),
+            soundcloud: $('#provider-soundcloud').prop('checked'),
+            spotify: $('#provider-spotify').prop('checked'),
+            tidal: $('#provider-tidal').prop('checked'),
+        },
+        tidal: {
+            token: $('#tidal-token').val(),
+            country_code: $('#tidal-country-code').val(),
+            search_limit: $('#tidal-search-limit').val(),
         },
         voice: {
             model_path: $('#voice-model-path').val(),
             stt_model_size: $('#voice-stt-size').val(),
+            stt_engine: $('#voice-stt-engine').val(),
+            stt_url: $('#voice-stt-url').val(),
             tts_engine: $('#voice-tts-engine').val(),
             tts_voice: $('#voice-tts-voice').val(),
             speaches_url: $('#voice-speaches-url').val(),

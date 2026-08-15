@@ -7,11 +7,14 @@ resources:
   - namespace.yaml
   - configmap.yaml
   - bot-configmap.yaml
+  - youtube-secret.yaml
   - pvc.yaml
   - nfs-pv.yaml
   - nfs-pvc.yaml
   - models-nfs-pv.yaml
   - models-pvc.yaml
+  - backups-nfs-pv.yaml
+  - backups-pvc.yaml
   - service.yaml
   - deployment.yaml
   - web-ui-service.yaml
@@ -21,6 +24,6 @@ resources:
 # Image tags
 images:
   - name: registry.celestium.life/hellodj/bot
-    newTag: latest
+    newTag: 578368f
   - name: registry.celestium.life/hellodj/web-ui
     newTag: latest
