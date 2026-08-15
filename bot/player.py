@@ -70,8 +70,9 @@ def _install_voice_event_instrumentation(client: discord.Client) -> None:
                 pass
             log.info(
                 "raw-event %s arrived guild_id=%s _get_voice_client(guild_id)=%s "
-                "(forwarded=%s)",
+                "(forwarded=%s) t=%.3fs",
                 _name, guild_id, vc is not None, vc is not None,
+                time.monotonic(),
             )
             return _orig(data)
 
@@ -265,12 +266,22 @@ async def _reissue_voice_join(channel, cls, guild, guild_id: int) -> wavelink.Pl
         return None
 
     # Wait a short window for the handshake to complete.
+    start = time.monotonic()
     try:
         async with asyncio.timeout(3.0):
             while not _handshake_complete(player):
                 await asyncio.sleep(0.25)
     except asyncio.TimeoutError:
+        log.info(
+            "connect_player re-issue handshake still incomplete after %.2fs "
+            "(guild_id=%s) — dropping to timeout",
+            time.monotonic() - start, guild_id,
+        )
         return None
+    log.info(
+        "connect_player re-issue handshake COMPLETE after %.2fs (guild_id=%s)",
+        time.monotonic() - start, guild_id,
+    )
     return player
 
 
@@ -314,7 +325,10 @@ async def connect_player(channel: discord.abc.Connectable) -> wavelink.Player:
         guild = getattr(channel, "guild", None)
         cls = HybridPlayer if HybridPlayer is not None else wavelink.Player
         # Short per-attempt window; the outer loop enforces the overall ~30s budget.
-        attempt_timeout = min(5.0, timeout / 3.0)
+        # 10s (instead of 5s) gives the first join enough room to complete the
+        # handshake, so the dropped-event recovery path no longer fires on every
+        # routine first connect. Still capped by the overall budget.
+        attempt_timeout = min(10.0, timeout / 3.0)
         deadline = time.monotonic() + timeout
         last_exc: Exception | None = None
         attempts = 0
@@ -342,16 +356,33 @@ async def connect_player(channel: discord.abc.Connectable) -> wavelink.Player:
                     return player
                 # Handshake fields not populated despite connect() returning:
                 # the dropped-event race. Re-issue on a fresh registration below.
+                vs = getattr(player, "_voice_state", {}) or {}
+                v = vs.get("voice", {}) or {}
+                ev = getattr(player, "_connection_event", None)
                 log.info(
                     "connect_player handshake INCOMPLETE after connect() attempt=%d "
-                    "guild_id=%s — re-issuing opcode 4",
+                    "guild_id=%s — re-issuing opcode 4 "
+                    "[conn_event=%s session=%r token=%r endpoint=%r]",
                     attempts, guild_id,
+                    ev is not None and ev.is_set(),
+                    v.get("session_id"), v.get("token"), v.get("endpoint"),
                 )
             except Exception as exc:
                 last_exc = exc
+                # Distinguish dropped-event (empty handshake) vs late-event (fields
+                # partially populated): dump whatever the failed player did hold.
+                try:
+                    vs = getattr(player, "_voice_state", {}) or {}
+                    v = vs.get("voice", {}) or {}
+                    ev = getattr(player, "_connection_event", None)
+                except Exception:
+                    vs, v, ev = {}, {}, None
                 log.info(
-                    "connect_player attempt=%d failed (guild_id=%s): %s",
+                    "connect_player attempt=%d failed (guild_id=%s): %s "
+                    "[conn_event=%s session=%r token=%r endpoint=%r]",
                     attempts, guild_id, exc,
+                    ev is not None and ev.is_set(),
+                    v.get("session_id"), v.get("token"), v.get("endpoint"),
                 )
 
             # ── re-issue opcode 4 on a fresh, registered player ─────
