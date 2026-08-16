@@ -291,6 +291,25 @@
 
 <div class="row mt-3">
     <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-shield-check"></i> Provider Status
+            </div>
+            <div class="card-body">
+                <p class="text-muted small mb-2">
+                    OAuth provider configuration and token health. Expired tokens are
+                    refreshed automatically; a failing provider is flagged here.
+                </p>
+                <div id="provider-status">
+                    <span class="text-muted">Loading...</span>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-12">
         <button type="button" class="btn btn-hellodj btn-lg" onclick="saveConfig()">
             <i class="bi bi-check-circle"></i> Save Configuration
         </button>
@@ -306,6 +325,7 @@
 <script>
 $(async function() {
     await loadConfig();
+    await loadProviderStatus();
 });
 
 async function loadConfig() {
@@ -422,6 +442,36 @@ async function saveConfig() {
     if (result && result.status === 'ok') {
         showToast(result.message, 'success');
     }
+}
+
+async function loadProviderStatus() {
+    const data = await apiFetch('/api/providers/status');
+    if (!data || !data.providers) return;
+    const rows = Object.entries(data.providers).map(([key, p]) => {
+        const configured = p.configured
+            ? '<span class="badge bg-success">Configured</span>'
+            : '<span class="badge bg-danger">Not configured</span>';
+        const tokenPresent = p.token_present
+            ? '<span class="badge bg-success">Token present</span>'
+            : '<span class="badge bg-secondary">No token</span>';
+        const tokenExpired = p.token_present && p.token_expired
+            ? '<span class="badge bg-danger">Token expired</span>'
+            : '<span class="badge bg-success">Token valid</span>';
+        const updated = p.updated_at
+            ? `<small class="text-muted">Updated ${new Date(p.updated_at).toLocaleString()}</small>`
+            : '<small class="text-muted">Never authenticated</small>';
+        const error = p.refresh_error
+            ? `<div class="text-danger small mt-1">Refresh failed: ${p.refresh_error}</div>`
+            : '';
+        return `
+            <div class="mb-2">
+                <strong>${p.label || key}</strong>
+                ${configured} ${tokenPresent} ${tokenExpired}
+                <br>${updated}${error}
+            </div>
+        `;
+    }).join('');
+    $('#provider-status').html(rows || '<span class="text-muted">No provider data</span>');
 }
 </script>
 {% endblock %}

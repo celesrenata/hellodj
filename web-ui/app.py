@@ -31,24 +31,31 @@ from flask import (
 def _setup_logging():
     """Configure console + rotating-file logging. File path from WEBUI_LOG_FILE,
     defaulting to the shared NFS mount <cwd>/config/webui.log."""
+    fmt = "%(asctime)s %(levelname)s %(name)s: %(message)s"
+    datefmt = "%Y-%m-%d %H:%M:%S"
+    formatter = logging.Formatter(fmt, datefmt=datefmt)
+
     handlers: list[logging.Handler] = [logging.StreamHandler()]
+    handlers[0].setFormatter(formatter)
 
     log_file = os.getenv("WEBUI_LOG_FILE", "./config/webui.log")
     try:
         log_dir = os.path.dirname(log_file)
         if log_dir:
             os.makedirs(log_dir, exist_ok=True)
-        handlers.append(
-            logging.handlers.RotatingFileHandler(
-                log_file, maxBytes=5 * 1024 * 1024, backupCount=3,
-                encoding="utf-8",
-            )
+        file_handler = logging.handlers.RotatingFileHandler(
+            log_file, maxBytes=5 * 1024 * 1024, backupCount=3,
+            encoding="utf-8",
         )
+        file_handler.setFormatter(formatter)
+        handlers.append(file_handler)
     except OSError as exc:
         # Fall back to console-only if the file can't be opened (e.g. read-only FS).
         logging.getLogger(__name__).warning("Could not enable file logging to %s: %s", log_file, exc)
 
-    logging.basicConfig(level=logging.INFO, handlers=handlers)
+    # basicConfig re-applies the formatter to any provided handlers, so all
+    # existing loggers (this module's `log`, aiohttp, werkzeug) get timestamps.
+    logging.basicConfig(level=logging.INFO, handlers=handlers, format=fmt, datefmt=datefmt)
 
 _setup_logging()
 log = logging.getLogger(__name__)
@@ -270,80 +277,237 @@ DISCORD_AUTH_URL = "https://discord.com/oauth2/authorize"
 DISCORD_TOKEN_URL = "https://discord.com/api/oauth2/token"
 DISCORD_API_URL = "https://discord.com/api"
 
-def oauth_redirect_uri():
-    """Return the callback URI (same origin as the request).
+# ── OAuth providers registry ───────────────────────────────
+# Each provider is described by its OAuth endpoints, scope, label, and the .env
+# keys that supply client_id/client_secret. A provider is "configured" only when
+# both client_id AND client_secret are present in the .env file.
+PROVIDERS = {
+    "discord": {
+        "auth_url": "https://discord.com/oauth2/authorize",
+        "token_url": "https://discord.com/api/oauth2/token",
+        "api_url": "https://discord.com/api",
+        "scope": "identify",
+        "label": "Discord",
+        "client_id_env": "DISCORD_APPID",
+        "client_secret_env": "DISCORD_CLIENT_SECRET",
+        "user_path": "/users/@me",
+        "user_id_field": "id",
+    },
+    "spotify": {
+        "auth_url": "https://accounts.spotify.com/authorize",
+        "token_url": "https://accounts.spotify.com/api/token",
+        "api_url": "https://api.spotify.com/v1",
+        "scope": "user-read-private user-read-email",
+        "label": "Spotify",
+        "client_id_env": "SPOTIFY_CLIENT_ID",
+        "client_secret_env": "SPOTIFY_CLIENT_SECRET",
+        "user_path": "/me",
+        "user_id_field": "id",
+    },
+    "tidal": {
+        "auth_url": "https://auth.tidal.com/v1/oauth2/authorize",
+        "token_url": "https://auth.tidal.com/v1/oauth2/token",
+        "api_url": "https://api.tidal.com/v1",
+        "scope": "user_read",
+        "label": "Tidal",
+        "client_id_env": "TIDAL_CLIENT_ID",
+        "client_secret_env": "TIDAL_CLIENT_SECRET",
+        "user_path": "/users/me",
+        "user_id_field": "id",
+    },
+    "genius": {
+        "auth_url": "https://api.genius.com/oauth/authorize",
+        "token_url": "https://api.genius.com/token",
+        "api_url": "https://api.genius.com",
+        "scope": "",
+        "label": "Genius",
+        "client_id_env": "GENIUS_CLIENT_ID",
+        "client_secret_env": "GENIUS_CLIENT_SECRET",
+        "user_path": "/account",
+        "user_id_field": "id",
+    },
+}
+
+def provider_config(name):
+    """Return the registry entry for a provider, or None if unknown."""
+    return PROVIDERS.get(name)
+
+def provider_credentials(name):
+    """Return (client_id, client_secret) for a provider from .env, or (None, None)."""
+    prov = provider_config(name)
+    if prov is None:
+        return None, None
+    env = read_env()
+    cid = env.get(prov["client_id_env"], "")
+    csec = env.get(prov["client_secret_env"], "")
+    return (cid or None), (csec or None)
+
+def provider_is_configured(name):
+    """True when both client_id and client_secret are present for a provider."""
+    cid, csec = provider_credentials(name)
+    return bool(cid and csec)
+
+def oauth_redirect_uri(provider="discord"):
+    """Return the callback URI for a provider (same origin as the request).
 
     The site is served over HTTPS behind a TLS-terminating ingress, so force
     the scheme to https even though the proxied request appears as http://.
     """
-    return url_for("auth_callback", _external=True, _scheme="https")
+    if provider == "discord":
+        return url_for("auth_callback", _external=True, _scheme="https")
+    return url_for("provider_callback", provider=provider, _external=True, _scheme="https")
 
-def discord_credentials():
-    env = read_env()
-    return env.get("DISCORD_APPID", ""), env.get("DISCORD_CLIENT_SECRET", "")
+def _token_expires_at(expires_in):
+    """Return an epoch-seconds expiry timestamp from `expires_in`, or None."""
+    if expires_in is None:
+        return None
+    try:
+        return datetime.now(timezone.utc).timestamp() + int(expires_in)
+    except (TypeError, ValueError):
+        return None
 
-@app.route("/auth/login")
-def auth_login():
-    """Begin the OAuth authorization-code flow.
+def _refresh_provider_token(provider):
+    """Attempt a refresh_token exchange for a provider and persist the result.
 
-    If an owner is already bound, redirect to the dashboard. Otherwise send the
-    browser to Discord with a CSRF-protecting state token stored in the session.
+    Returns (True, None) on success after updating oauth.json, or
+    (False, error_message) on failure. Never raises.
     """
-    if current_user() is not None:
-        return redirect(url_for("index"))
-
-    client_id, _client_secret = discord_credentials()
-    if not client_id:
-        return jsonify({"error": "DISCORD_APPID is not configured"}), 500
-
-    state = secrets.token_hex(16)
-    session["oauth_state"] = state
-    params = {
-        "client_id": client_id,
-        "response_type": "code",
-        "redirect_uri": oauth_redirect_uri(),
-        "scope": "identify",
-        "state": state,
-    }
-    url = f"{DISCORD_AUTH_URL}?{urlencode(params)}"
-    return redirect(url)
-
-@app.route("/auth/callback")
-def auth_callback():
-    """Exchange the code for tokens, fetch the user, and bind the owner.
-
-    Only the first caller becomes the owner (owner_user_id). Later logins are
-    checked against the owner/admin list before granting a session.
-    """
-    code = request.args.get("code")
-    state = request.args.get("state")
-
-    if not code or not state:
-        return jsonify({"error": "Missing code or state"}), 400
-    if state != session.get("oauth_state"):
-        session.pop("oauth_state", None)
-        return jsonify({"error": "Invalid state parameter"}), 400
-    session.pop("oauth_state", None)
-
-    client_id, client_secret = discord_credentials()
+    prov = provider_config(provider)
+    if prov is None:
+        return False, "Unknown provider"
+    oauth = load_oauth()
+    entry = (oauth.get("providers") or {}).get(provider)
+    if not entry or not entry.get("access_token") or not entry.get("refresh_token"):
+        return False, "No stored token or refresh_token"
+    client_id, client_secret = provider_credentials(provider)
     if not client_id or not client_secret:
-        return jsonify({"error": "Discord OAuth not configured"}), 500
+        return False, f"{prov['label']} OAuth not configured"
+    refresh_token = entry["refresh_token"]
 
     async def exchange():
         async with aiohttp.ClientSession() as sess:
             async with sess.post(
-                DISCORD_TOKEN_URL,
+                prov["token_url"],
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                },
+            ) as resp:
+                if resp.status != 200:
+                    body = await resp.text()
+                    return None, f"Refresh failed ({resp.status}): {body}"
+                token_data = await resp.json()
+        return token_data, None
+
+    try:
+        token_data, err = asyncio.run(exchange())
+    except Exception as exc:
+        log.error("Token refresh error (%s): %s", provider, exc)
+        return False, f"Refresh error: {exc}"
+
+    if token_data is None:
+        return False, err or "Refresh failed"
+    access_token = token_data.get("access_token")
+    if not access_token:
+        return False, "No access_token in refresh response"
+
+    new_refresh = token_data.get("refresh_token")
+    expires_at = _token_expires_at(token_data.get("expires_in"))
+    entry["access_token"] = access_token
+    if new_refresh:
+        entry["refresh_token"] = new_refresh
+    entry["expires_at"] = expires_at
+    entry["updated_at"] = datetime.now(timezone.utc).isoformat()
+    oauth.setdefault("providers", {})[provider] = entry
+    save_oauth(oauth)
+    return True, None
+
+@app.route("/auth/<provider>/login")
+def provider_login(provider):
+    """Begin an OAuth authorization-code flow for any registered provider.
+
+    Unknown or unconfigured providers are rejected. Sends the browser to the
+    provider's authorize URL with a CSRF-protecting state token stored in the
+    session under oauth_state_<provider>.
+    """
+    prov = provider_config(provider)
+    if prov is None:
+        return jsonify({"error": f"Unknown provider: {provider}"}), 400
+    client_id, _client_secret = provider_credentials(provider)
+    if not client_id:
+        return jsonify({"error": f"{prov['label']} OAuth is not configured"}), 500
+
+    state = secrets.token_hex(16)
+    session[f"oauth_state_{provider}"] = state
+    params = {
+        "client_id": client_id,
+        "response_type": "code",
+        "redirect_uri": oauth_redirect_uri(provider),
+        "state": state,
+    }
+    if prov.get("scope"):
+        params["scope"] = prov["scope"]
+    url = f"{prov['auth_url']}?{urlencode(params)}"
+    return redirect(url)
+
+@app.route("/auth/login")
+def auth_login():
+    """Begin the Discord OAuth flow (backward-compatible wrapper)."""
+    if current_user() is not None:
+        return redirect(url_for("index"))
+    return provider_login("discord")
+
+@app.route("/auth/<provider>/callback")
+def provider_callback(provider):
+    """Exchange an OAuth code for tokens and store them under providers.
+
+    `state` is optional-tolerant: if present it is validated against the session
+    token; if absent a warning is logged and the flow proceeds. This accepts
+    Discord bot-invite callbacks (which omit state but carry valid code, plus
+    guild_id/permissions params). Those params are persisted in a `bot_invite`
+    record alongside the per-provider token so the bot can act on them.
+    """
+    prov = provider_config(provider)
+    if prov is None:
+        return jsonify({"error": f"Unknown provider: {provider}"}), 400
+
+    code = request.args.get("code")
+    state = request.args.get("state")
+
+    if not code:
+        return jsonify({"error": "Missing code"}), 400
+    if state is not None:
+        if state != session.get(f"oauth_state_{provider}"):
+            session.pop(f"oauth_state_{provider}", None)
+            return jsonify({"error": "Invalid state parameter"}), 400
+        session.pop(f"oauth_state_{provider}", None)
+    else:
+        log.warning(
+            "OAuth callback for %s received no state param (code present); "
+            "treating as bot-invite callback", provider,
+        )
+
+    client_id, client_secret = provider_credentials(provider)
+    if not client_id or not client_secret:
+        return jsonify({"error": f"{prov['label']} OAuth not configured"}), 500
+
+    async def exchange():
+        async with aiohttp.ClientSession() as sess:
+            async with sess.post(
+                prov["token_url"],
                 data={
                     "client_id": client_id,
                     "client_secret": client_secret,
                     "grant_type": "authorization_code",
                     "code": code,
-                    "redirect_uri": oauth_redirect_uri(),
+                    "redirect_uri": oauth_redirect_uri(provider),
                 },
             ) as token_resp:
                 if token_resp.status != 200:
                     body = await token_resp.text()
-                    log.error("Token exchange failed: %s %s", token_resp.status, body)
+                    log.error("Token exchange failed (%s): %s %s", provider, token_resp.status, body)
                     return None, None
                 token_data = await token_resp.json()
 
@@ -351,50 +515,86 @@ def auth_callback():
             if not access_token:
                 return None, None
 
-            async with sess.get(
-                f"{DISCORD_API_URL}/users/@me",
-                headers={"Authorization": f"Bearer {access_token}"},
-            ) as user_resp:
-                if user_resp.status != 200:
-                    body = await user_resp.text()
-                    log.error("Failed to fetch user: %s %s", user_resp.status, body)
-                    return None, None
-                return token_data, await user_resp.json()
+            user = {}
+            if prov.get("user_path"):
+                async with sess.get(
+                    f"{prov['api_url']}{prov['user_path']}",
+                    headers={"Authorization": f"Bearer {access_token}"},
+                ) as user_resp:
+                    if user_resp.status != 200:
+                        body = await user_resp.text()
+                        log.error("Failed to fetch user (%s): %s %s", provider, user_resp.status, body)
+                        return None, None
+                    user = await user_resp.json()
+            return token_data, user
 
     token_data, user = asyncio.run(exchange())
-    if token_data is None or user is None:
+    if token_data is None:
         return jsonify({"error": "OAuth exchange failed"}), 502
 
     access_token = token_data.get("access_token")
     refresh_token = token_data.get("refresh_token")
     expires_in = token_data.get("expires_in")
-    user_id = str(user.get("id"))
-    username = user.get("username", "")
 
     oauth = load_oauth()
-    owner = oauth.get("owner_user_id")
-    if owner is None:
-        # First login binds the owner.
-        oauth["owner_user_id"] = user_id
-        oauth["owner_username"] = username
-        oauth["discord_token"] = {
-            "access_token": access_token,
-            "refresh_token": refresh_token,
-            "expires_in": expires_in,
+    # Per-provider token store under a "providers" key.
+    providers = oauth.setdefault("providers", {})
+    providers[provider] = {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expires_at": _token_expires_at(expires_in),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    # Bot-invite params (Discord): persist guild_id + permissions if present.
+    guild_id = request.args.get("guild_id")
+    permissions = request.args.get("permissions")
+    if guild_id or permissions:
+        oauth["bot_invite"] = {
+            "provider": provider,
+            "guild_id": guild_id,
+            "permissions": permissions,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
         }
+        log.info(
+            "Stored bot-invite for %s guild=%s perms=%s",
+            provider, guild_id, permissions,
+        )
+
+    # Discord-only owner binding (backward compat): the first Discord login
+    # binds the owner; later logins are checked against the owner/admin list.
+    if provider == "discord" and user:
+        user_id = str(user.get("id"))
+        username = user.get("username", "")
+        owner = oauth.get("owner_user_id")
+        if owner is None:
+            oauth["owner_user_id"] = user_id
+            oauth["owner_username"] = username
+            oauth["discord_token"] = {
+                "access_token": access_token,
+                "refresh_token": refresh_token,
+                "expires_in": expires_in,
+            }
+            save_oauth(oauth)
+            session["user_id"] = user_id
+            session["username"] = username
+            log.info("Bound owner %s (%s)", user_id, username)
+            return redirect(url_for("index"))
+
+        if is_owner(user_id) or is_admin(user_id):
+            session["user_id"] = user_id
+            session["username"] = username
+            return redirect(url_for("index"))
         save_oauth(oauth)
-        session["user_id"] = user_id
-        session["username"] = username
-        log.info("Bound owner %s (%s)", user_id, username)
-        return redirect(url_for("index"))
+        return jsonify({"error": "You are not authorized to access this panel"}), 403
 
-    # Later logins: allow the owner or listed admins.
-    if is_owner(user_id) or is_admin(user_id):
-        session["user_id"] = user_id
-        session["username"] = username
-        return redirect(url_for("index"))
+    save_oauth(oauth)
+    return jsonify({"status": "ok", "message": f"{prov['label']} OAuth token stored"})
 
-    return jsonify({"error": "You are not authorized to access this panel"}), 403
+@app.route("/auth/callback")
+def auth_callback():
+    """Backward-compatible Discord callback wrapper."""
+    return provider_callback("discord")
 
 @app.route("/auth/logout")
 def auth_logout():
@@ -415,6 +615,69 @@ def auth_status():
         "is_owner": is_owner(uid),
         "is_admin": is_admin(uid),
     })
+
+@app.route("/api/providers/<provider>/refresh", methods=["POST"])
+def api_provider_refresh(provider):
+    """Attempt a refresh_token exchange for a provider and persist the result.
+
+    400 for unknown providers; 404 when no stored token/refresh_token exists;
+    200 on success; 500 on network/exchange error.
+    """
+    if provider_config(provider) is None:
+        return jsonify({"error": f"Unknown provider: {provider}"}), 400
+    oauth = load_oauth()
+    entry = (oauth.get("providers") or {}).get(provider)
+    if not entry or not entry.get("access_token") or not entry.get("refresh_token"):
+        return jsonify({"error": "No stored token or refresh_token"}), 404
+    ok, err = _refresh_provider_token(provider)
+    if not ok:
+        return jsonify({"error": err}), 500
+    return jsonify({"status": "ok", "message": f"{provider} token refreshed"}), 200
+
+@app.route("/api/providers/status")
+def api_providers_status():
+    """Report OAuth provider configuration and token status.
+
+    For each registered provider returns whether it is configured (client_id +
+    client_secret present), whether a token exists and is expired, and when it
+    was last authenticated. Expired tokens are refreshed first; if a refresh
+    fails, token_expired=true is reported with the error message.
+    Supports the health-strip / provider verification UI.
+    """
+    now = datetime.now(timezone.utc).timestamp()
+    oauth = load_oauth()
+    providers_store = oauth.get("providers", {})
+    status = {}
+    for name, prov in PROVIDERS.items():
+        entry = providers_store.get(name)
+        token_present = bool(entry and entry.get("access_token"))
+        expires_at = entry.get("expires_at") if entry else None
+        expired = False
+        error = None
+        if token_present and expires_at is not None:
+            try:
+                expired = now > float(expires_at)
+            except (TypeError, ValueError):
+                expired = False
+            # Auto-refresh an expired token before reporting status.
+            if expired:
+                ok, err = _refresh_provider_token(name)
+                if ok:
+                    entry = (load_oauth().get("providers") or {}).get(name)
+                    expires_at = entry.get("expires_at") if entry else None
+                    expired = False
+                else:
+                    error = err
+        status[name] = {
+            "configured": provider_is_configured(name),
+            "label": prov["label"],
+            "token_present": token_present,
+            "token_expired": expired,
+            "expires_at": expires_at,
+            "updated_at": entry.get("updated_at") if entry else None,
+            "refresh_error": error,
+        }
+    return jsonify({"providers": status})
 
 @app.route("/api/status")
 def api_status():
@@ -646,12 +909,19 @@ def api_get_guilds():
     guilds_data = read_json(GUILDS_FILE, {})
     guilds = []
     for gid, data in guilds_data.items():
+        icon = data.get("icon")
+        # Normalize the icon: a full CDN URL (http) is passed through as the full
+        # src; a bare icon id is built into the standard Discord CDN URL.
+        if icon and isinstance(icon, str) and not icon.startswith(("http://", "https://")):
+            icon = f"https://cdn.discordapp.com/icons/{gid}/{icon}.webp?size=128"
         guilds.append({
             "id": gid,
             "name": data.get("name", ""),
-            "icon": data.get("icon"),
+            "icon": icon,
             "member_count": data.get("member_count", 0),
             "channels": data.get("channels", []),
+            "permissions_ok": data.get("permissions_ok"),
+            "missing_permissions": data.get("missing_permissions", []),
         })
     return jsonify({"guilds": guilds})
 
@@ -679,6 +949,8 @@ def playlists_page():
 @app.route("/api/playlists")
 def api_get_playlists():
     """Return all playlists grouped by guild."""
+    if current_user() is None:
+        return jsonify({"error": "Authentication required"}), 401
     playlists = read_json(PLAYLISTS_FILE, {})
     return jsonify({"playlists": playlists})
 
@@ -776,13 +1048,17 @@ def blacklist_page():
         return require_auth()
     return render_template("blacklist.html", active="blacklist")
 
+# data/blacklist.json is the single source of truth for the blacklist. The bot
+# reads this file (bot-side sync is wired up in the bot subtask); the web UI
+# writes it here. Shape: { "<guild_id>": [user_id, ...], ... }.
+BLACKLIST_FILE = os.path.join(DATA_DIR, "blacklist.json")
+
 @app.route("/api/blacklist")
 def api_get_blacklist():
-    """Return the blacklist (read from bot's blacklist.py)."""
-    # Blacklist is in-memory in the bot; we read sessions for guild IDs
-    # In a real scenario this would come from the bot process or a shared file
-    blacklist_path = os.path.join(DATA_DIR, "blacklist.json")
-    bl = read_json(blacklist_path, {})
+    """Return the blacklist (read from data/blacklist.json)."""
+    if current_user() is None:
+        return jsonify({"error": "Authentication required"}), 401
+    bl = read_json(BLACKLIST_FILE, {})
     return jsonify({"blacklist": bl})
 
 @app.route("/api/blacklist", methods=["POST"])
@@ -793,7 +1069,7 @@ def api_update_blacklist():
     data = request.json
     if not data or "blacklist" not in data:
         return jsonify({"error": "No blacklist data provided"}), 400
-    write_json(os.path.join(DATA_DIR, "blacklist.json"), data["blacklist"])
+    write_json(BLACKLIST_FILE, data["blacklist"])
     return jsonify({"status": "ok", "message": "Blacklist updated"})
 
 # ── Admins ─────────────────────────────────────────────────

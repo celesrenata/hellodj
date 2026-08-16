@@ -77,6 +77,24 @@ class Admin(commands.Cog):
             f"Revoked **{user.name}** from using HelloDJ.", ephemeral=True
         )
 
+    @app_commands.command(
+        name="blacklist",
+        description="Reload the blacklist from data/blacklist.json (Admin only)",
+    )
+    async def blacklist_reload(self, interaction: discord.Interaction):
+        """Reload the shared blacklist from data/blacklist.json (written by the
+        web UI) so web-UI blacklist edits take effect on the running bot."""
+        if not self._is_admin(interaction):
+            await interaction.response.send_message(
+                "You need Administrator permission to use this command.", ephemeral=True
+            )
+            return
+
+        _blacklist.reload()
+        await interaction.response.send_message(
+            "🔄 Blacklist reloaded from data/blacklist.json.", ephemeral=True
+        )
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Admin(bot))

@@ -24,6 +24,6 @@ resources:
 # Image tags
 images:
   - name: registry.celestium.life/hellodj/bot
-    newTag: 578368f
+    newTag: latest
   - name: registry.celestium.life/hellodj/web-ui
     newTag: latest

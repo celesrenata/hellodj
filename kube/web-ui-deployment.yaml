@@ -86,6 +86,70 @@ spec:
                   name: hellodj-secret
                   key: FLASK_SECRET
                   optional: true
+            # ── OAuth provider credentials (hellodj-secret) ─────────────
+            # These are read by web-ui/app.py provider_credentials() which
+            # consults the .env file at /app/data/.env; the secret values must
+            # also be mirrored into that .env for the /api/providers/status UI.
+            - name: SPOTIFY_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: SPOTIFY_CLIENT_ID
+                  optional: true
+            - name: SPOTIFY_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: SPOTIFY_CLIENT_SECRET
+                  optional: true
+            - name: TIDAL_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: TIDAL_CLIENT_ID
+                  optional: true
+            - name: TIDAL_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: TIDAL_CLIENT_SECRET
+                  optional: true
+            - name: TIDAL_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: TIDAL_TOKEN
+                  optional: true
+            - name: TIDAL_ENABLED
+              value: "true"
+            - name: TIDAL_COUNTRY_CODE
+              value: US
+            - name: TIDAL_SEARCH_LIMIT
+              value: "6"
+            - name: GENIUS_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: GENIUS_CLIENT_ID
+                  optional: true
+            - name: GENIUS_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: GENIUS_CLIENT_SECRET
+                  optional: true
+            - name: GENIUS_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: GENIUS_ACCESS_TOKEN
+                  optional: true
+            - name: GENIUS_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: GENIUS_API_KEY
+                  optional: true
           resources:
             limits:
               cpu: "1"

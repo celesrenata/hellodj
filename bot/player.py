@@ -14,7 +14,9 @@ import wavelink
 from wavelink import Playable, TrackSource
 
 import session
+import permissions
 from voice.hybrid_player import HybridPlayer
+import voice_debug
 
 log = logging.getLogger(__name__)
 
@@ -36,50 +38,7 @@ _connect_locks: dict[int, asyncio.Lock] = {}
 # session_id/token/endpoint. This hook logs, at INFO, whether the raw events
 # arrive and whether _get_voice_client(guild.id) is non-None when they do, so
 # the next live logs confirm recovery. Installed once per process.
-_instrumented = False
 
-
-def _install_voice_event_instrumentation(client: discord.Client) -> None:
-    """Wrap the gateway voice-event parsers with INFO logging (one-time).
-
-    Logs arrival of VOICE_STATE_UPDATE / VOICE_SERVER_UPDATE and whether a
-    registered voice client exists for the guild at arrival time — the exact
-    condition that gates forwarding to the wavelink player. Lightweight: two
-    log lines per voice handshake, no per-event spam.
-    """
-    global _instrumented
-    if _instrumented:
-        return
-    state = getattr(client, "_connection", None)
-    if state is None or not hasattr(state, "parsers"):
-        log.warning("voice event instrumentation skipped: no ConnectionState.parsers")
-        return
-
-    for name in ("VOICE_STATE_UPDATE", "VOICE_SERVER_UPDATE"):
-        orig = state.parsers.get(name)
-        if orig is None:
-            continue
-
-        def _wrapped(data, _orig=orig, _name=name):
-            guild_id = data.get("guild_id")
-            vc = None
-            try:
-                if guild_id is not None:
-                    vc = state._get_voice_client(int(guild_id))
-            except Exception:
-                pass
-            log.info(
-                "raw-event %s arrived guild_id=%s _get_voice_client(guild_id)=%s "
-                "(forwarded=%s) t=%.3fs",
-                _name, guild_id, vc is not None, vc is not None,
-                time.monotonic(),
-            )
-            return _orig(data)
-
-        state.parsers[name] = _wrapped
-        log.info("voice event instrumentation installed for %s", name)
-
-    _instrumented = True
 
 # ── helpers ───────────────────────────────────────────────
 
@@ -269,7 +228,7 @@ async def _reissue_voice_join(channel, cls, guild, guild_id: int) -> wavelink.Pl
     start = time.monotonic()
     try:
         async with asyncio.timeout(3.0):
-            while not _handshake_complete(player):
+            while not await _handshake_complete(player):
                 await asyncio.sleep(0.25)
     except asyncio.TimeoutError:
         log.info(
@@ -278,10 +237,25 @@ async def _reissue_voice_join(channel, cls, guild, guild_id: int) -> wavelink.Pl
             time.monotonic() - start, guild_id,
         )
         return None
-    log.info(
-        "connect_player re-issue handshake COMPLETE after %.2fs (guild_id=%s)",
-        time.monotonic() - start, guild_id,
-    )
+    # Log the ACTUAL handshake fields at the moment of "COMPLETE". A real
+    # gateway round-trip (opcode 4 -> VOICE_STATE_UPDATE -> VOICE_SERVER_UPDATE
+    # -> PATCH to Lavalink) takes ~100-500ms minimum. A completion in ~10ms
+    # means the fresh player inherited stale session_id/token/endpoint or a
+    # pre-set _connection_event — i.e. the "handshake" is NOT driven by fresh
+    # gateway events. This dump lets us prove/disprove that stale-state path.
+    try:
+        vs = getattr(player, "_voice_state", {}) or {}
+        v = vs.get("voice", {}) or {}
+        ev = getattr(player, "_connection_event", None)
+        log.info(
+            "connect_player re-issue COMPLETE detail (guild_id=%s) after=%.2fs "
+            "conn_event=%s session_id=%r token=%r endpoint=%r voice_state=%r",
+            guild_id, time.monotonic() - start,
+            ev is not None and ev.is_set(),
+            v.get("session_id"), v.get("token"), v.get("endpoint"), vs,
+        )
+    except Exception:
+        log.exception("connect_player re-issue: could not dump COMPLETE detail guild_id=%s", guild_id)
     return player
 
 
@@ -309,12 +283,6 @@ async def connect_player(channel: discord.abc.Connectable) -> wavelink.Player:
         # Install the raw-event handshake instrumentation once so the next live
         # logs confirm whether VOICE_STATE_UPDATE / VOICE_SERVER_UPDATE arrive
         # and whether _get_voice_client(guild.id) is non-None at arrival time.
-        guild0 = getattr(channel, "guild", None)
-        if guild0 is not None:
-            try:
-                _install_voice_event_instrumentation(guild0._state._get_client())
-            except Exception:
-                log.exception("connect_player: could not install voice event instrumentation")
 
         timeout = float(os.getenv("VOICE_CONNECT_TIMEOUT", "30.0"))
         log.info(
@@ -324,6 +292,14 @@ async def connect_player(channel: discord.abc.Connectable) -> wavelink.Player:
         )
         guild = getattr(channel, "guild", None)
         cls = HybridPlayer if HybridPlayer is not None else wavelink.Player
+
+        # ── switchable debug layer (HELLODJ_VOICE_DEBUG) ────────
+        # Log the ACTUAL per-channel permissions on the exact target channel
+        # (channel.permissions_for honors overwrites; guild.me.guild_permissions
+        # does NOT) and the op-4 send. This discriminates per-channel Connect/
+        # Speak denial from a registration race.
+        voice_debug.log_per_channel_perms(guild, channel, label="connect_player")
+        voice_debug.log_op4_send(guild, channel)
         # Short per-attempt window; the outer loop enforces the overall ~30s budget.
         # 10s (instead of 5s) gives the first join enough room to complete the
         # handshake, so the dropped-event recovery path no longer fires on every
@@ -348,7 +324,7 @@ async def connect_player(channel: discord.abc.Connectable) -> wavelink.Player:
             )
             try:
                 player = await channel.connect(cls=cls, timeout=attempt_timeout)
-                if _handshake_complete(player):
+                if await _handshake_complete(player):
                     log.info(
                         "connect_player handshake COMPLETE attempt=%d (guild_id=%s)",
                         attempts, guild_id,
@@ -387,7 +363,7 @@ async def connect_player(channel: discord.abc.Connectable) -> wavelink.Player:
 
             # ── re-issue opcode 4 on a fresh, registered player ─────
             reissued = await _reissue_voice_join(channel, cls, guild, guild_id)
-            if reissued is not None and _handshake_complete(reissued):
+            if reissued is not None and await _handshake_complete(reissued):
                 log.info(
                     "connect_player RECOVERED via re-issue attempt=%d (guild_id=%s)",
                     attempts, guild_id,
@@ -427,6 +403,26 @@ async def connect_player(channel: discord.abc.Connectable) -> wavelink.Player:
                 )
         except Exception:
             log.exception("connect_player: could not dump handshake diagnostics")
+
+        # Log which voice permissions the bot member is missing — the most
+        # common non-gateway cause of a failed connect (Connect/Speak denied).
+        if guild is not None:
+            me = guild.me
+            if me is not None:
+                missing_voice = permissions.missing_voice_permissions(me)
+                if missing_voice:
+                    log.error(
+                        "connect_player: guild_id=%s bot member %s is missing "
+                        "voice permissions %s — Connect/Speak denial can cause "
+                        "this failure",
+                        guild_id, me, missing_voice,
+                    )
+                else:
+                    log.info(
+                        "connect_player: guild_id=%s bot member %s holds all "
+                        "voice permissions (no Connect/Speak/ViewChannel denial)",
+                        guild_id, me,
+                    )
 
         # Preserve the fail-fast user-facing error message: re-raise so callers
         # still surface a specific error instead of the generic 30s timeout.

@@ -19,6 +19,12 @@ data:
   TTS_VOICE: af_heart
   SPEACHES_URL: http://speaches.speaches-service.svc.cluster.local:8000
   VOICE_ENABLED: "true"
+  # ── Voice-connect debug layer (switchable) ────────────────
+  # HELLODJ_VOICE_DEBUG=1 logs per-channel permissions on the exact target
+  # voice channel (honors overwrites) + raw VOICE_STATE_UPDATE /
+  # VOICE_SERVER_UPDATE for the bot itself. Set to "0" to disable after the
+  # ChannelTimeoutException diagnosis is complete.
+  HELLODJ_VOICE_DEBUG: "1"
   # ── Music providers (non-secret enable toggles; credentials in hellodj-secret) ─
   PROVIDER_YOUTUBE: "true"
   PROVIDER_YOUTUBEMUSIC: "true"

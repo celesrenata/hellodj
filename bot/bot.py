@@ -4,6 +4,7 @@ import asyncio
 import logging
 import logging.handlers
 import os
+import time
 
 import aiohttp
 import discord
@@ -16,6 +17,8 @@ import session
 import storage
 import blacklist as _blacklist
 import oauth_store
+import permissions
+import voice_debug
 
 load_dotenv()
 
@@ -39,6 +42,15 @@ def _setup_logging():
     except OSError as exc:
         # Fall back to console-only if the file can't be opened (e.g. read-only FS).
         logging.getLogger(__name__).warning("Could not enable file logging to %s: %s", log_file, exc)
+
+    # Timestamp every record (basicConfig's format= only applies to handlers it
+    # creates, so set the formatter explicitly on the pre-built handlers).
+    fmt = logging.Formatter(
+        "%(asctime)s %(levelname)s %(name)s: %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
+    )
+    for handler in handlers:
+        handler.setFormatter(fmt)
 
     logging.basicConfig(level=logging.INFO, handlers=handlers)
 
@@ -133,6 +145,7 @@ async def setup_hook():
     storage.load()
     session.load()
     oauth_store.load_oauth()
+    _blacklist.load()
 
     # Connect to Lavalink
     await connect_lavalink()
@@ -147,8 +160,15 @@ async def setup_hook():
     await bot.load_extension("cogs.info")
     await bot.load_extension("cogs.voice")
 
+    # ── switchable voice-connect debug layer ─────────────────
+    # Installs a socket raw-listener that logs whether the bot's OWN
+    # VOICE_STATE_UPDATE / VOICE_SERVER_UPDATE events arrive after op-4,
+    # and whether a voice client was registered at arrival time. On when
+    # HELLODJ_VOICE_DEBUG=1 (default); set to 0 to disable.
+    voice_debug.install_raw_listeners(bot)
+
     await bot.tree.sync()
-    print("HelloDJ slash commands synced.")
+    log.info("HelloDJ slash commands synced.")
 
 
 bot.setup_hook = setup_hook
@@ -217,19 +237,97 @@ def _build_guilds_data() -> dict:
                 channels.append(
                     {"id": str(ch.id), "name": ch.name, "type": str(ch.type)}
                 )
-        icon = guild.icon.url if guild.icon else None
+        # Persist only the icon id/key (guild.icon.key) — NOT the full CDN url.
+        # The web UI splices this value into the icon-id path segment; storing the
+        # .url produced malformed URLs like
+        #   https://cdn.discordapp.com/icons/<gid>/https://cdn.discordapp.com/icons/...
+        icon = guild.icon.key if guild.icon else None
+        _, missing = permissions.check_permissions(guild.me) if guild.me else ({}, [])
         data[str(guild.id)] = {
             "name": guild.name,
             "icon": icon,
             "member_count": guild.member_count or 0,
             "channels": channels,
+            "permissions_ok": not missing,
+            "missing_permissions": missing,
         }
     return data
 
 
+# ── gateway-health watchdog ────────────────────────────────
+# Observed failure (2026-08-15): the gateway TCP socket connects and READY is
+# received (a session id is logged from the READY payload), but the guild cache
+# never populates — no GUILD_CREATE events arrive, so on_ready never fires,
+# slash commands are not synced, and no /play / voice join can be processed.
+# This watchdog detects the pre-on_ready stall, force-reconnects the gateway,
+# and escalates to a process restart (k8s Recreate) if the stall persists.
+_ready_at: float = 0.0          # monotonic() when on_ready last fired
+_watchdog_started = False
+
+
+async def _gateway_health_watchdog() -> None:
+    stall_secs = float(os.getenv("GATEWAY_READY_TIMEOUT", "120.0"))
+    backoff = int(os.getenv("GATEWAY_RECONNECT_BACKOFF", "30"))
+    max_reconnects = int(os.getenv("GATEWAY_RESTART_AFTER", "3"))
+    reconnects = 0
+    log.info("gateway watchdog: starting (stall=%.0fs backoff=%ds max_reconnects=%d)",
+             stall_secs, backoff, max_reconnects)
+    while True:
+        await asyncio.sleep(30)
+        try:
+            if bot.is_ready():
+                continue
+            elapsed = time.monotonic() - _ready_at
+            if elapsed < stall_secs:
+                continue
+            log.error(
+                "gateway watchdog: READY stall (not ready for %.0fs; %d guilds "
+                "cached; ws=%s; reconnects=%d)",
+                elapsed, len(bot.guilds), bot.ws is not None, reconnects,
+            )
+            if reconnects >= max_reconnects:
+                log.critical(
+                    "gateway watchdog: still stalled after %d reconnects — "
+                    "forcing process restart (k8s will relaunch)",
+                    reconnects,
+                )
+                os._exit(1)
+            reconnects += 1
+            # Backoff before reconnecting so we don't hammer the gateway /
+            # trip a global rate limit that withholds guild data.
+            await asyncio.sleep(backoff)
+            ws = bot.ws
+            if ws is not None:
+                try:
+                    await ws.close()
+                    log.info(
+                        "gateway watchdog: closed gateway websocket to force "
+                        "reconnect (attempt %d)",
+                        reconnects,
+                    )
+                except Exception:
+                    log.exception("gateway watchdog: could not close websocket")
+            else:
+                log.warning("gateway watchdog: no bot.ws to close; relying on restart")
+        except Exception:
+            log.exception("gateway watchdog: loop error")
+
+
+@bot.event
+async def on_connect():
+    global _watchdog_started
+    if not _watchdog_started:
+        _watchdog_started = True
+        bot.loop.create_task(_gateway_health_watchdog())
+        log.info("gateway health watchdog started (on_connect)")
+
+
 @bot.event
 async def on_ready():
-    print(f"HelloDJ logged in as {bot.user} ({bot.user.id})")
+    global _ready_at
+    _ready_at = time.monotonic()
+    log.info("HelloDJ logged in as %s (%s)", bot.user, bot.user.id)
+    log.info("on_ready fired with %d guilds", len(bot.guilds))
     await oauth_store.write_guilds(_build_guilds_data(), force=True)
     global _resumed
     if not _resumed:

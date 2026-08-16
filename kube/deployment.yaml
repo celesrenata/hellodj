@@ -146,7 +146,7 @@ spec:
       containers:
         # ── Discord Bot ─────────────────────────────────────────────
         - name: bot
-          image: registry.celestium.life/hellodj/bot:578368f
+          image: registry.celestium.life/hellodj/bot:voicedbg-20260816
           imagePullPolicy: Always
           envFrom:
             - configMapRef:
@@ -222,6 +222,18 @@ spec:
                 secretKeyRef:
                   name: hellodj-secret
                   key: TIDAL_TOKEN
+                  optional: true
+            - name: TIDAL_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: TIDAL_CLIENT_ID
+                  optional: true
+            - name: TIDAL_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: TIDAL_CLIENT_SECRET
                   optional: true
             # ── Voice activation: LLM + MCP API keys (secrets) ─────────
             - name: LLM_API_KEY

@@ -145,16 +145,9 @@ if _VOICE_RECV_AVAILABLE:
     HybridPlayer = _build_hybrid()
 
 
-async def connect_hybrid(channel: discord.abc.Connectable):
-    """Connect a HybridPlayer to a voice channel.
-
-    Usage mirrors ``wavelink.Player.connect`` / ``VoiceChannel.connect(cls=...)``.
-    Returns None if the voice_recv extension is unavailable.
-    """
-    if HybridPlayer is None:
-        log.warning(
-            "discord-ext-voice-recv is not installed — voice activation receive "
-            "is disabled. Add 'discord-ext-voice-recv' to requirements.txt"
-        )
-        return None
-    return await channel.connect(cls=HybridPlayer)
+# NOTE: `connect_hybrid` was removed as dead code. The actual voice-connect path
+# is `player.connect_player` (bot/player.py:260), which already constructs and
+# connects the HybridPlayer internally:
+#   cls = HybridPlayer if HybridPlayer is not None else wavelink.Player
+#   player = await channel.connect(cls=cls, ...)
+# so a separate connect_hybrid() wrapper was never called anywhere.

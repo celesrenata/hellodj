@@ -1,3 +1,63 @@
 WARNING:__main__:Could not persist generated FLASK_SECRET: [Errno 13] Permission denied: '/app'
 WARNING:__main__:Could not persist generated FLASK_SECRET: [Errno 13] Permission denied: '/app'
 WARNING:__main__:Could not persist generated FLASK_SECRET: [Errno 13] Permission denied: '/app'
+2026-08-15 09:25:01 WARNING app: OAuth callback for discord received no state param (code present); treating as bot-invite callback
+2026-08-15 09:36:59 ERROR app: Exception on /auth/callback [GET]
+Traceback (most recent call last):
+  File "/home/celes/sources/celesrenata/hellodj/.admin-venv/lib/python3.14/site-packages/flask/app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "/home/celes/sources/celesrenata/hellodj/.admin-venv/lib/python3.14/site-packages/flask/app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "/home/celes/sources/celesrenata/hellodj/.admin-venv/lib/python3.14/site-packages/flask/app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "/home/celes/sources/celesrenata/hellodj/.admin-venv/lib/python3.14/site-packages/flask/app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/home/celes/sources/celesrenata/hellodj/web-ui/app.py", line 539, in auth_callback
+    return provider_callback("discord")
+  File "/home/celes/sources/celesrenata/hellodj/web-ui/app.py", line 473, in provider_callback
+    token_data, user = asyncio.run(exchange())
+    ^^^^^^^^^^^^^^^^
+TypeError: cannot unpack non-iterable coroutine object
+2026-08-15 09:37:28 ERROR app: Exception on /auth/callback [GET]
+Traceback (most recent call last):
+  File "/home/celes/sources/celesrenata/hellodj/.admin-venv/lib/python3.14/site-packages/flask/app.py", line 1511, in wsgi_app
+    response = self.full_dispatch_request()
+  File "/home/celes/sources/celesrenata/hellodj/.admin-venv/lib/python3.14/site-packages/flask/app.py", line 919, in full_dispatch_request
+    rv = self.handle_user_exception(e)
+  File "/home/celes/sources/celesrenata/hellodj/.admin-venv/lib/python3.14/site-packages/flask/app.py", line 917, in full_dispatch_request
+    rv = self.dispatch_request()
+  File "/home/celes/sources/celesrenata/hellodj/.admin-venv/lib/python3.14/site-packages/flask/app.py", line 902, in dispatch_request
+    return self.ensure_sync(self.view_functions[rule.endpoint])(**view_args)  # type: ignore[no-any-return]
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^
+  File "/home/celes/sources/celesrenata/hellodj/web-ui/app.py", line 539, in auth_callback
+    return provider_callback("discord")
+  File "/home/celes/sources/celesrenata/hellodj/web-ui/app.py", line 473, in provider_callback
+    token_data, user = asyncio.run(exchange())
+                       ~~~~~~~~~~~^^^^^^^^^^^^
+  File "/etc/profiles/per-user/celes/lib/python3.14/asyncio/runners.py", line 205, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "/etc/profiles/per-user/celes/lib/python3.14/asyncio/runners.py", line 128, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/etc/profiles/per-user/celes/lib/python3.14/asyncio/base_events.py", line 720, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "/home/celes/sources/celesrenata/hellodj/web-ui/app.py", line 440, in exchange
+    async with sess.post(
+               ~~~~~~~~~^
+        prov["token_url"],
+        ^^^^^^^^^^^^^^^^^^
+    ...<6 lines>...
+        },
+        ^^
+    ) as token_resp:
+    ^
+TypeError: 'coroutine' object does not support the asynchronous context manager protocol (missed __aexit__ method)
+2026-08-15 09:43:54 INFO app: Stored bot-invite for discord guild=1501686893765595296 perms=76422566768454
+2026-08-15 09:43:54 INFO app: Bound owner 42 (celes)
+2026-08-15 09:50:23 WARNING app: OAuth callback for discord received no state param (code present); treating as bot-invite callback
+2026-08-15 09:50:23 INFO app: Stored bot-invite for discord guild=1501686893765595296 perms=76422566768454
+2026-08-15 09:50:23 INFO app: Bound owner spotuser (sp)
+2026-08-15 17:21:18 ERROR app: Token refresh error (spotify): boom
