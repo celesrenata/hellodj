@@ -134,13 +134,41 @@
         </div>
         <div class="card mt-3">
             <div class="card-header">
-                <i class="bi bi-cloud"></i> YouTube, YouTube Music & SoundCloud
+                <i class="bi bi-cloud"></i> YouTube OAuth (music)
             </div>
             <div class="card-body">
-                <p class="text-muted small mb-0">
-                    These sources require no credentials and are controlled from the
-                    <strong>Music Providers</strong> card above.
+                <p class="text-muted small">
+                    YouTube increasingly blocks unauthenticated (guest) requests, so Lavalink
+                    returns <code>All clients failed to load the item</code> and no audio plays.
+                    Authenticating with a YouTube account via OAuth fixes this. Use the device
+                    flow below: start it, open the shown URL, enter the code, and the bot pushes
+                    the refresh token to Lavalink automatically.
                 </p>
+                <div class="mb-3">
+                    <button type="button" class="btn btn-primary" id="yt-oauth-start">
+                        <i class="bi bi-play-circle"></i> Start YouTube OAuth
+                    </button>
+                    <button type="button" class="btn btn-outline-danger" id="yt-oauth-clear">
+                        <i class="bi bi-x-circle"></i> Clear
+                    </button>
+                </div>
+                <div id="yt-oauth-status" class="mt-2 small"></div>
+                <div id="yt-oauth-pending" class="mt-2" style="display:none;">
+                    <p class="text-muted small mb-1">
+                        <a id="yt-auth-link" class="btn btn-sm btn-outline-success" target="_blank"
+                           rel="noopener noreferrer" href="#">
+                            <i class="bi bi-box-arrow-up-right"></i> Authorize YouTube (one click)
+                        </a>
+                    </p>
+                    <p class="text-muted small mb-1">
+                        Or open <strong id="yt-verify-url"></strong> and enter the code
+                        <strong id="yt-user-code" class="text-monospace"></strong>.
+                        This page will detect completion automatically (expires in ~5 min).
+                    </p>
+                    <button type="button" class="btn btn-sm btn-secondary" id="yt-oauth-poll">
+                        <i class="bi bi-arrow-repeat"></i> Check again
+                    </button>
+                </div>
             </div>
         </div>
         <div class="card mt-3">
@@ -473,5 +501,111 @@ async function loadProviderStatus() {
     }).join('');
     $('#provider-status').html(rows || '<span class="text-muted">No provider data</span>');
 }
+
+// ── YouTube OAuth device flow (youtube-source plugin) ──────────────
+// Starts a Google device flow, shows a direct one-click authorize link + code,
+// and polls /api/youtube/token (server holds the device_code via flow_id) until
+// the user authorizes or the TTL (300s) expires. On success the refresh token is
+// stored in data/oauth.json and the bot pushes it to Lavalink automatically.
+let _ytFlowId = null;
+let _ytInterval = 5;
+let _ytPollCount = 0;
+const _YT_MAX_POLLS = 60; // 300s / 5s interval
+
+async function ytStartOAuth() {
+    $('#yt-oauth-status').html('<span class="text-muted">Requesting device code...</span>');
+    const res = await apiFetch('/api/youtube/device', {
+        method: 'POST',
+        body: JSON.stringify({}),
+    });
+    if (!res || !res.flow_id) {
+        $('#yt-oauth-status').html(
+            '<span class="text-danger">Failed to start device flow: ' +
+            (res && res.error ? res.error : 'no response') + '</span>'
+        );
+        return;
+    }
+    _ytFlowId = res.flow_id;
+    _ytInterval = res.interval || 5;
+    _ytPollCount = 0;
+    $('#yt-user-code').text(res.user_code);
+    $('#yt-verify-url').text(res.verification_url || '');
+    $('#yt-auth-link').attr('href', res.verification_url_complete || '');
+    $('#yt-oauth-pending').show();
+    $('#yt-oauth-status').html(
+        '<span class="text-success">Device code issued. Click the authorize link ' +
+        'below (or open the URL and enter the code). Flow expires in ' +
+        (res.ttl || 300) + 's.</span>'
+    );
+    setTimeout(ytPollToken, Math.max(1, _ytInterval) * 1000);
+}
+
+async function ytPollToken() {
+    if (!_ytFlowId) return;
+    if (_ytPollCount >= _YT_MAX_POLLS) {
+        _ytFlowId = null;
+        $('#yt-oauth-pending').hide();
+        $('#yt-oauth-status').html(
+            '<span class="text-danger">Device flow timed out after ~300s. Start again.</span>'
+        );
+        return;
+    }
+    const res = await apiFetch('/api/youtube/token', {
+        method: 'POST',
+        body: JSON.stringify({ flow_id: _ytFlowId }),
+    });
+    if (!res) {
+        $('#yt-oauth-status').html('<span class="text-danger">Poll error (no response)</span>');
+        return;
+    }
+    if (res.status === 'ok') {
+        _ytFlowId = null;
+        $('#yt-oauth-pending').hide();
+        $('#yt-oauth-status').html(
+            '<span class="text-success">YouTube OAuth complete. Refresh token stored — ' +
+            'the bot will push it to Lavalink automatically.</span>'
+        );
+        loadProviderStatus();
+        return;
+    }
+    _ytPollCount++;
+    // authorization_pending / slow_down / expired_token: keep waiting.
+    if (res.error_code && res.error_code.indexOf('pending') !== -1) {
+        $('#yt-oauth-status').html(
+            '<span class="text-warning">Waiting for you to authorize the device...</span>'
+        );
+        setTimeout(ytPollToken, Math.max(1, _ytInterval) * 1000);
+    } else if (res.error_code && res.error_code.indexOf('slow') !== -1) {
+        _ytInterval += 5;
+        setTimeout(ytPollToken, Math.max(5, _ytInterval) * 1000);
+    } else {
+        _ytFlowId = null;
+        $('#yt-oauth-pending').hide();
+        $('#yt-oauth-status').html(
+            '<span class="text-danger">OAuth failed: ' +
+            (res.error || 'unknown error') + '</span>'
+        );
+    }
+}
+
+async function ytClearOAuth() {
+    _ytFlowId = null;
+    $('#yt-oauth-pending').hide();
+    const res = await apiFetch('/api/youtube/token/clear', {
+        method: 'POST',
+        body: JSON.stringify({}),
+    });
+    $('#yt-oauth-status').html(
+        '<span class="text-muted">' +
+        (res && res.message ? res.message : 'YouTube OAuth cleared') + '</span>'
+    );
+    loadProviderStatus();
+}
+
+$(function() {
+    $('#yt-oauth-start').on('click', ytStartOAuth);
+    $('#yt-oauth-poll').on('click', ytPollToken);
+    $('#yt-oauth-clear').on('click', ytClearOAuth);
+});
 </script>
 {% endblock %}

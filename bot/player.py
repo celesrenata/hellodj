@@ -163,7 +163,7 @@ def _force_remove_stale(guild: discord.Guild | None, guild_id: int) -> None:
     `except asyncio.TimeoutError:` (abc.py:2153). wavelink raises
     ChannelTimeoutException — a plain Exception, not asyncio.TimeoutError — when
     the handshake times out, so discord.py's cleanup is skipped and a dead/stale
-    player stays keyed in _voice_clients[guild_id]. The next /play then hits the
+    player stays keyed in _voice_clients. The next /play then hits the
     "Already connected to a voice channel." guard at abc.py:2140 and never sends
     voice_state_update, so the handshake can never complete. Force-remove the
     stale registration so the next connect/re-issue can register a fresh player.
@@ -324,11 +324,57 @@ async def connect_player(channel: discord.abc.Connectable) -> wavelink.Player:
             )
             try:
                 player = await channel.connect(cls=cls, timeout=attempt_timeout)
+                # ── receive-sink registration race fix ──────────────────
+                # Store the freshly connected player into state["player"]
+                # IMMEDIATELY (before the handshake wait below), so the cog's
+                # on_voice_state_update -> _start_receive finds a non-None
+                # player even when the bot's own voice-state event fires while
+                # connect() is still awaiting. Previously callers stored the
+                # player only AFTER connect_player returned, leaving the
+                # listener to hit the "No player yet" branch and never register
+                # the voice_recv sink.
+                if guild_id and player is not None:
+                    try:
+                        get_state(guild_id)["player"] = player
+                        log.info(
+                            "connect_player: stored player into state[%s] "
+                            "immediately (player=%s) for receive-sink wiring",
+                            guild_id, type(player).__name__,
+                        )
+                    except Exception:
+                        log.exception("connect_player: could not store player in state guild_id=%s", guild_id)
                 if await _handshake_complete(player):
                     log.info(
                         "connect_player handshake COMPLETE attempt=%d (guild_id=%s)",
                         attempts, guild_id,
                     )
+                    # Diagnosis: prove whether the HybridPlayer established a
+                    # REAL Discord voice connection (socket+SSRC+secret_key) or
+                    # only forwarded to Lavalink. wavelink's Player.connect() only
+                    # sends op-4 and PATCHes Lavalink; it never calls
+                    # VoiceConnectionState.connect(), so _connection.is_connected()
+                    # is normally False here — meaning TTS send_audio_packet and
+                    # voice_recv listen() cannot work.
+                    try:
+                        conn = getattr(player, "_connection", None)
+                        conn_ok = False
+                        if conn is not None and not isinstance(conn, str):
+                            try:
+                                conn_ok = conn.is_connected()
+                            except Exception:
+                                conn_ok = False
+                        log.info(
+                            "connect_player COMPLETE connection diag (guild_id=%s) "
+                            "player_type=%s connected_prop=%s _connection=%s "
+                            "conn.is_connected=%s voice_state=%r",
+                            guild_id, type(player).__name__,
+                            getattr(player, "connected", False),
+                            conn if conn is not None else "MISSING",
+                            conn_ok,
+                            getattr(player, "_voice_state", {}),
+                        )
+                    except Exception:
+                        log.exception("connect_player COMPLETE connection diag failed")
                     return player
                 # Handshake fields not populated despite connect() returning:
                 # the dropped-event race. Re-issue on a fresh registration below.
@@ -642,6 +688,13 @@ async def on_track_start(guild_id: int, player: wavelink.Player, track: wavelink
     state["current"] = info
     persist(guild_id)
 
+    # Cancel any in-flight progress-bar updater from a previous track so two
+    # coroutines never both edit the same now-playing message in one window
+    # (Discord 5-edits/5s per-message bucket -> 429).
+    prev_task = state.get("now_playing_task")
+    if prev_task and not prev_task.done():
+        prev_task.cancel()
+
     # Start progress bar updater
     state["now_playing_task"] = asyncio.ensure_future(
         _now_playing_updater(guild_id, player, track)
@@ -707,7 +760,7 @@ async def _now_playing_updater(guild_id: int, player: wavelink.Player, track: wa
     state = get_state(guild_id)
     try:
         while player.playing or player.paused:
-            await asyncio.sleep(5)
+            await asyncio.sleep(15)
             if not player.playing and not player.paused:
                 break
 
@@ -784,7 +837,7 @@ def _prefer_highest_quality(tracks: list) -> list:
             return quality_map.get(track.quality, 10)
         # If no quality info, check bitrate or other hints
         if hasattr(track, 'bitrate') and track.bitrate:
-            return track.bitrate // 100  # higher bitrate = higher score
+            return track.bitrate // 100  # higher bitrate = higher quality
         return 50  # default middle
 
     tracks.sort(key=quality_score, reverse=True)

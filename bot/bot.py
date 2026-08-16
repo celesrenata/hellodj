@@ -111,7 +111,7 @@ async def connect_lavalink():
         except Exception as exc:  # connection refused until sidecar is ready
             last_err = exc
 
-        log.info(
+        log.debug(
             "Lavalink not ready at %s (attempt %d/%d): %s",
             rest_url, attempt, max_attempts,
             last_err if last_err else "no response",
@@ -129,6 +129,74 @@ async def connect_lavalink():
     )
     await wavelink.Pool.connect(nodes=[node], client=bot)
     log.info("HelloDJ connected to Lavalink at %s", LAVALINK_URI)
+
+    # Push any stored YouTube OAuth refresh token to the youtube-source plugin.
+    # The plugin's REST endpoint (/youtube) is served by Lavalink's own Spring
+    # server on the same port, authenticated with the Lavalink password.
+    await push_youtube_oauth()
+
+
+async def push_youtube_oauth() -> bool:
+    """Push the stored YouTube OAuth refresh token to Lavalink's youtube-source.
+
+    The youtube-source plugin (dev.lavalink.youtube:youtube-plugin:1.18.2)
+    authenticates YouTube requests with an OAuth refresh token supplied via its
+    REST endpoint ``POST /youtube`` with JSON ``{"refreshToken": ..., "skipInitialization": false}``.
+    The web-ui stores the token in ``data/oauth.json`` (providers.youtube.refresh_token)
+    via its device flow; this shares the same NFS data mount.
+
+    Returns True when a token was pushed successfully, False otherwise (no token
+    stored, or a push failure). Never raises.
+    """
+    token = oauth_store.get_youtube_refresh_token()
+    if not token:
+        log.info("youtube-oauth: no stored refresh token — skipping push to Lavalink")
+        return False
+
+    url = f"{LAVALINK_URI}/youtube"
+    payload = {"refreshToken": token, "skipInitialization": False}
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(
+                url,
+                json=payload,
+                headers={"Authorization": LAVALINK_PASSWORD},
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                body = await resp.text()
+                if resp.status in (200, 204):
+                    log.info(
+                        "youtube-oauth: pushed refresh token to Lavalink %s (status=%s) body=%s",
+                        url, resp.status, body,
+                    )
+                    return True
+                log.warning(
+                    "youtube-oauth: Lavalink push failed (status=%s) body=%s",
+                    resp.status, body,
+                )
+    except Exception as exc:
+        log.warning("youtube-oauth: push to Lavalink failed: %s", exc)
+    return False
+
+
+async def _youtube_oauth_watchdog() -> None:
+    """Periodically re-push the stored YouTube OAuth refresh token to Lavalink.
+
+    The web-ui device flow writes providers.youtube.refresh_token into
+    data/oauth.json at an arbitrary time. This loop re-reads it and pushes it to
+    Lavalink's youtube-source REST endpoint so a token stored while the bot is
+    running is applied without a restart.
+    """
+    interval = int(os.getenv("YOUTUBE_OAUTH_PUSH_INTERVAL", "60"))
+    while True:
+        await asyncio.sleep(interval)
+        try:
+            token = oauth_store.get_youtube_refresh_token()
+            if not token:
+                continue
+            await push_youtube_oauth()
+        except Exception:
+            log.exception("youtube-oauth: watchdog iteration error")
 
 
 async def disconnect_lavalink():
@@ -224,6 +292,10 @@ async def _resume_sessions():
                 await player.enqueue_and_start(guild, text_channel, entries, replace=True)
                 await text_channel.send("HelloDJ reconnected after a restart — resuming the queue.")
         except Exception as exc:
+            if "50001" in str(exc) or "Missing Access" in str(exc):
+                log.info("Guild %s no longer accessible — clearing stale session.", gid_str)
+                await session.clear(gid)
+                continue
             log.warning("Could not resume session for guild %s: %s", gid_str, exc)
 
 
@@ -263,6 +335,8 @@ def _build_guilds_data() -> dict:
 # and escalates to a process restart (k8s Recreate) if the stall persists.
 _ready_at: float = 0.0          # monotonic() when on_ready last fired
 _watchdog_started = False
+# YouTube OAuth periodic re-push watchdog (started once per process)
+_yt_oauth_task_started = False
 
 
 async def _gateway_health_watchdog() -> None:
@@ -325,6 +399,7 @@ async def on_connect():
 @bot.event
 async def on_ready():
     global _ready_at
+    global _yt_oauth_task_started
     _ready_at = time.monotonic()
     log.info("HelloDJ logged in as %s (%s)", bot.user, bot.user.id)
     log.info("on_ready fired with %d guilds", len(bot.guilds))
@@ -333,6 +408,12 @@ async def on_ready():
     if not _resumed:
         _resumed = True
         await _resume_sessions()
+    # Start the YouTube OAuth periodic re-push so a token stored via the web-ui
+    # device flow is applied to Lavalink without a bot restart.
+    if not _yt_oauth_task_started:
+        _yt_oauth_task_started = True
+        bot.loop.create_task(_youtube_oauth_watchdog())
+        log.info("youtube-oauth: periodic re-push watchdog started")
 
 
 @bot.event

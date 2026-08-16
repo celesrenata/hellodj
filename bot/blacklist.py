@@ -9,6 +9,7 @@ Shape of data/blacklist.json: { "<guild_id>": [user_id, ...], ... }.
 
 import json
 import logging
+import os
 
 log = logging.getLogger(__name__)
 
@@ -26,6 +27,11 @@ def load() -> None:
     module-level references held by bot.py, cogs/admin.py, and
     voice/voice_commands.py all observe the reloaded contents.
     """
+    os.makedirs("data", exist_ok=True)
+    if not os.path.exists(BLACKLIST_FILE):
+        log.info("HelloDJ: %s not found — starting with empty blacklist.", BLACKLIST_FILE)
+        return
+
     try:
         with open(BLACKLIST_FILE, "r", encoding="utf-8") as f:
             raw = json.load(f)

@@ -283,6 +283,33 @@ class TTSPLayer:
             log.warning("No voice client — cannot play TTS")
             return
 
+        # Diagnosis: prove the TTS outbound path has a REAL Discord voice
+        # connection. send_audio_packet reads self.sequence/timestamp/ssrc/
+        # mode/secret_key off the VoiceConnectionState; a wavelink-only forward
+        # (Lavalink PATCH, no socket) leaves _connection unconnected, so the
+        # first send_audio_packet raises or silently no-ops.
+        try:
+            vc_type = type(self.voice_client).__name__
+            try:
+                is_conn = self.voice_client.is_connected()
+            except Exception as e:
+                is_conn = f"EXC {e!r}"
+            conn = getattr(self.voice_client, "_connection", None)
+            ssrc = None
+            mode = None
+            if conn is not None and not isinstance(conn, str):
+                ssrc = getattr(conn, "ssrc", None)
+                mode = getattr(conn, "mode", None)
+            log.info(
+                "TTS play diag (guild=%s) vc_type=%s is_connected=%s "
+                "_connection=%s ssrc=%s mode=%s",
+                self.guild_id, vc_type, is_conn,
+                conn if conn is not None else "MISSING",
+                ssrc, mode,
+            )
+        except Exception:
+            log.exception("TTS play diag failed")
+
         self._playing = True
         try:
             source = PCMAudioSource(pcm, sample_rate)
@@ -291,6 +318,7 @@ class TTSPLayer:
             # Send every 20 ms frame directly via the base VoiceClient
             # send_audio_packet path. The Opus frame is already encoded, so
             # encode=False avoids re-encoding raw PCM.
+            sent = 0
             while source.is_playing():
                 frame_pcm = source.read()
                 if not frame_pcm:
@@ -302,10 +330,11 @@ class TTSPLayer:
                 stereo[1::2] = frame_arr
                 opus = encoder.encode(stereo.tobytes(), len(stereo) // 2)
                 self.voice_client.send_audio_packet(opus, encode=False)
+                sent += 1
                 # Wait one 20 ms frame interval so Discord keeps real-time pacing.
                 await asyncio.sleep(0.02)
 
-            log.info("TTS playback complete (guild=%s)", self.guild_id)
+            log.info("TTS playback complete (guild=%s, frames_sent=%d)", self.guild_id, sent)
         except Exception as exc:
             # Log clearly and re-raise so the caller (_speak) knows TTS failed
             # and does not silently resume music as if nothing happened.

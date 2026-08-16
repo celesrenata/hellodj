@@ -206,6 +206,28 @@ class VoiceCog(commands.Cog):
         """When the bot joins a voice channel, start receiving Opus frames."""
         if member.id != self.bot.user.id:
             return
+        # Diagnosis: prove the receive-sink registration race. At the instant the
+        # bot's OWN voice-state event fires, is state["player"] already populated?
+        # connect_player returns the player to callers who store it into
+        # state["player"] AFTER connect() returns, so this event usually races
+        # ahead of that assignment.
+        try:
+            gid = member.guild.id
+            st = player.get_state(gid)
+            pobj = st.get("player")
+            log.info(
+                "on_voice_state_update bot self (guild_id=%s) before=%s after=%s "
+                "state_player=%s player_connected=%s sinks=%s listen=%s",
+                gid,
+                _before.channel.id if _before.channel else None,
+                _after.channel.id if _after.channel else None,
+                pobj is not None,
+                getattr(pobj, "connected", False) if pobj else False,
+                list(self._sinks.keys()),
+                getattr(pobj, "is_listening", lambda: False)() if pobj else False,
+            )
+        except Exception:
+            log.exception("on_voice_state_update diag failed")
         if _after.channel is None:
             # Bot left voice — stop receiving
             self._stop_receive(member.guild.id)
@@ -216,7 +238,14 @@ class VoiceCog(commands.Cog):
     # ── sink wiring (uses the hybrid player's listen()) ─────────────────
 
     def _start_receive(self, guild_id: int) -> None:
-        """Register the pipeline sink on the guild's hybrid player."""
+        """Register the pipeline sink on the guild's hybrid player.
+
+        Retries up to a short window: the bot's own voice-state event can fire
+        while connect_player is still mid-handshake, so the player may exist but
+        its real voice socket may not be connected yet (voice_recv's listen()
+        requires a connected socket). We keep trying until listen() succeeds or
+        the window elapses.
+        """
         if not _VOICE_RECV_AVAILABLE:
             log.warning("voice_recv not installed — cannot receive voice audio")
             return
@@ -231,6 +260,56 @@ class VoiceCog(commands.Cog):
         if self._orchestrator is None:
             return
 
+        # Retry until the player's real voice connection is ready (listen() needs
+        # is_connected() True). connect_player now stores the player into state
+        # immediately, so player_obj may exist while the handshake is still
+        # completing. Because this is a sync listener, schedule the retry as a
+        # background task rather than blocking the event loop.
+        connected = getattr(player_obj, "connected", False)
+        conn = getattr(player_obj, "_connection", None)
+        conn_ok = False
+        if conn is not None and not isinstance(conn, str):
+            try:
+                conn_ok = conn.is_connected()
+            except Exception:
+                conn_ok = False
+        if not (connected or conn_ok):
+            log.info(
+                "start_receive (guild_id=%s) player not connected yet "
+                "(connected=%s conn_ok=%s) — scheduling retry task",
+                guild_id, connected, conn_ok,
+            )
+            import asyncio
+            asyncio.ensure_future(self._retry_start_receive(guild_id))
+            return
+
+        # Diagnosis: log the real voice-connection state before attempting
+        # listen(). voice_recv.VoiceRecvClient.listen() calls is_connected() ->
+        # self._connection.is_connected(). A wavelink-only forward (Lavalink
+        # PATCH, no real socket) leaves _connection unconnected, so listen()
+        # raises ClientException('Not connected to voice.') — proving the sink
+        # can never attach.
+        try:
+            ptype = type(player_obj).__name__
+            conn = getattr(player_obj, "_connection", None)
+            conn_ok = False
+            # conn may be MISSING sentinel or a VoiceConnectionState
+            if conn is not None and not isinstance(conn, str):
+                try:
+                    conn_ok = conn.is_connected()
+                except Exception:
+                    conn_ok = False
+            log.info(
+                "start_receive diag (guild_id=%s) player_type=%s connected_prop=%s "
+                "_connection=%s conn.is_connected=%s",
+                guild_id, ptype,
+                getattr(player_obj, "connected", False),
+                conn if conn is not None else "MISSING",
+                conn_ok,
+            )
+        except Exception:
+            log.exception("start_receive diag failed")
+
         try:
             if PipelineSink is None:  # voice_recv unavailable
                 return
@@ -240,6 +319,42 @@ class VoiceCog(commands.Cog):
             log.info("Voice receiver started for guild %s", guild_id)
         except Exception as exc:
             log.warning("Could not start voice receiver: %s", exc)
+
+    async def _retry_start_receive(self, guild_id: int) -> None:
+        """Background retry: wait for the player's voice socket, then listen()."""
+        import asyncio
+        for _ in range(8):
+            if guild_id in self._sinks:
+                return
+            state = player.get_state(guild_id)
+            player_obj = state.get("player")
+            if player_obj is None:
+                return
+            connected = getattr(player_obj, "connected", False)
+            conn = getattr(player_obj, "_connection", None)
+            conn_ok = False
+            if conn is not None and not isinstance(conn, str):
+                try:
+                    conn_ok = conn.is_connected()
+                except Exception:
+                    conn_ok = False
+            if connected or conn_ok:
+                break
+            await asyncio.sleep(1.0)
+        if guild_id in self._sinks:
+            return
+        player_obj = player.get_state(guild_id).get("player")
+        if player_obj is None or self._orchestrator is None:
+            return
+        try:
+            if PipelineSink is None:
+                return
+            sink = PipelineSink(self._orchestrator, guild_id)
+            player_obj.listen(sink)
+            self._sinks[guild_id] = sink
+            log.info("Voice receiver started for guild %s (via retry)", guild_id)
+        except Exception as exc:
+            log.warning("Could not start voice receiver (retry): %s", exc)
 
     def _stop_receive(self, guild_id: int) -> None:
         """Unregister the pipeline sink for a guild."""

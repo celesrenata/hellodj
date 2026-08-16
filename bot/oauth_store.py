@@ -92,6 +92,22 @@ def is_bound_admin(user_id: int) -> bool:
     return False
 
 
+def get_youtube_refresh_token() -> str | None:
+    """Return the stored YouTube OAuth refresh token (provider store).
+
+    The web-ui writes ``data/oauth.json`` under ``providers.youtube.refresh_token``
+    via its device flow (see web-ui/app.py). This module shares the same NFS
+    ``data/`` mount, so the bot reads it here and pushes it to Lavalink's
+    youtube-source REST endpoint at startup / on refresh.
+    """
+    _reload_oauth_if_changed()
+    entry = (_oauth.get("providers") or {}).get("youtube") or {}
+    token = entry.get("refresh_token")
+    if isinstance(token, str) and token.strip():
+        return token.strip()
+    return None
+
+
 # --- Bot guilds snapshot (written by bot, read by web-ui) ---
 
 _guilds_lock = asyncio.Lock()

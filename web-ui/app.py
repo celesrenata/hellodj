@@ -106,6 +106,10 @@ CONFIG_FILE = os.path.join(CONFIG_DIR, "hellodj-config.json")
 OAUTH_FILE = os.path.join(DATA_DIR, "oauth.json")
 # Bot guilds snapshot (written by bot, read here)
 GUILDS_FILE = os.path.join(DATA_DIR, "bot_guilds.json")
+# YouTube device-flow pending store. Persisted to the shared NFS data dir so
+# all gunicorn workers can see the same pending flow (a flow started in one
+# worker must be polled by whichever worker handles the next request).
+YOUTUBE_FLOWS_FILE = os.path.join(DATA_DIR, "youtube_flows.json")
 
 # ── Helpers ────────────────────────────────────────────────
 
@@ -326,20 +330,114 @@ PROVIDERS = {
         "user_path": "/account",
         "user_id_field": "id",
     },
+    # ── YouTube (youtube-source plugin OAuth, device flow) ──────────────
+    # The youtube-source plugin (dev.lavalink.youtube:youtube-plugin:1.18.2)
+    # authenticates via a Google OAuth **refresh token** using a device flow —
+    # there is no redirect-URI / authorization-code flow. The client_id/secret
+    # are hardcoded in the plugin jar (verified from the plugin bytecode):
+    #   CLIENT_ID   = 861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.googleusercontent.com
+    #   CLIENT_SECRET = SboVhoG9s0rNafixCSGGKXAT
+    #   SCOPES      = "http://gdata.youtube.com https://www.googleapis.com/auth/youtube"
+    #   DEVICE_URL  = https://www.youtube.com/o/oauth2/device/code
+    #   TOKEN_URL   = https://www.youtube.com/o/oauth2/token
+    # So the web-ui does NOT need its own client credentials: it talks directly
+    # to Google with the plugin's own client id/secret. The refresh token is
+    # stored in data/oauth.json under providers.youtube, and the BOT (which
+    # shares the same NFS data mount) reads it and pushes it to the running
+    # Lavalink's youtube-source REST endpoint (/youtube).
+    "youtube": {
+        "auth_url": "https://www.youtube.com/o/oauth2/device/code",
+        "token_url": "https://www.youtube.com/o/oauth2/token",
+        "api_url": "https://www.googleapis.com/youtube/v3",
+        "scope": "http://gdata.youtube.com https://www.googleapis.com/auth/youtube",
+        "label": "YouTube",
+        "client_id": "861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.googleusercontent.com",
+        "client_secret": "SboVhoG9s0rNafixCSGGKXAT",
+        "user_path": "/",
+        "user_id_field": "id",
+    },
 }
+
+# ── YouTube device-flow pending state ──────────────────────────────
+# The device_code is held server-side (not just in browser JS) so the flow
+# survives page reloads and can run up to DEVICE_FLOW_TTL_SECONDS before the
+# code expires. The frontend receives a flow_id and can resume polling later.
+#
+# The store is persisted to the shared NFS data dir (youtube_flows.json) because
+# gunicorn runs multiple worker processes; a flow started in one worker must be
+# pollable by whichever worker handles the next request. Disk-backed storage
+# makes it worker-agnostic, at the cost of a read/write per poll.
+import time as _time
+
+DEVICE_FLOW_TTL_SECONDS = int(os.getenv("YOUTUBE_DEVICE_FLOW_TTL", "300"))
+
+
+def _yt_load_flows() -> dict:
+    """Read the disk-backed flow store (dict of flow_id -> flow dict)."""
+    return read_json(YOUTUBE_FLOWS_FILE, {})
+
+
+def _yt_save_flows(flows: dict) -> None:
+    """Persist the flow store atomically to youtube_flows.json."""
+    os.makedirs(DATA_DIR, exist_ok=True)
+    write_json(YOUTUBE_FLOWS_FILE, flows)
+
+
+def _yt_evict_expired(flows: dict, now: float) -> dict:
+    """Return flows with entries older than DEVICE_FLOW_TTL_SECONDS removed."""
+    return {
+        fid: f for fid, f in flows.items()
+        if (now - f.get("_created", 0)) <= DEVICE_FLOW_TTL_SECONDS
+    }
+
+
+def _yt_store_flow(device_code, user_code, verification_url,
+                   verification_url_complete) -> str:
+    """Persist a pending device flow, evicting stale entries. Returns a flow_id."""
+    flows = _yt_evict_expired(_yt_load_flows(), _time.monotonic())
+    flow_id = secrets.token_urlsafe(8)
+    flows[flow_id] = {
+        "device_code": device_code,
+        "user_code": user_code,
+        "verification_url": verification_url,
+        "verification_url_complete": verification_url_complete,
+        "_created": _time.monotonic(),
+    }
+    _yt_save_flows(flows)
+    return flow_id
+
+
+def _yt_get_flow(flow_id: str):
+    """Return the pending flow dict (or None) if still within TTL."""
+    flows = _yt_evict_expired(_yt_load_flows(), _time.monotonic())
+    flow = flows.get(flow_id)
+    if flow is None:
+        return None
+    # Refresh the file (drop expired entries) opportunistically.
+    _yt_save_flows(flows)
+    return flow
+
 
 def provider_config(name):
     """Return the registry entry for a provider, or None if unknown."""
     return PROVIDERS.get(name)
 
 def provider_credentials(name):
-    """Return (client_id, client_secret) for a provider from .env, or (None, None)."""
+    """Return (client_id, client_secret) for a provider from .env, or (None, None).
+
+    The youtube-source plugin (youtube provider) carries its client_id/client_secret
+    inline in the registry (they are hardcoded in the plugin jar and verified from
+    its bytecode) rather than from .env, so fall back to those when the env keys
+    are absent.
+    """
     prov = provider_config(name)
     if prov is None:
         return None, None
     env = read_env()
-    cid = env.get(prov["client_id_env"], "")
-    csec = env.get(prov["client_secret_env"], "")
+    cid_env = prov.get("client_id_env")
+    csec_env = prov.get("client_secret_env")
+    cid = env.get(cid_env, "") if cid_env else prov.get("client_id", "")
+    csec = env.get(csec_env, "") if csec_env else prov.get("client_secret", "")
     return (cid or None), (csec or None)
 
 def provider_is_configured(name):
@@ -678,6 +776,156 @@ def api_providers_status():
             "refresh_error": error,
         }
     return jsonify({"providers": status})
+
+# ── YouTube device-flow OAuth (youtube-source plugin) ─────────────────
+# The youtube-source plugin has NO redirect-URI flow — it authenticates via a
+# Google OAuth device flow and consumes an OAuth refresh token. These endpoints
+# talk directly to Google with the plugin's own (hardcoded, verified) client
+# id/secret, then store the refresh token in data/oauth.json under
+# providers.youtube.refresh_token. The bot (sharing the same NFS data mount)
+# reads it and pushes it to the running Lavalink's /youtube REST endpoint.
+
+@app.route("/api/youtube/device", methods=["POST"])
+def api_youtube_device():
+    """Request a Google device code for the YouTube scope.
+
+    Returns a flow_id (the server holds the device_code up to
+    DEVICE_FLOW_TTL_SECONDS), the user_code, the verification_url, and a direct
+    authorize link (verification_url_complete) that pre-fills the code so the
+    user can authorize with a single click instead of typing the code.
+    """
+    prov = provider_config("youtube")
+    if prov is None:
+        return jsonify({"error": "YouTube provider not registered"}), 500
+    payload = {
+        "client_id": prov["client_id"],
+        "scope": prov["scope"],
+        "device_id": "-",
+        "device_model": "ytlr::",
+    }
+
+    async def fetch():
+        async with aiohttp.ClientSession() as sess:
+            async with sess.post(prov["auth_url"], data=payload) as resp:
+                body = await resp.json()
+                return resp.status, body
+
+    try:
+        status, body = asyncio.run(fetch())
+    except Exception as exc:
+        log.error("YouTube device code fetch error: %s", exc)
+        return jsonify({"error": f"Device code fetch error: {exc}"}), 502
+    if status != 200:
+        return jsonify({"error": f"Device code request failed ({status})", "body": body}), 502
+
+    device_code = body.get("device_code")
+    user_code = body.get("user_code")
+    verification_url = body.get("verification_url") or "https://www.google.com/device"
+    verification_url_complete = body.get("verification_url_complete")
+    # Build a direct authorize link even if Google omits the pre-filled variant.
+    if not verification_url_complete:
+        verification_url_complete = f"{verification_url}?user_code={user_code}"
+    flow_id = _yt_store_flow(
+        device_code, user_code, verification_url, verification_url_complete
+    )
+    log.info("YouTube device flow started flow_id=%s ttl=%ds user_code=%s",
+             flow_id, DEVICE_FLOW_TTL_SECONDS, user_code)
+    return jsonify({
+        "flow_id": flow_id,
+        "device_code": device_code,
+        "user_code": user_code,
+        "verification_url": verification_url,
+        "verification_url_complete": verification_url_complete,
+        "expires_in": body.get("expires_in"),
+        "interval": body.get("interval"),
+        "ttl": DEVICE_FLOW_TTL_SECONDS,
+    })
+
+@app.route("/api/youtube/token", methods=["POST"])
+def api_youtube_token():
+    """Poll Google with the device_code to obtain the OAuth refresh token.
+
+    The device flow returns the tokens only after the user authorizes at the
+    verification URL. On success we persist providers.youtube.refresh_token in
+    data/oauth.json so the bot can push it to Lavalink.
+
+    The caller supplies a flow_id (from /api/youtube/device); the device_code is
+    held server-side so the flow survives page reloads up to
+    DEVICE_FLOW_TTL_SECONDS. Accepts an optional explicit device_code for
+    back-compat.
+    """
+    data = request.get_json(silent=True) or {}
+    device_code = data.get("device_code")
+    flow_id = data.get("flow_id")
+    flow = _yt_get_flow(flow_id) if flow_id else None
+    if not device_code and flow:
+        device_code = flow["device_code"]
+    if not device_code:
+        return jsonify({"error": "Missing device_code or flow_id"}), 400
+    prov = provider_config("youtube")
+    if prov is None:
+        return jsonify({"error": "YouTube provider not registered"}), 500
+    payload = {
+        "client_id": prov["client_id"],
+        "client_secret": prov["client_secret"],
+        "grant_type": "http://oauth.net/grant_type/device/1.0",
+        "code": device_code,
+    }
+
+    async def fetch():
+        async with aiohttp.ClientSession() as sess:
+            async with sess.post(prov["token_url"], data=payload) as resp:
+                body = await resp.json()
+                return resp.status, body
+
+    try:
+        status, body = asyncio.run(fetch())
+    except Exception as exc:
+        log.error("YouTube token poll error: %s", exc)
+        return jsonify({"error": f"Token poll error: {exc}"}), 502
+    # Google's device token endpoint returns HTTP 200 with an error field
+    # ({"error":"authorization_pending"}) while the user has not yet authorized,
+    # so we must check the body's error field regardless of HTTP status.
+    err = body.get("error")
+    if status != 200 or err:
+        # authorization_pending / slow_down / expired_token / invalid_grant are
+        # expected while the user has not yet authorized or the code expired.
+        return jsonify({
+            "error": f"Token poll failed (status={status})",
+            "error_code": err or body.get("error_description"),
+            "body": body,
+        }), 202
+    access_token = body.get("access_token")
+    refresh_token = body.get("refresh_token")
+    if not refresh_token:
+        return jsonify({"error": "No refresh_token in device response"}), 502
+
+    oauth = load_oauth()
+    providers = oauth.setdefault("providers", {})
+    providers["youtube"] = {
+        "access_token": access_token,
+        "refresh_token": refresh_token,
+        "expires_at": _token_expires_at(body.get("expires_in")),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }
+    save_oauth(oauth)
+    log.info("YouTube OAuth refresh token stored in oauth.json (provider=youtube)")
+    return jsonify({
+        "status": "ok",
+        "message": "YouTube OAuth refresh token stored. The bot will push it to Lavalink.",
+        "refresh_token": refresh_token,
+    })
+
+@app.route("/api/youtube/token/clear", methods=["POST"])
+def api_youtube_clear():
+    """Clear the stored YouTube refresh token (revoke binding)."""
+    oauth = load_oauth()
+    providers = oauth.get("providers", {})
+    if "youtube" in providers:
+        del providers["youtube"]
+        save_oauth(oauth)
+        return jsonify({"status": "ok", "message": "YouTube OAuth token cleared"})
+    return jsonify({"status": "ok", "message": "No YouTube OAuth token stored"})
 
 @app.route("/api/status")
 def api_status():

@@ -120,7 +120,7 @@ spec:
             # OAuth refresh token instead. Leave enabled=false until real values are
             # filled in the youtube-secret (see kube/youtube-secret.yaml).
             - name: YOUTUBE_OAUTH_ENABLED
-              value: "false"
+              value: "true"
             - name: YOUTUBE_OAUTH_REFRESH_TOKEN
               valueFrom:
                 secretKeyRef:
