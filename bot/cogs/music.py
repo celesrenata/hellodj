@@ -905,6 +905,7 @@ class Music(commands.Cog):
             track = tracks[0]
             info = player._track_entry(track, provider)
             await player.add_track(state, interaction.guild.id, info)
+            await self._start_if_idle(interaction.guild.id)
             await interaction.followup.send(f"HelloDJ added to queue: **{info['title']}**")
 
         except (wavelink.LavalinkLoadException, wavelink.NodeException) as exc:
@@ -928,6 +929,19 @@ class Music(commands.Cog):
             log.error("Play %s failed (%s): %s", label, type(exc).__name__, exc)
             await interaction.followup.send(f"Could not play: {exc}")
 
+    async def _start_if_idle(self, guild_id: int) -> None:
+        """Start playback from the queue if the player is connected and idle.
+
+        ``player.add_track`` only appends the resolved entry to the queue and
+        persists it — it never starts playback. /play link (and the direct-URL
+        branch of /play song) must mirror the dropdown path (``on_pick`` →
+        ``player._play_next_from_queue``) so a freshly-connected, idle player
+        actually starts playing instead of leaving the track queued forever.
+        """
+        p = player.get_player(guild_id)
+        if p and p.connected and not p.playing and not p.paused:
+            await player._play_next_from_queue(guild_id)
+
     async def _play_url_flow(self, interaction: discord.Interaction, url: str, *, allow_playlist: bool = False) -> None:
         """Resolve a direct URL (track/video) or playlist and queue it."""
         if not (url.startswith("http://") or url.startswith("https://")):
@@ -950,6 +964,7 @@ class Music(commands.Cog):
                 for track in tracks:
                     info = player._track_entry(track, provider)
                     await player.add_track(state, interaction.guild.id, info)
+                await self._start_if_idle(interaction.guild.id)
                 await interaction.followup.send(
                     f"HelloDJ added **{len(tracks)}** tracks from **{result.name}** to the queue."
                 )
@@ -960,6 +975,7 @@ class Music(commands.Cog):
                 for track in items:
                     info = player._track_entry(track, provider)
                     await player.add_track(state, interaction.guild.id, info)
+                await self._start_if_idle(interaction.guild.id)
                 if allow_playlist:
                     await interaction.followup.send(f"HelloDJ added **{len(result)}** tracks to the queue.")
                 else:
@@ -967,6 +983,7 @@ class Music(commands.Cog):
             else:
                 info = player._track_entry(result, provider)
                 await player.add_track(state, interaction.guild.id, info)
+                await self._start_if_idle(interaction.guild.id)
                 await interaction.followup.send(f"HelloDJ added to queue: **{info['title']}**")
 
         except (wavelink.LavalinkLoadException, wavelink.NodeException) as exc:
