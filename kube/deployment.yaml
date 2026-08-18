@@ -127,13 +127,21 @@ spec:
                   name: youtube-secret
                   key: YOUTUBE_OAUTH_REFRESH_TOKEN
                   optional: true
+            # ── yt-cipher remote cipher server token ───────────────────
+            # Shared with the yt-cipher container (API_TOKEN env var).
+            # Rendered into the Lavalink application.yml remoteCipher.password.
+            - name: YTCIPHER_API_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: yt-cipher-secret
+                  key: API_TOKEN
           command:
             - /bin/sh
             - -c
             - |
               set -e
               cp /cfg/application.yml /out/application.yml
-              for v in TIDAL_COUNTRY_CODE TIDAL_SEARCH_LIMIT TIDAL_CLIENT_ID TIDAL_CLIENT_SECRET TIDAL_TOKEN SPOTIFY_CLIENT_ID SPOTIFY_CLIENT_SECRET PROVIDER_YOUTUBE PROVIDER_YOUTUBEMUSIC PROVIDER_SOUNDCLOUD PROVIDER_SPOTIFY PROVIDER_TIDAL YOUTUBE_OAUTH_ENABLED YOUTUBE_OAUTH_REFRESH_TOKEN; do
+              for v in TIDAL_COUNTRY_CODE TIDAL_SEARCH_LIMIT TIDAL_CLIENT_ID TIDAL_CLIENT_SECRET TIDAL_TOKEN SPOTIFY_CLIENT_ID SPOTIFY_CLIENT_SECRET PROVIDER_YOUTUBE PROVIDER_YOUTUBEMUSIC PROVIDER_SOUNDCLOUD PROVIDER_SPOTIFY PROVIDER_TIDAL YOUTUBE_OAUTH_ENABLED YOUTUBE_OAUTH_REFRESH_TOKEN YTCIPHER_API_TOKEN; do
                 val=$(eval echo \${$v})
                 sed -i "s|\${$v}|$val|g" /out/application.yml
               done
@@ -146,7 +154,7 @@ spec:
       containers:
         # ── Discord Bot ─────────────────────────────────────────────
         - name: bot
-          image: registry.celestium.life/hellodj/bot:voicedbg-20260816
+          image: registry.celestium.life/hellodj/bot:batch-fixes-2026-08-18-fix1
           imagePullPolicy: Always
           envFrom:
             - configMapRef:

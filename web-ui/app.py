@@ -16,7 +16,7 @@ import glob
 import logging
 import logging.handlers
 import secrets
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from urllib.parse import urlencode
 
@@ -110,6 +110,8 @@ GUILDS_FILE = os.path.join(DATA_DIR, "bot_guilds.json")
 # all gunicorn workers can see the same pending flow (a flow started in one
 # worker must be polled by whichever worker handles the next request).
 YOUTUBE_FLOWS_FILE = os.path.join(DATA_DIR, "youtube_flows.json")
+# AI usage metrics (written by the bot to the shared NFS data dir; read here)
+METRICS_FILE = os.path.join(DATA_DIR, "metrics.json")
 
 # ── Helpers ────────────────────────────────────────────────
 
@@ -926,6 +928,177 @@ def api_youtube_clear():
         save_oauth(oauth)
         return jsonify({"status": "ok", "message": "YouTube OAuth token cleared"})
     return jsonify({"status": "ok", "message": "No YouTube OAuth token stored"})
+
+# ── Metrics ────────────────────────────────────────────────
+# AI usage metrics are written by the bot to data/metrics.json on the shared
+# NFS mount. The web UI reads that file directly (separate process) and
+# recomputes the summaries here rather than importing bot/metrics.py.
+
+def _metrics_raw() -> dict:
+    """Return the raw metrics payload from the bot, or empty defaults."""
+    return read_json(METRICS_FILE, {})
+
+
+def _period_start(period: str) -> float:
+    """Epoch start of a period bucket: today | week | month | all."""
+    now = datetime.now()
+    if period == "today":
+        return datetime(now.year, now.month, now.day).timestamp()
+    if period == "week":
+        monday = now - timedelta(days=now.weekday())
+        return datetime(monday.year, monday.month, monday.day).timestamp()
+    if period == "month":
+        return datetime(now.year, now.month, 1).timestamp()
+    if period in ("all", "alltime"):
+        return 0.0
+    return datetime(now.year, now.month, now.day).timestamp()
+
+
+def _metrics_summary(period: str = "today") -> dict:
+    """Aggregate raw metrics for the requested period (mirrors bot metrics.py)."""
+    data = _metrics_raw()
+    start = _period_start(period)
+    llm = [r for r in data.get("llm", []) if r.get("ts", 0) >= start]
+    stt = [r for r in data.get("stt", []) if r.get("ts", 0) >= start]
+    tts = [r for r in data.get("tts", []) if r.get("ts", 0) >= start]
+    wake = [r for r in data.get("wakeword", []) if r.get("ts", 0) >= start]
+
+    total_tokens = sum(r.get("input_tokens", 0) + r.get("output_tokens", 0) for r in llm)
+    total_input = sum(r.get("input_tokens", 0) for r in llm)
+    total_output = sum(r.get("output_tokens", 0) for r in llm)
+    latency_ms = sum(r.get("latency_ms", 0) for r in llm)
+
+    def _engine_breakdown(records: list) -> dict:
+        by_engine: dict = {}
+        for r in records:
+            eng = r.get("engine", "unknown") or "unknown"
+            bucket = by_engine.setdefault(eng, {"calls": 0, "total": 0})
+            bucket["calls"] += 1
+            bucket["total"] += r.get("duration_ms", 0) or r.get("chars", 0) or 0
+        return by_engine
+
+    def _model_breakdown(records: list) -> dict:
+        by_model: dict = {}
+        for r in records:
+            model = r.get("model", "unknown") or "unknown"
+            bucket = by_model.setdefault(model, {"calls": 0, "tokens": 0})
+            bucket["calls"] += 1
+            bucket["tokens"] += r.get("input_tokens", 0) + r.get("output_tokens", 0)
+        return by_model
+
+    return {
+        "period": period,
+        "llm": {
+            "calls": len(llm),
+            "tokens": total_tokens,
+            "input_tokens": total_input,
+            "output_tokens": total_output,
+            "avg_latency_ms": round(latency_ms / len(llm), 2) if llm else 0,
+            "models": _model_breakdown(llm),
+        },
+        "stt": {
+            "calls": len(stt),
+            "duration_ms": sum(r.get("duration_ms", 0) for r in stt),
+            "engines": _engine_breakdown(stt),
+        },
+        "tts": {
+            "calls": len(tts),
+            "chars": sum(r.get("chars", 0) for r in tts),
+            "engines": _engine_breakdown(tts),
+        },
+        "wakeword": {"detections": len(wake)},
+    }
+
+
+def _metrics_daily(days: int = 14) -> list:
+    """Per-day usage for the last ``days`` days (oldest first)."""
+    data = _metrics_raw()
+    today = datetime.now().date()
+    start_day = today - timedelta(days=days - 1)
+    start_ts = datetime(start_day.year, start_day.month, start_day.day).timestamp()
+
+    buckets = {}
+    for i in range(days):
+        day = start_day + datetime.timedelta(days=i)
+        buckets[day.strftime("%Y-%m-%d")] = {
+            "date": "", "llm_calls": 0, "tokens": 0,
+            "stt_calls": 0, "tts_calls": 0, "wakewords": 0,
+        }
+
+    def _day_key(ts: float) -> str:
+        return datetime.fromtimestamp(ts).strftime("%Y-%m-%d")
+
+    for r in data.get("llm", []):
+        if r.get("ts", 0) < start_ts:
+            continue
+        b = buckets.setdefault(_day_key(r["ts"]), {
+            "date": "", "llm_calls": 0, "tokens": 0,
+            "stt_calls": 0, "tts_calls": 0, "wakewords": 0,
+        })
+        b["llm_calls"] += 1
+        b["tokens"] += r.get("input_tokens", 0) + r.get("output_tokens", 0)
+    for r in data.get("stt", []):
+        if r.get("ts", 0) < start_ts:
+            continue
+        buckets.setdefault(_day_key(r["ts"]), {
+            "date": "", "llm_calls": 0, "tokens": 0,
+            "stt_calls": 0, "tts_calls": 0, "wakewords": 0,
+        })["stt_calls"] += 1
+    for r in data.get("tts", []):
+        if r.get("ts", 0) < start_ts:
+            continue
+        buckets.setdefault(_day_key(r["ts"]), {
+            "date": "", "llm_calls": 0, "tokens": 0,
+            "stt_calls": 0, "tts_calls": 0, "wakewords": 0,
+        })["tts_calls"] += 1
+    for r in data.get("wakeword", []):
+        if r.get("ts", 0) < start_ts:
+            continue
+        buckets.setdefault(_day_key(r["ts"]), {
+            "date": "", "llm_calls": 0, "tokens": 0,
+            "stt_calls": 0, "tts_calls": 0, "wakewords": 0,
+        })["wakewords"] += 1
+
+    ordered = []
+    for i in range(days):
+        day = start_day + datetime.timedelta(days=i)
+        key = day.strftime("%Y-%m-%d")
+        b = buckets.get(key) or {
+            "date": "", "llm_calls": 0, "tokens": 0,
+            "stt_calls": 0, "tts_calls": 0, "wakewords": 0,
+        }
+        b["date"] = key
+        ordered.append(b)
+    return ordered
+
+
+@app.route("/metrics")
+def metrics_page():
+    """Metrics dashboard — login-required."""
+    if require_auth():
+        return require_auth()
+    return render_template("metrics.html", active="metrics")
+
+
+@app.route("/api/metrics")
+def api_metrics():
+    """Return aggregated AI usage metrics (auth required)."""
+    if current_user() is None:
+        return jsonify({"error": "Authentication required"}), 401
+    period = request.args.get("period", "today")
+    if period not in ("today", "week", "month", "all"):
+        period = "today"
+    days = request.args.get("days", "14")
+    try:
+        days = max(1, min(int(days), 90))
+    except (TypeError, ValueError):
+        days = 14
+    return jsonify({
+        "summary": _metrics_summary(period),
+        "daily": _metrics_daily(days),
+        "days": days,
+    })
+
 
 @app.route("/api/status")
 def api_status():

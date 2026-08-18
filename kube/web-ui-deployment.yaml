@@ -39,7 +39,7 @@ spec:
         runAsUser: 1000
       containers:
         - name: web-ui
-          image: registry.celestium.life/hellodj/web-ui:latest
+          image: registry.celestium.life/hellodj/web-ui:v2026-08-17
           imagePullPolicy: Always
           ports:
             - containerPort: 8080

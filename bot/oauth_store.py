@@ -79,6 +79,31 @@ def _reload_oauth_if_changed() -> None:
         )
 
 
+def get_admin_ids() -> set[int]:
+    """Return the set of bound-owner + admin Discord user ids (as ints).
+
+    Used by the guild policy to check whether any bot administrator is a member
+    of a guild. Includes the OAuth-bound owner and every OAuth-bound admin.
+    Returns an empty set when no bindings exist (e.g. oauth.json missing).
+    """
+    _reload_oauth_if_changed()
+    ids: set[int] = set()
+    owner = _oauth.get("owner_user_id")
+    if owner is not None:
+        try:
+            ids.add(int(owner))
+        except (TypeError, ValueError):
+            log.warning("HelloDJ could not parse bound owner id %r", owner)
+    for admin_id in _oauth.get("admin_user_ids", []) or []:
+        if admin_id is None:
+            continue
+        try:
+            ids.add(int(admin_id))
+        except (TypeError, ValueError):
+            log.warning("HelloDJ could not parse admin id %r", admin_id)
+    return ids
+
+
 def is_bound_admin(user_id: int) -> bool:
     """True if the user's Discord id equals the stored owner or is in admin ids."""
     _reload_oauth_if_changed()

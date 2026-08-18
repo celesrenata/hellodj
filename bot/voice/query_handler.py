@@ -7,8 +7,11 @@ weather, news, stocks, and astronomy tools.
 import json
 import logging
 import os
+import time
 
 import aiohttp
+
+import metrics as _metrics
 
 log = logging.getLogger(__name__)
 
@@ -310,8 +313,9 @@ class QueryHandler:
             "Content-Type": "application/json",
         }
 
+        model = os.getenv("LLM_MODEL", "gpt-4o-mini")
         body = {
-            "model": os.getenv("LLM_MODEL", "gpt-4o-mini"),
+            "model": model,
             "messages": [
                 {"role": "system", "content": SYSTEM_PROMPT},
                 {"role": "user", "content": query},
@@ -327,6 +331,16 @@ class QueryHandler:
 
             choice = result.get("choices", [{}])[0]
             message = choice.get("message", {})
+
+            # Record token usage for the initial completion (OpenAI-compatible
+            # endpoints return a "usage" object: prompt_tokens + completion_tokens).
+            usage = result.get("usage") or {}
+            await _metrics.metrics.record_llm_call(
+                model,
+                usage.get("prompt_tokens", 0),
+                usage.get("completion_tokens", 0),
+                latency_ms=0.0,  # latency is captured on the tool-call follow-up
+            )
 
             # Check for tool calls
             tool_calls = message.get("tool_calls")
@@ -359,8 +373,17 @@ class QueryHandler:
                         "tool_call_id": tc["id"],
                         "content": tool_result,
                     })
+                    t0 = time.monotonic()
                     async with session.post(url, headers=headers, json=body) as resp:
                         result2 = await resp.json()
+                    latency_ms = (time.monotonic() - t0) * 1000.0
+                    usage2 = result2.get("usage") or {}
+                    await _metrics.metrics.record_llm_call(
+                        model,
+                        usage2.get("prompt_tokens", 0),
+                        usage2.get("completion_tokens", 0),
+                        latency_ms=latency_ms,
+                    )
                     choice2 = result2.get("choices", [{}])[0]
                     return choice2.get("message", {}).get("content", "").strip()
 

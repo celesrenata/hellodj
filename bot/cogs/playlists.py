@@ -11,9 +11,16 @@ import storage
 from cogs.music import SearchSelectView
 
 
-def _fmt_duration(seconds) -> str:
-    secs = int(seconds or 0)
-    mins, secs = divmod(secs, 60)
+def _fmt_duration(ms) -> str:
+    """Format a duration in milliseconds to M:SS or H:MM:SS."""
+    total_ms = int(ms or 0)
+    if total_ms <= 0:
+        return "0:00"
+    total_secs = total_ms // 1000
+    hours, remainder = divmod(total_secs, 3600)
+    mins, secs = divmod(remainder, 60)
+    if hours > 0:
+        return f"{hours}:{mins:02d}:{secs:02d}"
     return f"{mins}:{secs:02d}"
 
 
@@ -170,10 +177,10 @@ class Playlists(commands.Cog):
         except Exception as exc:
             await interaction.followup.send(f"Could not add: {exc}", ephemeral=True)
 
-    @group.command(name="addcurrent", description="Add the currently playing track to a playlist")
+    @group.command(name="add-current", description="Add the currently playing track to a playlist")
     @app_commands.describe(name="Playlist to add to")
     @app_commands.autocomplete(name=_name_autocomplete)
-    async def addcurrent(self, interaction: discord.Interaction, name: str):
+    async def add_current(self, interaction: discord.Interaction, name: str):
         current = player.get_state(interaction.guild.id).get("current")
         if not current:
             await interaction.response.send_message("Nothing is playing right now.", ephemeral=True)

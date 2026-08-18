@@ -4,13 +4,24 @@ Model input:  float32[1, 16, 96] — 16 time-steps × 96 mel bins, 80ms sliding 
 Model output: float32[1, 1]     — sigmoid probability (≥0.5 = wake word detected)
 """
 
+import asyncio
 import logging
 import os
 
 import numpy as np
 import onnxruntime as ort
 
+import metrics as _metrics
+
 log = logging.getLogger(__name__)
+
+
+def _record_wakeword() -> None:
+    """Fire-and-forget record a wake-word detection onto the running event loop."""
+    try:
+        asyncio.create_task(_metrics.metrics.record_wakeword())
+    except Exception as exc:
+        log.warning("Could not schedule wake-word metrics: %s", exc)
 
 # Default threshold; can be raised at runtime to reduce false positives
 _DEFAULT_THRESHOLD = 0.5
@@ -79,7 +90,10 @@ class WakeWordModel:
             {self._input_name: mel.astype(np.float32)},
         )
         prob = float(result[0][0][0])
-        return prob >= threshold
+        detected = prob >= threshold
+        if detected:
+            _record_wakeword()
+        return detected
 
     def predict_prob(self, mel: np.ndarray) -> float:
         """Return the raw sigmoid probability (for logging / diagnostics)."""

@@ -49,8 +49,14 @@ data:
         allowDirectVideoIds: true
         allowDirectPlaylistIds: true
         # Clients are queried in order; first that can load wins.
+        # TV is the ONLY OAuth-capable client (per the youtube-source client
+        # table) — it must be present for the OAuth refresh token to be applied.
+        # TVHTML5_SIMPLY (added in 1.18.0) is a more robust playback client.
+        # MUSIC handles search; the rest are unauthenticated fallbacks.
         clients:
           - MUSIC
+          - TV
+          - TVHTML5_SIMPLY
           - ANDROID_VR
           - WEB
           - WEBEMBEDDED
@@ -59,6 +65,14 @@ data:
         oauth:
           enabled: ${YOUTUBE_OAUTH_ENABLED}
           refreshToken: "${YOUTUBE_OAUTH_REFRESH_TOKEN}"
+        # Remote cipher server — offloads YouTube signature deciphering from the
+        # plugin's local extractor (which breaks on "Must find sig function").
+        # The yt-cipher service runs in the same namespace; the token is rendered
+        # from yt-cipher-secret by the init container.
+        remoteCipher:
+          url: "http://yt-cipher.hellodj-service.svc.cluster.local:8001"
+          password: "${YTCIPHER_API_TOKEN}"
+          userAgent: "hellodj"
       lavasrc:
         sources:
           tidal: "${PROVIDER_TIDAL}"
@@ -85,11 +99,29 @@ data:
 
     filters:
       enabled: true
-      timescale:
-        enabled: true
-      rotation:
+      # All core Lavalink v4 DSP filters used by the bot's filter commands. The
+      # config keys match Lavalink's filterConfigs.kt / FilterChain.kt schema.
+      # NOTE: highPass/freqShift are Lavaplayer *plugin* filters, not part of the
+      # core filters block — so they are intentionally not listed here.
+      volume:
         enabled: true
       equalizer:
+        enabled: true
+      karaoke:
+        enabled: true      # /filter stems isolate vocals (instrumental)
+      timescale:
+        enabled: true      # /filter nightcore, vaporwave, 8bit
+      tremolo:
+        enabled: true      # /filter 8bit (arcade warbling)
+      vibrato:
+        enabled: true      # /filter 8bit (retro vibrato)
+      distortion:
+        enabled: true      # /filter 8bit (square-wave grit)
+      rotation:
+        enabled: true      # /filter 8d
+      lowPass:
+        enabled: true      # low-pass smoothing (used by legacy presets)
+      channelMix:
         enabled: true
 
     server:

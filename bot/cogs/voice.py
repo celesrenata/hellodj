@@ -174,6 +174,11 @@ class VoiceCog(commands.Cog):
                 ephemeral=True,
             )
 
+    # Intentional naming exception: /voice_status keeps its underscore name.
+    # Converting to a space-group (/voice status) would break the existing
+    # /voice enable|disable toggle command (voice.py:142), so this low-risk
+    # underscore name is retained for parity-without-collision.
+
     @app_commands.command(
         name="voice_status",
         description="Show voice activation status",

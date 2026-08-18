@@ -1,0 +1,24 @@
+# Service for the yt-cipher remote cipher service.
+# Lavalink (sidecar in the hellodj pod) connects to this via the cluster DNS name:
+#   http://yt-cipher.hellodj-service.svc.cluster.local:8001
+apiVersion: v1
+kind: Service
+metadata:
+  name: yt-cipher
+  namespace: hellodj-service
+  labels:
+    app.kubernetes.io/instance: hellodj
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/name: yt-cipher
+    app.kubernetes.io/component: lavalink
+    helm.sh/chart: hellodj-0.1.0
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/instance: hellodj
+    app.kubernetes.io/name: yt-cipher
+  ports:
+    - name: http
+      port: 8001
+      targetPort: 8001
+      protocol: TCP

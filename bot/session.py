@@ -73,6 +73,8 @@ async def save_guild(
     source_provider: str = "youtube",
     repeat_mode: str = "off",
     filters: dict | None = None,
+    crossfade_seconds: float = 0.0,
+    tune_enabled: bool = False,
 ) -> None:
     """Snapshot a guild's live playback state to disk."""
     async with _lock:
@@ -89,6 +91,10 @@ async def save_guild(
             "source_provider": source_provider,
             "repeat_mode": repeat_mode,
             "filters": filters or {},
+            # /crossfade — seconds of fade between tracks (0 = disabled)
+            "crossfade_seconds": crossfade_seconds,
+            # /tune — enhanced-audio toggle, persisted across restarts
+            "tune_enabled": tune_enabled,
         }
         _save()
 

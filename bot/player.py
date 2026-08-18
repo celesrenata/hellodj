@@ -17,6 +17,7 @@ import session
 import permissions
 from voice.hybrid_player import HybridPlayer
 import voice_debug
+import blacklist as _blacklist
 
 log = logging.getLogger(__name__)
 
@@ -27,6 +28,15 @@ guild_state: dict[int, dict] = {}
 # wakeword/voice pipeline and /play cannot race and trigger
 # `ClientException('Already connected to a voice channel.')`.
 _connect_locks: dict[int, asyncio.Lock] = {}
+
+# ── mid-song recovery (retry) ───────────────────────────────
+# When a track fails mid-song, on_track_exception re-resolves and replays the
+# SAME track up to MAX_TRACK_RETRIES times (instead of advancing the queue) so
+# the bot recovers from a transient failure instead of "falling over" in the
+# middle of a song. RETRY_BACKOFF_SECONDS is the sleep inserted between retries.
+# Both are overridable via env for tuning without a code change.
+MAX_TRACK_RETRIES = int(os.getenv("HELLODJ_MAX_TRACK_RETRIES", "3"))
+RETRY_BACKOFF_SECONDS = float(os.getenv("HELLODJ_RETRY_BACKOFF_SECONDS", "1.5"))
 
 # ── raw-event handshake instrumentation (diagnosis only) ────
 # discord.py only forwards VOICE_STATE_UPDATE / VOICE_SERVER_UPDATE to the
@@ -108,6 +118,18 @@ def _snapshot(state: dict) -> dict:
         "text_channel_id": text_channel.id if text_channel else None,
         "current": _to_entry(current) if current else None,
         "queue": [_to_entry(item) for item in state["queue"]],
+        # Extended guild settings — must be persisted or they reset to
+        # save_guild() defaults (source_provider="youtube", repeat_mode="off")
+        # on every persist() call, wiping the user's /source choice on restart.
+        "source_provider": state.get("source_provider", "youtube"),
+        "repeat_mode": state.get("repeat_mode", "off"),
+        "autoplay_enabled": state.get("autoplay_enabled", False),
+        "autoplay_genres": list(state.get("autoplay_genres") or []),
+        "filters": dict(state.get("filters") or {}),
+        # /tune — enhanced-audio toggle persisted across restarts (like filters)
+        "tune_enabled": state.get("tune_enabled", False),
+        # /crossfade — seconds of fade overlap between tracks (0 = disabled)
+        "crossfade_seconds": state.get("crossfade_seconds", 0.0),
     }
 
 
@@ -128,8 +150,16 @@ def get_state(guild_id: int) -> dict:
             "autoplay_enabled": False,
             "autoplay_genres": [],
             "filters": {},
+            # /tune — enhanced-audio toggle, persisted across restarts
+            "tune_enabled": False,
             "now_playing_msg": None,
             "now_playing_task": None,
+            # /crossfade — seconds of fade between tracks (0 = disabled)
+            "crossfade_seconds": 0.0,
+            "crossfade_tasks": [],
+            # Mid-song recovery: how many times the CURRENT track has been
+            # retried after a mid-song exception. Reset on successful start.
+            "track_retries": 0,
         }
     return guild_state[guild_id]
 
@@ -538,6 +568,96 @@ def set_repeat(state: dict, mode: str) -> None:
     state["repeat_mode"] = mode
 
 
+# ── crossfade (fade-out / fade-in transition) ──────────────
+# Approach & limitations (documented):
+#   Lavalink/wavelink plays ONE track at a time on a single voice stream, so a
+#   true overlapping crossfade (both tracks audible simultaneously) is not
+#   possible through the standard player API, and Lavalink exposes no crossfade
+#   filter. This implementation instead performs a *fade-based* crossfade:
+#     - the outgoing track fades to ~0 volume over the last `crossfade_seconds`
+#       of its runtime (tracked by playback position), and
+#     - the incoming track fades up from ~0 to full volume over the same window.
+#   The audible result is a smooth, gapless-feeling transition rather than a
+#   silence gap. It is not a true overlap mix (no dual-stream PCM mixing), which
+#   is the documented limitation of the single-stream Lavalink model.
+#   NOTE: crossfade drives Lavalink volume directly, so it overrides any manual
+#   `/volume` while a fade is in progress; volume is reset to 1.0 after the fade.
+
+def set_crossfade(state: dict, seconds: float) -> None:
+    """Set the guild crossfade duration in seconds (0 disables)."""
+    state["crossfade_seconds"] = max(0.0, float(seconds))
+
+
+def get_crossfade_seconds(state: dict) -> float:
+    """Return the guild crossfade duration in seconds (0 = disabled)."""
+    try:
+        return max(0.0, float(state.get("crossfade_seconds", 0.0) or 0.0))
+    except (TypeError, ValueError):
+        return 0.0
+
+
+async def _safe_set_volume(player: wavelink.Player, volume: float) -> None:
+    try:
+        await player.set_volume(max(0.0, min(1.0, volume)))
+    except Exception:
+        log.warning("crossfade: could not set volume to %s", volume)
+
+
+async def _crossfade_fade_in(guild_id: int, player: wavelink.Player, cf_sec: float) -> None:
+    """Fade the incoming track up from near-silence to full volume."""
+    try:
+        await player.set_volume(0.05)
+    except Exception:
+        pass
+    steps = max(1, int(cf_sec / 0.2))
+    try:
+        for i in range(1, steps + 1):
+            vol = 0.05 + (0.95 * i / steps)
+            await _safe_set_volume(player, vol)
+            await asyncio.sleep(0.2)
+        await _safe_set_volume(player, 1.0)
+    except asyncio.CancelledError:
+        await _safe_set_volume(player, 1.0)
+
+
+async def _crossfade_fade_out(guild_id: int, player: wavelink.Player, duration_ms: int, cf_sec: float) -> None:
+    """Wait until the track is within `cf_sec` of its end, then fade it to ~0."""
+    target_pos = max(0, int(duration_ms) - int(cf_sec * 1000))
+    try:
+        while player.playing and (player.position or 0) < target_pos:
+            await asyncio.sleep(0.5)
+    except asyncio.CancelledError:
+        return
+    steps = max(1, int(cf_sec / 0.2))
+    try:
+        for i in range(steps, -1, -1):
+            await _safe_set_volume(player, i / steps)
+            await asyncio.sleep(0.2)
+    except asyncio.CancelledError:
+        return
+
+
+def _cancel_crossfade_tasks(state: dict) -> None:
+    tasks = state.get("crossfade_tasks") or []
+    for t in tasks:
+        if t and not t.done():
+            t.cancel()
+    state["crossfade_tasks"] = []
+
+
+def reset_crossfade(guild_id: int) -> None:
+    """Cancel any in-flight crossfade fades and restore full volume.
+
+    Called by the cog's /stop, /clear, /leave paths so a mid-fade volume is
+    never left near zero after playback is stopped.
+    """
+    state = get_state(guild_id)
+    _cancel_crossfade_tasks(state)
+    p = state.get("player")
+    if p is not None:
+        asyncio.ensure_future(_safe_set_volume(p, 1.0))
+
+
 async def add_track(state: dict, guild_id: int, entry: dict) -> None:
     state["queue"].append(entry)
     persist(guild_id)
@@ -604,6 +724,13 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
     url = entry.get("webpage_url") or entry.get("url")
     title = entry.get("title", "Unknown")
 
+    # DIAGNOSIS: log the effective source_provider at resolution time
+    sp = state.get("source_provider", "youtube")
+    log.info(
+        "_resolve_and_play guild=%d title=%r source_provider=%r",
+        guild_id, title, sp,
+    )
+
     try:
         # Search using Playable.search with the configured source
         source_map = {
@@ -613,7 +740,7 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
             "spotify": "spsearch",
             "tidal": "tidal",
         }
-        source = source_map.get(state.get("source_provider", "youtube"), TrackSource.YouTube)
+        source = source_map.get(sp, TrackSource.YouTube)
 
         # For URLs, try to parse directly; for search, use Playable.search
         if state.get("source_provider") == "tidal":
@@ -621,6 +748,16 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
             tracks = await Playable.search(tidal_query, source=TrackSource.YouTube)
             if not tracks:
                 tracks = await Playable.search(title or url, source=TrackSource.YouTube)
+            else:
+                # Tidal is audio-only (no video). If the resolved track is a
+                # Tidal URL, redirect to YouTube so a video version is used.
+                first = tracks[0] if isinstance(tracks, list) else tracks
+                first_url = (getattr(first, "url", None) or "").lower()
+                if "tidal.com" in first_url or "tidal" in first_url:
+                    log.info("Tidal track has no video - redirecting to YouTube for %r", title)
+                    yt_tracks = await Playable.search(title or url, source=TrackSource.YouTube)
+                    if yt_tracks:
+                        tracks = yt_tracks
         elif url and ("http://" in url or "https://" in url):
             # Direct URL — try to get as a Playable
             tracks = await Playable.search(url, source=source)
@@ -678,11 +815,116 @@ async def _on_queue_empty(guild_id: int) -> None:
         log.warning("Autoplay search failed: %s", exc)
 
 
+# ── mid-song recovery helpers ──────────────────────────────
+
+def _is_connection_related(exc: Exception) -> bool:
+    """True if the exception looks voice-connection related (dropped handshake, disconnect).
+
+    Matches the wavelink exception classes used by the connect machinery plus a
+    conservative message-text heuristic for provider/transport errors.
+    """
+    try:
+        exc_mod = wavelink.exceptions
+        if isinstance(
+            exc,
+            (exc_mod.ChannelTimeoutException, exc_mod.NodeException,
+             exc_mod.InvalidChannelStateException, exc_mod.LavalinkException),
+        ):
+            return True
+    except Exception:
+        pass
+    text = str(exc).lower()
+    return any(
+        k in text
+        for k in ("connect", "disconnect", "timeout", "handshake", "voice",
+                  "websocket", "not connected", "already connected", "closed")
+    )
+
+
+async def _attempt_reconnect(guild_id: int) -> None:
+    """Force a fresh voice-connection when the player has dropped mid-song."""
+    state = get_state(guild_id)
+    channel = state.get("voice_channel")
+    if channel is None:
+        return
+    try:
+        player = await connect_player(channel)
+        state["player"] = player
+        log.info(
+            "on_track_exception: reconnected player for guild %s after "
+            "connection-related failure",
+            guild_id,
+        )
+    except Exception as exc:
+        log.warning(
+            "on_track_exception: reconnect attempt failed for guild %s: %s",
+            guild_id, exc,
+        )
+
+
+async def _announce_up_next(guild_id: int) -> None:
+    """Peek the next queue entry and send a lightweight 'up next' heads-up.
+
+    Announced only when there IS a next track AND repeat_mode is not 'single'
+    (single-track repeat would replay the same song, so there is no meaningful
+    'up next'). Returns early when the queue is empty — including the case where
+    autoplay would later fill it, since there is no known track to announce yet.
+    This is a lightweight heads-up, NOT a duplicate now-playing embed: the full
+    embed is still sent on track start.
+    """
+    state = get_state(guild_id)
+    channel = state.get("text_channel")
+    if not channel:
+        return
+    if state.get("repeat_mode") == "single":
+        return
+    if not state["queue"]:
+        return
+    next_entry = state["queue"][0]
+    title = next_entry.get("title", "Unknown")
+    try:
+        await channel.send(f"⏭️ Up next: **{title}**")
+    except Exception as exc:
+        log.warning(
+            "Could not send 'up next' announcement in guild %s: %s", guild_id, exc,
+        )
+
+
+# ── /tune enhancement helper ───────────────────────────────
+# Mirrors the tune chain defined in filters.py (`_apply_tune`) so player.py can
+# re-apply it on every new track without a circular import (filters.py imports
+# player, so player cannot import filters).
+TUNE_GAINS = [0.5, 0.3, 0.2, 0.1, 0.1, 0, 0, -0.05, 0, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35]
+
+
+async def _apply_tune_to(player: wavelink.Player) -> None:
+    """Apply the /tune enhancement chain to ``player`` (equalizer + timescale).
+
+    Transparent "studio master" polish: gentle low boost + high-frequency lift
+    for air/crispness, natural tempo (speed=1.0), and a very light distortion
+    (scale=1.1) for warmth. No vibrato/tremolo (those add wobble).
+    """
+    bands = [{"band": i, "gain": g} for i, g in enumerate(TUNE_GAINS)]
+    filters = player.filters
+    filters.equalizer.set(bands=bands)
+    filters.timescale.set(speed=1.0, pitch=1.0, rate=1.0)
+    filters.distortion.set(scale=1.1)
+    filters.rotation.reset()
+    filters.low_pass.reset()
+    filters.karaoke.reset()
+    filters.channel_mix.reset()
+    await player.set_filters(filters)
+
+
 # ── wavelink event handlers ────────────────────────────────
 
 async def on_track_start(guild_id: int, player: wavelink.Player, track: wavelink.Playable) -> None:
     state = get_state(guild_id)
     state["player"] = player
+
+    # A track started successfully — clear any mid-song retry counter so the
+    # next failure episode starts fresh at 0.
+    state["track_retries"] = 0
 
     info = _track_entry(track, provider="on_track_start")
     state["current"] = info
@@ -700,6 +942,40 @@ async def on_track_start(guild_id: int, player: wavelink.Player, track: wavelink
         _now_playing_updater(guild_id, player, track)
     )
 
+    # ── crossfade scheduling ─────────────────────────────────
+    # Fade the just-started track in, and (when its length is known) schedule a
+    # fade-out near its end. Each track gets its own fade pair; both are
+    # cancelled on stop/clear/leave and on the next track end.
+    _cancel_crossfade_tasks(state)
+    cf = get_crossfade_seconds(state)
+    if cf > 0:
+        tasks = []
+        tasks.append(asyncio.ensure_future(_crossfade_fade_in(guild_id, player, cf)))
+        duration = getattr(track, "length", None) or 0
+        if duration > 0:
+            tasks.append(asyncio.ensure_future(_crossfade_fade_out(guild_id, player, duration, cf)))
+        state["crossfade_tasks"] = tasks
+
+    # ── /tune re-application (enhanced audio) ─────────────────
+    # `/tune` is a permanent per-song "light switch": when tune_enabled is True
+    # (persisted across restarts), re-apply the tune enhancement filter to every
+    # NEW track that starts so the audio stays "less compressed and more crisp"
+    # song after song. The chain is defined in filters.py (`_apply_tune`) and
+    # mirrored here so player.py can re-apply it without a circular import.
+    if state.get("tune_enabled"):
+        try:
+            await _apply_tune_to(player)
+            log.info(
+                "on_track_start: re-applied /tune enhancement for guild %s "
+                "(tune_enabled=True)",
+                guild_id,
+            )
+        except Exception as exc:
+            log.warning(
+                "on_track_start: could not re-apply /tune enhancement for guild %s: %s",
+                guild_id, exc,
+            )
+
     await _send_now_playing(guild_id, player, track)
 
 
@@ -711,11 +987,56 @@ async def on_track_end(guild_id: int, player: wavelink.Player, track: wavelink.P
         np_task.cancel()
     state["now_playing_task"] = None
 
+    # Cancel any in-flight crossfade fades for the ended track.
+    _cancel_crossfade_tasks(state)
+
+    # Lightweight "up next" heads-up before advancing (only when a next track
+    # exists and repeat isn't single-track). The full now-playing embed is still
+    # the primary display, sent on track start.
+    await _announce_up_next(guild_id)
+
     await _play_next_from_queue(guild_id)
 
 
 async def on_track_exception(guild_id: int, player: wavelink.Player, track: wavelink.Playable, exc: Exception) -> None:
-    log.warning("Track exception in guild %s for %s: %s", guild_id, track, exc)
+    state = get_state(guild_id)
+    log.warning(
+        "Track exception in guild %s for %r: %s (retries_used=%s)",
+        guild_id, track, exc, state.get("track_retries", 0),
+    )
+
+    # ── mid-song recovery: retry the SAME track instead of advancing ────
+    retries = state.get("track_retries", 0)
+    if retries < MAX_TRACK_RETRIES:
+        state["track_retries"] = retries + 1
+        log.info(
+            "Retrying track %r in guild %s (attempt %d/%d)",
+            track, guild_id, state["track_retries"], MAX_TRACK_RETRIES,
+        )
+
+        # If the failure looks connection-related, force a fresh player connect
+        # so the retry starts from a healthy voice socket.
+        if _is_connection_related(exc):
+            await _attempt_reconnect(guild_id)
+
+        # Small backoff between retries so the provider/transport can recover.
+        await asyncio.sleep(RETRY_BACKOFF_SECONDS)
+
+        # Re-resolve and replay the SAME track (the `track` object is in scope),
+        # using the same machinery as a normal play. This does NOT consume the
+        # queue, so the current track is preserved.
+        entry = _track_entry(track, provider="on_track_exception")
+        state["current"] = entry
+        await _resolve_and_play(state.get("player") or player, guild_id, entry)
+        return
+
+    # Retries exhausted — fall through to the existing end-of-track behavior
+    # (advance the queue) and log that the track is being skipped.
+    log.warning(
+        "Skipping track %r in guild %s after %d failed retries",
+        track, guild_id, MAX_TRACK_RETRIES,
+    )
+    state["track_retries"] = 0
     await on_track_end(guild_id, player, track, "exception")
 
 
@@ -742,34 +1063,119 @@ async def _send_now_playing(guild_id: int, player: wavelink.Player, track: wavel
     state["now_playing_msg"] = msg
 
 
-def _build_now_playing_embed(track: wavelink.Playable) -> discord.Embed:
-    title = track.title or "Unknown"
-    author = track.author or "Unknown Artist"
-    duration = track.length or 0
-    mins, secs = divmod(duration // 1000, 60) if duration > 1000 else divmod(duration, 60)
+def _fmt_duration_ms(ms: int) -> str:
+    """Format a duration in milliseconds to H:MM:SS or M:SS."""
+    if ms <= 0:
+        return "0:00"
+    total_secs = ms // 1000
+    hours, remainder = divmod(total_secs, 3600)
+    mins, secs = divmod(remainder, 60)
+    if hours > 0:
+        return f"{hours}:{mins:02d}:{secs:02d}"
+    return f"{mins}:{secs:02d}"
+
+
+def _split_title(raw_title: str, author: str) -> tuple[str, str]:
+    """Split a track title into (song, artist).
+
+    YouTube returns titles as 'Artist - Song Name' while `author` is the
+    channel/uploader (e.g. 'AAA FM'), NOT the artist. So parse the real artist
+    out of the title. For sources where the title is just the song name (e.g.
+    Spotify via LavaSrc), fall back to using `author` as the artist.
+    """
+    title = (raw_title or "Unknown").strip()
+    # Split on the FIRST ' - ' separator only.
+    if " - " in title:
+        artist_part, song_part = title.split(" - ", 1)
+        artist_part = artist_part.strip()
+        song_part = song_part.strip()
+        if artist_part and song_part:
+            return song_part, artist_part
+    return title, (author or "Unknown Artist").strip()
+
+
+def build_now_playing_embed_from_entry(entry: dict) -> discord.Embed:
+    """Build the same per-song now-playing embed from a queue entry dict.
+
+    ``entry`` is ``state["current"]`` (produced by _track_entry) and carries
+    ``webpage_url``/``title``/``author``/``duration`` — the same fields the
+    wavelink-based _build_now_playing_embed renders from a Playable. Used by
+    /remote when refreshing an existing now-playing message from stored state.
+    """
+    raw_title = entry.get("title") or "Unknown"
+    author = entry.get("author") or "Unknown Artist"
+    song, artist = _split_title(raw_title, author)
+    duration = entry.get("duration") or 0
+    source = entry.get("source") or "unknown"
 
     embed = discord.Embed(title="🎵 HelloDJ — Now Playing", colour=discord.Colour.blurple())
-    embed.add_field(name="Song", value=title, inline=True)
-    embed.add_field(name="Artist", value=author, inline=True)
-    embed.add_field(name="Duration", value=f"{mins}:{secs:02d}", inline=True)
+    embed.add_field(name="Song", value=song, inline=True)
+    embed.add_field(name="Artist", value=artist, inline=True)
+    embed.add_field(name="Duration", value=_fmt_duration_ms(duration), inline=True)
+    embed.add_field(name="Source", value=str(source).capitalize(), inline=True)
+    url = entry.get("webpage_url") or entry.get("url") or entry.get("uri")
+    if url:
+        embed.add_field(name="Link", value=url, inline=False)
+        embed.url = url
+    embed.set_footer(text="HelloDJ — Use the buttons below to control playback")
+    return embed
+
+
+def _build_now_playing_embed(track: wavelink.Playable) -> discord.Embed:
+    raw_title = track.title or "Unknown"
+    author = track.author or "Unknown Artist"
+    song, artist = _split_title(raw_title, author)
+    duration = track.length or 0
+    source = getattr(track, "source", None) or "unknown"
+
+    # Album (may be None for some sources)
+    album_name = None
+    try:
+        album_obj = getattr(track, "album", None)
+        if album_obj:
+            album_name = getattr(album_obj, "name", None)
+    except Exception:
+        album_name = None
+
+    embed = discord.Embed(title="🎵 HelloDJ — Now Playing", colour=discord.Colour.blurple())
+    embed.add_field(name="Song", value=song, inline=True)
+    embed.add_field(name="Artist", value=artist, inline=True)
+    embed.add_field(name="Duration", value=_fmt_duration_ms(duration), inline=True)
+    embed.add_field(name="Source", value=source.capitalize(), inline=True)
+    if album_name:
+        embed.add_field(name="Album", value=album_name, inline=True)
     embed.set_footer(text="HelloDJ — Use the buttons below to control playback")
     return embed
 
 
 async def _now_playing_updater(guild_id: int, player: wavelink.Player, track: wavelink.Playable) -> None:
     state = get_state(guild_id)
+    me = asyncio.current_task()
     try:
         while player.playing or player.paused:
             await asyncio.sleep(15)
             if not player.playing and not player.paused:
                 break
 
+            # Stale-check: if a newer now-playing updater has been registered
+            # (a new track started via on_track_start), this coroutine is
+            # obsolete. Stop editing so we never overwrite the fresh embed
+            # with a stale progress bar. task.cancel() is async, so a
+            # cancelled updater can still land one in-flight msg.edit() after
+            # the new track's _send_now_playing — this guard closes that race.
+            if state.get("now_playing_task") is not me:
+                break
+
             msg = state.get("now_playing_msg")
             if not msg:
                 continue
 
+            # Rebuild from the LIVE track (player.current) so the Song/Artist/
+            # Source/Album/Duration fields always match the currently-playing
+            # song, not the one captured when this updater was spawned.
+            current = player.current or track
             position = player.position
-            duration = track.length
+            duration = current.length or 0
             if duration <= 0:
                 continue
 
@@ -777,7 +1183,7 @@ async def _now_playing_updater(guild_id: int, player: wavelink.Player, track: wa
             pos_m, pos_s = divmod(position // 1000, 60)
             dur_m, dur_s = divmod(duration // 1000, 60)
 
-            embed = msg.embeds[0] if msg.embeds else discord.Embed(title="🎵 HelloDJ — Now Playing", colour=discord.Colour.blurple())
+            embed = _build_now_playing_embed(current)
             embed.description = f"`{bar}`  {pos_m}:{pos_s:02d} / {dur_m}:{dur_s:02d}"
             try:
                 await msg.edit(embed=embed)
@@ -847,68 +1253,78 @@ def _prefer_highest_quality(tracks: list) -> list:
 # ── now-playing button view ────────────────────────────────
 
 class NowPlayingView(discord.ui.View):
-    """Persistent buttons attached to the now-playing embed."""
+    """Unified remote control panel attached to the now-playing embed.
+
+    The now-playing message posted when a song starts IS the remote control:
+    ⏮ Previous (seek to start) • ⏯ Play/Pause toggle • ⏭ Next (skip) •
+    🚫 Block (permanently blacklist the current track).
+    """
 
     def __init__(self, guild_id: int):
         super().__init__(timeout=300)
         self.guild_id = guild_id
 
-    @discord.ui.button(label="▶️", style=discord.ButtonStyle.secondary, custom_id="np_play")
-    async def play_resume(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        await self._play_resume(interaction)
+    @discord.ui.button(label="⏮", style=discord.ButtonStyle.secondary, custom_id="np_prev")
+    async def prev_track(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        await self._seek_start(interaction)
 
-    @discord.ui.button(label="⏸", style=discord.ButtonStyle.primary, custom_id="np_toggle")
-    async def pause_resume(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        await self._toggle_pause(interaction)
+    @discord.ui.button(label="⏯", style=discord.ButtonStyle.primary, custom_id="np_toggle")
+    async def pause_resume(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await self._toggle_pause(interaction, button)
 
     @discord.ui.button(label="⏭", style=discord.ButtonStyle.secondary, custom_id="np_next")
     async def next_track(self, interaction: discord.Interaction, _button: discord.ui.Button):
         await self._skip_next(interaction)
 
-    @discord.ui.button(label="🔀", style=discord.ButtonStyle.success, custom_id="np_shuffle")
-    async def shuffle_tracks(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        await self._shuffle(interaction)
-
-    @discord.ui.button(label="⏹️", style=discord.ButtonStyle.danger, custom_id="np_stop")
-    async def stop_playback(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        await self._stop(interaction)
+    @discord.ui.button(label="🚫", style=discord.ButtonStyle.danger, custom_id="np_block")
+    async def block_track(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        await self._block(interaction)
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        # Allow any guild member to use buttons
+        # Allow any guild member to use the buttons
         return True
 
-    async def _play_resume(self, interaction: discord.Interaction) -> None:
+    async def _seek_start(self, interaction: discord.Interaction) -> None:
+        """⏮ Previous — seek back to the start of the current song."""
         player = get_player(self.guild_id)
         if player:
-            if player.paused:
-                await player.resume()
-            elif not player.playing:
-                await _play_next_from_queue(self.guild_id)
+            try:
+                await player.seek(0)
+            except Exception:
+                pass
         await interaction.response.defer()
 
-    async def _toggle_pause(self, interaction: discord.Interaction) -> None:
+    async def _toggle_pause(self, interaction: discord.Interaction, button: discord.ui.Button) -> None:
+        """⏯ Play/Pause toggle — flip playback state and refresh the button icon."""
         player = get_player(self.guild_id)
-        if player:
-            if player.paused:
-                await player.resume()
-            elif player.playing:
-                await player.pause()
-        await interaction.response.defer()
+        if not player:
+            await interaction.response.defer()
+            return
+        if player.paused:
+            await player.pause(False)
+            button.label = "⏯"
+        elif player.playing:
+            await player.pause(True)
+            button.label = "▶️"
+        await interaction.response.edit_message(view=self)
 
     async def _skip_next(self, interaction: discord.Interaction) -> None:
+        """⏭ Next — skip to the next track."""
         player = get_player(self.guild_id)
         if player:
             await player.stop()
         await interaction.response.defer()
 
-    async def _stop(self, interaction: discord.Interaction) -> None:
-        player = get_player(self.guild_id)
-        if player:
-            await player.stop()
-        await interaction.response.defer()
-
-    async def _shuffle(self, interaction: discord.Interaction) -> None:
+    async def _block(self, interaction: discord.Interaction) -> None:
+        """🚫 Block — permanently blacklist the current track, then skip it."""
         state = get_state(self.guild_id)
-        shuffle_queue(state)
-        persist(self.guild_id)
-        await interaction.response.send_message("HelloDJ queue shuffled.", ephemeral=True)
+        current = state.get("current")
+        title = (current or {}).get("title", "Unknown")
+        if current:
+            _blacklist.add_blacklist_entry(self.guild_id, current)
+        player = get_player(self.guild_id)
+        if player:
+            await player.stop()
+        await interaction.response.send_message(
+            f"🚫 Blocked **{title}**.", ephemeral=True
+        )

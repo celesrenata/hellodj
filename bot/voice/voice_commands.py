@@ -350,14 +350,14 @@ class VoiceCommandOrchestrator:
 
         elif sub == "pause":
             if player_obj and player_obj.playing:
-                await player_obj.pause()
+                await player_obj.pause(True)
                 await self._speak(session, guild, "Paused.")
             else:
                 await self._speak(session, guild, "Nothing playing.")
 
         elif sub in ("resume", "start"):
             if player_obj and player_obj.paused:
-                await player_obj.resume()
+                await player_obj.pause(False)
                 await self._speak(session, guild, "Resumed.")
             else:
                 await self._speak(session, guild, "Nothing paused.")
@@ -786,14 +786,14 @@ class VoiceCommandOrchestrator:
         # Pause music
         was_playing = player_obj.playing and not player_obj.paused
         if was_playing:
-            await player_obj.pause()
+            await player_obj.pause(True)
 
         # Generate TTS PCM
         result = self.tts.synthesize(text)
         if result is None:
             log.warning("TTS synthesis failed for: %s", text[:60])
             if was_playing:
-                await player_obj.resume()
+                await player_obj.pause(False)
             session.state = VoiceCommandSession.IDLE
             return
 
@@ -808,7 +808,7 @@ class VoiceCommandOrchestrator:
         finally:
             # Resume music
             if was_playing:
-                await player_obj.resume()
+                await player_obj.pause(False)
 
         session.state = VoiceCommandSession.IDLE
 

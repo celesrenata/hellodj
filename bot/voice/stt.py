@@ -4,12 +4,24 @@ On wake word detection, we capture the speaker's audio until silence,
 then transcribe with faster-whisper.
 """
 
+import asyncio
 import logging
 import os
+import time
 
 import numpy as np
 
+import metrics as _metrics
+
 log = logging.getLogger(__name__)
+
+
+def _record_stt(engine: str, duration_ms: float) -> None:
+    """Fire-and-forget record an STT call onto the running event loop."""
+    try:
+        asyncio.create_task(_metrics.metrics.record_stt_call(engine, duration_ms))
+    except Exception as exc:
+        log.warning("Could not schedule STT metrics: %s", exc)
 
 # ── silence detection ──────────────────────────────────────────────────────
 
@@ -49,32 +61,59 @@ def detect_silence(pcm: np.ndarray, threshold: float = SILENCE_THRESHOLD) -> int
 # ── Whisper transcription ─────────────────────────────────────────────────
 
 class STTEngine:
-    """Speech-to-text using faster-whisper."""
+    """Speech-to-text using faster-whisper (local), an OpenAI-compatible remote
+    endpoint, or AWS Bedrock/Amazon Transcribe.
+
+    Engine selection via STT_ENGINE: local | openai | remote | bedrock.
+    """
 
     def __init__(self, model_size: str = "base"):
         self._model_size = model_size or os.getenv("STT_MODEL_SIZE", "base")
         self._engine = os.getenv("STT_ENGINE", "local")
-        self._url = os.getenv("STT_URL", "")
+        # Backward compat: STT_URL == STT_WHISPER_ENDPOINT for the remote engine.
+        self._url = os.getenv("STT_URL", "") or os.getenv("STT_WHISPER_ENDPOINT", "")
+        self._api_key = os.getenv("STT_API_KEY", "")
         self._model = None
 
     def _ensure_model(self):
         if self._model is not None:
             return
 
-        if self._engine == "remote":
+        if self._engine in ("remote", "openai"):
             if not self._url:
                 log.error(
-                    "STT engine 'remote' selected but STT_URL is not set — STT disabled. "
-                    "Set STT_URL to a running remote STT server."
+                    "STT engine '%s' selected but STT_URL / STT_WHISPER_ENDPOINT "
+                    "is not set — STT disabled. Set STT_WHISPER_ENDPOINT to a "
+                    "running OpenAI-compatible transcription server.",
+                    self._engine,
                 )
                 self._model = None
                 return
             # Remote mode: no in-process faster-whisper model is loaded.
             # Use a small marker so transcribe() branches to the remote call.
-            self._model = {"url": self._url, "model": self._model_size}
+            self._model = {
+                "url": self._url,
+                "model": self._model_size,
+                "api_key": self._api_key,
+            }
             log.info(
-                "remote STT engine configured (url=%s, model=%s)",
-                self._url, self._model_size,
+                "%s STT engine configured (url=%s, model=%s)",
+                self._engine, self._url, self._model_size,
+            )
+            return
+
+        if self._engine == "bedrock":
+            # AWS Bedrock / Amazon Transcribe backend. No in-process model is
+            # loaded; BedrockSTTEngine wraps the boto3 Transcribe client.
+            self._model = BedrockSTTEngine(
+                region=os.getenv("AWS_REGION", ""),
+                role_arn=os.getenv("AWS_ROLE_ARN", ""),
+                bucket=os.getenv("BEDROCK_S3_BUCKET", ""),
+            )
+            log.info(
+                "bedrock STT engine configured (region=%s, bucket=%s)",
+                os.getenv("AWS_REGION", "us-east-1"),
+                os.getenv("BEDROCK_S3_BUCKET", ""),
             )
             return
 
@@ -129,27 +168,34 @@ class STTEngine:
         if self._model is None:
             return ""
 
-        if self._engine == "remote":
-            return self._transcribe_remote(pcm, sample_rate)
+        t0 = time.monotonic()
+        try:
+            if self._engine in ("remote", "openai"):
+                text = self._transcribe_remote(pcm, sample_rate)
+            elif self._engine == "bedrock":
+                text = self._transcribe_bedrock(pcm, sample_rate)
+            else:
+                # Normalize volume
+                pcm_float = pcm.astype(np.float32) / 32768.0
 
-        # Normalize volume
-        pcm_float = pcm.astype(np.float32) / 32768.0
+                segments, info = self._model.transcribe(
+                    pcm_float,
+                    beam_size=3,
+                    no_speech_threshold=0.6,
+                    condition_on_previous_text=False,
+                )
 
-        segments, info = self._model.transcribe(
-            pcm_float,
-            beam_size=3,
-            no_speech_threshold=0.6,
-            condition_on_previous_text=False,
-        )
-
-        text = " ".join(seg.text for seg in segments)
-        log.info(
-            "STT result (lang=%s, %.2fs audio): %s",
-            info.language if info else "?",
-            len(pcm) / sample_rate if len(pcm) > 0 else 0,
-            text[:120],
-        )
-        return text
+                text = " ".join(seg.text for seg in segments)
+                log.info(
+                    "STT result (lang=%s, %.2fs audio): %s",
+                    info.language if info else "?",
+                    len(pcm) / sample_rate if len(pcm) > 0 else 0,
+                    text[:120],
+                )
+            return text
+        finally:
+            duration_ms = (time.monotonic() - t0) * 1000.0
+            _record_stt(self._engine, duration_ms)
 
     def _transcribe_remote(self, pcm: np.ndarray, sample_rate: int = 16000) -> str:
         """Transcribe via a remote OpenAI-compatible ``/v1/audio/transcriptions`` endpoint.
@@ -188,14 +234,14 @@ class STTEngine:
         )
 
         url = self._model["url"].rstrip("/") + "/v1/audio/transcriptions"
-        req = urllib.request.Request(
-            url,
-            data=body,
-            headers={
-                "Content-Type": "multipart/form-data; boundary=" + boundary,
-                "Content-Length": str(len(body)),
-            },
-        )
+        headers = {
+            "Content-Type": "multipart/form-data; boundary=" + boundary,
+            "Content-Length": str(len(body)),
+        }
+        api_key = self._model.get("api_key") or self._api_key
+        if api_key:
+            headers["Authorization"] = "Bearer " + api_key
+        req = urllib.request.Request(url, data=body, headers=headers)
         try:
             with urllib.request.urlopen(req, timeout=60) as resp:
                 data = resp.read()
@@ -212,6 +258,28 @@ class STTEngine:
         text = payload.get("text", "")
         log.info(
             "STT result (remote, %.2fs audio): %s",
+            len(pcm) / sample_rate if len(pcm) > 0 else 0,
+            text[:120],
+        )
+        return text
+
+    def _transcribe_bedrock(self, pcm: np.ndarray, sample_rate: int = 16000) -> str:
+        """Transcribe via AWS Bedrock / Amazon Transcribe (file-based, boto3).
+
+        The PCM is encoded as a mono WAV, uploaded to the configured S3 bucket,
+        and transcribed by Amazon Transcribe. Returns the transcript text, or ""
+        on failure.
+        """
+        if self._model is None:
+            return ""
+        engine = self._model  # BedrockSTTEngine instance
+        try:
+            text = engine.transcribe(pcm, sample_rate)
+        except Exception as exc:
+            log.warning("bedrock STT failed: %s", exc)
+            return ""
+        log.info(
+            "STT result (bedrock, %.2fs audio): %s",
             len(pcm) / sample_rate if len(pcm) > 0 else 0,
             text[:120],
         )
@@ -235,3 +303,149 @@ class STTEngine:
         else:
             text = self.transcribe(pcm, sample_rate)
             return text, None
+
+
+# ── AWS Bedrock / Amazon Transcribe STT backend ───────────────────────────
+
+class BedrockSTTEngine:
+    """Speech-to-text via Amazon Transcribe (file-based), using AWS boto3.
+
+    Credentials come from AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_REGION
+    env vars, or an IAM role via AWS_ROLE_ARN (STS assume-role), or the EC2/EKS
+    instance-role credential chain when no env vars are set. Audio is uploaded
+    to an S3 bucket (BEDROCK_S3_BUCKET), transcribed, and the transcript text is
+    returned. The S3 object is deleted after transcription.
+
+    Synchronous (boto3) — safe to call from the bot's async loop for short
+    clips, consistent with the existing remote (urllib) STT path.
+    """
+
+    def __init__(
+        self,
+        region: str | None = None,
+        role_arn: str | None = None,
+        bucket: str | None = None,
+    ):
+        self._region = region or os.getenv("AWS_REGION", "us-east-1")
+        self._role_arn = role_arn or os.getenv("AWS_ROLE_ARN", "")
+        self._bucket = bucket or os.getenv("BEDROCK_S3_BUCKET", "")
+        self._language = os.getenv("STT_BEDROCK_LANGUAGE", "en-US")
+        self._timeout = int(os.getenv("STT_BEDROCK_TIMEOUT", "60"))
+        self._session = None
+        self._client = None
+
+    def _ensure_session(self):
+        if self._session is not None:
+            return
+        import boto3  # raises ImportError if boto3 is not installed
+
+        if self._role_arn:
+            sts = boto3.client("sts", region_name=self._region)
+            creds = sts.assume_role(
+                RoleArn=self._role_arn,
+                RoleSessionName="hellodj-stt",
+            ).get("Credentials")
+            if not creds:
+                raise RuntimeError("STS assume-role returned no credentials")
+            self._session = boto3.Session(
+                region_name=self._region,
+                aws_access_key_id=creds["AccessKeyId"],
+                aws_secret_access_key=creds["SecretAccessKey"],
+                aws_session_token=creds["SessionToken"],
+            )
+        else:
+            # No role: rely on AWS env vars or the instance-role credential chain.
+            self._session = boto3.Session(region_name=self._region)
+        self._client = self._session.client("transcribe")
+
+    def transcribe(self, pcm: np.ndarray, sample_rate: int = 16000) -> str:
+        """Upload the PCM as WAV to S3, run a Transcribe job, return the text."""
+        if not self._bucket:
+            log.error(
+                "bedrock STT selected but BEDROCK_S3_BUCKET is not set — STT disabled. "
+                "Set BEDROCK_S3_BUCKET to the S3 bucket used for transcription."
+            )
+            return ""
+        self._ensure_session()
+
+        import io
+        import uuid
+        import wave
+
+        # Encode PCM int16 as a mono WAV in memory.
+        pcm_int16 = pcm.astype(np.int16) if pcm.dtype != np.int16 else pcm
+        buf = io.BytesIO()
+        with wave.open(buf, "wb") as wav:
+            wav.setnchannels(1)
+            wav.setsampwidth(2)
+            wav.setframerate(sample_rate)
+            wav.writeframes(pcm_int16.tobytes())
+        wav_bytes = buf.getvalue()
+
+        job_id = uuid.uuid4().hex
+        key = f"hellodj-stt/{job_id}.wav"
+        s3 = self._session.client("s3")
+        try:
+            s3.put_object(
+                Bucket=self._bucket,
+                Key=key,
+                Body=wav_bytes,
+                ContentType="audio/wav",
+            )
+        except Exception as exc:
+            log.warning("bedrock STT: S3 upload failed: %s", exc)
+            return ""
+
+        job_name = f"hellodj-{job_id}"
+        try:
+            self._client.start_transcription_job(
+                TranscriptionJobName=job_name,
+                LanguageCode=self._language,
+                MediaFormat="wav",
+                Media={"MediaFileUri": f"s3://{self._bucket}/{key}"},
+            )
+        except Exception as exc:
+            log.warning("bedrock STT: start_transcription_job failed: %s", exc)
+            self._cleanup(s3, key)
+            return ""
+
+        text = ""
+        try:
+            for _ in range(self._timeout):
+                job = self._client.get_transcription_job(
+                    TranscriptionJobName=job_name,
+                )["TranscriptionJob"]
+                status = job["TranscriptionJobStatus"]
+                if status == "COMPLETED":
+                    uri = job["Transcript"]["TranscriptFileUri"]
+                    text = self._fetch_transcript(uri)
+                    break
+                if status == "FAILED":
+                    log.warning(
+                        "bedrock STT job %s FAILED: %s",
+                        job_name, job.get("FailureReason", "unknown"),
+                    )
+                    break
+                time.sleep(1)
+        except Exception as exc:
+            log.warning("bedrock STT: job polling failed: %s", exc)
+        finally:
+            self._cleanup(s3, key)
+        return text
+
+    def _fetch_transcript(self, uri: str) -> str:
+        """Download and parse the Transcribe transcript JSON from its file URI."""
+        import json
+        import urllib.request
+
+        with urllib.request.urlopen(uri, timeout=60) as resp:
+            data = json.loads(resp.read().decode("utf-8"))
+        # Amazon Transcribe transcript JSON: transcripts[0].transcript
+        return data.get("transcripts", [{}])[0].get("transcript", "")
+
+    def _cleanup(self, s3, key: str) -> None:
+        """Best-effort delete of the uploaded S3 object."""
+        try:
+            s3.delete_object(Bucket=self._bucket, Key=key)
+        except Exception:
+            pass

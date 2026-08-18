@@ -14,6 +14,11 @@ services:
       # refresh token is set (see bot/lavalink/application.yml plugins.youtube).
       YOUTUBE_OAUTH_ENABLED: "false"
       YOUTUBE_OAUTH_REFRESH_TOKEN: "${YOUTUBE_OAUTH_REFRESH_TOKEN:-}"
+      # YouTube poToken / visitorData (Proof of Origin, optional). Defeats
+      # YouTube bot-detection for the non-OAuth WEB-family clients. Generate via
+      # https://github.com/iv-org/youtube-trusted-session-generator. Blank = off.
+      POT_TOKEN: "${POT_TOKEN:-}"
+      POT_VISITOR_DATA: "${POT_VISITOR_DATA:-}"
     networks:
       - hellodj-net
     expose:
@@ -37,10 +42,29 @@ services:
       # ── Voice activation ──────────────────────────────────────────────
       WAKE_WORD_MODEL_PATH: /app/models/Hello_DJ.onnx
       STT_MODEL_SIZE: base
-      TTS_ENGINE: kokoro
+      STT_ENGINE: "${STT_ENGINE:-local}"
+      STT_WHISPER_ENDPOINT: "${STT_WHISPER_ENDPOINT:-}"
+      STT_API_KEY: "${STT_API_KEY:-}"
+      STT_URL: "${STT_URL:-}"
+      TTS_ENGINE: "${TTS_ENGINE:-kokoro}"
       TTS_VOICE: af_heart
       SPEACHES_URL: "${SPEACHES_URL:-}"
+      TTS_SPEACHES_ENDPOINT: "${TTS_SPEACHES_ENDPOINT:-}"
+      TTS_KOKORO_ENDPOINT: "${TTS_KOKORO_ENDPOINT:-}"
+      TTS_API_KEY: "${TTS_API_KEY:-}"
+      KOKORO_URL: "${KOKORO_URL:-}"
       VOICE_ENABLED: "true"
+      # ── Cloud STT/TTS — AWS (Bedrock/Transcribe/Polly) ───────────────
+      AWS_REGION: "${AWS_REGION:-us-east-1}"
+      AWS_ROLE_ARN: "${AWS_ROLE_ARN:-}"
+      BEDROCK_S3_BUCKET: "${BEDROCK_S3_BUCKET:-}"
+      STT_BEDROCK_LANGUAGE: "${STT_BEDROCK_LANGUAGE:-en-US}"
+      STT_BEDROCK_TIMEOUT: "${STT_BEDROCK_TIMEOUT:-60}"
+      POLLY_VOICE_ID: "${POLLY_VOICE_ID:-Joanna}"
+      POLLY_OUTPUT_FORMAT: "${POLLY_OUTPUT_FORMAT:-mp3}"
+      # AWS credential secrets (passed via env/secret)
+      AWS_ACCESS_KEY_ID: "${AWS_ACCESS_KEY_ID:-}"
+      AWS_SECRET_ACCESS_KEY: "${AWS_SECRET_ACCESS_KEY:-}"
       # ── LLM (general voice queries) ────────────────────────────────────
       LLM_API_URL: "${LLM_API_URL:-https://api.openai.com/v1}"
       LLM_MODEL: "${LLM_MODEL:-gpt-4o-mini}"

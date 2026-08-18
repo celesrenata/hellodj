@@ -8,6 +8,9 @@ resources:
   - configmap.yaml
   - bot-configmap.yaml
   - youtube-secret.yaml
+  - yt-cipher-secret.yaml
+  - yt-cipher-deployment.yaml
+  - yt-cipher-service.yaml
   - pvc.yaml
   - nfs-pv.yaml
   - nfs-pvc.yaml
@@ -24,6 +27,6 @@ resources:
 # Image tags
 images:
   - name: registry.celestium.life/hellodj/bot
-    newTag: latest
+    newTag: batch-fixes-2026-08-18-fix1
   - name: registry.celestium.life/hellodj/web-ui
-    newTag: latest
+    newTag: v2026-08-17

@@ -103,6 +103,42 @@ The web UI provides:
 - Autoplay with genre-based recommendations
 - Session persistence and auto-resume after restarts
 - Paginated queue and now-playing progress bar
+- Tidal music-video streaming: `/stream <query>` (see below)
+
+## Tidal Music-Video Streaming
+
+`/stream <query>` searches Tidal for a track. When the track has an official
+music video, HelloDJ downloads it (via yt-dlp) and posts it as an **embedded
+video message** in the text channel, and also queues the audio for voice
+playback. When no video is available, it falls back to audio playback plus a
+YouTube link.
+
+**Configuration** (see `bot/.env.example`):
+
+- `TD_ENABLED` — optional; documents intent to enable Tidal streaming. The
+  `/stream` command activates automatically when `TD_CLIENT_ID`/`TD_CLIENT_SECRET`
+  are set.
+- `TD_CLIENT_ID` / `TD_CLIENT_SECRET` — Tidal API OAuth client-credentials
+  (required for `/stream`). Get them at https://developer.tidal.com.
+- `DISCORD_ATTACHMENT_LIMIT` — optional; defaults to 8 MiB. Videos larger than
+  the server's attachment limit are posted as a link instead of an attachment.
+
+### Discord API limitation (important)
+
+Discord does **NOT** support a bot "screensharing" video into a voice channel.
+The Discord API exposes no endpoint for a bot to broadcast video into voice —
+streaming/GoLive is a user-guild feature, and bots can only set
+`self_mute`/`self_deafen` voice state. The realistic way to deliver a music
+video is therefore to **embed it in a text channel** (Discord auto-embeds video
+links/attachments posted as messages), which is exactly what `/stream` does.
+There is no code path that pretends to screenshare into voice.
+
+### Dependencies
+
+- `yt-dlp` (pure-Python, NixOS-clean) downloads Tidal/HLS video streams.
+- The Tidal API client (`bot/tidal.py`) is a purpose-built async client on
+  `aiohttp`; the third-party `tidalapi` package is intentionally **not** used
+  (it pulls `requests` and heavier deps).
 
 ## Deployment
 

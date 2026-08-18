@@ -12,3 +12,6 @@ soundfile>=0.12.0
 kokoro>=0.9.4
 openai>=1.0.0
 librosa>=0.10.0
+
+# Tidal music-video streaming (/stream)
+yt-dlp>=2025.1.15

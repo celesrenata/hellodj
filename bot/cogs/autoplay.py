@@ -3,6 +3,10 @@
 When the queue empties and autoplay is enabled, the bot automatically adds
 recommended tracks based on genres or the current track's metadata.
 If a user manually enqueues a song, autoplay pauses until that song finishes.
+
+Commands (single `autoplay` group — no command/group name collision):
+  /autoplay toggle                      — toggle automatic song recommendations
+  /autoplay genre add|remove|clear|list — manage autoplay genres
 """
 
 import logging
@@ -12,7 +16,6 @@ from discord import app_commands
 from discord.ext import commands
 
 import player
-import session
 
 log = logging.getLogger(__name__)
 
@@ -21,9 +24,19 @@ class Autoplay(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
 
-    # ── Autoplay toggle ─────────────────────────────────────
+    # ── Autoplay group ─────────────────────────────────────────
+    # One top-level command name ("autoplay") is registered as a group.
+    # Previously "autoplay" was registered BOTH as a top-level command AND
+    # as a group, which Discord rejects ("You cannot have two guild
+    # CHAT_INPUT commands within the same name"). The toggle is now a
+    # subcommand, so /autoplay toggle and /autoplay genre ... coexist.
 
-    @app_commands.command(name="autoplay", description="Toggle automatic song recommendations")
+    autoplay_group = app_commands.Group(
+        name="autoplay",
+        description="HelloDJ autoplay commands",
+    )
+
+    @autoplay_group.command(name="toggle", description="Toggle automatic song recommendations")
     async def autoplay_toggle(self, interaction: discord.Interaction):
         state = player.get_state(interaction.guild.id)
         enabled = not state.get("autoplay_enabled", False)
@@ -33,14 +46,12 @@ class Autoplay(commands.Cog):
         status = "ON" if enabled else "OFF"
         await interaction.response.send_message(f"HelloDJ autoplay: **{status}**")
 
-    # ── Genre management group ──────────────────────────────
+    # ── Genre management group (nested under the autoplay group) ───
 
     genre_group = app_commands.Group(
-        name="genre", description="Manage autoplay genres",
-        parent=app_commands.Group(
-            name="autoplay",
-            description="HelloDJ autoplay commands",
-        ),
+        name="genre",
+        description="Manage autoplay genres",
+        parent=autoplay_group,
     )
 
     @genre_group.command(name="add", description="Add a genre for autoplay recommendations")
