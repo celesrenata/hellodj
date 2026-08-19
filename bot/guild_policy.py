@@ -1,28 +1,20 @@
 """HelloDJ — Guild authorization policy.
 
-Enforces the rule: *HelloDJ may only operate on a guild (server) where at least
-one bot administrator is a member.* An administrator is the bot owner
-(``BOT_OWNER_ID`` env var) or any OAuth-bound admin (see ``oauth_store``).
+Enforces the rule: *New guilds must be explicitly approved by a bot
+administrator (via the web-ui admin portal) before HelloDJ will operate.*
+
+- When the bot joins a new guild, it enters a **pending** state.
+- While pending, the bot refuses all commands and notifies the guild.
+- An administrator must approve the guild via the admin portal.
+- If not approved within 24 hours, the bot automatically leaves.
+- Previously approved guilds remain approved across restarts.
 
 State is persisted to ``data/guild_policy.json`` (same NFS data mount as the
-other stores) and follows the ``storage.py`` / ``guild_settings.py``
-conventions: asyncio-lock guarded, atomic write (temp then rename), JSON under
-``data/``, explicit logging.
+other stores).
 
 Schema of data/guild_policy.json:
-    { "<guild_id>": { "authorized": bool, "reason": str, "checked_at": int }, ... }
-
-Behavior notes:
-- A guild with no entry yet is treated as authorized (fail-open) until a check
-  runs, so commands are not spuriously blocked during a startup gap. Every guild
-  the bot is in is checked on join and re-checked at startup.
-- If NO administrator ids are configured (no ``BOT_OWNER_ID`` and no OAuth
-  bindings), checks fail OPEN (authorized) with a loud warning: we cannot
-  determine "the administrators" yet, and locking the bot out of every server
-  on first boot would break the deployment. Once an owner/admin is bound, the
-  policy becomes enforceable.
-- On an unauthorized guild, the caller should refuse commands and (on join)
-  leave the guild; this module only records the decision.
+    { "<guild_id>": { "status": "approved"|"pending"|"denied",
+                      "reason": str, "checked_at": int, "name": str }, ... }
 """
 
 import asyncio
@@ -36,8 +28,9 @@ import oauth_store
 log = logging.getLogger(__name__)
 
 POLICY_FILE = "data/guild_policy.json"
+PENDING_EXPIRY_SECONDS = 24 * 60 * 60  # 24 hours
 
-# guild_id (int) -> {"authorized": bool, "reason": str, "checked_at": int}
+# guild_id (int) -> {"status": str, "reason": str, "checked_at": int, "name": str}
 _data: dict[int, dict] = {}
 _lock = asyncio.Lock()
 
@@ -68,10 +61,14 @@ def load() -> None:
         except (ValueError, TypeError):
             continue
         if isinstance(entry, dict):
+            # Migrate old format: "authorized" bool -> "status" string
+            if "status" not in entry and "authorized" in entry:
+                entry["status"] = "approved" if entry["authorized"] else "denied"
             new[gid] = {
-                "authorized": bool(entry.get("authorized", False)),
+                "status": entry.get("status", "pending"),
                 "reason": str(entry.get("reason", "")),
                 "checked_at": int(entry.get("checked_at", 0) or 0),
+                "name": entry.get("name", ""),
             }
     _data.clear()
     _data.update(new)
@@ -91,14 +88,10 @@ async def _save() -> None:
 
 
 def _current_admin_ids() -> set[int]:
-    """Return the set of bot-administrator Discord user ids.
-
-    Union of ``BOT_OWNER_ID`` (env) and the OAuth-bound owner + admins from
-    ``oauth_store.get_admin_ids()`` (which reloads on change). The bot owner is
-    always considered an administrator.
-    """
+    """Return the set of bot-administrator Discord user ids."""
+    from config import cfg
     ids: set[int] = set()
-    owner_env = os.getenv("BOT_OWNER_ID", "")
+    owner_env = cfg("discord.owner_id", "")
     if owner_env:
         try:
             ids.add(int(owner_env))
@@ -108,127 +101,94 @@ def _current_admin_ids() -> set[int]:
     return ids
 
 
-async def _admin_member_present(guild, admin_ids: set[int]) -> bool:
-    """Return True if any admin id is a member of ``guild``.
+async def check_guild(guild) -> str:
+    """Check a guild's authorization status on join.
 
-    Fast path: scan the cached ``guild.members`` (members intent is enabled).
-    Slow path: if no admin is found in cache, fetch the full member list to
-    confirm absence — large-guild member caches can be partial.
-    """
-    if any(m.id in admin_ids for m in guild.members):
-        return True
-
-    # Confirm absence against the authoritative member list before declaring
-    # the guild unauthorized (member cache may be incomplete for large guilds).
-    try:
-        async for member in guild.fetch_members():
-            if member.id in admin_ids:
-                return True
-    except Exception as exc:
-        # fetch_members can fail (missing intent, rate limit, API error). Fall
-        # back to the cache result: treat absence as authoritative only when we
-        # could actually verify it; otherwise report the cached answer.
-        log.warning(
-            "guild_policy: could not fetch members for guild %s (%s); "
-            "relying on cache",
-            getattr(guild, "id", "?"), exc,
-        )
-    return False
-
-
-def _no_admins_configured(admin_ids: set[int]) -> bool:
-    """True when no administrator ids are configured at all."""
-    return not admin_ids
-
-
-async def check_guild(guild) -> bool:
-    """Check whether any bot administrator is a member of ``guild`` and record it.
-
-    Returns True when the guild is authorized to operate, False otherwise. The
-    policy entry is persisted under the lock. When no admins are configured the
-    check fails OPEN (returns True) with a loud warning (see module docstring).
+    Returns the status: "approved", "pending", or "denied".
+    New guilds get "pending" status. Previously approved guilds stay approved.
     """
     gid = int(guild.id)
-    admin_ids = _current_admin_ids()
+    name = getattr(guild, "name", "?")
 
-    if _no_admins_configured(admin_ids):
-        log.warning(
-            "guild_policy: no BOT_OWNER_ID and no OAuth-bound admins configured — "
-            "guild %s (%s) authorized by default (fail-open)",
-            getattr(guild, "name", "?"), gid,
-        )
-        async with _lock:
-            _data[gid] = {
-                "authorized": True,
-                "reason": "no administrators configured (fail-open)",
-                "checked_at": int(time.time()),
-            }
-            await _save()
-        return True
+    # If already in policy, return existing status
+    entry = _data.get(gid)
+    if entry and entry.get("status") == "approved":
+        log.info("guild_policy: guild %s (%s) already approved", name, gid)
+        return "approved"
 
-    present = await _admin_member_present(guild, admin_ids)
+    if entry and entry.get("status") == "denied":
+        log.info("guild_policy: guild %s (%s) is denied", name, gid)
+        return "denied"
+
+    # New guild or pending — set to pending
     async with _lock:
-        if present:
-            _data[gid] = {
-                "authorized": True,
-                "reason": "administrator present",
-                "checked_at": int(time.time()),
-            }
-            log.info(
-                "guild_policy: guild %s (%s) authorized — administrator present",
-                getattr(guild, "name", "?"), gid,
-            )
-        else:
-            _data[gid] = {
-                "authorized": False,
-                "reason": "no bot administrator is a member",
-                "checked_at": int(time.time()),
-            }
-            log.warning(
-                "guild_policy: guild %s (%s) UNAUTHORIZED — no bot administrator "
-                "is a member",
-                getattr(guild, "name", "?"), gid,
-            )
+        _data[gid] = {
+            "status": "pending",
+            "reason": "awaiting admin approval",
+            "checked_at": int(time.time()),
+            "name": name,
+        }
         await _save()
-    return present
+    log.info("guild_policy: guild %s (%s) set to PENDING — awaiting approval", name, gid)
+    return "pending"
 
 
 async def is_authorized(guild_id: int) -> bool:
-    """Return whether the guild is currently authorized.
-
-    A guild with no recorded policy yet defaults to authorized (fail-open) so a
-    startup gap does not spuriously block commands. Records are written by
-    ``check_guild`` on join and at startup.
-    """
+    """Return whether the guild is approved for operation."""
     entry = _data.get(int(guild_id))
     if entry is None:
-        return True
-    return bool(entry.get("authorized", False))
+        return False  # Unknown guilds are not authorized
+    return entry.get("status") == "approved"
+
+
+async def approve_guild(guild_id: int) -> None:
+    """Approve a guild (called from admin portal)."""
+    gid = int(guild_id)
+    async with _lock:
+        entry = _data.get(gid, {})
+        _data[gid] = {
+            "status": "approved",
+            "reason": "approved by administrator",
+            "checked_at": int(time.time()),
+            "name": entry.get("name", ""),
+        }
+        await _save()
+    log.info("guild_policy: guild %s approved by administrator", gid)
+
+
+async def deny_guild(guild_id: int) -> None:
+    """Deny a guild (called from admin portal)."""
+    gid = int(guild_id)
+    async with _lock:
+        entry = _data.get(gid, {})
+        _data[gid] = {
+            "status": "denied",
+            "reason": "denied by administrator",
+            "checked_at": int(time.time()),
+            "name": entry.get("name", ""),
+        }
+        await _save()
+    log.warning("guild_policy: guild %s denied by administrator", gid)
 
 
 async def set_unauthorized(guild_id: int, reason: str) -> None:
-    """Mark a guild unauthorized and persist. Used by the caller after a leave."""
+    """Mark a guild denied and persist."""
     gid = int(guild_id)
     async with _lock:
+        entry = _data.get(gid, {})
         _data[gid] = {
-            "authorized": False,
+            "status": "denied",
             "reason": reason,
             "checked_at": int(time.time()),
+            "name": entry.get("name", ""),
         }
         await _save()
-    log.warning("guild_policy: marked guild %s unauthorized (%s)", gid, reason)
+    log.warning("guild_policy: marked guild %s denied (%s)", gid, reason)
 
 
 async def set_authorized(guild_id: int) -> None:
-    """Mark a guild authorized and persist (e.g. after an admin joins)."""
-    gid = int(guild_id)
-    async with _lock:
-        _data[gid] = {
-            "authorized": True,
-            "reason": "administrator present",
-            "checked_at": int(time.time()),
-        }
-        await _save()
+    """Mark a guild approved and persist."""
+    await approve_guild(guild_id)
 
 
 async def clear(guild_id: int) -> None:
@@ -239,3 +199,75 @@ async def clear(guild_id: int) -> None:
             del _data[gid]
             await _save()
             log.info("guild_policy: cleared policy for guild %s", gid)
+
+
+def get_pending_guilds() -> list[dict]:
+    """Return all guilds in pending status (for the admin portal)."""
+    now = int(time.time())
+    pending = []
+    for gid, entry in _data.items():
+        if entry.get("status") == "pending":
+            pending.append({
+                "guild_id": str(gid),
+                "name": entry.get("name", "Unknown"),
+                "pending_since": entry.get("checked_at", 0),
+                "expires_in": max(0, PENDING_EXPIRY_SECONDS - (now - entry.get("checked_at", 0))),
+            })
+    return pending
+
+
+def get_all_guilds() -> list[dict]:
+    """Return all guilds and their status (for the admin portal)."""
+    return [
+        {
+            "guild_id": str(gid),
+            "name": entry.get("name", "Unknown"),
+            "status": entry.get("status", "unknown"),
+            "reason": entry.get("reason", ""),
+            "checked_at": entry.get("checked_at", 0),
+        }
+        for gid, entry in _data.items()
+    ]
+
+
+async def expire_pending_guilds(bot) -> list[int]:
+    """Remove guilds that have been pending for > 24 hours. Returns guild IDs removed.
+
+    Should be called periodically (e.g. from the watchdog).
+    """
+    now = int(time.time())
+    expired = []
+
+    for gid, entry in list(_data.items()):
+        if entry.get("status") != "pending":
+            continue
+        elapsed = now - entry.get("checked_at", 0)
+        if elapsed > PENDING_EXPIRY_SECONDS:
+            expired.append(gid)
+
+    for gid in expired:
+        async with _lock:
+            _data[gid] = {
+                "status": "denied",
+                "reason": "expired — not approved within 24 hours",
+                "checked_at": now,
+                "name": _data.get(gid, {}).get("name", ""),
+            }
+            await _save()
+        log.warning("guild_policy: guild %s expired (not approved in 24h)", gid)
+        # Leave the guild
+        guild = bot.get_guild(gid)
+        if guild:
+            try:
+                system_channel = getattr(guild, "system_channel", None)
+                if system_channel and system_channel.permissions_for(guild.me).send_messages:
+                    await system_channel.send(
+                        "HelloDJ was not approved for this server within 24 hours. "
+                        "Leaving. Contact a HelloDJ administrator to get approved."
+                    )
+                await guild.leave()
+                log.info("guild_policy: left expired guild %s (%s)", guild.name, gid)
+            except Exception as exc:
+                log.error("guild_policy: could not leave expired guild %s: %s", gid, exc)
+
+    return expired

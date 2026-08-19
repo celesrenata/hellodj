@@ -12,8 +12,10 @@ import time
 import numpy as np
 
 import metrics as _metrics
+from debug import get_debug_logger
 
 log = logging.getLogger(__name__)
+dbg = get_debug_logger("stt")
 
 
 def _record_stt(engine: str, duration_ms: float) -> None:
@@ -68,11 +70,11 @@ class STTEngine:
     """
 
     def __init__(self, model_size: str = "base"):
-        self._model_size = model_size or os.getenv("STT_MODEL_SIZE", "base")
-        self._engine = os.getenv("STT_ENGINE", "local")
-        # Backward compat: STT_URL == STT_WHISPER_ENDPOINT for the remote engine.
-        self._url = os.getenv("STT_URL", "") or os.getenv("STT_WHISPER_ENDPOINT", "")
-        self._api_key = os.getenv("STT_API_KEY", "")
+        from config import cfg
+        self._model_size = model_size or cfg("stt.model_size", "base")
+        self._engine = cfg("stt.engine", "local")
+        self._url = cfg("stt.url", "") or cfg("stt.whisper_endpoint", "")
+        self._api_key = cfg("stt.api_key", "")
         self._model = None
 
     def _ensure_model(self):
@@ -103,17 +105,16 @@ class STTEngine:
             return
 
         if self._engine == "bedrock":
-            # AWS Bedrock / Amazon Transcribe backend. No in-process model is
-            # loaded; BedrockSTTEngine wraps the boto3 Transcribe client.
+            from config import cfg
             self._model = BedrockSTTEngine(
-                region=os.getenv("AWS_REGION", ""),
-                role_arn=os.getenv("AWS_ROLE_ARN", ""),
-                bucket=os.getenv("BEDROCK_S3_BUCKET", ""),
+                region=cfg("aws.region", ""),
+                role_arn=cfg("aws.role_arn", ""),
+                bucket=cfg("bedrock.s3_bucket", ""),
             )
             log.info(
                 "bedrock STT engine configured (region=%s, bucket=%s)",
-                os.getenv("AWS_REGION", "us-east-1"),
-                os.getenv("BEDROCK_S3_BUCKET", ""),
+                cfg("aws.region", "us-east-1"),
+                cfg("bedrock.s3_bucket", ""),
             )
             return
 
@@ -326,11 +327,12 @@ class BedrockSTTEngine:
         role_arn: str | None = None,
         bucket: str | None = None,
     ):
-        self._region = region or os.getenv("AWS_REGION", "us-east-1")
-        self._role_arn = role_arn or os.getenv("AWS_ROLE_ARN", "")
-        self._bucket = bucket or os.getenv("BEDROCK_S3_BUCKET", "")
-        self._language = os.getenv("STT_BEDROCK_LANGUAGE", "en-US")
-        self._timeout = int(os.getenv("STT_BEDROCK_TIMEOUT", "60"))
+        from config import cfg
+        self._region = region or cfg("aws.region", "us-east-1")
+        self._role_arn = role_arn or cfg("aws.role_arn", "")
+        self._bucket = bucket or cfg("bedrock.s3_bucket", "")
+        self._language = cfg("stt.bedrock_language", "en-US")
+        self._timeout = cfg.int("stt.bedrock_timeout", 60)
         self._session = None
         self._client = None
 

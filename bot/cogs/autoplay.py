@@ -16,8 +16,10 @@ from discord import app_commands
 from discord.ext import commands
 
 import player
+from debug import get_debug_logger
 
 log = logging.getLogger(__name__)
+dbg = get_debug_logger("autoplay")
 
 
 class Autoplay(commands.Cog):

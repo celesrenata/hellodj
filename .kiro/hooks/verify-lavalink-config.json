@@ -1,0 +1,13 @@
+{
+  "name": "Verify Lavalink Config",
+  "version": "1.0.0",
+  "description": "Validate Lavalink application.yml syntax when modified",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["bot/lavalink/application.yml"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "The Lavalink application.yml was just modified. Please verify the YAML is valid and that all plugin configurations (youtube-source, lavasrc) have correct structure. Check that environment variable references use the correct ${VAR} syntax and that source enable/disable toggles are consistent with the .env.example."
+  }
+}

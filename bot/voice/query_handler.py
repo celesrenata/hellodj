@@ -12,8 +12,10 @@ import time
 import aiohttp
 
 import metrics as _metrics
+from debug import get_debug_logger
 
 log = logging.getLogger(__name__)
+dbg = get_debug_logger("query")
 
 # ── MCP tool definitions (sent to LLM as system prompt) ───────────────────
 
@@ -137,7 +139,8 @@ async def _call_weather(location: str) -> str:
 
 async def _call_news(topic: str | None = None) -> str:
     """Fetch news headlines."""
-    api_key = os.getenv("NEWS_API_KEY", "")
+    from config import cfg
+    api_key = cfg("news.api_key", "")
     if not api_key:
         return "News is not configured — no API key set."
 
@@ -162,9 +165,8 @@ async def _call_news(topic: str | None = None) -> str:
 
 async def _call_stock(symbol: str) -> str:
     """Fetch stock price. Uses yfinance-style free endpoint."""
-    # Using finnhub-free or polygon-free — yfinance is a local Python lib
-    # For simplicity, use a free API
-    api_key = os.getenv("STOCKS_API_KEY", "")
+    from config import cfg
+    api_key = cfg("stocks.api_key", "")
     if not api_key:
         return "Stock data is not configured — no API key set."
 
@@ -243,8 +245,9 @@ class QueryHandler:
     """Handles general queries via LLM with tool-calling."""
 
     def __init__(self):
-        self._api_url = os.getenv("LLM_API_URL", "")
-        self._api_key = os.getenv("LLM_API_KEY", "")
+        from config import cfg
+        self._api_url = cfg("llm.api_url", "")
+        self._api_key = cfg("llm.api_key", "")
 
     @property
     def available(self) -> bool:
@@ -313,7 +316,8 @@ class QueryHandler:
             "Content-Type": "application/json",
         }
 
-        model = os.getenv("LLM_MODEL", "gpt-4o-mini")
+        from config import cfg
+        model = cfg("llm.model", "gpt-4o-mini")
         body = {
             "model": model,
             "messages": [

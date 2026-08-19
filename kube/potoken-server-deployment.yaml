@@ -1,0 +1,79 @@
+# potoken-server — generates YouTube Proof-of-Origin tokens on demand.
+#
+# Uses brainicism/bgutil-ytdlp-pot-provider which leverages LuanRT's BotGuard
+# library to generate valid poTokens. The HTTP server listens on port 4416 and
+# exposes GET /token for retrieving fresh tokens.
+#
+# The bot's _potoken_refresh_task() periodically fetches from this service and
+# pushes the token to Lavalink via POST /youtube. This defeats YouTube's
+# "Sign in to confirm you're not a bot" blocks for WEB-family clients.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: potoken-server
+  namespace: hellodj-service
+  labels:
+    app.kubernetes.io/instance: hellodj
+    app.kubernetes.io/managed-by: kubectl
+    app.kubernetes.io/name: potoken-server
+    app.kubernetes.io/version: "1.3.1"
+    app.kubernetes.io/component: lavalink
+    helm.sh/chart: hellodj-0.1.0
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/instance: hellodj
+      app.kubernetes.io/name: potoken-server
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: hellodj
+        app.kubernetes.io/managed-by: kubectl
+        app.kubernetes.io/name: potoken-server
+        app.kubernetes.io/version: "1.3.1"
+        app.kubernetes.io/component: lavalink
+        helm.sh/chart: hellodj-0.1.0
+    spec:
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: potoken-server
+          image: brainicism/bgutil-ytdlp-pot-provider:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 4416
+              name: http
+              protocol: TCP
+          resources:
+            limits:
+              cpu: "1"
+              memory: 512Mi
+            requests:
+              cpu: 100m
+              memory: 128Mi
+          startupProbe:
+            httpGet:
+              path: /ping
+              port: http
+            periodSeconds: 5
+            timeoutSeconds: 5
+            failureThreshold: 30
+          readinessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /ping
+              port: http
+            periodSeconds: 60
+            timeoutSeconds: 5
+            failureThreshold: 3

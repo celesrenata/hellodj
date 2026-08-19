@@ -1,0 +1,8 @@
+# kubectl patch configmap hellodj-bot-config -n hellodj-service --type=strategic --patch-file=configmap-patch.yaml
+#
+# Adds stream service URLs to the bot's env config.
+# Since they're sidecars in the same pod, use localhost.
+
+data:
+  TIDAL_STREAM_URL: "http://localhost:8801"
+  SPOTIFY_STREAM_URL: "http://localhost:8802"

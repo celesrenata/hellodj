@@ -1,0 +1,86 @@
+# kubectl patch deployment hellodj -n hellodj-service --type=strategic --patch-file=stream-services-patch.yaml
+#
+# This adds tidal-stream and spotify-stream as sidecar containers to the
+# existing hellodj pod. They share the hellodj-data volume (where oauth.json lives).
+#
+# After applying: rebuild bot image with stream_resolver.py, then restart.
+# The TIDAL_STREAM_URL and SPOTIFY_STREAM_URL env vars point to localhost since
+# the sidecars run in the same pod.
+
+spec:
+  template:
+    spec:
+      containers:
+      # ── tidal-stream sidecar ─────────────────────────────────────────────
+      - name: tidal-stream
+        image: registry.celestium.life/hellodj/tidal-stream:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8801
+          name: tidal-stream
+          protocol: TCP
+        env:
+        - name: DATA_DIR
+          value: /app/data
+        - name: TIDAL_STREAM_PORT
+          value: "8801"
+        - name: TIDAL_QUALITY
+          value: high_lossless
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: 500m
+            memory: 256Mi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: tidal-stream
+          periodSeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: tidal-stream
+          periodSeconds: 10
+          timeoutSeconds: 5
+        volumeMounts:
+        - name: hellodj-data
+          mountPath: /app/data
+
+      # ── spotify-stream sidecar ───────────────────────────────────────────
+      - name: spotify-stream
+        image: registry.celestium.life/hellodj/spotify-stream:latest
+        imagePullPolicy: Always
+        ports:
+        - containerPort: 8802
+          name: spotify-stream
+          protocol: TCP
+        env:
+        - name: DATA_DIR
+          value: /app/data
+        - name: SPOTIFY_STREAM_PORT
+          value: "8802"
+        resources:
+          requests:
+            cpu: 100m
+            memory: 128Mi
+          limits:
+            cpu: "1"
+            memory: 512Mi
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: spotify-stream
+          periodSeconds: 30
+          timeoutSeconds: 5
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: spotify-stream
+          periodSeconds: 10
+          timeoutSeconds: 5
+        volumeMounts:
+        - name: hellodj-data
+          mountPath: /app/data

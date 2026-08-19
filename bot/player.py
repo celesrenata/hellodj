@@ -18,8 +18,10 @@ import permissions
 from voice.hybrid_player import HybridPlayer
 import voice_debug
 import blacklist as _blacklist
+from debug import get_debug_logger, trace
 
 log = logging.getLogger(__name__)
+dbg = get_debug_logger("player")
 
 # Per-guild state
 guild_state: dict[int, dict] = {}
@@ -77,17 +79,27 @@ def _track_entry(track, provider: str | None = None) -> dict:
     title = getattr(track, "title", None) or "Unknown"
     author = getattr(track, "author", None) or ""
     length = getattr(track, "length", None) or 0
+    # Album name from lavasrc plugin info (Spotify/Tidal/Apple Music)
+    album = ""
+    extras = getattr(track, "extras", None)
+    if extras and hasattr(extras, "get"):
+        album = extras.get("albumName", "") or ""
+    if not album:
+        raw = getattr(track, "raw_data", None)
+        if raw and isinstance(raw, dict):
+            album = raw.get("pluginInfo", {}).get("albumName", "") or ""
 
     entry = {
         "webpage_url": str(uri) if uri else None,
         "title": title,
         "author": author,
+        "album": album,
         "duration": length,
     }
 
     log.debug(
-        "track_entry type=%s provider=%s uri=%r title=%r author=%r length=%r",
-        type(track).__name__, provider, uri, title, author, length,
+        "track_entry type=%s provider=%s uri=%r title=%r author=%r album=%r length=%r",
+        type(track).__name__, provider, uri, title, author, album, length,
     )
     return entry
 
@@ -685,11 +697,21 @@ async def enqueue_and_start(
     for track in tracks:
         state["queue"].append(track)
 
-    # Trigger playback if a player exists
-    player = get_player(guild.id)
-    if player and player.connected:
-        if not player.playing and not player.paused:
-            await _play_next_from_queue(guild.id)
+    # Trigger playback — connect if needed, then start if idle
+    p = get_player(guild.id)
+    if not p or not p.connected:
+        # No player or disconnected — connect to the voice channel if we have one
+        vc = state.get("voice_channel")
+        if vc:
+            try:
+                p = await connect_player(vc)
+                state["player"] = p
+            except Exception as exc:
+                log.warning("enqueue_and_start: connect_player failed guild=%s: %s", guild.id, exc)
+                p = None
+
+    if p and p.connected and not p.playing and not p.paused:
+        await _play_next_from_queue(guild.id)
 
     persist(guild.id)
     return len(tracks)
@@ -701,7 +723,12 @@ async def _play_next_from_queue(guild_id: int) -> None:
     state = get_state(guild_id)
     player = state.get("player")
     if not player or not player.connected:
+        dbg.debug("play_next: no player or disconnected guild=%d", guild_id)
         return
+
+    dbg.event("play_next", guild_id=guild_id, queue_len=len(state["queue"]),
+              repeat_mode=state["repeat_mode"],
+              current_title=state.get("current", {}).get("title") if state.get("current") else None)
 
     # Repeat mode
     if state["repeat_mode"] == "single" and state.get("current"):
@@ -730,8 +757,58 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
         "_resolve_and_play guild=%d title=%r source_provider=%r",
         guild_id, title, sp,
     )
+    dbg.event("resolve_start", guild_id=guild_id, title=title, url=url,
+              source_provider=sp, queue_len=len(state["queue"]))
+    resolve_start = time.monotonic()
 
     try:
+        # ── Direct stream resolution (bypass YouTube mirroring) ────────────
+        # For Spotify/Tidal: try our stream services first. If they return a
+        # direct URL, feed it to Lavalink as an HTTP source. If they fail,
+        # fall through to the old LavaSrc/YouTube path.
+        if sp in ("spotify", "tidal") and url:
+            from stream_resolver import resolve_direct_stream
+            direct_url = await resolve_direct_stream(sp, url)
+            if direct_url:
+                tracks = await Playable.search(direct_url)
+                if tracks:
+                    track = tracks[0] if isinstance(tracks, list) else tracks
+                    # Inject real metadata — Lavalink's HTTP source doesn't know
+                    # the track title/artist. Use object.__setattr__ to bypass
+                    # wavelink's read-only property descriptors.
+                    try:
+                        object.__setattr__(track, "_title", title)
+                    except Exception:
+                        pass
+                    try:
+                        object.__setattr__(track, "_author", entry.get("author", "") or "")
+                    except Exception:
+                        pass
+                    try:
+                        object.__setattr__(track, "_uri", url)
+                    except Exception:
+                        pass
+                    try:
+                        object.__setattr__(track, "_source", sp)
+                    except Exception:
+                        pass
+                    duration = entry.get("duration", 0)
+                    if duration and duration > 0:
+                        try:
+                            object.__setattr__(track, "_length", duration)
+                        except Exception:
+                            pass
+                    dbg.event("resolve_success", guild_id=guild_id, title=title,
+                              resolved_uri=url,
+                              resolved_title=title,
+                              resolved_author=track.author,
+                              resolved_length=track.length,
+                              source_provider=f"{sp}_direct",
+                              elapsed_ms=(time.monotonic() - resolve_start) * 1000)
+                    await player.play(track)
+                    return
+                log.info("Direct stream URL returned but Lavalink couldn't load it — falling back")
+
         # Search using Playable.search with the configured source
         source_map = {
             "youtube": TrackSource.YouTube,
@@ -779,9 +856,18 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
             tracks = _prefer_highest_quality(tracks)
 
         track = tracks[0] if isinstance(tracks, list) else tracks
+        dbg.event("resolve_success", guild_id=guild_id, title=title,
+                  resolved_uri=getattr(track, "uri", None),
+                  resolved_title=getattr(track, "title", None),
+                  resolved_author=getattr(track, "author", None),
+                  resolved_length=getattr(track, "length", None),
+                  source_provider=sp,
+                  elapsed_ms=(time.monotonic() - resolve_start) * 1000)
         await player.play(track)
 
     except Exception as exc:
+        dbg.error("resolve_failed guild=%d title=%r provider=%r error=%s",
+                  guild_id, title, sp, exc)
         log.error("Failed to resolve/play track %s: %s", title, exc)
         await _play_next_from_queue(guild_id)
 
@@ -926,8 +1012,10 @@ async def on_track_start(guild_id: int, player: wavelink.Player, track: wavelink
     # next failure episode starts fresh at 0.
     state["track_retries"] = 0
 
-    info = _track_entry(track, provider="on_track_start")
-    state["current"] = info
+    # Do NOT overwrite state["current"] here. It was already set correctly by
+    # _play_next_from_queue with the original queue entry metadata (proper title,
+    # author, Spotify/YouTube URL). Lavalink's track_start event often has
+    # degraded metadata (e.g. "Unknown title" for HTTP proxy streams).
     persist(guild_id)
 
     # Cancel any in-flight progress-bar updater from a previous track so two
@@ -1048,7 +1136,13 @@ async def _send_now_playing(guild_id: int, player: wavelink.Player, track: wavel
     if not channel:
         return
 
-    embed = _build_now_playing_embed(track)
+    # Prefer state["current"] (has correct metadata) over the live track object
+    # (which may report "Unknown title" for HTTP proxy streams).
+    current_entry = state.get("current")
+    if current_entry and current_entry.get("title") and current_entry["title"] not in ("Unknown", "Unknown title"):
+        embed = build_now_playing_embed_from_entry(current_entry)
+    else:
+        embed = _build_now_playing_embed(track)
     view = NowPlayingView(guild_id)
 
     msg = state.get("now_playing_msg")
@@ -1084,14 +1178,22 @@ def _split_title(raw_title: str, author: str) -> tuple[str, str]:
     Spotify via LavaSrc), fall back to using `author` as the artist.
     """
     title = (raw_title or "Unknown").strip()
+    artist_fallback = (author or "Unknown Artist").strip()
+    # Strip YouTube auto-generated " - Topic" suffix from artist names
+    if artist_fallback.endswith(" - Topic"):
+        artist_fallback = artist_fallback[:-8].strip()
+
     # Split on the FIRST ' - ' separator only.
     if " - " in title:
         artist_part, song_part = title.split(" - ", 1)
         artist_part = artist_part.strip()
         song_part = song_part.strip()
+        # Strip " - Topic" from parsed artist too
+        if artist_part.endswith(" - Topic"):
+            artist_part = artist_part[:-8].strip()
         if artist_part and song_part:
             return song_part, artist_part
-    return title, (author or "Unknown Artist").strip()
+    return title, artist_fallback
 
 
 def build_now_playing_embed_from_entry(entry: dict) -> discord.Embed:
@@ -1170,12 +1272,12 @@ async def _now_playing_updater(guild_id: int, player: wavelink.Player, track: wa
             if not msg:
                 continue
 
-            # Rebuild from the LIVE track (player.current) so the Song/Artist/
-            # Source/Album/Duration fields always match the currently-playing
-            # song, not the one captured when this updater was spawned.
+            # Rebuild the embed from state["current"] (correct metadata) with
+            # live position from the player.
+            current_entry = state.get("current")
             current = player.current or track
             position = player.position
-            duration = current.length or 0
+            duration = (current_entry or {}).get("duration") or current.length or 0
             if duration <= 0:
                 continue
 
@@ -1183,7 +1285,10 @@ async def _now_playing_updater(guild_id: int, player: wavelink.Player, track: wa
             pos_m, pos_s = divmod(position // 1000, 60)
             dur_m, dur_s = divmod(duration // 1000, 60)
 
-            embed = _build_now_playing_embed(current)
+            if current_entry and current_entry.get("title") and current_entry["title"] not in ("Unknown", "Unknown title"):
+                embed = build_now_playing_embed_from_entry(current_entry)
+            else:
+                embed = _build_now_playing_embed(current)
             embed.description = f"`{bar}`  {pos_m}:{pos_s:02d} / {dur_m}:{dur_s:02d}"
             try:
                 await msg.edit(embed=embed)
@@ -1256,27 +1361,30 @@ class NowPlayingView(discord.ui.View):
     """Unified remote control panel attached to the now-playing embed.
 
     The now-playing message posted when a song starts IS the remote control:
-    ⏮ Previous (seek to start) • ⏯ Play/Pause toggle • ⏭ Next (skip) •
-    🚫 Block (permanently blacklist the current track).
+    ⏮ Previous • ⏯ Play/Pause • ⏭ Next • ➕ Add to Playlist • Block: 🚫
     """
 
     def __init__(self, guild_id: int):
         super().__init__(timeout=300)
         self.guild_id = guild_id
 
-    @discord.ui.button(label="⏮", style=discord.ButtonStyle.secondary, custom_id="np_prev")
+    @discord.ui.button(label="⏮", style=discord.ButtonStyle.secondary, custom_id="np_prev", row=0)
     async def prev_track(self, interaction: discord.Interaction, _button: discord.ui.Button):
         await self._seek_start(interaction)
 
-    @discord.ui.button(label="⏯", style=discord.ButtonStyle.primary, custom_id="np_toggle")
+    @discord.ui.button(label="⏯", style=discord.ButtonStyle.primary, custom_id="np_toggle", row=0)
     async def pause_resume(self, interaction: discord.Interaction, button: discord.ui.Button):
         await self._toggle_pause(interaction, button)
 
-    @discord.ui.button(label="⏭", style=discord.ButtonStyle.secondary, custom_id="np_next")
+    @discord.ui.button(label="⏭", style=discord.ButtonStyle.secondary, custom_id="np_next", row=0)
     async def next_track(self, interaction: discord.Interaction, _button: discord.ui.Button):
         await self._skip_next(interaction)
 
-    @discord.ui.button(label="🚫", style=discord.ButtonStyle.danger, custom_id="np_block")
+    @discord.ui.button(label="➕", style=discord.ButtonStyle.success, custom_id="np_playlist", row=0)
+    async def add_to_playlist(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        await self._show_playlist_picker(interaction)
+
+    @discord.ui.button(label="🚫", style=discord.ButtonStyle.secondary, custom_id="np_block", row=0)
     async def block_track(self, interaction: discord.Interaction, _button: discord.ui.Button):
         await self._block(interaction)
 
@@ -1316,7 +1424,20 @@ class NowPlayingView(discord.ui.View):
         await interaction.response.defer()
 
     async def _block(self, interaction: discord.Interaction) -> None:
-        """🚫 Block — permanently blacklist the current track, then skip it."""
+        """🚫 Block — permanently blacklist the current track, then skip it. Admin only."""
+        # Admin gate: only guild administrators or OAuth-bound admins can block
+        import oauth_store
+        is_admin = False
+        if interaction.guild:
+            is_admin = interaction.user.guild_permissions.administrator
+        if not is_admin:
+            is_admin = oauth_store.is_bound_admin(interaction.user.id)
+        if not is_admin:
+            await interaction.response.send_message(
+                "🚫 Only administrators can block tracks.", ephemeral=True
+            )
+            return
+
         state = get_state(self.guild_id)
         current = state.get("current")
         title = (current or {}).get("title", "Unknown")
@@ -1328,3 +1449,80 @@ class NowPlayingView(discord.ui.View):
         await interaction.response.send_message(
             f"🚫 Blocked **{title}**.", ephemeral=True
         )
+
+    async def _show_playlist_picker(self, interaction: discord.Interaction) -> None:
+        """➕ Add to Playlist — show a dropdown to pick which playlist."""
+        import storage
+
+        state = get_state(self.guild_id)
+        current = state.get("current")
+        if not current:
+            await interaction.response.send_message(
+                "Nothing is playing right now.", ephemeral=True
+            )
+            return
+
+        playlist_names = storage.names(self.guild_id)
+
+        if not playlist_names:
+            # No playlists exist — offer to create one
+            await interaction.response.send_message(
+                "No playlists exist yet. Use `/playlist create <name>` to create one first.",
+                ephemeral=True,
+            )
+            return
+
+        # Build a select menu with the guild's playlists
+        view = _PlaylistSelectView(self.guild_id, current)
+        await interaction.response.send_message(
+            "Choose a playlist to add the current song to:",
+            view=view,
+            ephemeral=True,
+        )
+
+
+class _PlaylistSelectView(discord.ui.View):
+    """Ephemeral dropdown for picking a playlist to add the current track to."""
+
+    def __init__(self, guild_id: int, track_entry: dict):
+        super().__init__(timeout=30)
+        self.guild_id = guild_id
+        self.track_entry = track_entry
+
+        import storage
+        playlist_names = storage.names(guild_id)
+
+        options = [
+            discord.SelectOption(label=name[:100], value=name[:100])
+            for name in playlist_names[:25]  # Discord max 25 options
+        ]
+
+        select = discord.ui.Select(
+            placeholder="Select a playlist…",
+            options=options,
+            custom_id="np_playlist_select",
+        )
+        select.callback = self._on_select
+        self.add_item(select)
+
+    async def _on_select(self, interaction: discord.Interaction) -> None:
+        import storage
+
+        playlist_name = interaction.data["values"][0]
+        track = {
+            "url": self.track_entry.get("webpage_url") or self.track_entry.get("url") or "",
+            "title": self.track_entry.get("title", "Unknown"),
+            "duration": self.track_entry.get("duration", 0),
+        }
+
+        try:
+            resolved_name = await storage.add_track(self.guild_id, playlist_name, track)
+            await interaction.response.edit_message(
+                content=f"✅ Added **{track['title']}** to **{resolved_name}**.",
+                view=None,
+            )
+        except Exception as exc:
+            await interaction.response.edit_message(
+                content=f"❌ Could not add to playlist: {exc}",
+                view=None,
+            )

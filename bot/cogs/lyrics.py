@@ -49,10 +49,11 @@ class LyricsPaginatedView(discord.ui.View):
 class Lyrics(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self.client_id = os.getenv("GENIUS_CLIENT_ID", "")
-        self.client_secret = os.getenv("GENIUS_CLIENT_SECRET", "")
-        self.access_token = os.getenv("GENIUS_ACCESS_TOKEN", "")
-        self.api_key = os.getenv("GENIUS_API_KEY", "")
+        from config import cfg
+        self.client_id = cfg("genius.client_id", "")
+        self.client_secret = cfg("genius.client_secret", "")
+        self.access_token = cfg("genius.access_token", "")
+        self.api_key = cfg("genius.api_key", "")
 
     @app_commands.command(name="lyrics", description="Fetch lyrics for the current song")
     async def lyrics(self, interaction: discord.Interaction):

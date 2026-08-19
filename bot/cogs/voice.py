@@ -100,8 +100,8 @@ class VoiceCog(commands.Cog):
         self._disabled_guilds: set[int] = set()
         self._sinks: dict[int, object] = {}
         # Master switch: when VOICE_ENABLED=true the bot listens by default in
-        # every guild it joins; the per-guild /voice toggle can still override.
-        self._voice_enabled = os.getenv("VOICE_ENABLED", "false").strip().lower() == "true"
+        from config import cfg
+        self._voice_enabled = cfg.bool("voice.enabled")
         if self._voice_enabled:
             log.info("VOICE_ENABLED=true — voice activation auto-enabled for all guilds")
 

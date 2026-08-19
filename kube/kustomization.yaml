@@ -11,6 +11,8 @@ resources:
   - yt-cipher-secret.yaml
   - yt-cipher-deployment.yaml
   - yt-cipher-service.yaml
+  - potoken-server-deployment.yaml
+  - potoken-server-service.yaml
   - pvc.yaml
   - nfs-pv.yaml
   - nfs-pvc.yaml
@@ -27,6 +29,10 @@ resources:
 # Image tags
 images:
   - name: registry.celestium.life/hellodj/bot
-    newTag: batch-fixes-2026-08-18-fix1
+    newTag: latest
   - name: registry.celestium.life/hellodj/web-ui
-    newTag: v2026-08-17
+    newTag: latest
+  - name: registry.celestium.life/hellodj/tidal-stream
+    newTag: latest
+  - name: registry.celestium.life/hellodj/spotify-stream
+    newTag: latest

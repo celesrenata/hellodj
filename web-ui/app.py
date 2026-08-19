@@ -15,6 +15,7 @@ import shutil
 import glob
 import logging
 import logging.handlers
+import traceback
 import secrets
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -24,8 +25,9 @@ import asyncio
 import aiohttp
 from flask import (
     Flask, render_template, jsonify, request, redirect, url_for, flash,
-    session,
+    session, g,
 )
+from werkzeug.exceptions import HTTPException
 
 # ── Logging: console + rotating file under the config dir (NFS shared) ──
 def _setup_logging():
@@ -59,6 +61,8 @@ def _setup_logging():
 
 _setup_logging()
 log = logging.getLogger(__name__)
+# Full debug logging for the web UI's own logger (requests/responses/errors).
+log.setLevel(logging.DEBUG)
 
 # Base directory for all relative paths. Resolving against the process working
 # directory lets the app run both in the container (cwd=/app) and locally
@@ -66,6 +70,112 @@ log = logging.getLogger(__name__)
 BASE_DIR = os.getcwd()
 
 app = Flask(__name__)
+
+# ── Full debug logging for every request/response/error ─────────────
+# Sensitive keys/headers are redacted before logging so tokens, passwords,
+# and authorization headers never reach the log files.
+SENSITIVE_SUBSTRINGS = (
+    "password", "token", "secret", "apikey", "api_key", "authorization",
+    "credential", "cookie", "device_code", "user_code", "code",
+)
+SENSITIVE_HEADERS = {
+    "authorization", "cookie", "set-cookie", "x-api-key", "x-auth-token",
+    "proxy-authorization", "x-forwarded-access-token",
+}
+
+def _redact(obj):
+    """Recursively redact sensitive keys from dicts/lists before logging."""
+    if isinstance(obj, dict):
+        out = {}
+        for k, v in obj.items():
+            kl = str(k).lower()
+            if any(s in kl for s in SENSITIVE_SUBSTRINGS):
+                out[k] = "[REDACTED]"
+            elif isinstance(v, (dict, list)):
+                out[k] = _redact(v)
+            else:
+                out[k] = v
+        return out
+    if isinstance(obj, list):
+        return [_redact(x) if isinstance(x, (dict, list)) else x for x in obj]
+    return obj
+
+def _log_headers(headers):
+    """Return a redacted headers mapping for logging."""
+    return {
+        k: ("[REDACTED]" if k.lower() in SENSITIVE_HEADERS else v)
+        for k, v in headers.items()
+    }
+
+@app.before_request
+def _log_request():
+    """Log method, path, query args, JSON/form body, IP, and user-agent."""
+    try:
+        g._req_start = _time.perf_counter()
+        method = request.method
+        path = request.path
+        remote = request.remote_addr or request.headers.get("X-Forwarded-For", "")
+        ua = request.headers.get("User-Agent", "")
+        args = _redact(dict(request.args)) if request.args else {}
+        log.debug("REQ %s %s remote=%s ua=%s args=%s",
+                  method, path, remote, ua, args)
+        if method in ("POST", "PUT", "PATCH"):
+            if request.is_json:
+                log.debug("REQ JSON %s %s body=%s",
+                          method, path, _redact(request.get_json(silent=True)))
+            elif request.form:
+                log.debug("REQ FORM %s %s form=%s",
+                          method, path, _redact(dict(request.form)))
+        log.debug("REQ HEADERS %s %s headers=%s",
+                  method, path, _log_headers(request.headers))
+    except Exception as exc:
+        log.warning("Could not log request: %s", exc)
+
+@app.after_request
+def _log_response(response):
+    """Log status code and processing duration; JSON bodies at DEBUG."""
+    try:
+        start = getattr(g, "_req_start", None)
+        dur = (_time.perf_counter() - start) * 1000.0 if start else 0.0
+        method = request.method
+        path = request.path
+        status = response.status_code
+        body = None
+        if response.mimetype == "application/json":
+            # Only buffer/parse small JSON responses to avoid breaking large ones.
+            if response.content_length is None or response.content_length < 1_000_000:
+                try:
+                    parsed = json.loads(response.get_data(as_text=True))
+                    body = _redact(parsed)
+                except Exception:
+                    body = None
+        log.debug("RES %s %s status=%s dur=%.2fms body=%s",
+                  method, path, status, dur, body)
+    except Exception as exc:
+        log.warning("Could not log response: %s", exc)
+    return response
+
+@app.errorhandler(Exception)
+def _handle_exception(exc):
+    """Log a full traceback for every unhandled exception."""
+    try:
+        if isinstance(exc, HTTPException):
+            # Let Flask render HTTP errors (404/401/403/...) normally.
+            log.debug("HTTP %s %s -> %s", request.method, request.path, exc.code)
+            return exc
+        log.exception("EXC %s %s: %s", request.method, request.path, exc)
+        try:
+            args = _redact(dict(request.args)) if request.args else {}
+            form = _redact(dict(request.form)) if request.form else None
+            json_body = _redact(request.get_json(silent=True)) if request.is_json else None
+            log.debug("EXC REQ %s %s args=%s form=%s json=%s",
+                      request.method, request.path, args, form, json_body)
+            log.debug("EXC TRACEBACK:\n%s", traceback.format_exc())
+        except Exception:
+            pass
+        return jsonify({"error": "Internal server error", "detail": str(exc)}), 500
+    except Exception:
+        return jsonify({"error": "Internal server error"}), 500
 
 @app.context_processor
 def inject_auth():
@@ -154,10 +264,86 @@ def read_env():
     return env
 
 def write_env(env: dict):
-    """Write key=value pairs to .env."""
+    """Write key=value pairs to .env AND to the credential store."""
+    # Write .env file (legacy compat)
     with open(ENV_FILE, "w", encoding="utf-8") as f:
         for key, val in env.items():
             f.write(f"{key}={val}\n")
+    # Also write to credential store (the canonical source going forward)
+    _write_env_to_creds(env)
+
+
+def _write_env_to_creds(env: dict):
+    """Sync env key-value pairs to the encrypted credential store."""
+    try:
+        from credentials import creds
+    except Exception as exc:
+        log.warning("Credential store unavailable (%s) — .env only", exc)
+        return
+
+    # Env var name -> credential store key
+    _mapping = {
+        "DISCORD_TOKEN": "discord.token",
+        "DISCORD_APPID": "discord.app_id",
+        "DISCORD_PUBKEY": "discord.public_key",
+        "BOT_OWNER_ID": "discord.owner_id",
+        "SPOTIFY_CLIENT_ID": "spotify.client_id",
+        "SPOTIFY_CLIENT_SECRET": "spotify.client_secret",
+        "TIDAL_CLIENT_ID": "tidal.client_id",
+        "TIDAL_CLIENT_SECRET": "tidal.client_secret",
+        "TIDAL_TOKEN": "tidal.api_token",
+        "TIDAL_COUNTRY_CODE": "tidal.country_code",
+        "TIDAL_SEARCH_LIMIT": "tidal.search_limit",
+        "TIDAL_ENABLED": "tidal.enabled",
+        "YOUTUBE_OAUTH_ENABLED": "youtube.oauth_enabled",
+        "YOUTUBE_OAUTH_REFRESH_TOKEN": "youtube.oauth_refresh_token",
+        "POT_TOKEN": "youtube.pot_token",
+        "POT_VISITOR_DATA": "youtube.pot_visitor_data",
+        "YTCIPHER_URL": "ytcipher.url",
+        "YTCIPHER_API_TOKEN": "ytcipher.api_token",
+        "PROVIDER_YOUTUBE": "provider.youtube",
+        "PROVIDER_YOUTUBEMUSIC": "provider.youtube_music",
+        "PROVIDER_SOUNDCLOUD": "provider.soundcloud",
+        "PROVIDER_SPOTIFY": "provider.spotify",
+        "PROVIDER_TIDAL": "provider.tidal",
+        "PROVIDER_DEEZER": "provider.deezer",
+        "PROVIDER_APPLE_MUSIC": "provider.apple_music",
+        "LAVALINK_HOST": "lavalink.host",
+        "LAVALINK_PORT": "lavalink.port",
+        "LAVALINK_PASSWORD": "lavalink.password",
+        "LLM_API_URL": "llm.api_url",
+        "LLM_API_KEY": "llm.api_key",
+        "LLM_MODEL": "llm.model",
+        "STT_ENGINE": "stt.engine",
+        "STT_API_KEY": "stt.api_key",
+        "STT_URL": "stt.url",
+        "STT_MODEL_SIZE": "stt.model_size",
+        "STT_WHISPER_ENDPOINT": "stt.whisper_endpoint",
+        "TTS_ENGINE": "tts.engine",
+        "TTS_API_KEY": "tts.api_key",
+        "TTS_VOICE": "tts.voice",
+        "SPEACHES_URL": "tts.speaches_url",
+        "TTS_SPEACHES_ENDPOINT": "tts.speaches_endpoint",
+        "KOKORO_URL": "tts.kokoro_url",
+        "TTS_KOKORO_ENDPOINT": "tts.kokoro_endpoint",
+        "VOICE_ENABLED": "voice.enabled",
+        "WAKE_WORD_MODEL_PATH": "voice.wakeword_model",
+        "GENIUS_API_KEY": "genius.api_key",
+        "GENIUS_CLIENT_ID": "genius.client_id",
+        "GENIUS_CLIENT_SECRET": "genius.client_secret",
+        "GENIUS_ACCESS_TOKEN": "genius.access_token",
+        "NEWS_API_KEY": "news.api_key",
+        "STOCKS_API_KEY": "stocks.api_key",
+        "DEEZER_ARL": "deezer.arl",
+        "DEEZER_MASTER_KEY": "deezer.master_key",
+        "APPLE_MUSIC_MEDIA_API_TOKEN": "applemusic.media_api_token",
+        "APPLE_MUSIC_COUNTRY_CODE": "applemusic.country_code",
+    }
+
+    for env_key, val in env.items():
+        db_key = _mapping.get(env_key)
+        if db_key and val:
+            creds.set(db_key, val)
 
 # ── OAuth binding store ─────────────────────────────────────
 
@@ -171,9 +357,20 @@ def load_oauth():
     })
 
 def save_oauth(data):
-    """Persist the OAuth binding store atomically to data/oauth.json."""
+    """Persist the OAuth binding store atomically to data/oauth.json AND credential store."""
     os.makedirs(DATA_DIR, exist_ok=True)
     write_json(OAUTH_FILE, data)
+    # Sync provider tokens to the encrypted credential store
+    try:
+        from credentials import creds
+        providers = data.get("providers", {})
+        for provider, tokens in providers.items():
+            if isinstance(tokens, dict):
+                for token_key, token_val in tokens.items():
+                    if token_val:
+                        creds.set(f"{provider}.{token_key}", str(token_val))
+    except Exception as exc:
+        log.warning("Could not sync oauth tokens to credential store: %s", exc)
 
 def is_owner_bound():
     oauth = load_oauth()
@@ -311,14 +508,15 @@ PROVIDERS = {
         "user_id_field": "id",
     },
     "tidal": {
-        "auth_url": "https://auth.tidal.com/v1/oauth2/authorize",
+        "auth_url": "https://login.tidal.com/authorize",
         "token_url": "https://auth.tidal.com/v1/oauth2/token",
         "api_url": "https://api.tidal.com/v1",
-        "scope": "user_read",
+        "scope": "collection.read collection.write entitlements.read playback playlists.read playlists.write recommendations.read search.read search.write",
         "label": "Tidal",
         "client_id_env": "TIDAL_CLIENT_ID",
         "client_secret_env": "TIDAL_CLIENT_SECRET",
-        "user_path": "/users/me",
+        "pkce": True,
+        "user_path": None,
         "user_id_field": "id",
     },
     "genius": {
@@ -331,6 +529,28 @@ PROVIDERS = {
         "client_secret_env": "GENIUS_CLIENT_SECRET",
         "user_path": "/account",
         "user_id_field": "id",
+    },
+    "deezer": {
+        "auth_url": "",  # No OAuth redirect flow
+        "token_url": "",
+        "api_url": "https://api.deezer.com",
+        "scope": "",
+        "label": "Deezer",
+        "client_id_env": "DEEZER_ARL",  # Uses ARL cookie, not client_id
+        "client_secret_env": "DEEZER_MASTER_KEY",  # Uses master key, not client_secret
+        "user_path": "",
+        "user_id_field": "",
+    },
+    "applemusic": {
+        "auth_url": "",  # No OAuth redirect flow
+        "token_url": "",
+        "api_url": "https://api.music.apple.com/v1",
+        "scope": "",
+        "label": "Apple Music",
+        "client_id_env": "APPLE_MUSIC_MEDIA_API_TOKEN",
+        "client_secret_env": "",  # No client secret
+        "user_path": "",
+        "user_id_field": "",
     },
     # ── YouTube (youtube-source plugin OAuth, device flow) ──────────────
     # The youtube-source plugin (dev.lavalink.youtube:youtube-plugin:1.18.2)
@@ -425,26 +645,45 @@ def provider_config(name):
     return PROVIDERS.get(name)
 
 def provider_credentials(name):
-    """Return (client_id, client_secret) for a provider from .env, or (None, None).
+    """Return (client_id, client_secret) for a provider.
 
-    The youtube-source plugin (youtube provider) carries its client_id/client_secret
-    inline in the registry (they are hardcoded in the plugin jar and verified from
-    its bytecode) rather than from .env, so fall back to those when the env keys
-    are absent.
+    Reads from the credential store first, falls back to .env file, then
+    process environment variables (injected by k8s secrets).
     """
     prov = provider_config(name)
     if prov is None:
         return None, None
-    env = read_env()
-    cid_env = prov.get("client_id_env")
-    csec_env = prov.get("client_secret_env")
-    cid = env.get(cid_env, "") if cid_env else prov.get("client_id", "")
-    csec = env.get(csec_env, "") if csec_env else prov.get("client_secret", "")
-    return (cid or None), (csec or None)
+
+    # Try credential store first
+    cid, csec = None, None
+    try:
+        from credentials import creds
+        cid = creds.get(f"{name}.client_id") or None
+        csec = creds.get(f"{name}.client_secret") or None
+    except Exception:
+        pass
+
+    # Fall back to .env / os.environ
+    if not cid or not csec:
+        env = read_env()
+        cid_env = prov.get("client_id_env")
+        csec_env = prov.get("client_secret_env")
+        if not cid:
+            cid = ((env.get(cid_env, "") or os.environ.get(cid_env, "")) if cid_env else prov.get("client_id", "")) or None
+        if not csec:
+            csec = ((env.get(csec_env, "") or os.environ.get(csec_env, "")) if csec_env else prov.get("client_secret", "")) or None
+
+    return cid, csec
 
 def provider_is_configured(name):
-    """True when both client_id and client_secret are present for a provider."""
+    """True when credentials are present for a provider.
+
+    PKCE providers only need client_id; others need both client_id and client_secret.
+    """
+    prov = provider_config(name)
     cid, csec = provider_credentials(name)
+    if prov and prov.get("pkce"):
+        return bool(cid)
     return bool(cid and csec)
 
 def oauth_redirect_uri(provider="discord"):
@@ -486,6 +725,8 @@ def _refresh_provider_token(provider):
 
     async def exchange():
         async with aiohttp.ClientSession() as sess:
+            log.debug("OUT POST %s provider=%s (refresh exchange)",
+                      prov["token_url"], provider)
             async with sess.post(
                 prov["token_url"],
                 data={
@@ -497,8 +738,12 @@ def _refresh_provider_token(provider):
             ) as resp:
                 if resp.status != 200:
                     body = await resp.text()
+                    log.debug("OUT POST %s -> status=%s body=%s",
+                              prov["token_url"], resp.status, _redact(body))
                     return None, f"Refresh failed ({resp.status}): {body}"
                 token_data = await resp.json()
+                log.debug("OUT POST %s -> status=%s body=%s",
+                          prov["token_url"], resp.status, _redact(token_data))
         return token_data, None
 
     try:
@@ -531,6 +776,9 @@ def provider_login(provider):
     Unknown or unconfigured providers are rejected. Sends the browser to the
     provider's authorize URL with a CSRF-protecting state token stored in the
     session under oauth_state_<provider>.
+
+    For providers that support PKCE (e.g. Tidal), only client_id is needed —
+    client_secret is not required.
     """
     prov = provider_config(provider)
     if prov is None:
@@ -549,6 +797,18 @@ def provider_login(provider):
     }
     if prov.get("scope"):
         params["scope"] = prov["scope"]
+
+    # PKCE support: generate code_verifier/challenge for providers that need it
+    if prov.get("pkce"):
+        import hashlib, base64
+        code_verifier = secrets.token_urlsafe(64)[:128]
+        code_challenge = base64.urlsafe_b64encode(
+            hashlib.sha256(code_verifier.encode()).digest()
+        ).decode().rstrip("=")
+        params["code_challenge"] = code_challenge
+        params["code_challenge_method"] = "S256"
+        session[f"oauth_pkce_{provider}"] = code_verifier
+
     url = f"{prov['auth_url']}?{urlencode(params)}"
     return redirect(url)
 
@@ -590,26 +850,40 @@ def provider_callback(provider):
         )
 
     client_id, client_secret = provider_credentials(provider)
-    if not client_id or not client_secret:
+    if not client_id:
         return jsonify({"error": f"{prov['label']} OAuth not configured"}), 500
+    # PKCE providers don't require client_secret
+    if not client_secret and not prov.get("pkce"):
+        return jsonify({"error": f"{prov['label']} OAuth not configured (missing client_secret)"}), 500
 
     async def exchange():
         async with aiohttp.ClientSession() as sess:
+            log.debug("OUT POST %s provider=%s (auth-code exchange)",
+                      prov["token_url"], provider)
+            token_data = {
+                "client_id": client_id,
+                "grant_type": "authorization_code",
+                "code": code,
+                "redirect_uri": oauth_redirect_uri(provider),
+            }
+            # PKCE: use code_verifier instead of client_secret
+            code_verifier = session.pop(f"oauth_pkce_{provider}", None)
+            if code_verifier:
+                token_data["code_verifier"] = code_verifier
+            elif client_secret:
+                token_data["client_secret"] = client_secret
+
             async with sess.post(
                 prov["token_url"],
-                data={
-                    "client_id": client_id,
-                    "client_secret": client_secret,
-                    "grant_type": "authorization_code",
-                    "code": code,
-                    "redirect_uri": oauth_redirect_uri(provider),
-                },
+                data=token_data,
             ) as token_resp:
                 if token_resp.status != 200:
                     body = await token_resp.text()
                     log.error("Token exchange failed (%s): %s %s", provider, token_resp.status, body)
                     return None, None
                 token_data = await token_resp.json()
+                log.debug("OUT POST %s -> status=%s body=%s",
+                          prov["token_url"], token_resp.status, _redact(token_data))
 
             access_token = token_data.get("access_token")
             if not access_token:
@@ -617,8 +891,11 @@ def provider_callback(provider):
 
             user = {}
             if prov.get("user_path"):
+                user_url = f"{prov['api_url']}{prov['user_path']}"
+                log.debug("OUT GET %s provider=%s (auth header redacted)",
+                          user_url, provider)
                 async with sess.get(
-                    f"{prov['api_url']}{prov['user_path']}",
+                    user_url,
                     headers={"Authorization": f"Bearer {access_token}"},
                 ) as user_resp:
                     if user_resp.status != 200:
@@ -626,6 +903,8 @@ def provider_callback(provider):
                         log.error("Failed to fetch user (%s): %s %s", provider, user_resp.status, body)
                         return None, None
                     user = await user_resp.json()
+                    log.debug("OUT GET %s -> status=%s body=%s",
+                              user_url, user_resp.status, _redact(user))
             return token_data, user
 
     token_data, user = asyncio.run(exchange())
@@ -689,11 +968,17 @@ def provider_callback(provider):
         return jsonify({"error": "You are not authorized to access this panel"}), 403
 
     save_oauth(oauth)
-    return jsonify({"status": "ok", "message": f"{prov['label']} OAuth token stored"})
+    return redirect(url_for("config_page"))
 
 @app.route("/auth/callback")
 def auth_callback():
-    """Backward-compatible Discord callback wrapper."""
+    """Backward-compatible callback wrapper.
+    
+    Routes to Tidal stream callback if redirect_url is present (Tidal PKCE flow),
+    otherwise handles as Discord OAuth callback.
+    """
+    if request.args.get("redirect_url"):
+        return tidal_stream_callback()
     return provider_callback("discord")
 
 @app.route("/auth/logout")
@@ -701,6 +986,43 @@ def auth_logout():
     """Clear the Flask session."""
     session.clear()
     return redirect(url_for("index"))
+
+
+@app.route("/auth/tidal/stream-login")
+def tidal_stream_login():
+    """Redirect to tidal-stream which redirects to Tidal login."""
+    import requests as req
+    try:
+        resp = req.get(
+            "http://hellodj.hellodj-service.svc.cluster.local:8801/auth/login",
+            timeout=10,
+            allow_redirects=False,
+        )
+        if resp.status_code in (301, 302, 303, 307, 308):
+            return redirect(resp.headers["Location"])
+        return resp.text, resp.status_code, {"Content-Type": resp.headers.get("Content-Type", "text/html")}
+    except Exception as exc:
+        return jsonify({"error": f"Cannot reach tidal-stream service: {exc}"}), 502
+
+
+@app.route("/auth/tidal/stream-callback")
+@app.route("/auth/tidal/callback")
+def tidal_stream_callback():
+    """Handle Tidal OAuth redirect — pass the full callback URL to tidal-stream."""
+    import requests as req
+
+    # Reconstruct the full redirect URL that Tidal sent us.
+    # Force https:// since we're behind a TLS-terminating reverse proxy.
+    full_redirect_url = request.url.replace("http://", "https://", 1)
+    try:
+        resp = req.get(
+            "http://hellodj.hellodj-service.svc.cluster.local:8801/auth/callback",
+            params={"redirect_url": full_redirect_url},
+            timeout=30,
+        )
+        return resp.text, resp.status_code, {"Content-Type": resp.headers.get("Content-Type", "text/html")}
+    except Exception as exc:
+        return jsonify({"error": f"Tidal auth callback failed: {exc}"}), 502
 
 @app.route("/auth/status")
 def auth_status():
@@ -754,6 +1076,33 @@ def api_providers_status():
         expires_at = entry.get("expires_at") if entry else None
         expired = False
         error = None
+
+        # For Tidal: check the tidal-stream sidecar directly (it manages its own session)
+        if name == "tidal":
+            import requests as req
+            try:
+                resp = req.get("http://hellodj.hellodj-service.svc.cluster.local:8801/health", timeout=3)
+                health = resp.json()
+                if health.get("status") == "ok":
+                    token_present = True
+                    expired = False
+                    error = None
+                else:
+                    expired = True
+                    error = "Tidal stream session not active"
+            except Exception:
+                pass  # Fall through to oauth.json check
+            status[name] = {
+                "configured": True,
+                "label": prov["label"],
+                "token_present": token_present,
+                "token_expired": expired,
+                "expires_at": expires_at,
+                "updated_at": entry.get("updated_at") if entry else None,
+                "refresh_error": error,
+            }
+            continue
+
         if token_present and expires_at is not None:
             try:
                 expired = now > float(expires_at)
@@ -808,8 +1157,12 @@ def api_youtube_device():
 
     async def fetch():
         async with aiohttp.ClientSession() as sess:
+            log.debug("OUT POST %s payload=%s (youtube device)",
+                      prov["auth_url"], _redact(payload))
             async with sess.post(prov["auth_url"], data=payload) as resp:
                 body = await resp.json()
+                log.debug("OUT POST %s -> status=%s body=%s",
+                          prov["auth_url"], resp.status, _redact(body))
                 return resp.status, body
 
     try:
@@ -876,8 +1229,12 @@ def api_youtube_token():
 
     async def fetch():
         async with aiohttp.ClientSession() as sess:
+            log.debug("OUT POST %s payload=%s (youtube token poll)",
+                      prov["token_url"], _redact(payload))
             async with sess.post(prov["token_url"], data=payload) as resp:
                 body = await resp.json()
+                log.debug("OUT POST %s -> status=%s body=%s",
+                          prov["token_url"], resp.status, _redact(body))
                 return resp.status, body
 
     try:
@@ -928,6 +1285,67 @@ def api_youtube_clear():
         save_oauth(oauth)
         return jsonify({"status": "ok", "message": "YouTube OAuth token cleared"})
     return jsonify({"status": "ok", "message": "No YouTube OAuth token stored"})
+
+
+@app.route("/api/youtube/potoken/generate", methods=["POST"])
+def api_youtube_potoken_generate():
+    """Generate a fresh YouTube poToken via the potoken-server service.
+
+    Calls the bgutil-ytdlp-pot-provider HTTP server running in the cluster,
+    which generates tokens on demand without memory issues.
+    """
+    import requests as http_requests
+
+    potoken_url = "http://potoken-server.hellodj-service.svc.cluster.local:4416/get_pot"
+
+    try:
+        resp = http_requests.post(potoken_url, json={}, timeout=60)
+        if resp.status_code != 200:
+            log.error("poToken server returned %d: %s", resp.status_code, resp.text[:200])
+            return jsonify({
+                "error": f"poToken server returned {resp.status_code}",
+                "detail": resp.text[:300],
+            }), 500
+
+        data = resp.json()
+        po_token = data.get("poToken", "")
+        visitor_data = data.get("contentBinding") or data.get("visitorData") or ""
+
+        if not po_token:
+            return jsonify({
+                "error": "Server returned no poToken",
+                "detail": json.dumps(data)[:200],
+            }), 500
+
+        # Store in credential store
+        try:
+            from credentials import creds
+            creds.set("youtube.pot_token", po_token)
+            if visitor_data:
+                creds.set("youtube.pot_visitor_data", visitor_data)
+        except Exception as exc:
+            log.error("Failed to store poToken in credential store: %s", exc)
+            return jsonify({"error": f"Storage failed: {exc}"}), 500
+
+        log.info("poToken generated and stored (token=%s... visitor=%s...)",
+                 po_token[:20], visitor_data[:20] if visitor_data else "none")
+        return jsonify({
+            "status": "ok",
+            "message": "poToken generated and stored",
+            "poToken": po_token[:30] + "...",
+            "visitorData": (visitor_data[:30] + "...") if visitor_data else "not provided",
+        })
+
+    except http_requests.Timeout:
+        return jsonify({"error": "poToken server timed out (60s)"}), 504
+    except http_requests.ConnectionError as exc:
+        return jsonify({
+            "error": "Cannot reach poToken server",
+            "detail": str(exc)[:200],
+        }), 503
+    except Exception as exc:
+        log.exception("poToken generation error")
+        return jsonify({"error": str(exc)}), 500
 
 # ── Metrics ────────────────────────────────────────────────
 # AI usage metrics are written by the bot to data/metrics.json on the shared
@@ -1168,10 +1586,20 @@ def api_get_config():
             "access_token": env.get("GENIUS_ACCESS_TOKEN", ""),
         },
         "tidal": {
+            "client_id": env.get("TIDAL_CLIENT_ID", ""),
+            "client_secret": env.get("TIDAL_CLIENT_SECRET", ""),
             "token": env.get("TIDAL_TOKEN", ""),
             "enabled": env.get("TIDAL_ENABLED", ""),
             "country_code": env.get("TIDAL_COUNTRY_CODE", ""),
             "search_limit": env.get("TIDAL_SEARCH_LIMIT", ""),
+        },
+        "deezer": {
+            "arl": env.get("DEEZER_ARL", ""),
+            "master_key": env.get("DEEZER_MASTER_KEY", ""),
+        },
+        "applemusic": {
+            "media_api_token": env.get("APPLE_MUSIC_MEDIA_API_TOKEN", ""),
+            "country_code": env.get("APPLE_MUSIC_COUNTRY_CODE", "US"),
         },
         "providers": {
             "youtube": env.get("PROVIDER_YOUTUBE", "true"),
@@ -1179,6 +1607,8 @@ def api_get_config():
             "soundcloud": env.get("PROVIDER_SOUNDCLOUD", "true"),
             "spotify": env.get("PROVIDER_SPOTIFY", "true"),
             "tidal": env.get("PROVIDER_TIDAL", "true"),
+            "deezer": env.get("PROVIDER_DEEZER", "true"),
+            "applemusic": env.get("PROVIDER_APPLE_MUSIC", "true"),
         },
         "voice": {
             "model_path": env.get("WAKE_WORD_MODEL_PATH", os.path.join(BASE_DIR, "models", "Hello_DJ.onnx")),
@@ -1248,6 +1678,10 @@ def api_update_config():
             env["GENIUS_ACCESS_TOKEN"] = g["access_token"]
     if "tidal" in data:
         t = data["tidal"]
+        if "client_id" in t:
+            env["TIDAL_CLIENT_ID"] = t["client_id"]
+        if "client_secret" in t:
+            env["TIDAL_CLIENT_SECRET"] = t["client_secret"]
         if "token" in t:
             env["TIDAL_TOKEN"] = t["token"]
         if "enabled" in t:
@@ -1256,6 +1690,20 @@ def api_update_config():
             env["TIDAL_COUNTRY_CODE"] = t["country_code"]
         if "search_limit" in t:
             env["TIDAL_SEARCH_LIMIT"] = str(t["search_limit"])
+
+    if "deezer" in data:
+        d = data["deezer"]
+        if "arl" in d:
+            env["DEEZER_ARL"] = str(d["arl"])
+        if "master_key" in d:
+            env["DEEZER_MASTER_KEY"] = str(d["master_key"])
+
+    if "applemusic" in data:
+        am = data["applemusic"]
+        if "media_api_token" in am:
+            env["APPLE_MUSIC_MEDIA_API_TOKEN"] = str(am["media_api_token"])
+        if "country_code" in am:
+            env["APPLE_MUSIC_COUNTRY_CODE"] = str(am["country_code"])
 
     if "providers" in data:
         p = data["providers"]
@@ -1269,6 +1717,10 @@ def api_update_config():
             env["PROVIDER_SPOTIFY"] = "true" if p["spotify"] else "false"
         if "tidal" in p:
             env["PROVIDER_TIDAL"] = "true" if p["tidal"] else "false"
+        if "deezer" in p:
+            env["PROVIDER_DEEZER"] = "true" if p["deezer"] else "false"
+        if "applemusic" in p:
+            env["PROVIDER_APPLE_MUSIC"] = "true" if p["applemusic"] else "false"
 
     if "voice" in data:
         v = data["voice"]

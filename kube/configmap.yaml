@@ -32,12 +32,8 @@ data:
         cpu: 0
 
       plugins:
-        - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
-          repository: "https://maven.lavalink.dev/releases"
-          snapshot: false
-        - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.2.0"
-          repository: "https://maven.lavalink.dev/releases"
-          snapshot: false
+        # Plugins are baked into the custom Lavalink image (youtube-plugin-sabr + lavasrc-plugin-4.8.3)
+        # No Maven downloads needed at startup.
 
     plugins:
       # youtube-source plugin config (https://github.com/lavalink-devs/youtube-source#plugin)
@@ -49,22 +45,37 @@ data:
         allowDirectVideoIds: true
         allowDirectPlaylistIds: true
         # Clients are queried in order; first that can load wins.
-        # TV is the ONLY OAuth-capable client (per the youtube-source client
-        # table) — it must be present for the OAuth refresh token to be applied.
-        # TVHTML5_SIMPLY (added in 1.18.0) is a more robust playback client.
-        # MUSIC handles search; the rest are unauthenticated fallbacks.
+        # TV is the ONLY OAuth-capable client — primary streaming with OAuth.
+        # TVHTML5_SIMPLY (added in 1.18.0) is a robust unauthenticated playback client.
+        # ANDROID_VR is another reliable unauthenticated streaming fallback.
+        # MUSIC handles search only; WEB handles metadata/playlists only.
         clients:
-          - MUSIC
           - TV
           - TVHTML5_SIMPLY
           - ANDROID_VR
+          - MUSIC
           - WEB
-          - WEBEMBEDDED
-        # Optional OAuth to reduce bot/age-restriction blocks. Fill the secret values
-        # in kube (youtube-secret) and set YOUTUBE_OAUTH_ENABLED=true.
+        clientOptions:
+          MUSIC:
+            playback: false
+            videoLoading: false
+        # OAuth — TV client uses this to appear as a normal signed-in user.
+        # The bot pushes the real token at runtime via POST /youtube; the config
+        # value here is rendered from the youtube-secret (intentionally empty at
+        # deploy time — see youtube-secret.yaml).
+        # skipInitialization: true prevents the plugin from starting a broken
+        # OAuth poller with an empty token at boot. The bot's runtime push
+        # (POST /youtube with refreshToken) properly initializes OAuth.
         oauth:
-          enabled: ${YOUTUBE_OAUTH_ENABLED}
+          enabled: true
+          skipInitialization: true
           refreshToken: "${YOUTUBE_OAUTH_REFRESH_TOKEN}"
+        # Proof-of-Origin token (poToken) — defeats YouTube bot-detection for
+        # WEB-family clients. Values pushed at runtime by the bot from the
+        # credential store or the bgutil potoken-server.
+        pot:
+          token: "${POT_TOKEN}"
+          visitorData: "${POT_VISITOR_DATA}"
         # Remote cipher server — offloads YouTube signature deciphering from the
         # plugin's local extractor (which breaks on "Must find sig function").
         # The yt-cipher service runs in the same namespace; the token is rendered
@@ -74,9 +85,14 @@ data:
           password: "${YTCIPHER_API_TOKEN}"
           userAgent: "hellodj"
       lavasrc:
+        providers:
+          - "scsearch:%QUERY%"        # SoundCloud (direct, no auth, most reliable)
+          - "ytsearch:\"%ISRC%\""     # YouTube ISRC lookup (fallback)
+          - "ytsearch:%QUERY%"        # YouTube text search (last resort)
         sources:
-          tidal: "${PROVIDER_TIDAL}"
           spotify: "${PROVIDER_SPOTIFY}"
+          tidal: "${PROVIDER_TIDAL}"
+          youtube: "${PROVIDER_YOUTUBE}"
         tidal:
           countryCode: "${TIDAL_COUNTRY_CODE}"
           searchLimit: ${TIDAL_SEARCH_LIMIT}
@@ -86,6 +102,10 @@ data:
         spotify:
           clientId: "${SPOTIFY_CLIENT_ID}"
           clientSecret: "${SPOTIFY_CLIENT_SECRET}"
+          countryCode: "US"
+          playlistLoadLimit: 6
+          albumLoadLimit: 6
+          resolveArtistsInSearch: false
 
     sources:
       youtube:

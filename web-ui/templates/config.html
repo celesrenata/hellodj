@@ -94,6 +94,14 @@
                     <input type="checkbox" class="form-check-input" id="provider-tidal">
                     <label class="form-check-label" for="provider-tidal">Tidal</label>
                 </div>
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="provider-deezer">
+                    <label class="form-check-label" for="provider-deezer">Deezer</label>
+                </div>
+                <div class="mb-3 form-check">
+                    <input type="checkbox" class="form-check-input" id="provider-applemusic">
+                    <label class="form-check-label" for="provider-applemusic">Apple Music</label>
+                </div>
             </div>
         </div>
         <div class="card mt-3">
@@ -102,16 +110,22 @@
             </div>
             <div class="card-body">
                 <div class="mb-3">
-                    <label class="form-label" for="tidal-token">Tidal Token</label>
-                    <input type="password" class="form-control" id="tidal-token" placeholder="TIDAL_TOKEN">
+                    <label class="form-label" for="tidal-client-id">Client ID</label>
+                    <input type="text" class="form-control" id="tidal-client-id" placeholder="From Tidal Developer Portal">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="tidal-client-secret">Client Secret (optional for PKCE)</label>
+                    <input type="password" class="form-control" id="tidal-client-secret" placeholder="Optional">
                 </div>
                 <div class="mb-3">
                     <label class="form-label" for="tidal-country-code">Country Code</label>
-                    <input class="form-control" id="tidal-country-code" placeholder="TIDAL_COUNTRY_CODE">
+                    <input class="form-control" id="tidal-country-code" placeholder="US">
                 </div>
                 <div class="mb-3">
-                    <label class="form-label" for="tidal-search-limit">Search Limit</label>
-                    <input type="number" class="form-control" id="tidal-search-limit" placeholder="TIDAL_SEARCH_LIMIT">
+                    <button type="button" class="btn btn-primary btn-sm" onclick="window.open('/auth/tidal/stream-login', '_blank')">
+                        <i class="bi bi-music-note"></i> Connect Tidal Account
+                    </button>
+                    <small class="text-muted d-block mt-1">Enter Client ID above, save, then click Connect to authenticate with Tidal for direct streaming.</small>
                 </div>
             </div>
         </div>
@@ -129,6 +143,12 @@
                 <div class="mb-3">
                     <label class="form-label" for="spotify-secret">Client Secret</label>
                     <input type="password" class="form-control" id="spotify-secret" placeholder="SPOTIFY_CLIENT_SECRET">
+                </div>
+                <div class="mb-3">
+                    <button type="button" class="btn btn-success btn-sm" onclick="window.open('/auth/spotify/login', '_blank')">
+                        <i class="bi bi-spotify"></i> Connect Spotify Account
+                    </button>
+                    <small class="text-muted d-block mt-1">Optional: connect your Spotify account for personalized recommendations and private playlists.</small>
                 </div>
             </div>
         </div>
@@ -173,6 +193,25 @@
         </div>
         <div class="card mt-3">
             <div class="card-header">
+                <i class="bi bi-shield-check"></i> YouTube poToken (Bot Detection Bypass)
+            </div>
+            <div class="card-body">
+                <p class="text-muted small">
+                    YouTube blocks requests it detects as bots with "Sign in to confirm you're
+                    not a bot" or "The page needs to be reloaded". A <strong>poToken</strong>
+                    (Proof of Origin) proves the request is legitimate. Click below to generate
+                    one — no browser needed.
+                </p>
+                <div class="mb-3">
+                    <button type="button" class="btn btn-success" id="potoken-generate">
+                        <i class="bi bi-lightning-charge"></i> Generate poToken
+                    </button>
+                </div>
+                <div id="potoken-status" class="mt-2 small"></div>
+            </div>
+        </div>
+        <div class="card mt-3">
+            <div class="card-header">
                 <i class="bi bi-magic"></i> Genius (Lyrics)
             </div>
             <div class="card-body">
@@ -191,6 +230,46 @@
                 <div class="mb-3">
                     <label class="form-label" for="genius-access-token">Access Token</label>
                     <input type="password" class="form-control" id="genius-access-token" placeholder="GENIUS_ACCESS_TOKEN">
+                </div>
+            </div>
+        </div>
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="bi bi-music-note-list"></i> Deezer
+            </div>
+            <div class="card-body">
+                <p class="text-muted small">
+                    Deezer requires an ARL cookie from your browser session. Log into deezer.com,
+                    open DevTools → Application → Cookies → find the "arl" cookie and paste its value here.
+                    The master decryption key enables FLAC quality (premium accounts only).
+                </p>
+                <div class="mb-3">
+                    <label class="form-label" for="deezer-arl">ARL Cookie</label>
+                    <input type="password" class="form-control" id="deezer-arl" placeholder="DEEZER_ARL">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="deezer-master-key">Master Decryption Key (optional, for FLAC)</label>
+                    <input type="password" class="form-control" id="deezer-master-key" placeholder="DEEZER_MASTER_KEY">
+                </div>
+            </div>
+        </div>
+        <div class="card mt-3">
+            <div class="card-header">
+                <i class="bi bi-apple"></i> Apple Music
+            </div>
+            <div class="card-body">
+                <p class="text-muted small">
+                    Apple Music requires a Media API Token (developer JWT). You can obtain one from
+                    the Apple Developer portal or extract it from the Apple Music web player. Alternatively,
+                    provide a MusicKit key (keyID + teamID + private key).
+                </p>
+                <div class="mb-3">
+                    <label class="form-label" for="applemusic-token">Media API Token</label>
+                    <input type="password" class="form-control" id="applemusic-token" placeholder="APPLE_MUSIC_MEDIA_API_TOKEN">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label" for="applemusic-country">Country Code</label>
+                    <input class="form-control" id="applemusic-country" placeholder="US">
                 </div>
             </div>
         </div>
@@ -378,11 +457,21 @@ async function loadConfig() {
         $('#provider-soundcloud').prop('checked', cfg.providers.soundcloud !== 'false');
         $('#provider-spotify').prop('checked', cfg.providers.spotify !== 'false');
         $('#provider-tidal').prop('checked', cfg.providers.tidal !== 'false');
+        $('#provider-deezer').prop('checked', cfg.providers.deezer !== 'false');
+        $('#provider-applemusic').prop('checked', cfg.providers.applemusic !== 'false');
     }
     if (cfg.tidal) {
-        $('#tidal-token').val(cfg.tidal.token || '');
+        $('#tidal-client-id').val(cfg.tidal.client_id || '');
+        $('#tidal-client-secret').val(cfg.tidal.client_secret || '');
         $('#tidal-country-code').val(cfg.tidal.country_code || 'US');
-        $('#tidal-search-limit').val(cfg.tidal.search_limit || '6');
+    }
+    if (cfg.deezer) {
+        $('#deezer-arl').val(cfg.deezer.arl || '');
+        $('#deezer-master-key').val(cfg.deezer.master_key || '');
+    }
+    if (cfg.applemusic) {
+        $('#applemusic-token').val(cfg.applemusic.media_api_token || '');
+        $('#applemusic-country').val(cfg.applemusic.country_code || 'US');
     }
     if (cfg.voice) {
         $('#voice-enabled').prop('checked', cfg.voice.enabled);
@@ -434,11 +523,21 @@ async function saveConfig() {
             soundcloud: $('#provider-soundcloud').prop('checked'),
             spotify: $('#provider-spotify').prop('checked'),
             tidal: $('#provider-tidal').prop('checked'),
+            deezer: $('#provider-deezer').prop('checked'),
+            applemusic: $('#provider-applemusic').prop('checked'),
         },
         tidal: {
-            token: $('#tidal-token').val(),
+            client_id: $('#tidal-client-id').val(),
+            client_secret: $('#tidal-client-secret').val(),
             country_code: $('#tidal-country-code').val(),
-            search_limit: $('#tidal-search-limit').val(),
+        },
+        deezer: {
+            arl: $('#deezer-arl').val(),
+            master_key: $('#deezer-master-key').val(),
+        },
+        applemusic: {
+            media_api_token: $('#applemusic-token').val(),
+            country_code: $('#applemusic-country').val(),
         },
         voice: {
             model_path: $('#voice-model-path').val(),
@@ -602,10 +701,42 @@ async function ytClearOAuth() {
     loadProviderStatus();
 }
 
+function generatePoToken() {
+    const status = $('#potoken-status');
+    const btn = $('#potoken-generate');
+    btn.prop('disabled', true).html('<i class="bi bi-hourglass-split"></i> Generating...');
+    status.html('<span class="text-muted">Running youtube-po-token-generator (up to 60s)...</span>');
+
+    $.ajax({
+        url: '/api/youtube/potoken/generate',
+        method: 'POST',
+        timeout: 65000,
+        success: function(data) {
+            status.html(
+                '<span class="text-success"><i class="bi bi-check-circle"></i> ' +
+                data.message + '</span><br>' +
+                '<small class="text-muted">poToken: ' + data.poToken + '<br>' +
+                'visitorData: ' + data.visitorData + '</small>'
+            );
+            btn.prop('disabled', false).html('<i class="bi bi-lightning-charge"></i> Generate poToken');
+        },
+        error: function(xhr) {
+            const err = xhr.responseJSON ? xhr.responseJSON.error : 'Request failed';
+            const detail = xhr.responseJSON ? (xhr.responseJSON.detail || '') : '';
+            status.html(
+                '<span class="text-danger"><i class="bi bi-x-circle"></i> ' + err + '</span>' +
+                (detail ? '<br><small class="text-muted">' + detail + '</small>' : '')
+            );
+            btn.prop('disabled', false).html('<i class="bi bi-lightning-charge"></i> Generate poToken');
+        }
+    });
+}
+
 $(function() {
     $('#yt-oauth-start').on('click', ytStartOAuth);
     $('#yt-oauth-poll').on('click', ytPollToken);
     $('#yt-oauth-clear').on('click', ytClearOAuth);
+    $('#potoken-generate').on('click', generatePoToken);
 });
 </script>
 {% endblock %}

@@ -40,6 +40,17 @@ data:
   # VOICE_SERVER_UPDATE for the bot itself. Set to "0" to disable after the
   # ChannelTimeoutException diagnosis is complete.
   HELLODJ_VOICE_DEBUG: "1"
+  # ── Unified debug framework (debug.py) ───────────────────
+  # Master switch for the debug framework (1=enabled, 0=disabled)
+  HELLODJ_DEBUG: "1"
+  # Comma-separated list of debug modules (* = all):
+  #   player, bot, tidal, music, voice_cmd, session, radio, stream,
+  #   filters, autoplay, audio_pipeline, wakeword, stt, tts, intent, query
+  HELLODJ_DEBUG_MODULES: "*"
+  # Minimum debug output level (DEBUG, INFO, WARNING)
+  HELLODJ_DEBUG_LEVEL: "DEBUG"
+  # Ultra-verbose function entry/exit tracing (0=off, 1=on)
+  HELLODJ_DEBUG_TRACE: "0"
   # ── Music providers (non-secret enable toggles; credentials in hellodj-secret) ─
   PROVIDER_YOUTUBE: "true"
   PROVIDER_YOUTUBEMUSIC: "true"
@@ -76,3 +87,13 @@ data:
   # STEM_MODEL selects a separation model (e.g. demucs or an ONNX path).
   # When unset, /stems falls back to whichever backend is importable.
   STEM_MODEL: ""
+  # ── Direct stream services (sidecars in same pod) ──────────────────
+  # These bypass YouTube mirroring for Spotify/Tidal by streaming audio
+  # directly from those services using Premium account credentials.
+  TIDAL_STREAM_URL: "http://localhost:8801"
+  SPOTIFY_STREAM_URL: "http://localhost:8802"
+  # ── PoToken server (bgutil-ytdlp-pot-provider, in-cluster) ────────
+  # The bot periodically fetches fresh poTokens from this service and pushes
+  # them to Lavalink. Default refresh interval: 3600s (1 hour).
+  POTOKEN_SERVER_URL: "http://potoken-server.hellodj-service.svc.cluster.local:4416"
+  POTOKEN_REFRESH_INTERVAL: "3600"

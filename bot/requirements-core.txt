@@ -2,6 +2,7 @@ discord.py[voice]
 wavelink>=3.5.0
 python-dotenv
 aiohttp
+cryptography>=42.0.0
 
 # Voice activation - core/light deps (no torch/transformers/spacy)
 discord-ext-voice-recv>=0.5.2a179

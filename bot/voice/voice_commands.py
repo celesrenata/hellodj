@@ -20,8 +20,10 @@ from .intent import classify_intent, intent_to_string
 from .stt import STTEngine
 from .tts import TTSEngine, TTSPLayer
 from .query_handler import QueryHandler
+from debug import get_debug_logger
 
 log = logging.getLogger(__name__)
+dbg = get_debug_logger("voice_cmd")
 
 # ── confirmation keywords ─────────────────────────────────────────────────
 

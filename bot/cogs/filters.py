@@ -78,8 +78,10 @@ import wavelink
 import player
 import sounds
 import stems
+from debug import get_debug_logger
 
 log = logging.getLogger(__name__)
+dbg = get_debug_logger("filters")
 
 
 # ── server-side verification helpers ──────────────────────────────────────

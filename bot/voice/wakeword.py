@@ -12,8 +12,10 @@ import numpy as np
 import onnxruntime as ort
 
 import metrics as _metrics
+from debug import get_debug_logger
 
 log = logging.getLogger(__name__)
+dbg = get_debug_logger("wakeword")
 
 
 def _record_wakeword() -> None:

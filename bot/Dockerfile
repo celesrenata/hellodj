@@ -27,7 +27,7 @@ COPY requirements-ai.txt .
 RUN pip install --no-cache-dir -r requirements-ai.txt
 
 # Copy source
-COPY bot.py metrics.py player.py oauth_store.py session.py storage.py blacklist.py allowlist.py guild_settings.py guild_policy.py permissions.py voice_debug.py sounds.py whosampled.py tidal.py file_handler.py sleep_settings.py artist_info.py stems.py ./
+COPY bot.py metrics.py player.py oauth_store.py session.py storage.py blacklist.py allowlist.py guild_settings.py guild_policy.py permissions.py voice_debug.py sounds.py whosampled.py tidal.py file_handler.py sleep_settings.py artist_info.py stems.py debug.py stream_resolver.py credentials.py config.py migrate_to_db.py render_lavalink_config.py ./
 COPY cogs/ ./cogs/
 COPY voice/ ./voice/
 

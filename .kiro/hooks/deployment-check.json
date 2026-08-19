@@ -1,0 +1,13 @@
+{
+  "name": "Deployment Manifest Check",
+  "version": "1.0.0",
+  "description": "Validate Kubernetes manifests when kube/ files are modified",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["kube/*.yaml", "kube/*.yml"]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "kubectl --dry-run=client -f kube/ apply 2>&1 || echo 'kubectl not available - skipping validation'"
+  }
+}

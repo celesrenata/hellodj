@@ -1,0 +1,13 @@
+{
+  "name": "Lint Python on Save",
+  "version": "1.0.0",
+  "description": "Run Python syntax check when bot Python files are saved",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["bot/**/*.py"]
+  },
+  "then": {
+    "type": "runCommand",
+    "command": "cd bot && python3 -c \"import ast, pathlib, sys; errors=[]; [errors.append(f'{f}: {e}') for f in pathlib.Path('.').rglob('*.py') if '__pycache__' not in str(f) for e in [None] if not (lambda p: (ast.parse(p.read_text()), True)[-1])(f)]; sys.exit(1) if errors else print('All Python files OK')\""
+  }
+}

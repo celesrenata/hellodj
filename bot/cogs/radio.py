@@ -29,8 +29,10 @@ import wavelink
 from wavelink import Playable, TrackSource
 
 import player
+from debug import get_debug_logger
 
 log = logging.getLogger(__name__)
+dbg = get_debug_logger("radio")
 
 # Browser-ish User-Agent so the public JSON APIs don't reject the request.
 _USER_AGENT = (

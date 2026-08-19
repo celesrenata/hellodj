@@ -38,7 +38,10 @@ import time
 
 import aiohttp
 
+from debug import get_debug_logger
+
 log = logging.getLogger(__name__)
+dbg = get_debug_logger("tidal")
 
 # ── Tidal API endpoints (verified against the Tidal Web API reference) ─────
 AUTH_URL = "https://auth.tidal.com/v1/oauth2/token"
@@ -80,8 +83,9 @@ class TidalClient:
         # Primary names are TD_CLIENT_ID / TD_CLIENT_SECRET (task spec). The
         # deployed bot also exposes TIDAL_CLIENT_ID / TIDAL_CLIENT_SECRET (used
         # by Lavalink + web-ui), so accept those as aliases too.
-        self.client_id = client_id or os.getenv("TD_CLIENT_ID") or os.getenv("TIDAL_CLIENT_ID", "")
-        self.client_secret = client_secret or os.getenv("TD_CLIENT_SECRET") or os.getenv("TIDAL_CLIENT_SECRET", "")
+        from config import cfg
+        self.client_id = client_id or cfg("tidal.td_client_id", "") or cfg("tidal.client_id", "")
+        self.client_secret = client_secret or cfg("tidal.td_client_secret", "") or cfg("tidal.client_secret", "")
         self.token_ttl_buffer = token_ttl_buffer
         self._access_token: str | None = None
         self._expires_at: float = 0.0
@@ -215,6 +219,8 @@ class TidalClient:
         ``{id, title, artist, album, duration, url, thumbnail}``.
         Raises ``TidalError`` on API failure; never returns a partial list.
         """
+        dbg.event("search_start", query=query, limit=limit)
+        t0 = time.monotonic()
         params = {
             "query": query,
             "types": "TRACKS",
@@ -230,6 +236,8 @@ class TidalClient:
             norm = self._normalize_track(item)
             if norm:
                 results.append(norm)
+        dbg.event("search_complete", query=query, results=len(results),
+                  elapsed_ms=(time.monotonic() - t0) * 1000)
         log.info("tidal: search %r returned %d track(s)", query, len(results))
         return results
 
@@ -248,10 +256,13 @@ class TidalClient:
         as a hard error, so the cog can fall back to audio playback + a YouTube
         link.
         """
+        dbg.event("video_lookup_start", track_id=track_id)
+        t0 = time.monotonic()
         try:
             video = await self._get(TRACK_VIDEO_URL.format(track_id=track_id))
         except TidalError as exc:
             if "not found" in str(exc).lower() or "404" in str(exc):
+                dbg.info("track %s has no video resource (404)", track_id)
                 log.info("tidal: track %s has no video resource — no video available", track_id)
                 return None
             log.warning("tidal: video lookup for track %s failed: %s", track_id, exc)
@@ -259,19 +270,24 @@ class TidalClient:
 
         video_id = video.get("id")
         if not video_id:
+            dbg.warning("track %s video response had no id, payload=%r", track_id, video)
             log.warning("tidal: track %s video response had no id", track_id)
             return None
 
         try:
             stream = await self._get(VIDEO_STREAM_URL.format(video_id=video_id))
         except TidalError as exc:
+            dbg.error("video stream fetch failed video_id=%s error=%s", video_id, exc)
             log.warning("tidal: video stream for %s failed: %s", video_id, exc)
             return None
 
         url = stream.get("url") or stream.get("streamUrl")
         if not url:
+            dbg.info("video %s has no playable url, stream_keys=%r", video_id, list(stream.keys()))
             log.info("tidal: video %s has no playable url", video_id)
             return None
+        dbg.event("video_lookup_complete", track_id=track_id, video_id=video_id,
+                  elapsed_ms=(time.monotonic() - t0) * 1000)
         log.info("tidal: track %s video url resolved (video_id=%s)", track_id, video_id)
         return url
 

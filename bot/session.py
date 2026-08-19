@@ -15,7 +15,10 @@ import logging
 import os
 from datetime import datetime, timezone
 
+from debug import get_debug_logger
+
 log = logging.getLogger(__name__)
+dbg = get_debug_logger("session")
 
 SESSIONS_FILE = "data/sessions.json"
 
@@ -77,6 +80,9 @@ async def save_guild(
     tune_enabled: bool = False,
 ) -> None:
     """Snapshot a guild's live playback state to disk."""
+    dbg.event("save_guild", gid=gid, queue_len=len(queue),
+              source_provider=source_provider, repeat_mode=repeat_mode,
+              auto_resume=auto_resume, current_title=current.get("title") if current else None)
     async with _lock:
         _data[str(gid)] = {
             "voice_channel_id": voice_channel_id,

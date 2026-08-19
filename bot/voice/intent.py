@@ -10,7 +10,10 @@ import logging
 import os
 import re
 
+from debug import get_debug_logger
+
 log = logging.getLogger(__name__)
+dbg = get_debug_logger("intent")
 
 # ── keyword patterns ──────────────────────────────────────────────────────
 
@@ -49,6 +52,7 @@ def classify_intent(transcript: str) -> dict:
         args: dict — parsed arguments (e.g. {"song": "..."})
     """
     transcript = transcript.strip().lower()
+    dbg.event("classify_start", transcript=transcript[:100])
 
     # ── 1. Admin check (most important — security-sensitive) ──────
     admin_match = _match_admin(transcript)

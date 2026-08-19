@@ -3,3 +3,5 @@ flask-cors>=4.0
 python-dotenv>=1.0
 aiohttp>=3.9
 gunicorn>=21.2
+requests>=2.31
+cryptography>=42.0.0

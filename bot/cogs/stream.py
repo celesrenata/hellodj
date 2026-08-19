@@ -47,6 +47,9 @@ from discord.ext import commands
 
 import player
 import tidal
+from debug import get_debug_logger
+
+dbg = get_debug_logger("stream")
 
 log = logging.getLogger(__name__)
 

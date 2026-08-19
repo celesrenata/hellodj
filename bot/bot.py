@@ -25,8 +25,13 @@ import permissions
 import voice_debug
 import file_handler
 import guild_policy as _guild_policy
+from debug import get_debug_logger, log_debug_config
 
 load_dotenv()
+dbg = get_debug_logger("bot")
+
+# ── Configuration: unified accessor (credential store + env fallback) ──
+from config import cfg
 
 # ── Logging: console + rotating file under /app/config (NFS shared) ──
 def _setup_logging():
@@ -72,9 +77,9 @@ bot = commands.Bot(command_prefix="!", intents=intents)
 
 # ── Lavalink config ────────────────────────────────────────
 
-LAVALINK_HOST = os.getenv("LAVALINK_HOST", "losingtime.dpaste.org")
-LAVALINK_PORT = int(os.getenv("LAVALINK_PORT", "2124"))
-LAVALINK_PASSWORD = os.getenv("LAVALINK_PASSWORD", "SleepingOnTrains")
+LAVALINK_HOST = cfg("lavalink.host", "losingtime.dpaste.org")
+LAVALINK_PORT = cfg.int("lavalink.port", 2124)
+LAVALINK_PASSWORD = cfg("lavalink.password", "SleepingOnTrains")
 LAVALINK_URI = f"http://{LAVALINK_HOST}:{LAVALINK_PORT}"
 
 # ── YouTube poToken (Proof of Origin) ───────────────────────
@@ -84,13 +89,10 @@ LAVALINK_URI = f"http://{LAVALINK_HOST}:{LAVALINK_PORT}"
 # WEB-family clients. Generate a fresh token via
 # https://github.com/iv-org/youtube-trusted-session-generator and set these env
 # vars (bot-configmap / docker-compose). Blank values disable the push.
-POT_TOKEN = os.getenv("POT_TOKEN", "")
-POT_VISITOR_DATA = os.getenv("POT_VISITOR_DATA", "")
-
 # ── Spotify credentials (optional) ─────────────────────────
 
-SPOTIFY_CLIENT_ID = os.getenv("SPOTIFY_CLIENT_ID", "")
-SPOTIFY_CLIENT_SECRET = os.getenv("SPOTIFY_CLIENT_SECRET", "")
+SPOTIFY_CLIENT_ID = cfg("spotify.client_id", "")
+SPOTIFY_CLIENT_SECRET = cfg("spotify.client_secret", "")
 
 # ── Guild blacklist / allowlist / settings (shared with cogs/admin.py) ───
 
@@ -152,32 +154,62 @@ async def connect_lavalink():
     # Push any stored YouTube OAuth refresh token to the youtube-source plugin.
     # The plugin's REST endpoint (/youtube) is served by Lavalink's own Spring
     # server on the same port, authenticated with the Lavalink password.
-    await push_youtube_oauth()
+    # Retry up to 5 times with 2s delay — the NFS mount may not have the
+    # oauth.json file visible yet on a fresh pod start.
+    for _oauth_attempt in range(1, 6):
+        pushed = await push_youtube_oauth()
+        if pushed:
+            break
+        dbg.debug("youtube-oauth push attempt %d: no token yet, retrying in 2s", _oauth_attempt)
+        await asyncio.sleep(2)
+
+    # After pushing OAuth, give Lavalink time to exchange the refresh token for
+    # an access token (Google token endpoint round-trip). Without this wait, the
+    # session resume fires immediately and tracks fail because the TV client's
+    # access token hasn't been obtained yet. 5 seconds covers the typical 1-2s
+    # token exchange plus network variance.
+    if pushed:
+        log.info("youtube-oauth: waiting 5s for Lavalink to exchange refresh token for access token")
+        await asyncio.sleep(5)
+
     # Push the optional poToken/visitorData (Proof of Origin) to the same
     # endpoint. poToken defeats YouTube bot-detection for the non-OAuth
     # WEB-family clients and complements OAuth (TV). Blank values are a no-op.
     await push_youtube_pot()
 
+    # Refresh Tidal token at startup (it expires every ~6 hours)
+    await refresh_tidal_token()
+
 
 async def push_youtube_oauth() -> bool:
-    """Push the stored YouTube OAuth refresh token to Lavalink's youtube-source.
+    """Push YouTube OAuth + poToken to Lavalink in a SINGLE request.
 
-    The youtube-source plugin (dev.lavalink.youtube:youtube-plugin:1.18.2)
-    authenticates YouTube requests with an OAuth refresh token supplied via its
-    REST endpoint ``POST /youtube`` with JSON ``{"refreshToken": ..., "skipInitialization": false}``.
-    The web-ui stores the token in ``data/oauth.json`` (providers.youtube.refresh_token)
-    via its device flow; this shares the same NFS data mount.
-
-    Returns True when a token was pushed successfully, False otherwise (no token
-    stored, or a push failure). Never raises.
+    The youtube-source plugin's POST /youtube replaces ALL fields each call,
+    so we must send both refreshToken AND poToken together.
     """
-    token = oauth_store.get_youtube_refresh_token()
-    if not token:
-        log.info("youtube-oauth: no stored refresh token — skipping push to Lavalink")
+    token = cfg("youtube.oauth_refresh_token") or cfg("youtube.refresh_token") or oauth_store.get_youtube_refresh_token()
+    pot_token = cfg("youtube.pot_token", "")
+    pot_visitor_data = cfg("youtube.pot_visitor_data", "")
+
+    if not token and not pot_token:
+        log.info("youtube-oauth: no refresh token or poToken — skipping push")
         return False
 
+    # Keep DB in sync if token came from oauth.json fallback
+    if token:
+        from credentials import creds as _creds
+        if token != (_creds.get("youtube.oauth_refresh_token") or ""):
+            _creds.set("youtube.oauth_refresh_token", token)
+            _creds.set("youtube.refresh_token", token)
+
     url = f"{LAVALINK_URI}/youtube"
-    payload = {"refreshToken": token, "skipInitialization": False}
+    payload = {"skipInitialization": False}
+    if token:
+        payload["refreshToken"] = token
+    if pot_token and pot_visitor_data:
+        payload["poToken"] = pot_token
+        payload["visitorData"] = pot_visitor_data
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
@@ -188,88 +220,183 @@ async def push_youtube_oauth() -> bool:
             ) as resp:
                 body = await resp.text()
                 if resp.status in (200, 204):
+                    parts = []
+                    if token:
+                        parts.append("oauth")
+                    if pot_token:
+                        parts.append("poToken")
                     log.info(
-                        "youtube-oauth: pushed refresh token to Lavalink %s (status=%s) body=%s",
-                        url, resp.status, body,
+                        "youtube-auth: pushed %s to Lavalink %s (status=%s)",
+                        "+".join(parts), url, resp.status,
                     )
                     return True
                 log.warning(
-                    "youtube-oauth: Lavalink push failed (status=%s) body=%s",
+                    "youtube-auth: Lavalink push failed (status=%s) body=%s",
                     resp.status, body,
                 )
     except Exception as exc:
-        log.warning("youtube-oauth: push to Lavalink failed: %s", exc)
+        log.warning("youtube-auth: push to Lavalink failed: %s", exc)
     return False
 
 
 async def push_youtube_pot() -> bool:
-    """Push the optional YouTube poToken/visitorData (Proof of Origin) to Lavalink.
+    """Now a no-op — push_youtube_oauth sends both together."""
+    return True
 
-    The youtube-source plugin's ``POST /youtube`` endpoint accepts a ``poToken``
-    + ``visitorData`` pair to defeat YouTube's bot-detection for the non-OAuth
-    WEB-family clients (WEB, WEBEMBEDDED, TVHTML5_SIMPLY) — the errors "Sign in
-    to confirm you're not a bot" / "The page needs to be reloaded" /
-    "No supported audio streams available" seen in the live log. It complements
-    OAuth (which only benefits the TV client). Per the plugin docs, poToken and
-    OAuth are mutually exclusive per-request, so this push sets ``refreshToken``
-    to ``"x"`` to leave the OAuth token untouched.
 
-    Values come from the POT_TOKEN / POT_VISITOR_DATA env vars. Blank values are
-    a no-op (returns False). Never raises.
+# ── PoToken auto-refresh from bgutil server ─────────────────
+# The bgutil-ytdlp-pot-provider HTTP server (deployed at potoken-server:4416)
+# generates fresh Proof-of-Origin tokens on demand. This task periodically
+# fetches a new token, stores it in the credential store, and re-pushes
+# to Lavalink so the WEB-family clients stay authenticated.
+
+POTOKEN_SERVER_URL = os.environ.get(
+    "POTOKEN_SERVER_URL",
+    "http://potoken-server.hellodj-service.svc.cluster.local:4416",
+)
+POTOKEN_REFRESH_INTERVAL = int(os.environ.get("POTOKEN_REFRESH_INTERVAL", "3600"))  # 1 hour
+
+
+async def fetch_and_push_potoken() -> bool:
+    """Fetch a fresh poToken from the bgutil server and push to Lavalink.
+
+    The bgutil server's POST /get_pot endpoint generates a BotGuard challenge
+    response (poToken) and returns it alongside the visitorData (content_binding).
+    We store these in the credential store and then re-push the full YouTube
+    auth payload (OAuth + poToken) to Lavalink in a single request.
     """
-    if not POT_TOKEN or not POT_VISITOR_DATA:
-        log.info("youtube-pot: no poToken configured — skipping push to Lavalink")
+    try:
+        async with aiohttp.ClientSession() as session:
+            # Request a new poToken; omit content_binding to let the server
+            # generate its own visitor_data.
+            async with session.post(
+                f"{POTOKEN_SERVER_URL}/get_pot",
+                json={},
+                timeout=aiohttp.ClientTimeout(total=30),
+            ) as resp:
+                if resp.status != 200:
+                    body = await resp.text()
+                    log.warning(
+                        "potoken-refresh: bgutil server returned %s: %s",
+                        resp.status, body[:200],
+                    )
+                    return False
+                data = await resp.json()
+
+        po_token = data.get("poToken", "")
+        visitor_data = data.get("contentBinding", "")
+
+        if not po_token or not visitor_data:
+            log.warning("potoken-refresh: empty poToken or contentBinding in response")
+            return False
+
+        # Persist to credential store
+        from credentials import creds as _creds
+        _creds.set("youtube.pot_token", po_token)
+        _creds.set("youtube.pot_visitor_data", visitor_data)
+
+        log.info(
+            "potoken-refresh: stored new poToken (len=%d) + visitorData (len=%d)",
+            len(po_token), len(visitor_data),
+        )
+
+        # Re-push full auth payload (OAuth + poToken) to Lavalink
+        pushed = await push_youtube_oauth()
+        if pushed:
+            log.info("potoken-refresh: successfully pushed new poToken to Lavalink")
+        return pushed
+
+    except aiohttp.ClientConnectorError:
+        log.debug("potoken-refresh: bgutil server not reachable (service may not be deployed)")
+        return False
+    except Exception as exc:
+        log.warning("potoken-refresh: failed: %s", exc)
         return False
 
-    url = f"{LAVALINK_URI}/youtube"
-    payload = {
-        "refreshToken": "x",  # do not update OAuth; poToken only
-        "skipInitialization": False,
-        "poToken": POT_TOKEN,
-        "visitorData": POT_VISITOR_DATA,
-    }
+
+_potoken_task_started = False
+
+
+async def _potoken_refresh_task() -> None:
+    """Background task: refresh poToken from bgutil server periodically."""
+    # Initial delay — give the cluster time to start the potoken-server pod
+    await asyncio.sleep(30)
+    # Try an immediate fetch at startup
+    await fetch_and_push_potoken()
+    while True:
+        await asyncio.sleep(POTOKEN_REFRESH_INTERVAL)
+        try:
+            await fetch_and_push_potoken()
+        except Exception:
+            log.exception("potoken-refresh: task iteration error")
+
+
+async def refresh_tidal_token() -> bool:
+    """Refresh the Tidal access token using the stored refresh token and client_id.
+
+    Writes the new access token back to the credential store and updates
+    tidal.expires_at. Returns True on success.
+    """
+    import time as _time
+    from credentials import creds as _creds
+
+    refresh_token = cfg("tidal.refresh_token", "")
+    client_id = cfg("tidal.client_id", "")
+    if not refresh_token or not client_id:
+        return False
+
+    # Check if token is still valid (with 5 min buffer)
+    expires_at = float(cfg("tidal.expires_at", "0") or "0")
+    if expires_at > _time.time() + 300:
+        return True  # Still valid
+
     try:
         async with aiohttp.ClientSession() as session:
             async with session.post(
-                url,
-                json=payload,
-                headers={"Authorization": LAVALINK_PASSWORD},
+                "https://auth.tidal.com/v1/oauth2/token",
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                    "client_id": client_id,
+                },
                 timeout=aiohttp.ClientTimeout(total=15),
             ) as resp:
-                body = await resp.text()
-                if resp.status in (200, 204):
-                    log.info(
-                        "youtube-pot: pushed poToken to Lavalink %s (status=%s) body=%s",
-                        url, resp.status, body,
-                    )
+                if resp.status != 200:
+                    body = await resp.text()
+                    log.warning("tidal-refresh: failed (status=%s): %s", resp.status, body[:200])
+                    return False
+                data = await resp.json()
+                new_access = data.get("access_token", "")
+                new_refresh = data.get("refresh_token", "")
+                expires_in = data.get("expires_in", 86400)
+                if new_access:
+                    _creds.set("tidal.access_token", new_access)
+                    _creds.set("tidal.api_token", new_access)
+                    _creds.set("tidal.expires_at", str(_time.time() + expires_in))
+                    if new_refresh:
+                        _creds.set("tidal.refresh_token", new_refresh)
+                    log.info("tidal-refresh: token refreshed (expires_in=%s)", expires_in)
                     return True
-                log.warning(
-                    "youtube-pot: Lavalink push failed (status=%s) body=%s",
-                    resp.status, body,
-                )
+                log.warning("tidal-refresh: no access_token in response")
+                return False
     except Exception as exc:
-        log.warning("youtube-pot: push to Lavalink failed: %s", exc)
-    return False
+        log.warning("tidal-refresh: failed: %s", exc)
+        return False
 
 
-async def _youtube_oauth_watchdog() -> None:
-    """Periodically re-push the stored YouTube OAuth refresh token to Lavalink.
-
-    The web-ui device flow writes providers.youtube.refresh_token into
-    data/oauth.json at an arbitrary time. This loop re-reads it and pushes it to
-    Lavalink's youtube-source REST endpoint so a token stored while the bot is
-    running is applied without a restart.
-    """
-    interval = int(os.getenv("YOUTUBE_OAUTH_PUSH_INTERVAL", "60"))
+async def _token_refresh_watchdog() -> None:
+    """Periodically refresh Tidal + Spotify tokens and re-push YouTube auth."""
+    interval = 300  # every 5 minutes
     while True:
         await asyncio.sleep(interval)
         try:
-            token = oauth_store.get_youtube_refresh_token()
-            if token:
-                await push_youtube_oauth()
-            # poToken/visitorData are static env values; re-push on each tick so
-            # a value set while the bot runs is applied without a restart.
-            await push_youtube_pot()
+            await refresh_tidal_token()
+            await push_youtube_oauth()
+        except Exception:
+            log.exception("token-refresh: watchdog iteration error")
+        await asyncio.sleep(interval)
+        try:
+            await push_youtube_oauth()
         except Exception:
             log.exception("youtube-oauth: watchdog iteration error")
 
@@ -285,6 +412,8 @@ async def disconnect_lavalink():
 # ── setup hook ─────────────────────────────────────────────
 
 async def setup_hook():
+    log_debug_config()
+    dbg.info("setup_hook: loading data stores...")
     storage.load()
     session.load()
     oauth_store.load_oauth()
@@ -295,12 +424,15 @@ async def setup_hook():
     _sleep_settings.load()
     _metrics.load()
     _guild_policy.load()
+    dbg.info("setup_hook: all data stores loaded")
 
     # Clean up old uploaded files (default 24h) on startup.
     file_handler.cleanup_old_files()
 
     # Connect to Lavalink
+    dbg.info("setup_hook: connecting to Lavalink at %s:%s", LAVALINK_HOST, LAVALINK_PORT)
     await connect_lavalink()
+    dbg.info("setup_hook: Lavalink connected successfully")
 
     # Load custom cogs
     await bot.load_extension("cogs.music")
@@ -337,12 +469,11 @@ async def permission_check(interaction: discord.Interaction) -> bool:
     gid = interaction.guild.id
     uid = interaction.user.id
 
-    # Guild authorization gate: refuse to operate on servers where no bot
-    # administrator is a member (see guild_policy.py).
+    # Guild approval gate: only approved guilds can use commands.
     if not await _guild_policy.is_authorized(gid):
         await interaction.response.send_message(
-            "This server isn't authorized — no HelloDJ administrator is a member. "
-            "Ask a HelloDJ admin to join before using it.",
+            "⏳ This server is pending approval by a HelloDJ administrator. "
+            "Commands are disabled until approved.",
             ephemeral=True,
         )
         return False
@@ -537,12 +668,17 @@ async def on_ready():
     if not _resumed:
         _resumed = True
         await _resume_sessions()
-    # Start the YouTube OAuth periodic re-push so a token stored via the web-ui
-    # device flow is applied to Lavalink without a bot restart.
+    # Start the token refresh watchdog (Tidal refresh + YouTube push + Spotify)
     if not _yt_oauth_task_started:
         _yt_oauth_task_started = True
-        bot.loop.create_task(_youtube_oauth_watchdog())
-        log.info("youtube-oauth: periodic re-push watchdog started")
+        bot.loop.create_task(_token_refresh_watchdog())
+        log.info("token-refresh: watchdog started (tidal + youtube + spotify)")
+    # Start the poToken auto-refresh from bgutil server (hourly)
+    global _potoken_task_started
+    if not _potoken_task_started:
+        _potoken_task_started = True
+        bot.loop.create_task(_potoken_refresh_task())
+        log.info("potoken-refresh: background task started (interval=%ds)", POTOKEN_REFRESH_INTERVAL)
     # Start the periodic guild-authorization re-check so the policy stays
     # current as admins join/leave guilds while the bot runs.
     if not _guild_policy_task_started:
@@ -694,37 +830,52 @@ async def on_message(message: discord.Message):
 # and periodically so the policy stays current as admins join/leave.
 
 async def _leave_unauthorized_guild(guild: discord.Guild) -> None:
-    """Politely notify and leave a guild that has no bot-administrator member."""
+    """Politely notify and leave a guild that is denied."""
     gid = int(guild.id)
-    # Try to send a polite explanation first (best-effort; may fail if the bot
-    # cannot message in any channel).
     try:
         system_channel = getattr(guild, "system_channel", None)
         if system_channel is not None and system_channel.permissions_for(guild.me).send_messages:
             await system_channel.send(
-                "HelloDJ left this server because no HelloDJ administrator is a "
-                "member. Ask a HelloDJ admin to join before re-inviting."
+                "HelloDJ is not approved for this server. "
+                "A HelloDJ administrator must approve it via the admin portal."
             )
     except Exception as exc:
         log.info("guild_policy: could not notify guild %s before leave: %s", gid, exc)
 
     try:
         await guild.leave()
-        log.warning("HelloDJ left unauthorized guild %s (%s)", guild.name, gid)
+        log.warning("HelloDJ left denied guild %s (%s)", guild.name, gid)
     except Exception as exc:
         log.error("guild_policy: could not leave guild %s (%s): %s", guild.name, gid, exc)
 
 
-async def _recheck_guilds() -> None:
-    """Re-check every guild the bot is in against admin membership.
+async def _notify_pending_guild(guild: discord.Guild) -> None:
+    """Notify a guild that it's pending approval."""
+    try:
+        system_channel = getattr(guild, "system_channel", None)
+        if system_channel is not None and system_channel.permissions_for(guild.me).send_messages:
+            await system_channel.send(
+                "👋 HelloDJ has joined but is **pending approval**. "
+                "A HelloDJ administrator must approve this server via the admin portal. "
+                "If not approved within 24 hours, HelloDJ will leave automatically.\n\n"
+                "Commands are disabled until approved."
+            )
+    except Exception:
+        pass
 
-    Any guild whose membership check now fails is marked unauthorized and left.
-    Runs at startup (on_ready) and periodically (watchdog).
+
+async def _recheck_guilds() -> None:
+    """Re-check every guild the bot is in.
+
+    - Approved guilds stay as-is.
+    - Pending guilds are left alone (watchdog handles expiry).
+    - Denied guilds are left.
+    - Unknown guilds (no entry) get set to pending.
     """
     for guild in list(bot.guilds):
         try:
-            authorized = await _guild_policy.check_guild(guild)
-            if not authorized:
+            status = await _guild_policy.check_guild(guild)
+            if status == "denied":
                 await _leave_unauthorized_guild(guild)
         except Exception as exc:
             log.error("guild_policy: recheck failed for guild %s (%s): %s",
@@ -732,11 +883,12 @@ async def _recheck_guilds() -> None:
 
 
 async def _guild_policy_watchdog() -> None:
-    """Periodically re-check guild authorization (admins join/leave over time)."""
-    interval = int(os.getenv("GUILD_POLICY_RECHECK_INTERVAL", "3600"))
+    """Periodically expire pending guilds and re-check denied ones."""
+    interval = 3600  # every hour
     while True:
         await asyncio.sleep(interval)
         try:
+            await _guild_policy.expire_pending_guilds(bot)
             await _recheck_guilds()
         except Exception:
             log.exception("guild_policy: watchdog iteration error")
@@ -746,9 +898,12 @@ async def _guild_policy_watchdog() -> None:
 async def on_guild_join(guild: discord.Guild):
     log.info("HelloDJ joined guild %s (%s)", guild.name, guild.id)
     try:
-        authorized = await _guild_policy.check_guild(guild)
-        if not authorized:
+        status = await _guild_policy.check_guild(guild)
+        if status == "pending":
+            await _notify_pending_guild(guild)
+        elif status == "denied":
             await _leave_unauthorized_guild(guild)
+        # "approved" -> do nothing, bot is welcome
     except Exception as exc:
         log.error("guild_policy: join check failed for guild %s (%s): %s",
                   guild.name, guild.id, exc)
@@ -792,6 +947,12 @@ async def on_wavelink_track_start(payload: wavelink.TrackStartEventPayload):
     if wv_player is None:
         return
     guild_id = int(wv_player.guild.id)
+    dbg.event("track_start", guild_id=guild_id,
+              title=getattr(track, "title", None),
+              uri=getattr(track, "uri", None),
+              author=getattr(track, "author", None),
+              length=getattr(track, "length", None),
+              source=getattr(track, "source", None))
     await player.on_track_start(guild_id, wv_player, track)
 
 
@@ -803,6 +964,9 @@ async def on_wavelink_track_end(payload: wavelink.TrackEndEventPayload):
     if wv_player is None:
         return
     guild_id = int(wv_player.guild.id)
+    dbg.event("track_end", guild_id=guild_id,
+              title=getattr(track, "title", None),
+              reason=reason)
     await player.on_track_end(guild_id, wv_player, track, reason)
 
 
@@ -814,15 +978,19 @@ async def on_wavelink_track_exception(payload: wavelink.TrackExceptionEventPaylo
     if wv_player is None:
         return
     guild_id = int(wv_player.guild.id)
+    dbg.event("track_exception", guild_id=guild_id,
+              title=getattr(track, "title", None),
+              exception=str(exception))
     await player.on_track_exception(guild_id, wv_player, track, exception)
 
 
 # ── main ───────────────────────────────────────────────────
 
-token = os.getenv("DISCORD_TOKEN")
+token = cfg("discord.token")
 if not token:
     raise SystemExit(
-        "DISCORD_TOKEN is not set. Copy .env.example to .env and add your bot token."
+        "discord.token is not set in the credential store. "
+        "Run migrate_to_db.py or set it via the web UI."
     )
 
 bot.run(token)

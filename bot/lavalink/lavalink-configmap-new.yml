@@ -1,0 +1,134 @@
+# Lavalink configuration for HelloDJ
+# Deployed as sidecar alongside the Discord bot
+
+lavalink:
+  server:
+    host: "0.0.0.0"
+    port: 2333
+    password: "youshallnotpass"
+    pluginsDir: "./plugins"
+    # The legacy built-in YouTube source is deprecated and breaks against current
+    # YouTube. We use the maintained youtube-source plugin instead, so disable it.
+    sources:
+      youtube: false
+  buffer:
+    period: 500
+    periodMilliseconds: 500
+  limits:
+    memory: 0
+    cpu: 0
+
+  plugins:
+    - dependency: "dev.lavalink.youtube:youtube-plugin:1.18.2"
+      repository: "https://maven.lavalink.dev/releases"
+      snapshot: false
+    - dependency: "com.github.topi314.lavasrc:lavasrc-plugin:4.8.3"
+      repository: "https://maven.lavalink.dev/releases"
+      snapshot: false
+
+plugins:
+  # youtube-source plugin config (https://github.com/lavalink-devs/youtube-source#plugin)
+  # NOTE: this plugin does NOT support the built-in source's `email`/`password`
+  # keys — auth is done via OAuth refreshToken (see oauth block below).
+  youtube:
+    enabled: true
+    allowSearch: true
+    allowDirectVideoIds: true
+    allowDirectPlaylistIds: true
+    # Clients are queried in order; first that can load wins.
+    # TV is the ONLY OAuth-capable client (per the youtube-source client
+    # table) — it must be present for the OAuth refresh token to be applied.
+    # TVHTML5_SIMPLY (added in 1.18.0) is a more robust playback client.
+    # MUSIC handles search; the rest are unauthenticated fallbacks.
+    clients:
+      - TV
+      - TVHTML5_SIMPLY
+      - ANDROID_VR
+      - MUSIC
+      - WEB
+    # TV uses OAuth — primary streaming client.
+    # TVHTML5_SIMPLY and ANDROID_VR are unauthenticated streaming fallbacks.
+    # MUSIC is search-only. WEB is video/playlist loading only (no playback).
+    # TV has OAuth and handles both loading + playback.
+    # MUSIC is search-only. WEB handles metadata/playlists.
+    clientOptions:
+      MUSIC:
+        playback: false
+        videoLoading: false
+      WEB:
+        playback: false
+    # Optional OAuth to reduce bot/age-restriction blocks. Fill the secret values
+    # in kube (youtube-secret) and set YOUTUBE_OAUTH_ENABLED=true.
+    oauth:
+      enabled: ${YOUTUBE_OAUTH_ENABLED}
+      refreshToken: "${YOUTUBE_OAUTH_REFRESH_TOKEN}"
+    # Remote cipher server — offloads YouTube signature deciphering from the
+    # plugin's local extractor (which breaks on "Must find sig function").
+    # The yt-cipher service runs in the same namespace; the token is rendered
+    # from yt-cipher-secret by the init container.
+    remoteCipher:
+      url: "http://yt-cipher.hellodj-service.svc.cluster.local:8001"
+      password: "${YTCIPHER_API_TOKEN}"
+      userAgent: "hellodj"
+  lavasrc:
+    providers:
+      - "scsearch:%QUERY%"        # SoundCloud (direct, no auth, most reliable)
+      - "ytsearch:\"%ISRC%\""     # YouTube ISRC lookup (fallback)
+      - "ytsearch:%QUERY%"        # YouTube text search (last resort)
+    sources:
+      spotify: "${PROVIDER_SPOTIFY}"
+      tidal: "${PROVIDER_TIDAL}"
+      youtube: "${PROVIDER_YOUTUBE}"
+    tidal:
+      countryCode: "${TIDAL_COUNTRY_CODE}"
+      searchLimit: ${TIDAL_SEARCH_LIMIT}
+      clientId: "${TIDAL_CLIENT_ID}"
+      clientSecret: "${TIDAL_CLIENT_SECRET}"
+      token: "${TIDAL_TOKEN}"
+    spotify:
+      clientId: "${SPOTIFY_CLIENT_ID}"
+      clientSecret: "${SPOTIFY_CLIENT_SECRET}"
+      countryCode: "US"
+      playlistLoadLimit: 6
+      albumLoadLimit: 6
+      resolveArtistsInSearch: false
+
+sources:
+  youtube:
+    enabled: ${PROVIDER_YOUTUBE}
+  youtubemusic:
+    enabled: ${PROVIDER_YOUTUBEMUSIC}
+  soundcloud:
+    enabled: ${PROVIDER_SOUNDCLOUD}
+  spotify:
+    enabled: ${PROVIDER_SPOTIFY}  # Uses global app credentials; per-user OAuth is a later feature
+
+filters:
+  enabled: true
+  # All core Lavalink v4 DSP filters used by the bot's filter commands. The
+  # config keys match Lavalink's filterConfigs.kt / FilterChain.kt schema.
+  # NOTE: highPass/freqShift are Lavaplayer *plugin* filters, not part of the
+  # core filters block — so they are intentionally not listed here.
+  volume:
+    enabled: true
+  equalizer:
+    enabled: true
+  karaoke:
+    enabled: true      # /filter stems isolate vocals (instrumental)
+  timescale:
+    enabled: true      # /filter nightcore, vaporwave, 8bit
+  tremolo:
+    enabled: true      # /filter 8bit (arcade warbling)
+  vibrato:
+    enabled: true      # /filter 8bit (retro vibrato)
+  distortion:
+    enabled: true      # /filter 8bit (square-wave grit)
+  rotation:
+    enabled: true      # /filter 8d
+  lowPass:
+    enabled: true      # low-pass smoothing (used by legacy presets)
+  channelMix:
+    enabled: true
+
+server:
+  port: 2333

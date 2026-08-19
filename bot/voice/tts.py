@@ -19,8 +19,10 @@ import wave
 import numpy as np
 
 import metrics as _metrics
+from debug import get_debug_logger
 
 log = logging.getLogger(__name__)
+dbg = get_debug_logger("tts")
 
 
 def _record_tts(engine: str, chars: int) -> None:
@@ -49,17 +51,13 @@ class TTSEngine:
     """
 
     def __init__(self, engine: str | None = None):
-        self._engine = engine or os.getenv("TTS_ENGINE", "kokoro")
+        from config import cfg
+        self._engine = engine or cfg("tts.engine", "kokoro")
         self._model = None
-        # Backward compat: SPEACHES_URL / KOKORO_URL == *_ENDPOINT equivalents.
-        self._speaches_url = os.getenv("SPEACHES_URL", "") or os.getenv(
-            "TTS_SPEACHES_ENDPOINT", ""
-        )
-        self._kokoro_url = os.getenv("KOKORO_URL", "") or os.getenv(
-            "TTS_KOKORO_ENDPOINT", ""
-        )
-        self._api_key = os.getenv("TTS_API_KEY", "")
-        self._voice = os.getenv("TTS_VOICE", "af_heart")
+        self._speaches_url = cfg("tts.speaches_url", "") or cfg("tts.speaches_endpoint", "")
+        self._kokoro_url = cfg("tts.kokoro_url", "") or cfg("tts.kokoro_endpoint", "")
+        self._api_key = cfg("tts.api_key", "")
+        self._voice = cfg("tts.voice", "af_heart")
 
     def _ensure_model(self):
         if self._model is not None:
@@ -101,16 +99,16 @@ class TTSEngine:
             else:
                 # bedrock: AWS Polly backend.
                 self._model = BedrockTTSEngine(
-                    voice_id=os.getenv("POLLY_VOICE_ID", "Joanna"),
-                    output_format=os.getenv("POLLY_OUTPUT_FORMAT", "mp3"),
-                    region=os.getenv("AWS_REGION", ""),
-                    role_arn=os.getenv("AWS_ROLE_ARN", ""),
+                    voice_id=cfg("polly.voice_id", "Joanna"),
+                    output_format=cfg("polly.output_format", "mp3"),
+                    region=cfg("aws.region", ""),
+                    role_arn=cfg("aws.role_arn", ""),
                 )
                 log.info(
                     "bedrock TTS engine configured via Polly "
                     "(voice=%s, format=%s)",
-                    os.getenv("POLLY_VOICE_ID", "Joanna"),
-                    os.getenv("POLLY_OUTPUT_FORMAT", "mp3"),
+                    cfg("polly.voice_id", "Joanna"),
+                    cfg("polly.output_format", "mp3"),
                 )
         else:
             log.error("Unknown TTS engine '%s' — TTS disabled", self._engine)
@@ -352,8 +350,9 @@ class BedrockTTSEngine:
     ):
         self.voice_id = voice_id
         self.output_format = output_format
-        self._region = region or os.getenv("AWS_REGION", "us-east-1")
-        self._role_arn = role_arn or os.getenv("AWS_ROLE_ARN", "")
+        from config import cfg
+        self._region = region or cfg("aws.region", "us-east-1")
+        self._role_arn = role_arn or cfg("aws.role_arn", "")
         self._session = None
         self._client = None
 

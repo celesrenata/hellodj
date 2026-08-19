@@ -41,6 +41,9 @@ import artist_info
 import guild_settings as _guild_settings
 import sleep_settings as _sleep_settings
 import file_handler
+from debug import get_debug_logger
+
+dbg = get_debug_logger("music")
 
 
 # ── Duration parser (for /sleep) ──────────────────────────
@@ -174,14 +177,31 @@ class SearchSelectView(discord.ui.View):
 
         options = []
         for i, info in enumerate(results):
-            title = (info.get("title") or "Unknown")[:100]
+            artist = (info.get("author") or "").strip()
+            song = (info.get("title") or "Unknown").strip()
+            album = (info.get("album") or "").strip()
             duration = info.get("duration") or 0
-            # duration is in milliseconds (wavelink Playable.length)
             total_secs = int(duration) // 1000
             mins, secs = divmod(total_secs, 60)
-            uploader = (info.get("uploader") or "")[:50]
-            desc = f"{uploader} • {mins}:{secs:02d}" if uploader else f"{mins}:{secs:02d}"
-            options.append(discord.SelectOption(label=title, value=str(i), description=desc[:100]))
+
+            # Clean up YouTube "Topic" channels: "Artist - Topic" -> "Artist"
+            if artist.endswith(" - Topic"):
+                artist = artist[:-8].strip()
+
+            # Label: song title (max 100 chars)
+            label = song[:100]
+
+            # Description: "by Artist — 3:15" or "by Artist • Album — 3:15"
+            parts = []
+            if artist:
+                parts.append(f"by {artist}")
+            if album:
+                parts.append(album)
+            time_str = f"{mins}:{secs:02d}"
+            desc = " • ".join(parts) + f" — {time_str}" if parts else time_str
+            desc = desc[:100]
+
+            options.append(discord.SelectOption(label=label, value=str(i), description=desc))
 
         select = discord.ui.Select(placeholder="Choose a song…", options=options)
         select.callback = self._on_select
@@ -536,20 +556,10 @@ class RemoteControlView(discord.ui.View):
             return
 
         if choice == "equalizer":
-            # Apply a gentle default EQ preset via the dropdown.
-            gains = [0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
-            bands = [{"band": i, "gain": g} for i, g in enumerate(gains)]
-            filters.equalizer.set(bands=bands)
-            filters.timescale.reset()
-            filters.rotation.reset()
-            filters.low_pass.reset()
-            await p.set_filters(filters)
-            state = player.get_state(self.guild_id)
-            state["filters"]["equalizer"] = {"gains": gains}
-            player.persist(self.guild_id)
-            await interaction.response.send_message(
-                "HelloDJ equalizer applied (flat preset).", ephemeral=True
-            )
+            from cogs.equalizer_view import EqualizerView, _build_eq_embed
+            eq_view = EqualizerView(self.guild_id)
+            embed = _build_eq_embed(eq_view.gains, eq_view.selected_band)
+            await interaction.response.send_message(embed=embed, view=eq_view, ephemeral=True)
             return
 
         await interaction.response.send_message(f"Unknown filter: {choice}", ephemeral=True)
@@ -849,8 +859,9 @@ class Music(commands.Cog):
                     duration_ms = info.get("duration") or 0
                     await player.add_track(state, interaction.guild.id, info)
                     p = player.get_player(interaction.guild.id)
+
+                    # Respond to the interaction IMMEDIATELY (before slow resolve)
                     if p and p.connected and not p.playing and not p.paused:
-                        await player._play_next_from_queue(interaction.guild.id)
                         embed = discord.Embed(
                             title="✅ Selected & playing",
                             description=f"**{title}**",
@@ -865,7 +876,7 @@ class Music(commands.Cog):
                         embed.add_field(name="🎚️ Position", value="Now playing", inline=True)
                     else:
                         queue_len = len(state["queue"])
-                        pos = queue_len  # index after append (1-based)
+                        pos = queue_len
                         time_to_play_ms = 0
                         if p and p.playing:
                             remaining = max(0, int(p.current.length or 0) - int(p.position or 0))
@@ -894,6 +905,19 @@ class Music(commands.Cog):
                             inline=False,
                         )
                     await picker.response.edit_message(embed=embed, view=None)
+
+                    # Start playback AFTER responding (can be slow for Spotify)
+                    if p and p.connected and not p.playing and not p.paused:
+                        await player._play_next_from_queue(interaction.guild.id)
+                    elif p and not p.connected:
+                        vc = state.get("voice_channel")
+                        if vc:
+                            try:
+                                new_player = await player.connect_player(vc)
+                                state["player"] = new_player
+                                await player._play_next_from_queue(interaction.guild.id)
+                            except Exception as exc:
+                                log.error("on_pick reconnect failed: %s", exc)
 
                 view = SearchSelectView(results, interaction.user.id, on_pick)
                 prompt = f"Select a {label}:"
@@ -941,6 +965,33 @@ class Music(commands.Cog):
         p = player.get_player(guild_id)
         if p and p.connected and not p.playing and not p.paused:
             await player._play_next_from_queue(guild_id)
+        elif p and not p.connected:
+            # Player exists but lost connection — re-evaluate state. Log for
+            # diagnosis so we can catch the race condition.
+            log.warning(
+                "_start_if_idle: player exists but not connected (guild=%s "
+                "connected=%s playing=%s paused=%s) — attempting reconnect & play",
+                guild_id, p.connected, p.playing, p.paused,
+            )
+            state = player.get_state(guild_id)
+            vc = state.get("voice_channel")
+            if vc:
+                try:
+                    new_player = await player.connect_player(vc)
+                    state["player"] = new_player
+                    await player._play_next_from_queue(guild_id)
+                except Exception as exc:
+                    log.error("_start_if_idle reconnect failed guild=%s: %s", guild_id, exc)
+        else:
+            # Log the state so we can diagnose why playback didn't start.
+            log.info(
+                "_start_if_idle: skipping (guild=%s p=%s connected=%s playing=%s paused=%s)",
+                guild_id,
+                p is not None,
+                getattr(p, "connected", None) if p else None,
+                getattr(p, "playing", None) if p else None,
+                getattr(p, "paused", None) if p else None,
+            )
 
     async def _play_url_flow(self, interaction: discord.Interaction, url: str, *, allow_playlist: bool = False) -> None:
         """Resolve a direct URL (track/video) or playlist and queue it."""
@@ -1002,7 +1053,16 @@ class Music(commands.Cog):
             state = player.get_state(interaction.guild.id)
             provider = state.get("source_provider", "youtube")
 
-            result = await Playable.search(query, source=TrackSource.YouTube)
+            # Use the configured provider's source for search; URLs are
+            # handled natively by Lavalink (lavasrc intercepts Spotify URLs).
+            source_map = {
+                "youtube": TrackSource.YouTube,
+                "youtube_music": TrackSource.YouTubeMusic,
+                "soundcloud": TrackSource.SoundCloud,
+                "spotify": "spsearch",
+            }
+            source = source_map.get(provider, TrackSource.YouTube)
+            result = await Playable.search(query, source=source)
 
             if isinstance(result, wavelink.Playlist):
                 tracks = result.tracks
@@ -1047,7 +1107,14 @@ class Music(commands.Cog):
             state = player.get_state(interaction.guild.id)
             provider = state.get("source_provider", "youtube")
 
-            result = await Playable.search(query, source=TrackSource.YouTube)
+            source_map = {
+                "youtube": TrackSource.YouTube,
+                "youtube_music": TrackSource.YouTubeMusic,
+                "soundcloud": TrackSource.SoundCloud,
+                "spotify": "spsearch",
+            }
+            source = source_map.get(provider, TrackSource.YouTube)
+            result = await Playable.search(query, source=source)
 
             if isinstance(result, wavelink.Playlist):
                 tracks = result.tracks
@@ -1099,7 +1166,12 @@ class Music(commands.Cog):
 
     @app_commands.command(name="start", description="Alias for /resume")
     async def start(self, interaction: discord.Interaction):
-        await self.resume(interaction)
+        player_obj = player.get_player(interaction.guild.id)
+        if player_obj and player_obj.paused:
+            await player_obj.pause(False)
+            await interaction.response.send_message("HelloDJ resumed.")
+        else:
+            await interaction.response.send_message("HelloDJ: Nothing is paused.")
 
     # ── Skip ────────────────────────────────────────────────
 
@@ -1114,7 +1186,12 @@ class Music(commands.Cog):
 
     @app_commands.command(name="next", description="Alias for /skip")
     async def next_cmd(self, interaction: discord.Interaction):
-        await self.skip(interaction)
+        player_obj = player.get_player(interaction.guild.id)
+        if player_obj and (player_obj.playing or player_obj.paused):
+            await player_obj.stop()
+            await interaction.response.send_message("HelloDJ skipped.")
+        else:
+            await interaction.response.send_message("HelloDJ: Nothing to skip.")
 
     # ── Stop / Clear ────────────────────────────────────────
 
@@ -1192,11 +1269,11 @@ class Music(commands.Cog):
 
     @app_commands.command(name="list", description="Alias for /queue (paginated)")
     async def list_cmd(self, interaction: discord.Interaction):
-        await self.queue_cmd(interaction, "paginated")
+        await self.queue_cmd.callback(self, interaction, "paginated")
 
     @app_commands.command(name="q", description="Alias for /queue (simple)")
     async def q_cmd(self, interaction: discord.Interaction):
-        await self.queue_cmd(interaction, "simple")
+        await self.queue_cmd.callback(self, interaction, "simple")
 
     # ── Now playing ─────────────────────────────────────────
 
@@ -1329,7 +1406,7 @@ class Music(commands.Cog):
     @app_commands.command(name="delete", description="Alias for /remove")
     @app_commands.describe(index="Track number to delete (1-based)")
     async def delete(self, interaction: discord.Interaction, index: int):
-        await self.remove(interaction, index)
+        await self.remove.callback(self, interaction, index)
 
     # ── Move ────────────────────────────────────────────────
 
@@ -1434,15 +1511,15 @@ class Music(commands.Cog):
 
     @app_commands.command(name="fuckoff", description="Disconnect HelloDJ from voice (alias for /leave)")
     async def fuckoff(self, interaction: discord.Interaction):
-        await self.leave(interaction)
+        await self.leave.callback(self, interaction)
 
     @app_commands.command(name="l", description="Alias for /leave")
     async def l_cmd(self, interaction: discord.Interaction):
-        await self.leave(interaction)
+        await self.leave.callback(self, interaction)
 
     @app_commands.command(name="disconnect", description="Alias for /leave")
     async def disconnect(self, interaction: discord.Interaction):
-        await self.leave(interaction)
+        await self.leave.callback(self, interaction)
 
     # ── /remote control panel ───────────────────────────────
 
@@ -1457,22 +1534,24 @@ class Music(commands.Cog):
             return
         state = player.get_state(interaction.guild.id)
         current = state.get("current")
-        msg = state.get("now_playing_msg")
+        old_msg = state.get("now_playing_msg")
         view = player.NowPlayingView(interaction.guild.id)
         embed = player.build_now_playing_embed_from_entry(current) if current else discord.Embed(
             title="🎵 HelloDJ — Now Playing",
             description="Nothing is playing yet. Use /play to start a song — the buttons below will control it.",
             colour=discord.Colour.blurple(),
         ).set_footer(text="HelloDJ — Use the buttons below to control playback")
-        if msg:
+
+        # Delete the old remote panel if it exists
+        if old_msg:
             try:
-                await msg.edit(embed=embed, view=view)
-                await interaction.response.send_message("🎛️ Remote panel refreshed.", ephemeral=True)
-                return
-            except discord.NotFound:
+                await old_msg.delete()
+            except (discord.NotFound, discord.HTTPException):
                 pass
-        msg = await interaction.response.send_message(embed=embed, view=view, ephemeral=False)
-        state["now_playing_msg"] = msg
+
+        # Send a fresh one
+        await interaction.response.send_message(embed=embed, view=view)
+        state["now_playing_msg"] = await interaction.original_response()
 
     # ── /sleep auto-leave ───────────────────────────────────
 

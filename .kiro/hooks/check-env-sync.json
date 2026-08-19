@@ -1,0 +1,13 @@
+{
+  "name": "Check .env.example Sync",
+  "version": "1.0.0",
+  "description": "When bot code uses os.getenv with a new variable, remind to add it to .env.example",
+  "when": {
+    "type": "fileEdited",
+    "patterns": ["bot/**/*.py"]
+  },
+  "then": {
+    "type": "askAgent",
+    "prompt": "A Python file in bot/ was edited. If any new os.getenv() calls were added, check that the corresponding environment variable is documented in bot/.env.example with a comment explaining what it does and where to get the value. Only flag this if a genuinely new env var was introduced."
+  }
+}

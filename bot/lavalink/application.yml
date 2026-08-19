@@ -38,15 +38,24 @@ plugins:
     # Clients are queried in order; first that can load wins.
     # TV is the ONLY OAuth-capable client (per the youtube-source client
     # table) — it must be present for the OAuth refresh token to be applied.
-    # TVHTML5_SIMPLY (added in 1.18.0) is a more robust playback client.
-    # MUSIC handles search; the rest are unauthenticated fallbacks.
+    # TVHTML5_SIMPLY (added in 1.18.0) is a robust unauthenticated fallback.
+    # ANDROID_VR is another reliable unauthenticated playback client.
+    # MUSIC handles search only; WEB handles video/playlist loading only.
     clients:
-      - MUSIC
       - TV
       - TVHTML5_SIMPLY
       - ANDROID_VR
+      - MUSIC
       - WEB
-      - WEBEMBEDDED
+    # TV has OAuth — primary streaming client. TVHTML5_SIMPLY and ANDROID_VR
+    # are unauthenticated streaming fallbacks when OAuth/TV fails.
+    # MUSIC is search-only. WEB is load/search-only (no playback).
+    clientOptions:
+      MUSIC:
+        playback: false
+        videoLoading: false
+      WEB:
+        playback: false
     # Optional OAuth to reduce bot/age-restriction blocks. Fill the secret values
     # in kube (youtube-secret) and set YOUTUBE_OAUTH_ENABLED=true.
     oauth:
@@ -73,9 +82,16 @@ plugins:
       password: "${YTCIPHER_API_TOKEN}"
       userAgent: "hellodj"
   lavasrc:
+    providers:
+      # SoundCloud first — no bot-detection, most reliable for streaming.
+      # YouTube is currently blocking all clients for format loading (mid-2026).
+      - "scsearch:%QUERY%"      # SoundCloud (reliable, no auth needed)
+      - "ytsearch:\"%ISRC%\""   # YouTube ISRC lookup (fallback)
+      - "ytsearch:%QUERY%"      # YouTube text search (last resort)
     sources:
-      tidal: "${PROVIDER_TIDAL}"
       spotify: "${PROVIDER_SPOTIFY}"
+      tidal: "${PROVIDER_TIDAL}"
+      youtube: "${PROVIDER_YOUTUBE}"
     tidal:
       countryCode: "${TIDAL_COUNTRY_CODE}"
       searchLimit: ${TIDAL_SEARCH_LIMIT}
@@ -85,6 +101,9 @@ plugins:
     spotify:
       clientId: "${SPOTIFY_CLIENT_ID}"
       clientSecret: "${SPOTIFY_CLIENT_SECRET}"
+      countryCode: "US"
+      playlistLoadLimit: 6
+      albumLoadLimit: 6
 
 sources:
   youtube:

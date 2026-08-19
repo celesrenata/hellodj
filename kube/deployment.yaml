@@ -135,13 +135,28 @@ spec:
                 secretKeyRef:
                   name: yt-cipher-secret
                   key: API_TOKEN
+            # ── YouTube poToken (Proof of Origin) ──────────────────────
+            # Pushed at runtime by the bot, but also rendered into config for
+            # plugin initialization. Empty values are inert.
+            - name: POT_TOKEN
+              valueFrom:
+                configMapKeyRef:
+                  name: hellodj-bot-config
+                  key: POT_TOKEN
+                  optional: true
+            - name: POT_VISITOR_DATA
+              valueFrom:
+                configMapKeyRef:
+                  name: hellodj-bot-config
+                  key: POT_VISITOR_DATA
+                  optional: true
           command:
             - /bin/sh
             - -c
             - |
               set -e
               cp /cfg/application.yml /out/application.yml
-              for v in TIDAL_COUNTRY_CODE TIDAL_SEARCH_LIMIT TIDAL_CLIENT_ID TIDAL_CLIENT_SECRET TIDAL_TOKEN SPOTIFY_CLIENT_ID SPOTIFY_CLIENT_SECRET PROVIDER_YOUTUBE PROVIDER_YOUTUBEMUSIC PROVIDER_SOUNDCLOUD PROVIDER_SPOTIFY PROVIDER_TIDAL YOUTUBE_OAUTH_ENABLED YOUTUBE_OAUTH_REFRESH_TOKEN YTCIPHER_API_TOKEN; do
+              for v in TIDAL_COUNTRY_CODE TIDAL_SEARCH_LIMIT TIDAL_CLIENT_ID TIDAL_CLIENT_SECRET TIDAL_TOKEN SPOTIFY_CLIENT_ID SPOTIFY_CLIENT_SECRET PROVIDER_YOUTUBE PROVIDER_YOUTUBEMUSIC PROVIDER_SOUNDCLOUD PROVIDER_SPOTIFY PROVIDER_TIDAL YOUTUBE_OAUTH_ENABLED YOUTUBE_OAUTH_REFRESH_TOKEN YTCIPHER_API_TOKEN POT_TOKEN POT_VISITOR_DATA; do
                 val=$(eval echo \${$v})
                 sed -i "s|\${$v}|$val|g" /out/application.yml
               done
@@ -165,6 +180,11 @@ spec:
                 secretKeyRef:
                   name: hellodj-secret
                   key: DISCORD_TOKEN
+            - name: HELLODJ_DB_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-db-key
+                  key: HELLODJ_DB_KEY
             - name: DISCORD_APPID
               valueFrom:
                 secretKeyRef:
@@ -282,8 +302,8 @@ spec:
 
         # ── Lavalink sidecar ───────────────────────────────────────
         - name: lavalink
-          image: ghcr.io/lavalink-devs/lavalink:latest
-          imagePullPolicy: IfNotPresent
+          image: registry.celestium.life/hellodj/lavalink:sabr-2026-08-19
+          imagePullPolicy: Always
           ports:
             - containerPort: 2333
               name: lavalink
@@ -359,8 +379,88 @@ spec:
               name: lavalink-config-rendered
               readOnly: true
               subPath: application.yml
-            - mountPath: /opt/Lavalink/plugins/
-              name: lavalink-plugins
+
+        # ── Tidal stream sidecar ───────────────────────────────────
+        # Direct audio streaming from Tidal via tidalapi.
+        # Reads OAuth tokens from /app/data/oauth.json (shared with bot + web-ui).
+        - name: tidal-stream
+          image: registry.celestium.life/hellodj/tidal-stream:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8801
+              name: tidal-stream
+              protocol: TCP
+          env:
+            - name: DATA_DIR
+              value: /app/data
+            - name: TIDAL_STREAM_PORT
+              value: "8801"
+            - name: TIDAL_QUALITY
+              value: high_lossless
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: tidal-stream
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: tidal-stream
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - mountPath: /app/data
+              name: hellodj-data
+
+        # ── Spotify stream sidecar ─────────────────────────────────
+        # Direct audio streaming from Spotify via librespot-python.
+        # Decrypts audio in real-time and serves as HTTP stream.
+        - name: spotify-stream
+          image: registry.celestium.life/hellodj/spotify-stream:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8802
+              name: spotify-stream
+              protocol: TCP
+          env:
+            - name: DATA_DIR
+              value: /app/data
+            - name: SPOTIFY_STREAM_PORT
+              value: "8802"
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: "1"
+              memory: 512Mi
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: spotify-stream
+            periodSeconds: 30
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: spotify-stream
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          volumeMounts:
+            - mountPath: /app/data
+              name: hellodj-data
 
       volumes:
         - name: hellodj-data
@@ -379,8 +479,6 @@ spec:
             name: lavalink-config
           name: lavalink-config-src
         - name: lavalink-config-rendered
-          emptyDir: {}
-        - name: lavalink-plugins
           emptyDir: {}
         - name: hellodj-models
           persistentVolumeClaim:
