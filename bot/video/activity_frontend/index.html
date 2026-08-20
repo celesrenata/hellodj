@@ -1,0 +1,27 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>HelloDJ Video</title>
+    <link rel="stylesheet" href="/activity/static/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@1"></script>
+    <script src="https://unpkg.com/@discord/embedded-app-sdk/dist/index.js"></script>
+</head>
+<body>
+    <div id="app">
+        <video id="player" autoplay></video>
+
+        <div id="overlay" class="overlay">
+            <span id="video-title"></span>
+            <span id="video-duration"></span>
+        </div>
+
+        <div id="error-overlay" class="error-overlay" hidden>
+            <p id="error-message">An error occurred during playback.</p>
+        </div>
+    </div>
+
+    <script src="/activity/static/app.js" defer></script>
+</body>
+</html>

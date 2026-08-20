@@ -18,6 +18,13 @@ spec:
     - host: hellodj.celestium.life
       http:
         paths:
+          - path: /activity/
+            pathType: Prefix
+            backend:
+              service:
+                name: hellodj
+                port:
+                  number: 8090
           - path: /
             pathType: Prefix
             backend:

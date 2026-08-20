@@ -18,6 +18,10 @@ spec:
       port: 2333
       protocol: TCP
       targetPort: lavalink
+    - name: activity
+      port: 8090
+      protocol: TCP
+      targetPort: activity
   selector:
     app.kubernetes.io/instance: hellodj
     app.kubernetes.io/name: hellodj
