@@ -61,8 +61,8 @@ def _build_eq_display(gains: list[float], selected_band: int) -> str:
     block font. To compensate, we pad each block char with fewer spaces than
     the ASCII indicator/label rows. The result looks aligned on Discord.
     """
-    # Bars: block chars are ~1.5x wide, so use 2 spaces between them
-    bars = "  ".join(_gain_to_block(g) for g in gains)
+    # Bars: block chars render wider than ASCII in Discord, pad with 2 spaces
+    bars = " " + "  ".join(_gain_to_block(g) for g in gains)
 
     # Indicator: ASCII chars, use 3-char wide slots to match visual width
     indicator = "".join(" ▲ " if i == selected_band else " · " for i in range(BAND_COUNT))
