@@ -40,7 +40,8 @@ Before starting any validation run, confirm:
 
 | # | Command / Action | Expected Result | Pass/Fail | Notes |
 |---|------------------|-----------------|-----------|-------|
-| 4 | `/album <query>` | Queues full album (tracks resolved from artist/album search) | - [ ] | Requires artist_info/whosampled resolution |
+| 4 | `/album <url>` | URL loads directly, queues all tracks from the album | - [ ] | Spotify/Tidal/YouTube album URLs |
+| 4a | `/album <search query>` | Shows dropdown with albums (artist, year, track count, duration), selection queues all tracks | - [ ] | Searches across configured provider + fallbacks |
 
 ### `/remove`
 
@@ -210,6 +211,27 @@ Before starting any validation run, confirm:
 |---|------------------|-----------------|-----------|-------|
 | 44 | `/filter reset` | Clears all active filters, returns to normal playback | - [ ] | |
 
+### Now-Playing Filter Dropdown
+
+| # | Command / Action | Expected Result | Pass/Fail | Notes |
+|---|------------------|-----------------|-----------|-------|
+| 44a | Select "Bass Boost" from NP dropdown | Bass boost applied, ephemeral confirmation | - [ ] | |
+| 44b | Select "Nightcore" from NP dropdown | Nightcore applied | - [ ] | |
+| 44c | Select "8D Audio" from NP dropdown | 8D rotation applied | - [ ] | |
+| 44d | Select "Vaporwave" from NP dropdown | Vaporwave effect applied | - [ ] | |
+| 44e | Select "Tune (Enhanced)" from NP dropdown | Tune toggled on/off | - [ ] | |
+| 44f | Select "Equalizer" from NP dropdown | Opens interactive 10-band EQ (ephemeral) | - [ ] | |
+| 44g | Select "Reset Filters" from NP dropdown | All filters cleared | - [ ] | |
+
+### Equalizer View
+
+| # | Command / Action | Expected Result | Pass/Fail | Notes |
+|---|------------------|-----------------|-----------|-------|
+| 44h | EQ preset dropdown (Bass Boost, V-Shape, etc.) | Preset gains applied, display updates | - [ ] | |
+| 44i | ◀/▶ band navigation buttons | Selected band changes, indicator moves | - [ ] | |
+| 44j | ▲/▼ gain adjustment buttons | Selected band gain changes, bar updates | - [ ] | |
+| 44k | EQ display alignment | Bars, dots, and labels align visually in Discord | - [ ] | |
+
 ---
 
 ## 9. Discord Commands — Guild Restriction / Permissions
@@ -358,6 +380,17 @@ Before starting any validation run, confirm:
 |---|------------------|-----------------|-----------|-------|
 | 81 | Request track unavailable on Tidal | Bot falls back to YouTube and plays | - [ ] | tidal.py fallback |
 
+### Tidal v2 Direct Streaming
+
+| # | Command / Action | Expected Result | Pass/Fail | Notes |
+|---|------------------|-----------------|-----------|-------|
+| 81a | Play Tidal track with source=tidal | Direct stream resolves via tidal-stream sidecar (fMP4 HLS) | - [ ] | stream_resolver.py → localhost:8801 |
+| 81b | Now-playing embed shows correct title | Entry metadata used, not "Unknown title" from HLS track | - [ ] | |
+| 81c | Now-playing embed shows correct artist | Entry metadata used, not "Unknown artist" | - [ ] | |
+| 81d | Now-playing embed shows correct duration | Entry duration (e.g. 3:14), not Long.MAX_VALUE | - [ ] | _DURATION_MAX_MS guard |
+| 81e | Progress bar updates during Tidal playback | Position advances, bar fills correctly | - [ ] | Uses entry duration for total |
+| 81f | Tidal search returns artist + duration | LavasRC v2 enriches search with individual track fetches | - [ ] | |
+
 ### Cloud STT / TTS Engines
 
 | # | Command / Action | Expected Result | Pass/Fail | Notes |
@@ -423,5 +456,10 @@ Before starting any validation run, confirm:
 - [ ] Guild restriction policy
 - [ ] YouTube age-restricted playback fix
 - [ ] Tidal → YouTube fallback
+- [ ] Tidal v2 direct streaming (fMP4 HLS via sidecar)
+- [ ] Now-playing display (correct title/artist/duration for HLS streams)
+- [ ] Now-playing filter/EQ dropdown
+- [ ] Equalizer view (10-band, presets, display alignment)
+- [ ] Album selection dropdown (artist, year, track count, duration)
 - [ ] Cloud STT/TTS engines
 - [ ] Allowlist/blacklist in restrictive & allow_all modes
