@@ -69,7 +69,7 @@ spec:
         # refreshed Tidal tokens) directly from the encrypted SQLite DB.
         # This ensures Lavalink always starts with current tokens.
         - name: render-lavalink-config
-          image: registry.celestium.life/hellodj/bot:spotify-fix-2026-08-19
+          image: registry.celestium.life/hellodj/bot:tidal-v2-2026-08-19
           imagePullPolicy: Always
           env:
             - name: HELLODJ_DB_KEY
