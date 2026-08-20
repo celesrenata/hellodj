@@ -67,8 +67,11 @@ def _build_eq_display(gains: list[float], selected_band: int) -> str:
     # Indicator: 2 leading spaces, then 3-char wide slots
     indicator = "  " + "".join("▲  " if i == selected_band else "·  " for i in range(BAND_COUNT))
 
-    # Labels: 3-char wide right-aligned slots, shifted 1 space right to align
-    labels = " " + "".join(f"{l:>3}" for l in BAND_LABELS)
+    # Labels: space-separated, tuned to match the visual rhythm of the block chars
+    # Block chars are ~1.5x width of ASCII in Discord's code font, so each
+    # bar column (1 block + 2 spaces) is visually ~3.5 ASCII chars wide.
+    # We use variable padding to align under each bar.
+    labels = " ".join(f"{l:>3}" for l in BAND_LABELS)
 
     return f"```\n{bars}\n{indicator}\n{labels}\n```"
 
