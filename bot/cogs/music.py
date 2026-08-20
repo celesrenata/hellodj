@@ -1241,6 +1241,15 @@ class Music(commands.Cog):
         if provider == "spotify":
             search_queries.append(("spsearch", f"spsearch:{query}", "spotify"))
         elif provider == "tidal":
+            # Use the direct Tidal v2 album search for accurate results
+            import tidal as _tidal_mod
+            try:
+                tidal_albums = await _tidal_mod.search_albums(query, limit=10)
+                if tidal_albums:
+                    return tidal_albums
+            except Exception as exc:
+                log.debug("Tidal direct album search failed: %s", exc)
+            # Fall back to track-based grouping
             search_queries.append(("tidal", f"tdsearch:{query}", "tidal"))
         elif provider == "youtube_music":
             search_queries.append(("ytmsearch", f"ytmsearch:{query} album", "youtube_music"))
@@ -1387,10 +1396,6 @@ class Music(commands.Cog):
             ]
             if filtered:
                 results = filtered
-                continue
-
-            if len(results) >= 10:
-                break
 
         return results[:10]
 

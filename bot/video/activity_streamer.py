@@ -14,9 +14,13 @@ import shutil
 import time
 import uuid
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 from video import StreamState, VideoSource
 from video.hls_transcode import HLSTranscodePipeline, Resolution, _HLS_BASE_DIR
+
+if TYPE_CHECKING:
+    from video.ws_hub import WebSocketHub
 
 log = logging.getLogger(__name__)
 
@@ -52,7 +56,9 @@ class ActivityStreamer:
         Any state → ERROR (on unrecoverable failure)
     """
 
-    def __init__(self, guild_id: int, channel_id: int) -> None:
+    def __init__(
+        self, guild_id: int, channel_id: int, *, ws_hub: WebSocketHub | None = None
+    ) -> None:
         self.guild_id: int = guild_id
         self.channel_id: int = channel_id
         self.state: StreamState = StreamState.IDLE
@@ -63,6 +69,7 @@ class ActivityStreamer:
         self.history: list[VideoSource] = []
         self.start_time: float = 0.0
         self.max_queue_size: int = _MAX_QUEUE_SIZE
+        self._ws_hub: WebSocketHub | None = ws_hub
 
         # Background tasks
         self._advance_task: asyncio.Task[None] | None = None
@@ -90,6 +97,9 @@ class ActivityStreamer:
             QueueFullError: If the session is active and the queue is full.
         """
         if self.state in (StreamState.IDLE, StreamState.ERROR):
+            # New session from IDLE — initialize empty whiteboard stroke registry
+            if self.state == StreamState.IDLE and self._ws_hub is not None:
+                self._ws_hub.init_stroke_registry(self.guild_id)
             await self._play_source(source)
         else:
             self.enqueue(source)
@@ -126,6 +136,14 @@ class ActivityStreamer:
 
             # Clean up HLS files
             await self.cleanup()
+
+            # Clear whiteboard state and notify remaining clients
+            if self._ws_hub is not None:
+                self._ws_hub.clear_stroke_registry(self.guild_id)
+                await self._ws_hub.broadcast_from_bot(self.guild_id, {
+                    "type": "whiteboard_clear",
+                    "timestamp": time.time(),
+                })
 
             # Clear state
             self.queue.clear()
@@ -383,6 +401,14 @@ class ActivityStreamer:
             self.pipeline = None
 
         await self.cleanup()
+
+        # Clear whiteboard state and notify remaining clients
+        if self._ws_hub is not None:
+            self._ws_hub.clear_stroke_registry(self.guild_id)
+            await self._ws_hub.broadcast_from_bot(self.guild_id, {
+                "type": "whiteboard_clear",
+                "timestamp": time.time(),
+            })
 
         self.queue.clear()
         self.source = None

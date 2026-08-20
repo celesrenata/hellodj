@@ -17,9 +17,13 @@ from typing import Callable
 
 from aiohttp import web
 
+from bot.video.stroke_registry import StrokeData, StrokeRegistry
+
 log = logging.getLogger(__name__)
 
 _HEARTBEAT_INTERVAL = 30.0  # seconds between server pings
+
+_VALID_STROKE_TYPES = {"freehand", "line", "rect", "ellipse", "arrow", "text", "sticker"}
 
 
 @dataclasses.dataclass
@@ -49,6 +53,7 @@ class WebSocketHub:
         self._validate_guild_token = validate_guild_token
         self._connections: dict[int, set[web.WebSocketResponse]] = {}
         self._playback_state: dict[int, PlaybackState] = {}
+        self._stroke_registries: dict[int, StrokeRegistry] = {}  # guild_id → registry
 
     async def handle_ws(self, request: web.Request) -> web.WebSocketResponse:
         """Handle incoming WebSocket connection request.
@@ -89,16 +94,18 @@ class WebSocketHub:
 
         log.debug("WebSocket connected for guild %d (total: %d)", guild_id, len(self._connections[guild_id]))
 
-        # Send current state to late joiner
+        # Send current state to late joiner (always includes strokes)
         state = self._playback_state.get(guild_id)
-        if state is not None:
+        strokes = self.get_stroke_registry(guild_id).get_all()
+        if state is not None or strokes:
             state_msg = {
                 "type": "state",
-                "playing": state.playing,
-                "position": state.position,
+                "playing": state.playing if state else False,
+                "position": state.position if state else 0.0,
                 "timestamp": time.time(),
-                "subtitle_lang": state.subtitle_lang,
-                "audio_lang": state.audio_lang,
+                "subtitle_lang": state.subtitle_lang if state else None,
+                "audio_lang": state.audio_lang if state else None,
+                "strokes": strokes,
             }
             try:
                 await ws.send_json(state_msg)
@@ -133,6 +140,18 @@ class WebSocketHub:
             return
 
         msg_type = data.get("type")
+
+        # Whiteboard message dispatch
+        if msg_type == "stroke_add":
+            await self._handle_stroke_add(guild_id, sender, data)
+            return
+        if msg_type == "stroke_remove":
+            await self._handle_stroke_remove(guild_id, sender, data)
+            return
+        if msg_type == "whiteboard_reset":
+            await self._handle_whiteboard_reset(guild_id, sender, data)
+            return
+
         if msg_type not in ("play", "pause", "seek", "subtitle_change", "audio_change"):
             return
 
@@ -159,6 +178,84 @@ class WebSocketHub:
 
         # Broadcast to all other clients in this guild
         broadcast_msg = {**data, "timestamp": time.time()}
+        await self.broadcast(guild_id, broadcast_msg, exclude=sender)
+
+    async def _handle_stroke_add(
+        self, guild_id: int, sender: web.WebSocketResponse, data: dict
+    ) -> None:
+        """Validate, store, and broadcast a new stroke."""
+        stroke_id = data.get("id")
+        stroke_type = data.get("stroke_type")
+        points = data.get("points")
+        color = data.get("color")
+        width = data.get("width")
+        author = data.get("author")
+
+        if not all([stroke_id, stroke_type, points, color, width is not None, author]):
+            await self._send_error(sender, "stroke_add: missing required fields")
+            return
+
+        if stroke_type not in _VALID_STROKE_TYPES:
+            await self._send_error(sender, f"stroke_add: invalid type '{stroke_type}'")
+            return
+
+        if not isinstance(points, list) or len(points) == 0:
+            await self._send_error(sender, "stroke_add: empty points array")
+            return
+
+        if stroke_type == "sticker":
+            sticker_category = data.get("sticker_category")
+            sticker_filename = data.get("sticker_filename")
+            if not sticker_category or not sticker_filename:
+                await self._send_error(sender, "stroke_add: sticker requires sticker_category and sticker_filename")
+                return
+
+        registry = self.get_stroke_registry(guild_id)
+        stroke_data = StrokeData(
+            id=stroke_id,
+            type=stroke_type,
+            author=author,
+            color=color,
+            width=width,
+            points=points,
+            text=data.get("text"),
+            text_bg=data.get("text_bg", False),
+            sticker_category=data.get("sticker_category"),
+            sticker_filename=data.get("sticker_filename"),
+        )
+
+        if not registry.add(stroke_data):
+            await self._send_error(sender, "Whiteboard is full (500 stroke limit)")
+            return
+
+        broadcast_msg = {**data, "timestamp": time.time()}
+        await self.broadcast(guild_id, broadcast_msg, exclude=sender)
+
+    async def _handle_stroke_remove(
+        self, guild_id: int, sender: web.WebSocketResponse, data: dict
+    ) -> None:
+        """Remove a stroke from registry and broadcast removal."""
+        stroke_id = data.get("id")
+        if not stroke_id:
+            await self._send_error(sender, "stroke_remove: missing stroke ID")
+            return
+
+        registry = self.get_stroke_registry(guild_id)
+        if not registry.remove(stroke_id):
+            # Stroke not found — possibly already removed. Silently ignore.
+            return
+
+        broadcast_msg = {"type": "stroke_remove", "id": stroke_id, "timestamp": time.time()}
+        await self.broadcast(guild_id, broadcast_msg, exclude=sender)
+
+    async def _handle_whiteboard_reset(
+        self, guild_id: int, sender: web.WebSocketResponse, data: dict
+    ) -> None:
+        """Clear all strokes and broadcast reset to all viewers."""
+        registry = self.get_stroke_registry(guild_id)
+        registry.clear()
+
+        broadcast_msg = {"type": "whiteboard_reset", "timestamp": time.time()}
         await self.broadcast(guild_id, broadcast_msg, exclude=sender)
 
     async def broadcast(
@@ -220,3 +317,34 @@ class WebSocketHub:
                 pass
         self._playback_state.pop(guild_id, None)
         log.debug("Disconnected all WebSocket clients for guild %d", guild_id)
+
+    # ------------------------------------------------------------------
+    # Stroke registry management
+    # ------------------------------------------------------------------
+
+    def get_stroke_registry(self, guild_id: int) -> StrokeRegistry:
+        """Get or create the stroke registry for a guild."""
+        if guild_id not in self._stroke_registries:
+            self._stroke_registries[guild_id] = StrokeRegistry()
+        return self._stroke_registries[guild_id]
+
+    def clear_stroke_registry(self, guild_id: int) -> None:
+        """Clear all strokes for a guild (session end)."""
+        registry = self._stroke_registries.pop(guild_id, None)
+        if registry:
+            registry.clear()
+
+    def init_stroke_registry(self, guild_id: int) -> None:
+        """Initialize an empty stroke registry for a new session."""
+        self._stroke_registries[guild_id] = StrokeRegistry()
+
+    # ------------------------------------------------------------------
+    # Error helper
+    # ------------------------------------------------------------------
+
+    async def _send_error(self, ws: web.WebSocketResponse, message: str) -> None:
+        """Send an error notification to a single client."""
+        try:
+            await ws.send_json({"type": "error", "message": message})
+        except (ConnectionResetError, RuntimeError):
+            pass

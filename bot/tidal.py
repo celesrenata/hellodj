@@ -343,3 +343,118 @@ def get_client() -> TidalClient:
     if _SINGLETON is None:
         _SINGLETON = TidalClient()
     return _SINGLETON
+
+
+# ── Tidal v2 album search (uses PKCE access token from credential store) ─────
+
+V2_BASE = "https://openapi.tidal.com/v2"
+
+
+async def search_albums(query: str, limit: int = 10) -> list[dict]:
+    """Search Tidal for albums matching *query* using the v2 JSON:API.
+
+    Uses the PKCE access token from the credential store (same token the
+    tidal-stream sidecar and LavasRC use). Returns a list of dicts:
+        {name, artist, url, track_count, duration_seconds, album_id, year}
+
+    Returns an empty list on failure (graceful degradation).
+    """
+    from credentials import creds
+    from urllib.parse import quote
+
+    token = creds.get("tidal.access_token", "")
+    if not token:
+        log.debug("tidal: search_albums — no access token, skipping")
+        return []
+
+    encoded_query = quote(query)
+    url = (
+        f"{V2_BASE}/searchResults"
+        f"?filter%5Bquery%5D={encoded_query}"
+        f"&countryCode=US"
+        f"&include=albums,albums.artists"
+    )
+    headers = {
+        "Authorization": f"Bearer {token}",
+        "Accept": "application/vnd.api+json",
+    }
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+                if resp.status != 200:
+                    log.warning("tidal: album search failed (status=%s)", resp.status)
+                    return []
+                data = await resp.json()
+    except Exception as exc:
+        log.warning("tidal: album search failed: %s", exc)
+        return []
+
+    included = data.get("included", [])
+
+    # Build a lookup of artist resources
+    artist_map: dict[str, str] = {}
+    for resource in included:
+        if resource.get("type") == "artists":
+            aid = resource.get("id", "")
+            name = resource.get("attributes", {}).get("name", "")
+            if aid and name:
+                artist_map[aid] = name
+
+    # Extract album results
+    results = []
+    for resource in included:
+        if resource.get("type") != "albums":
+            continue
+        attrs = resource.get("attributes", {})
+        album_id = resource.get("id", "")
+        title = attrs.get("title", "")
+        if not title or not album_id:
+            continue
+
+        # Resolve artist names
+        rels = resource.get("relationships", {})
+        artist_refs = rels.get("artists", {}).get("data", [])
+        artist_names = []
+        for ref in artist_refs:
+            name = artist_map.get(ref.get("id", ""))
+            if name:
+                artist_names.append(name)
+        artist = ", ".join(artist_names) if artist_names else ""
+
+        # Parse ISO 8601 duration (PT57M19S) to seconds
+        duration_str = attrs.get("duration", "")
+        duration_seconds = 0
+        if duration_str:
+            try:
+                import re
+                m = re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration_str)
+                if m:
+                    h = int(m.group(1) or 0)
+                    mins = int(m.group(2) or 0)
+                    s = int(m.group(3) or 0)
+                    duration_seconds = h * 3600 + mins * 60 + s
+            except (ValueError, TypeError):
+                pass
+
+        track_count = attrs.get("numberOfItems") or 0
+        release_date = attrs.get("releaseDate", "")
+        year = release_date[:4] if release_date else ""
+
+        results.append({
+            "name": title,
+            "artist": artist,
+            "url": f"https://tidal.com/album/{album_id}",
+            "track_count": track_count,
+            "duration_seconds": duration_seconds,
+            "total_duration": duration_seconds * 1000,  # ms for bot display
+            "album_id": album_id,
+            "year": year,
+            "source": "tidal",
+        })
+
+        if len(results) >= limit:
+            break
+
+    log.info("tidal: album search %r returned %d album(s)", query, len(results))
+    return results

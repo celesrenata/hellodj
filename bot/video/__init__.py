@@ -90,7 +90,7 @@ class FormatInfo:
 class VideoSource:
     """Resolved video source ready for transcoding and streaming."""
 
-    source_type: Literal["youtube", "upload", "url"]
+    source_type: Literal["youtube", "upload", "url", "tidal"]
     file_path: str
     title: str
     duration_seconds: float  # 0 = unknown / live
@@ -113,3 +113,4 @@ class SessionStatus:
     audio_tracks: list[dict] = field(default_factory=list)
     subtitles: list[dict] = field(default_factory=list)
     playing: bool = True
+    uploader: str | None = None

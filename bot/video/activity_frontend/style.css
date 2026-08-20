@@ -204,6 +204,7 @@ body:hover {
     border-radius: 2px;
     outline: none;
     cursor: pointer;
+    vertical-align: middle;
 }
 
 .volume-slider::-webkit-slider-thumb {
@@ -214,6 +215,7 @@ body:hover {
     border-radius: 50%;
     background: var(--accent);
     cursor: pointer;
+    margin-top: -4px;
 }
 
 .volume-slider::-moz-range-thumb {
@@ -285,6 +287,190 @@ body:hover {
     height: 12px;
     accent-color: var(--accent);
     cursor: pointer;
+}
+
+/* === Whiteboard canvas overlay === */
+#whiteboard-canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    z-index: 20;
+    pointer-events: none;
+}
+
+#whiteboard-canvas.active {
+    pointer-events: auto;
+}
+
+/* === Whiteboard HUD toolbar === */
+.whiteboard-hud {
+    position: absolute;
+    top: 8px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 25;
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--bg-overlay);
+    border-radius: 8px;
+    pointer-events: auto;
+}
+
+.whiteboard-hud.visible {
+    display: flex;
+}
+
+.hud-tools,
+.hud-colors,
+.hud-options,
+.hud-actions {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.hud-btn {
+    background: none;
+    border: 1px solid transparent;
+    color: #fff;
+    font-size: 1.1rem;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+    opacity: 0.85;
+    transition: opacity 0.15s, border-color 0.15s;
+}
+
+.hud-btn:hover {
+    opacity: 1;
+}
+
+.hud-btn.active {
+    border-color: var(--accent);
+    opacity: 1;
+}
+
+.hud-btn.disabled {
+    opacity: 0.4;
+    pointer-events: none;
+    cursor: default;
+}
+
+.hud-divider {
+    width: 1px;
+    height: 24px;
+    background: rgba(255, 255, 255, 0.25);
+}
+
+.color-swatch {
+    width: 20px;
+    height: 20px;
+    border: 2px solid transparent;
+    border-radius: 50%;
+    cursor: pointer;
+    transition: border-color 0.15s;
+}
+
+.color-swatch.active {
+    border-color: var(--accent);
+}
+
+.color-custom {
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    padding: 0;
+    background: transparent;
+}
+
+.hud-checkbox {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.hud-checkbox input[type="checkbox"] {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+
+/* === Sticker picker panel === */
+.sticker-picker {
+    position: absolute;
+    top: 56px;
+    right: 8px;
+    width: 240px;
+    max-height: 320px;
+    background: var(--bg-overlay);
+    border-radius: 8px;
+    z-index: 25;
+    pointer-events: auto;
+    overflow: hidden;
+    display: none;
+    flex-direction: column;
+}
+
+.sticker-picker.visible {
+    display: flex;
+}
+
+.sticker-picker-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 12px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.15);
+}
+
+.sticker-picker-close {
+    background: none;
+    border: none;
+    color: var(--text-muted);
+    font-size: 1rem;
+    cursor: pointer;
+    padding: 2px 6px;
+    border-radius: 4px;
+}
+
+.sticker-picker-close:hover {
+    color: #fff;
+}
+
+.sticker-picker-categories {
+    display: flex;
+    gap: 4px;
+    padding: 6px 8px;
+    overflow-x: auto;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sticker-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(56px, 1fr));
+    gap: 6px;
+    padding: 8px;
+    overflow-y: auto;
+    flex: 1;
+}
+
+/* === Whiteboard toggle button active state === */
+#btn-whiteboard[data-active="true"] {
+    color: var(--accent);
+    opacity: 1;
 }
 
 /* Error overlay — top banner */

@@ -179,6 +179,7 @@ async def connect_lavalink():
 
     # Refresh Tidal token at startup (it expires every ~4 hours)
     await refresh_tidal_token()
+    await push_tidal_token()
 
 
 async def push_youtube_oauth() -> bool:
@@ -417,21 +418,57 @@ async def refresh_tidal_token() -> bool:
         return False
 
 
+async def push_tidal_token() -> bool:
+    """Push the current Tidal access token to LavasRC via PATCH /v4/lavasrc/config.
+
+    LavasRC's TidalTokenManager in static-token mode never refreshes on its own.
+    After the bot refreshes the token (via refresh_tidal_token), this function
+    pushes the fresh token to the running Lavalink instance so LavasRC can
+    continue resolving Tidal tracks without a pod restart.
+    """
+    from credentials import creds as _creds
+
+    token = _creds.get("tidal.access_token") or _creds.get("tidal.api_token") or ""
+    if not token:
+        log.debug("tidal-push: no access token in DB — skipping push")
+        return False
+
+    url = f"{LAVALINK_URI}/v4/lavasrc/config"
+    payload = {"tidal": {"token": token}}
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.patch(
+                url,
+                json=payload,
+                headers={"Authorization": LAVALINK_PASSWORD},
+                timeout=aiohttp.ClientTimeout(total=10),
+            ) as resp:
+                if resp.status in (200, 204):
+                    log.info("tidal-push: pushed fresh token to LavasRC (status=%s)", resp.status)
+                    return True
+                body = await resp.text()
+                log.warning(
+                    "tidal-push: LavasRC push failed (status=%s): %s",
+                    resp.status, body[:200],
+                )
+    except Exception as exc:
+        log.warning("tidal-push: failed to push to LavasRC: %s", exc)
+    return False
+
+
 async def _token_refresh_watchdog() -> None:
     """Periodically refresh Tidal token and re-push YouTube auth."""
     interval = 300  # every 5 minutes
     while True:
         await asyncio.sleep(interval)
         try:
-            await refresh_tidal_token()
+            refreshed = await refresh_tidal_token()
+            if refreshed:
+                await push_tidal_token()
             await push_youtube_oauth()
         except Exception:
             log.exception("token-refresh: watchdog iteration error")
-        await asyncio.sleep(interval)
-        try:
-            await push_youtube_oauth()
-        except Exception:
-            log.exception("youtube-oauth: watchdog iteration error")
 
 
 async def disconnect_lavalink():

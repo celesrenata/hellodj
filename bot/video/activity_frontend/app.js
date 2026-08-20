@@ -25,8 +25,15 @@ import { DiscordSDK } from './discord-sdk.js';
   const subtitleSelector = document.getElementById('subtitle-selector');
   const subtitleSelect = document.getElementById('subtitle-select');
   const subtitleForEveryone = document.getElementById('subtitle-for-everyone');
+  const btnMute = document.getElementById('btn-mute');
+  const volumeSlider = document.getElementById('volume-slider');
 
   // --- Utility ---
+  const formatTitle = (title, uploader) => {
+    if (uploader) return `${title} — Uploaded by ${uploader}`;
+    return title || '';
+  };
+
   const fmt = (sec) => {
     const s = Math.floor(Math.max(0, sec));
     const h = Math.floor(s / 3600);
@@ -316,6 +323,44 @@ import { DiscordSDK } from './discord-sdk.js';
   document.addEventListener('click', unmute);
   document.addEventListener('touchstart', unmute);
 
+  // Volume slider
+  let _savedVolume = 0.8; // remember volume before mute
+  volumeSlider.addEventListener('input', () => {
+    const val = volumeSlider.value / 100;
+    videoEl.volume = val;
+    if (val > 0 && videoEl.muted) {
+      videoEl.muted = false;
+    }
+    _updateMuteIcon();
+  });
+
+  // Mute toggle on speaker icon
+  btnMute.addEventListener('click', (e) => {
+    e.stopPropagation(); // don't trigger global unmute
+    if (videoEl.muted || videoEl.volume === 0) {
+      videoEl.muted = false;
+      videoEl.volume = _savedVolume || 0.8;
+      volumeSlider.value = Math.round(videoEl.volume * 100);
+    } else {
+      _savedVolume = videoEl.volume;
+      videoEl.muted = true;
+    }
+    _updateMuteIcon();
+  });
+
+  const _updateMuteIcon = () => {
+    if (videoEl.muted || videoEl.volume === 0) {
+      btnMute.textContent = '🔇';
+    } else if (videoEl.volume < 0.5) {
+      btnMute.textContent = '🔉';
+    } else {
+      btnMute.textContent = '🔊';
+    }
+  };
+
+  // Initialize volume from slider default
+  videoEl.volume = volumeSlider.value / 100;
+
   btnPlayPause.addEventListener('click', () => {
     if (videoEl.paused) {
       videoEl.play();
@@ -431,7 +476,7 @@ import { DiscordSDK } from './discord-sdk.js';
   const status = await fetchStatus();
   if (!status) return;
 
-  if (status.video_title) titleBar.textContent = status.video_title;
+  if (status.video_title) titleBar.textContent = formatTitle(status.video_title, status.uploader);
 
   // Populate subtitle tracks from status API
   if (status.subtitles) {
@@ -461,7 +506,7 @@ import { DiscordSDK } from './discord-sdk.js';
       const s = await fetchStatus();
       if (s && s.state === 'streaming' && s.playlist_url) {
         clearInterval(waitForStream);
-        titleBar.textContent = s.video_title || '';
+        titleBar.textContent = formatTitle(s.video_title, s.uploader);
         // Wait for countdown to finish if still playing
         if (!videoEl.ended && videoEl.currentTime < videoEl.duration) {
           videoEl.addEventListener('ended', () => {
@@ -485,8 +530,9 @@ import { DiscordSDK } from './discord-sdk.js';
   setInterval(async () => {
     const updated = await fetchStatus();
     if (!updated) return;
-    if (updated.video_title && updated.video_title !== titleBar.textContent) {
-      titleBar.textContent = updated.video_title;
+    const formattedTitle = formatTitle(updated.video_title, updated.uploader);
+    if (updated.video_title && formattedTitle !== titleBar.textContent) {
+      titleBar.textContent = formattedTitle;
     }
     if (updated.session_id && updated.session_id !== currentSessionId) {
       currentSessionId = updated.session_id;

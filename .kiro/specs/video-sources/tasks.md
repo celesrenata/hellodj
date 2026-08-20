@@ -6,15 +6,15 @@ Extend the video Activity streaming subsystem with three new source types (Tidal
 
 ## Tasks
 
-- [ ] 1. Extend data models and project structure
-  - [ ] 1.1 Extend VideoSource and SessionStatus data models
+- [x] 1. Extend data models and project structure
+  - [x] 1.1 Extend VideoSource and SessionStatus data models
     - Add `"tidal"` to the `VideoSource.source_type` Literal union in `bot/video/__init__.py`
     - Add `uploader: str | None = None` field to the `SessionStatus` dataclass
     - Ensure existing code continues to work with the extended type
     - _Requirements: 1.3, 3.4, 5.7, 6.3, 6.4_
 
-- [ ] 2. Implement TidalResolver
-  - [ ] 2.1 Create `bot/video/tidal_resolver.py` with URL resolution
+- [x] 2. Implement TidalResolver
+  - [x] 2.1 Create `bot/video/tidal_resolver.py` with URL resolution
     - Implement `TidalResolverError` exception class with `recoverable` flag
     - Implement `TidalResolver` class with `resolve_url()` method
     - Implement `extract_video_id()` to parse Tidal video URLs (tidal.com/browse/video/N, tidal.com/video/N, listen.tidal.com/video/N)
@@ -24,7 +24,7 @@ Extend the video Activity streaming subsystem with three new source types (Tidal
     - Produce `VideoSource` with `source_type="tidal"`, `cleanup_on_finish=True`, metadata containing artist, track_title, video_id
     - _Requirements: 1.1, 1.2, 1.3, 1.4, 1.7, 1.8, 3.4_
 
-  - [ ] 2.2 Implement Tidal OAuth token management
+  - [x] 2.2 Implement Tidal OAuth token management
     - Implement `_ensure_token()` — check expiry with 5-minute buffer, refresh if needed
     - Implement `_refresh_token()` — POST to `https://auth.tidal.com/v1/oauth2/token` with stored refresh token
     - Use `tidal.issuing_client_id` from credential store, fall back to tidalapi internal client ID
@@ -33,7 +33,7 @@ Extend the video Activity streaming subsystem with three new source types (Tidal
     - Read credentials from `credentials.py` creds singleton using `tidal.*` key namespace
     - _Requirements: 1.5, 1.6, 9.1, 9.2, 9.3, 9.4, 9.5_
 
-  - [ ] 2.3 Implement Tidal search functionality
+  - [x] 2.3 Implement Tidal search functionality
     - Implement `search()` method — strip `tidal:` prefix, validate query (1-200 chars, non-whitespace-only)
     - Search Tidal API for music videos, select first result
     - Resolve selected result through the same download flow as URL resolution
@@ -65,11 +65,11 @@ Extend the video Activity streaming subsystem with three new source types (Tidal
     - Generate credential store states with/without issuing_client_id, verify correct selection
     - **Validates: Requirements 9.5**
 
-- [ ] 3. Checkpoint - Ensure all tests pass
+- [x] 3. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. Implement UploadHandler
-  - [ ] 4.1 Create `bot/video/upload_handler.py` with upload processing
+- [x] 4. Implement UploadHandler
+  - [x] 4.1 Create `bot/video/upload_handler.py` with upload processing
     - Implement `UploadHandlerError` exception class
     - Implement `UploadHandler` class with `process()` method
     - Implement `validate_type()` — check content_type (video/*) and extension fallback (mp4, mkv, webm, avi, mov, m4v)
@@ -91,8 +91,8 @@ Extend the video Activity streaming subsystem with three new source types (Tidal
     - Generate VideoSource objects from TidalResolver and UploadHandler, verify `cleanup_on_finish=True`
     - **Validates: Requirements 3.4, 5.8**
 
-- [ ] 5. Implement Source Router
-  - [ ] 5.1 Create `bot/video/source_router.py` with classification logic
+- [x] 5. Implement Source Router
+  - [x] 5.1 Create `bot/video/source_router.py` with classification logic
     - Implement `classify_input()` function with priority-ordered classification
     - Implement `is_url()` helper — detect URLs by scheme and netloc presence
     - Implement `extract_tidal_video_id()` — regex extraction of numeric ID from Tidal video URLs
@@ -112,8 +112,8 @@ Extend the video Activity streaming subsystem with three new source types (Tidal
     - Generate random URLs with/without filename path segments, verify hostname fallback
     - **Validates: Requirements 4.3**
 
-- [ ] 6. Refactor VideoCog to use source router
-  - [ ] 6.1 Update `/video play` command in `bot/cogs/video.py`
+- [x] 6. Refactor VideoCog to use source router
+  - [x] 6.1 Update `/video play` command in `bot/cogs/video.py`
     - Add `attachment` parameter to `/video play` slash command (optional `discord.Attachment`)
     - Import and use `classify_input()` from source router
     - Import `TidalResolver`, `UploadHandler` alongside existing `YouTubeResolver`, `URLDownloader`
@@ -122,24 +122,24 @@ Extend the video Activity streaming subsystem with three new source types (Tidal
     - Catch all resolver errors and respond with ephemeral error messages including source type
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 8.6, 8.7, 10.1, 10.2, 10.3, 10.4, 10.5_
 
-- [ ] 7. Checkpoint - Ensure all tests pass
+- [x] 7. Checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 8. Update Now Playing embed and session status
-  - [ ] 8.1 Update Now Playing embed with source-type-aware formatting
+- [x] 8. Update Now Playing embed and session status
+  - [x] 8.1 Update Now Playing embed with source-type-aware formatting
     - Tidal videos: display title as "Artist — Title" using metadata artist field
     - Upload videos: display "Uploaded by {display_name}" in embed footer
     - URL videos: display filename extracted from URL path (existing behavior)
     - Update queue listing to include "(uploaded by display_name)" for upload sources
     - _Requirements: 3.2, 4.3, 6.1, 6.2_
 
-  - [ ] 8.2 Update SessionStatus in activity backend
+  - [x] 8.2 Update SessionStatus in activity backend
     - Populate `uploader` field from `source.metadata.get("uploader")` when `source_type == "upload"`
     - Set `uploader` to `None` for all other source types
     - Update `handle_status()` in `activity_backend.py` to include the uploader field in response
     - _Requirements: 6.3, 6.4_
 
-  - [ ] 8.3 Update Activity frontend to display uploader attribution
+  - [x] 8.3 Update Activity frontend to display uploader attribution
     - When status API returns non-null `uploader` field, display uploader attribution in player UI alongside video title
     - _Requirements: 6.5_
 
@@ -158,7 +158,7 @@ Extend the video Activity streaming subsystem with three new source types (Tidal
     - Generate random artist/title strings, verify "Artist — Title" format or title-only when artist is empty
     - **Validates: Requirements 3.2**
 
-- [ ] 9. Final checkpoint - Ensure all tests pass
+- [x] 9. Final checkpoint - Ensure all tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes

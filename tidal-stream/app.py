@@ -128,8 +128,31 @@ async def _get_session() -> tidalapi.Session | None:
                         log.info("Authenticated with Tidal via credential DB (direct load)")
                         _session = session
                         return _session
+                    elif refresh_token:
+                        # Token expired but we have a refresh token — try to refresh
+                        log.info("DB token expired, attempting refresh via tidalapi")
+                        try:
+                            session.token_refresh(refresh_token)
+                            if _is_session_valid(session):
+                                log.info("Tidal token refreshed successfully via tidalapi")
+                                # Persist the refreshed token back to DB
+                                _creds.set("tidal.access_token", session.access_token)
+                                _creds.set("tidal.api_token", session.access_token)
+                                if session.refresh_token:
+                                    _creds.set("tidal.refresh_token", session.refresh_token)
+                                if session.expiry_time:
+                                    expiry = session.expiry_time
+                                    if expiry.tzinfo is None:
+                                        expiry = expiry.replace(tzinfo=dt.timezone.utc)
+                                    _creds.set("tidal.expires_at", str(expiry.timestamp()))
+                                import time as _time
+                                _creds.set("tidal.updated_at", _time.strftime('%Y-%m-%dT%H:%M:%S+00:00', _time.gmtime()))
+                                _session = session
+                                return _session
+                        except Exception as refresh_exc:
+                            log.warning("Tidal tidalapi refresh failed: %s", refresh_exc)
                     else:
-                        log.warning("DB tokens present but session expired")
+                        log.warning("DB tokens present but session expired, no refresh token")
                     db_loaded = True
             except ImportError:
                 log.warning("credentials module not available in tidal-stream")

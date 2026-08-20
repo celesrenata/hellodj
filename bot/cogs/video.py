@@ -32,6 +32,7 @@ from video.activity_streamer import ActivityStreamer, QueueFullError, Transition
 from video.gpu_probe import GPUProbe
 from video.hls_cleanup import cleanup_orphaned_dirs
 from video.session_registry import SessionRegistry
+from video.source_router import classify_input, SourceType
 from video.sources import (
     URLDownloader,
     URLDownloaderError,
@@ -39,6 +40,8 @@ from video.sources import (
     YouTubeResolverError,
     is_video_extension,
 )
+from video.tidal_resolver import TidalResolver, TidalResolverError
+from video.upload_handler import UploadHandler, UploadHandlerError
 
 log = logging.getLogger(__name__)
 
@@ -129,9 +132,17 @@ class VideoCog(commands.Cog, name="Video"):
 
     # ── /video play ────────────────────────────────────────
 
-    @video_group.command(name="play", description="Play a YouTube video or URL in the voice channel Activity")
-    @app_commands.describe(query="YouTube URL, search query, or direct video URL")
-    async def video_play(self, interaction: discord.Interaction, query: str) -> None:
+    @video_group.command(name="play", description="Play a video in the voice channel Activity")
+    @app_commands.describe(
+        query="YouTube URL/search, Tidal URL, tidal:search, or direct video URL",
+        attachment="Upload a video file directly",
+    )
+    async def video_play(
+        self,
+        interaction: discord.Interaction,
+        query: str | None = None,
+        attachment: discord.Attachment | None = None,
+    ) -> None:
         # Pre-checks
         voice_err = self._check_voice(interaction)
         if voice_err:
@@ -150,14 +161,50 @@ class VideoCog(commands.Cog, name="Video"):
 
         voice_channel = interaction.user.voice.channel  # type: ignore[union-attr]
 
+        # Determine source type
+        has_attachment = attachment is not None
+
+        # Attachment takes priority (Req 10.4)
+        if has_attachment:
+            source_type: SourceType = "upload"
+        else:
+            if query is None:
+                await interaction.followup.send(
+                    "Provide a URL, search query, or file attachment.", ephemeral=True
+                )
+                return
+            source_type = classify_input(query)
+
         # Resolve the video source
         try:
-            if is_video_extension(query):
-                downloader = URLDownloader()
-                source = await downloader.download(query)
-            else:
-                resolver = YouTubeResolver()
-                source = await resolver.resolve(query)
+            match source_type:
+                case "upload":
+                    handler = UploadHandler()
+                    source = await handler.process(attachment, interaction.user.display_name)
+                case "youtube_url" | "youtube_search":
+                    resolver = YouTubeResolver()
+                    source = await resolver.resolve(query)
+                case "tidal_url":
+                    tidal = TidalResolver()
+                    source = await tidal.resolve_url(query)
+                case "tidal_search":
+                    tidal = TidalResolver()
+                    search_query = query[len("tidal:"):].strip()
+                    source = await tidal.search(search_query)
+                case "general_url":
+                    try:
+                        downloader = URLDownloader()
+                        source = await asyncio.wait_for(downloader.download(query), timeout=10.0)
+                    except (URLDownloaderError, asyncio.TimeoutError):
+                        # Fallback to YouTube search (Req 8.6)
+                        resolver = YouTubeResolver()
+                        source = await resolver.resolve(query)
+        except TidalResolverError as exc:
+            await interaction.followup.send(f"❌ Tidal error: {exc}", ephemeral=True)
+            return
+        except UploadHandlerError as exc:
+            await interaction.followup.send(f"❌ Upload error: {exc}", ephemeral=True)
+            return
         except YouTubeResolverError as exc:
             await interaction.followup.send(f"❌ YouTube error: {exc}", ephemeral=True)
             return
@@ -187,7 +234,7 @@ class VideoCog(commands.Cog, name="Video"):
             return
 
         # No active session — create streamer, launch Activity, start playback
-        streamer = ActivityStreamer(guild_id=guild_id, channel_id=voice_channel.id)
+        streamer = ActivityStreamer(guild_id=guild_id, channel_id=voice_channel.id, ws_hub=self._backend.ws_hub)
         self._registry.register(guild_id, streamer)
 
         # Launch Discord Activity
@@ -615,11 +662,23 @@ def _build_seek_bar(elapsed_seconds: float, duration_seconds: float) -> str:
 def _build_now_playing_embed(source: VideoSource, queue_length: int, *, activity_url: str | None = None, elapsed_seconds: float = 0.0) -> discord.Embed:
     """Build a 'Now Playing' embed for the current video."""
     seek_bar = _build_seek_bar(elapsed_seconds, source.duration_seconds)
+
+    # Source-type-aware title formatting
+    # Note: For Tidal, source.title is already "Artist — Title" from TidalResolver.
+    # The match is left explicit for clarity and future source types.
+    title_text = source.title
+
     embed = discord.Embed(
         title="🎬 Now Playing",
-        description=f"{source.title}\n{seek_bar}",
+        description=f"{title_text}\n{seek_bar}",
         color=discord.Color.purple(),
     )
+
+    # Upload attribution in footer (Req 6.1)
+    if source.source_type == "upload":
+        uploader = source.metadata.get("uploader", "Unknown")
+        embed.set_footer(text=f"Uploaded by {uploader}")
+
     if queue_length > 0:
         embed.add_field(name="Queue", value=f"{queue_length} video(s) up next")
     if activity_url:
@@ -905,9 +964,19 @@ def _build_queue_embed(source: VideoSource | None, queue: list[VideoSource]) -> 
     """Build a queue embed showing current playback and upcoming videos."""
     embed = discord.Embed(title="📋 Video Queue", color=discord.Color.blue())
     if source:
-        embed.add_field(name="Now Playing", value=source.title, inline=False)
+        now_playing_text = source.title
+        if source.source_type == "upload":
+            uploader = source.metadata.get("uploader", "Unknown")
+            now_playing_text += f" (uploaded by {uploader})"
+        embed.add_field(name="Now Playing", value=now_playing_text, inline=False)
     if queue:
-        lines = [f"{i + 1}. {s.title}" for i, s in enumerate(queue[:20])]
+        lines: list[str] = []
+        for i, s in enumerate(queue[:20]):
+            line = f"{i + 1}. {s.title}"
+            if s.source_type == "upload":
+                uploader = s.metadata.get("uploader", "Unknown")
+                line += f" (uploaded by {uploader})"
+            lines.append(line)
         if len(queue) > 20:
             lines.append(f"... and {len(queue) - 20} more")
         embed.add_field(name="Up Next", value="\n".join(lines), inline=False)

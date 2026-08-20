@@ -18,6 +18,11 @@ from typing import TYPE_CHECKING
 
 from aiohttp import web
 
+from video.sticker_catalog import (
+    StickerCatalog,
+    handle_sticker_catalog,
+    handle_sticker_image,
+)
 from video.ws_hub import WebSocketHub
 
 if TYPE_CHECKING:
@@ -56,6 +61,7 @@ class ActivityBackend:
 
         self.app = web.Application(middlewares=[self._cors_middleware])
         self._setup_routes()
+        self._init_sticker_catalog()
 
         self.runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
@@ -85,6 +91,16 @@ class ActivityBackend:
         response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
         response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
         return response
+
+    # ------------------------------------------------------------------
+    # Sticker catalog initialization
+    # ------------------------------------------------------------------
+
+    def _init_sticker_catalog(self) -> None:
+        """Initialize the sticker catalog and store it on the app for handlers."""
+        sticker_catalog = StickerCatalog(Path("stickers"))
+        sticker_catalog.load()
+        self.app["sticker_catalog"] = sticker_catalog
 
     # ------------------------------------------------------------------
     # Token management
@@ -159,6 +175,12 @@ class ActivityBackend:
             "/activity/stream/{guild_id}/{segment}.ts", self.handle_segment
         )
         self.app.router.add_get("/activity/ws/{guild_id}", self._ws_hub.handle_ws)
+
+        # Sticker catalog routes
+        self.app.router.add_get("/activity/stickers/catalog", handle_sticker_catalog)
+        self.app.router.add_get(
+            "/activity/stickers/{category}/{filename}", handle_sticker_image
+        )
 
     # ------------------------------------------------------------------
     # Authentication helpers
@@ -333,6 +355,11 @@ class ActivityBackend:
             subtitles=subtitles,
             audio_tracks=audio_tracks,
             playing=playing,
+            uploader=(
+                streamer.source.metadata.get("uploader")
+                if streamer.source and streamer.source.source_type == "upload"
+                else None
+            ),
         )
 
         return web.json_response(dataclasses.asdict(status))

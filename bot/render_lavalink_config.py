@@ -22,6 +22,8 @@ def render() -> str:
     spotify_id = creds.get("spotify.client_id", "")
     spotify_secret = creds.get("spotify.client_secret", "")
     tidal_token = creds.get("tidal.access_token") or creds.get("tidal.api_token") or "none"
+    tidal_client_id = creds.get("tidal.td_client_id") or creds.get("tidal.client_id") or ""
+    tidal_client_secret = creds.get("tidal.td_client_secret") or creds.get("tidal.client_secret") or ""
     tidal_country = creds.get("tidal.country_code", "US")
     tidal_limit = creds.get("tidal.search_limit", "6")
     ytcipher_token = creds.get("ytcipher.api_token", "")
@@ -29,10 +31,12 @@ def render() -> str:
     yt_pot_token = creds.get("youtube.pot_token", "")
     yt_visitor_data = creds.get("youtube.pot_visitor_data", "")
 
-    # Tidal source enabled only if we have a real token
-    tidal_enabled = "true" if (tidal_token and tidal_token not in ("none", "")) else "false"
+    # Tidal source enabled if we have either client credentials OR a real token
+    has_tidal_creds = bool(tidal_client_id and tidal_client_secret)
+    has_tidal_token = bool(tidal_token and tidal_token not in ("none", ""))
+    tidal_enabled = "true" if (has_tidal_creds or has_tidal_token) else "false"
     # If tidal disabled, still need a non-empty placeholder to avoid lavasrc crash
-    tidal_token_val = tidal_token if tidal_enabled == "true" else "disabled"
+    tidal_token_val = tidal_token if has_tidal_token else "disabled"
 
     # Spotify enabled only if credentials exist
     spotify_enabled = "true" if (spotify_id and spotify_secret) else "false"
@@ -99,8 +103,8 @@ plugins:
     tidal:
       countryCode: "{tidal_country}"
       searchLimit: {tidal_limit}
-      clientId: ""
-      clientSecret: ""
+      clientId: "{tidal_client_id}"
+      clientSecret: "{tidal_client_secret}"
       token: "{tidal_token_val}"
     spotify:
       clientId: "{spotify_id}"

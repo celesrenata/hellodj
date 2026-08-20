@@ -14,22 +14,22 @@ The implementation extends three backend components (StrokeRegistry, WebSocketHu
 
 ## Tasks
 
-- [ ] 1. Backend: StrokeRegistry and WebSocketHub extension
-  - [ ] 1.1 Create `bot/video/stroke_registry.py` with `StrokeData` and `StrokeRegistry`
+- [x] 1. Backend: StrokeRegistry and WebSocketHub extension
+  - [x] 1.1 Create `bot/video/stroke_registry.py` with `StrokeData` and `StrokeRegistry`
     - Add `StrokeData` dataclass with fields: id, type, author, color, width, points, text, text_bg, sticker_category, sticker_filename
     - Add `StrokeRegistry` class with MAX_STROKES=500, methods: add(), remove(), clear(), get_all(), __len__()
     - add() returns False when at capacity; remove() returns False when ID not found
     - get_all() returns list of dicts in insertion order (using dataclasses.asdict)
     - _Requirements: 10.2, 10.6, 10.11, 11.1, 11.5, 12.3_
 
-  - [ ] 1.2 Extend `bot/video/ws_hub.py` with stroke registry management
+  - [x] 1.2 Extend `bot/video/ws_hub.py` with stroke registry management
     - Add `_stroke_registries: dict[int, StrokeRegistry]` to WebSocketHub.__init__
     - Add `get_stroke_registry(guild_id)`, `clear_stroke_registry(guild_id)`, `init_stroke_registry(guild_id)` methods
     - Add `_VALID_STROKE_TYPES` set constant
     - Add `_send_error(ws, message)` helper method
     - _Requirements: 10.2, 10.6, 12.1, 12.4_
 
-  - [ ] 1.3 Add `stroke_add` handler to WebSocketHub
+  - [x] 1.3 Add `stroke_add` handler to WebSocketHub
     - Implement `_handle_stroke_add(guild_id, sender, data)` with full field validation
     - Validate required fields: id, stroke_type, points, color, width, author
     - Validate stroke_type against _VALID_STROKE_TYPES enum set
@@ -40,27 +40,27 @@ The implementation extends three backend components (StrokeRegistry, WebSocketHu
     - Wire into existing `_handle_message` dispatch
     - _Requirements: 10.1, 10.2, 10.11, 10.12_
 
-  - [ ] 1.4 Add `stroke_remove` and `whiteboard_reset` handlers to WebSocketHub
+  - [x] 1.4 Add `stroke_remove` and `whiteboard_reset` handlers to WebSocketHub
     - Implement `_handle_stroke_remove(guild_id, sender, data)` — validate ID, remove from registry, broadcast
     - Silently ignore removal of non-existent IDs (idempotent)
     - Implement `_handle_whiteboard_reset(guild_id, sender, data)` — clear registry, broadcast
     - Wire both into `_handle_message` dispatch
     - _Requirements: 10.4, 10.6, 10.8, 10.9_
 
-  - [ ] 1.5 Update late-joiner state message to include strokes
+  - [x] 1.5 Update late-joiner state message to include strokes
     - In the `handle_ws` connection handler, add `strokes` field to the initial `state` message
     - Call `get_stroke_registry(guild_id).get_all()` for the strokes array
     - Empty registry sends empty array
     - _Requirements: 10.10, 11.1, 11.2, 11.4_
 
-  - [ ] 1.6 Add session lifecycle hooks for whiteboard state
+  - [x] 1.6 Add session lifecycle hooks for whiteboard state
     - In `ActivityStreamer.play()`: call `ws_hub.init_stroke_registry(guild_id)` when starting a new session (state IDLE)
     - In `ActivityStreamer.stop()`: call `ws_hub.clear_stroke_registry(guild_id)` and broadcast `whiteboard_clear`
     - In `ActivityStreamer.skip()` / `_auto_advance()`: make NO changes to stroke registry (strokes persist across videos)
     - _Requirements: 12.1, 12.2, 12.4_
 
-- [ ] 2. Backend: Sticker catalog
-  - [ ] 2.1 Create `bot/video/sticker_catalog.py` with `StickerCatalog` class
+- [x] 2. Backend: Sticker catalog
+  - [x] 2.1 Create `bot/video/sticker_catalog.py` with `StickerCatalog` class
     - Implement `StickerCatalog` with __init__(stickers_dir), load(), _load_zip(), _slugify()
     - Support .png, .gif, .webp image extensions
     - Skip corrupt/empty zips gracefully with logging
@@ -68,7 +68,7 @@ The implementation extends three backend components (StrokeRegistry, WebSocketHu
     - Derive category display name from zip filename (strip timestamp suffixes)
     - _Requirements: 15.10, 15.11, 15.12_
 
-  - [ ] 2.2 Add HTTP endpoints for sticker catalog and image serving
+  - [x] 2.2 Add HTTP endpoints for sticker catalog and image serving
     - Implement `handle_sticker_catalog(request)` → GET /activity/stickers/catalog → JSON response
     - Implement `handle_sticker_image(request)` → GET /activity/stickers/{category}/{filename} → image bytes
     - Return 404 for missing category/filename
@@ -78,11 +78,11 @@ The implementation extends three backend components (StrokeRegistry, WebSocketHu
     - Initialize StickerCatalog at server startup (call .load())
     - _Requirements: 15.10, 15.11_
 
-- [ ] 3. Checkpoint — Backend tests pass
+- [x] 3. Checkpoint — Backend tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
-- [ ] 4. Frontend: Canvas overlay and mode activation
-  - [ ] 4.1 Add whiteboard canvas element and HUD DOM to `index.html`
+- [x] 4. Frontend: Canvas overlay and mode activation
+  - [x] 4.1 Add whiteboard canvas element and HUD DOM to `index.html`
     - Add `<canvas id="whiteboard-canvas">` element (z-index: 20)
     - Add `<div class="whiteboard-hud">` with tool buttons, color palette, undo, reset (z-index: 25)
     - Add `<div class="sticker-picker">` panel (hidden by default)
@@ -90,7 +90,7 @@ The implementation extends three backend components (StrokeRegistry, WebSocketHu
     - Set initial state: HUD hidden, canvas pointer-events none
     - _Requirements: 1.1, 1.3, 1.7_
 
-  - [ ] 4.2 Create `bot/video/activity/whiteboard.js` — WhiteboardOverlay class
+  - [x] 4.2 Create `bot/video/activity/whiteboard.js` — WhiteboardOverlay class
     - Implement mode toggle: activate() shows HUD + enables pointer-events on canvas; deactivate() hides HUD + disables pointer-events
     - Maintain strokes Map (id → Stroke), currentTool, currentColor, localAuthorId, undoStack
     - Implement addStroke(), removeStroke(), clearAll(), redraw(), resize()
@@ -99,7 +99,7 @@ The implementation extends three backend components (StrokeRegistry, WebSocketHu
     - Visual indicator on toggle button for active/inactive state
     - _Requirements: 1.1, 1.2, 1.4, 1.5, 1.6, 1.7_
 
-  - [ ] 4.3 Add whiteboard CSS styles to `style.css`
+  - [x] 4.3 Add whiteboard CSS styles to `style.css`
     - Style canvas overlay: position absolute, top 0, left 0, 100% width/height, z-index 20
     - Style HUD toolbar: positioned at top, z-index 25, flexbox layout
     - Style tool buttons, color swatches, dividers
@@ -107,15 +107,15 @@ The implementation extends three backend components (StrokeRegistry, WebSocketHu
     - Pointer-events toggling based on mode active/inactive
     - _Requirements: 1.3, 14.1_
 
-- [ ] 5. Frontend: Coordinate normalization and stroke renderer
-  - [ ] 5.1 Create `bot/video/activity/coords.js` — normalization module
+- [x] 5. Frontend: Coordinate normalization and stroke renderer
+  - [x] 5.1 Create `bot/video/activity/coords.js` — normalization module
     - Implement normalize(pixelX, pixelY, width, height) → [nx, ny] clamped to [0, 1] with 4 decimal places
     - Implement denormalize(normX, normY, width, height) → [px, py]
     - Implement normalizeWidth(cssPixels, viewportWidth) → normalized float
     - Implement denormalizeWidth(normalizedWidth, viewportWidth) → CSS pixels
     - _Requirements: 13.1, 13.2, 13.4, 13.5_
 
-  - [ ] 5.2 Create `bot/video/activity/renderer.js` — StrokeRenderer class
+  - [x] 5.2 Create `bot/video/activity/renderer.js` — StrokeRenderer class
     - Implement renderStroke(stroke) dispatcher by type
     - Implement renderFreehand() with quadratic Bézier interpolation (midpoint algorithm)
     - Implement renderLine() and renderArrow() (line + arrowhead)
@@ -126,14 +126,14 @@ The implementation extends three backend components (StrokeRegistry, WebSocketHu
     - Add image cache (Map<url, HTMLImageElement>) with onload → redraw trigger
     - _Requirements: 2.4, 2.6, 4.6, 5.6, 5.7, 13.2, 15.7, 15.8_
 
-- [ ] 6. Frontend: Drawing tools
-  - [ ] 6.1 Create `bot/video/activity/tools.js` — ToolManager and DrawingTool interface
+- [x] 6. Frontend: Drawing tools
+  - [x] 6.1 Create `bot/video/activity/tools.js` — ToolManager and DrawingTool interface
     - Implement ToolManager class with tools Map and activeTool state
     - Define DrawingTool interface: name, cursor, onPointerDown, onPointerMove, onPointerUp, onCancel, renderPreview
     - Implement selectTool(name) with cursor update on canvas
     - _Requirements: 2.1_
 
-  - [ ] 6.2 Implement PenTool
+  - [x] 6.2 Implement PenTool
     - Capture normalized points on pointermove
     - Finalize stroke on pointerup (type: "freehand", N≥2 points)
     - Finalize on pointer leaving canvas bounds
@@ -141,7 +141,7 @@ The implementation extends three backend components (StrokeRegistry, WebSocketHu
     - Render live preview during draw
     - _Requirements: 2.1, 2.2, 2.3, 2.5_
 
-  - [ ] 6.3 Implement LineTool
+  - [x] 6.3 Implement LineTool
     - Record start point on pointerdown (normalized)
     - Render preview line on pointermove
     - Finalize 2-point line stroke on pointerup
@@ -150,7 +150,7 @@ The implementation extends three backend components (StrokeRegistry, WebSocketHu
     - Use current color, fixed width 3px (normalized)
     - _Requirements: 3.1, 3.2, 3.3, 3.4, 3.5, 3.6, 3.7_
 
-  - [ ] 6.4 Implement ShapeTool (rect, ellipse, arrow sub-types)
+  - [x] 6.4 Implement ShapeTool (rect, ellipse, arrow sub-types)
     - Sub-menu for shape type selection (rect, ellipse, arrow)
     - Record start point on pointerdown
     - Render preview of selected shape within bounding box on pointermove
@@ -161,7 +161,7 @@ The implementation extends three backend components (StrokeRegistry, WebSocketHu
     - Arrow renders with proportional arrowhead at endpoint
     - _Requirements: 4.1, 4.2, 4.3, 4.4, 4.5, 4.6, 4.7, 4.8_
 
-  - [ ] 6.5 Implement TextTool
+  - [x] 6.5 Implement TextTool
     - On click: show text input at clicked position (normalized coords)
     - Max length 200 characters
     - On Enter or blur: finalize text stroke with content + text_bg toggle state
@@ -170,7 +170,7 @@ The implementation extends three backend components (StrokeRegistry, WebSocketHu
     - Use current color, font size 16px
     - _Requirements: 5.1, 5.2, 5.3, 5.4, 5.5, 5.6, 5.7_
 
-  - [ ] 6.6 Implement EraserTool
+  - [x] 6.6 Implement EraserTool
     - On click: hit-test against all strokes (topmost first)
     - 5px tolerance from path centerline (normalized to viewport)
     - Remove hit stroke locally + send stroke_remove via WebSocket
@@ -178,7 +178,7 @@ The implementation extends three backend components (StrokeRegistry, WebSocketHu
     - No action if no stroke within tolerance
     - _Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6_
 
-  - [ ] 6.7 Implement StickerTool
+  - [x] 6.7 Implement StickerTool
     - On activation: show Sticker_Picker panel
     - On deactivation: hide Sticker_Picker panel
     - Require sticker selection before placement (no-op if none selected)
@@ -189,8 +189,8 @@ The implementation extends three backend components (StrokeRegistry, WebSocketHu
     - Produce stroke with type "sticker", sticker_category, sticker_filename
     - _Requirements: 15.1, 15.4, 15.5, 15.6, 15.9_
 
-- [ ] 7. Frontend: HUD interactions, color picker, undo, reset
-  - [ ] 7.1 Implement Color_Picker in Whiteboard HUD
+- [x] 7. Frontend: HUD interactions, color picker, undo, reset
+  - [x] 7.1 Implement Color_Picker in Whiteboard HUD
     - 8 preset color swatches (white, red, orange, yellow, green, cyan, blue, purple)
     - Custom color input via native browser color picker
     - Visual highlight on active color swatch
@@ -199,7 +199,7 @@ The implementation extends three backend components (StrokeRegistry, WebSocketHu
     - Apply selected color to all subsequent strokes
     - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5_
 
-  - [ ] 7.2 Implement undo button logic
+  - [x] 7.2 Implement undo button logic
     - Remove most recent stroke by THIS viewer (not other viewers)
     - Send stroke_remove WebSocket message with that stroke's ID
     - Visually disable button when no strokes to undo (reduced opacity, non-interactive)
@@ -207,21 +207,21 @@ The implementation extends three backend components (StrokeRegistry, WebSocketHu
     - Wire Ctrl+Z / Cmd+Z keyboard shortcut
     - _Requirements: 8.1, 8.2, 8.3, 8.4, 8.6_
 
-  - [ ] 7.3 Implement reset button logic
+  - [x] 7.3 Implement reset button logic
     - Show confirmation prompt before proceeding
     - On confirm: clear all strokes locally, send whiteboard_reset via WebSocket
     - Clear undo history for all viewers
     - On cancel: no action
     - _Requirements: 9.1, 9.2, 9.3, 9.4, 9.6, 9.7_
 
-  - [ ] 7.4 Implement text background toggle
+  - [x] 7.4 Implement text background toggle
     - Checkbox in HUD for text background on/off
     - When enabled: text strokes render with 50% opacity black background + 4px padding
     - State passed to text strokes as text_bg field
     - _Requirements: 5.7_
 
-- [ ] 8. Frontend: Hit-testing
-  - [ ] 8.1 Create `bot/video/activity/hittest.js` — hit-testing module
+- [x] 8. Frontend: Hit-testing
+  - [x] 8.1 Create `bot/video/activity/hittest.js` — hit-testing module
     - Implement hitTest(clickX, clickY, strokes, tolerancePx, viewportWidth, viewportHeight)
     - Iterate strokes in reverse insertion order (topmost first)
     - For freehand: minimum distance to any line segment between consecutive points
@@ -235,8 +235,8 @@ The implementation extends three backend components (StrokeRegistry, WebSocketHu
     - Return topmost hit stroke or null
     - _Requirements: 7.2, 7.3, 7.4, 7.5, 15.9_
 
-- [ ] 9. Frontend: Sticker Picker UI
-  - [ ] 9.1 Create `bot/video/activity/sticker_picker.js` — StickerPicker class
+- [x] 9. Frontend: Sticker Picker UI
+  - [x] 9.1 Create `bot/video/activity/sticker_picker.js` — StickerPicker class
     - Implement show(): fetch catalog from /activity/stickers/catalog (cache after first fetch)
     - Implement hide(): hide picker panel
     - Render category tabs/accordion with clickable navigation
@@ -246,8 +246,8 @@ The implementation extends three backend components (StrokeRegistry, WebSocketHu
     - Handle fetch failure: show "Stickers unavailable" message, retry on next activation
     - _Requirements: 15.2, 15.3_
 
-- [ ] 10. Frontend: WebSocket sync integration
-  - [ ] 10.1 Integrate whiteboard with existing WebSocket client
+- [x] 10. Frontend: WebSocket sync integration
+  - [x] 10.1 Integrate whiteboard with existing WebSocket client
     - Handle incoming `stroke_add` messages: parse and render stroke on canvas
     - Handle incoming `stroke_remove` messages: remove stroke from map, redraw
     - Handle incoming `whiteboard_reset` messages: clear all strokes, redraw
@@ -259,25 +259,25 @@ The implementation extends three backend components (StrokeRegistry, WebSocketHu
     - Handle errors from server (display toast or log)
     - _Requirements: 10.1, 10.3, 10.4, 10.5, 10.7, 10.8, 10.10, 11.3_
 
-  - [ ] 10.2 Implement controls region event passthrough
+  - [x] 10.2 Implement controls region event passthrough
     - While whiteboard mode is active: detect pointer position within controls overlay region
     - Set canvas pointer-events to none for that region (allow events to reach controls)
     - Controls appear on hover/tap with same auto-hide timeout as normal mode
     - Touch devices: taps in controls region treated as controls interaction, not drawing
     - _Requirements: 14.1, 14.2, 14.3, 14.4, 14.5_
 
-  - [ ] 10.3 Implement canvas resize handling
+  - [x] 10.3 Implement canvas resize handling
     - Listen to ResizeObserver on canvas container
     - On resize: update canvas dimensions, recalculate all stroke pixel positions from normalized coords, redraw
     - Skip redraw if dimensions are 0
     - _Requirements: 13.3_
 
-  - [ ] 10.4 Implement undo history restore on reconnect
+  - [x] 10.4 Implement undo history restore on reconnect
     - On WebSocket reconnect: rebuild undoStack from strokes authored by localAuthorId in the state message
     - Maintain insertion order in undoStack
     - _Requirements: 8.5_
 
-- [ ] 11. Checkpoint — Frontend integration complete
+- [x] 11. Checkpoint — Frontend integration complete
   - Ensure all tests pass, ask the user if questions arise.
 
 - [ ] 12. Property-based tests (backend — Python/Hypothesis)
@@ -424,7 +424,7 @@ The implementation extends three backend components (StrokeRegistry, WebSocketHu
     - GET /activity/stickers/invalid/missing.png → verify 404 response
     - _Requirements: 15.10, 15.11, 15.12_
 
-- [ ] 14. Final checkpoint — All tests pass
+- [x] 14. Final checkpoint — All tests pass
   - Ensure all tests pass, ask the user if questions arise.
 
 ## Notes
