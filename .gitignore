@@ -32,3 +32,6 @@ Thumbs.db
 
 # Docker
 .docker/
+
+# Large build artifacts
+kube/lavalink/Lavalink.jar
