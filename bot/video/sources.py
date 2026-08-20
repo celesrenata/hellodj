@@ -30,7 +30,9 @@ VIDEO_EXTENSIONS: frozenset[str] = frozenset({"mp4", "mkv", "webm", "avi", "mov"
 
 _MAX_URL_DOWNLOAD_BYTES: int = 100 * 1024 * 1024  # 100 MB
 _URL_CONNECT_TIMEOUT_SECONDS: float = 10.0
-_YTDLP_DOWNLOAD_TIMEOUT_SECONDS: float = 30.0
+_YTDLP_DOWNLOAD_TIMEOUT_SECONDS: float = float(
+    os.environ.get("YTDLP_DOWNLOAD_TIMEOUT", "600")
+)  # 10 minutes default — long videos (50min+) can be 500MB+
 
 # Default download directory for video files
 _DOWNLOAD_DIR = Path(tempfile.gettempdir()) / "hellodj_video"

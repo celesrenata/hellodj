@@ -8,6 +8,7 @@ video delivery with audio included and 720p resolution cap.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 from pathlib import Path
@@ -95,6 +96,12 @@ class HLSTranscodePipeline:
         self._last_segment_time: float = 0.0
         self._complete_event: asyncio.Event = asyncio.Event()
 
+        # Subtitle tracks discovered via ffprobe
+        self.subtitle_tracks: list[dict] = []
+
+        # Audio tracks discovered via ffprobe
+        self.audio_tracks: list[dict] = []
+
     def _cap_resolution(self, resolution: Resolution) -> Resolution:
         """Cap the output resolution at 720p maximum."""
         if resolution.height > _MAX_HLS_HEIGHT:
@@ -109,6 +116,15 @@ class HLSTranscodePipeline:
         hwaccel_decode: bool | None = None,
     ) -> list[str]:
         """Construct ffmpeg command line for HLS output with QSV acceleration.
+
+        When multiple audio tracks are detected (len(self.audio_tracks) > 1),
+        produces a multi-variant HLS output with:
+        - A master playlist (playlist.m3u8) with #EXT-X-MEDIA audio group entries
+        - A video-only variant: video.m3u8 + seg%05d_video.ts
+        - Per-language audio variants: audio_{lang}.m3u8 + seg%05d_audio_{lang}.ts
+
+        When only one (or zero) audio tracks exist, produces a single muxed
+        A/V output as before (playlist.m3u8 + seg%05d.ts).
 
         Args:
             input_path: Path to the source video file.
@@ -128,6 +144,8 @@ class HLSTranscodePipeline:
         bitrate = _bitrate_for_resolution(resolution)
         maxrate = int(bitrate * 1.5)
 
+        multi_audio = len(self.audio_tracks) > 1
+
         args: list[str] = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
 
         # Decode stage
@@ -139,6 +157,12 @@ class HLSTranscodePipeline:
 
         # Input
         args.extend(["-i", input_path])
+
+        # Stream mapping for multi-audio: explicitly map video + each audio
+        if multi_audio:
+            args.extend(["-map", "0:v:0"])
+            for idx in range(len(self.audio_tracks)):
+                args.extend(["-map", f"0:a:{idx}"])
 
         # Video filter: VPP scale to target resolution
         if hwaccel_decode:
@@ -155,6 +179,7 @@ class HLSTranscodePipeline:
             ])
 
         # Video encode: h264_qsv with constrained VBR
+        # force_key_frames ensures keyframes align with HLS segment boundaries
         args.extend([
             "-c:v", "h264_qsv",
             "-profile:v", "main",
@@ -162,7 +187,8 @@ class HLSTranscodePipeline:
             "-b:v", str(bitrate),
             "-maxrate", str(maxrate),
             "-bufsize", str(bitrate * 2),
-            "-g", "60",
+            "-g", "96",
+            "-force_key_frames", "expr:gte(t,n_forced*4)",
         ])
 
         # Audio encode: AAC at 128 kbps
@@ -172,16 +198,272 @@ class HLSTranscodePipeline:
         ])
 
         # HLS output format
-        segment_pattern = str(self.output_dir / "seg%05d.ts")
+        # -max_interleave_delta 0: force muxer to wait for all streams before
+        # writing, preventing audio starvation when QSV video runs ahead
         args.extend([
+            "-max_interleave_delta", "0",
             "-f", "hls",
             "-hls_time", str(_HLS_SEGMENT_DURATION),
             "-hls_list_size", "0",
-            "-hls_segment_filename", segment_pattern,
-            str(self.playlist_path),
+            "-hls_flags", "independent_segments",
         ])
 
+        if multi_audio:
+            # Build -var_stream_map: video variant + one audio variant per track
+            # Each variant gets a name used as the %v substitution in output paths
+            var_parts: list[str] = ["v:0,name:video,agroup:audio"]
+            for idx, track in enumerate(self.audio_tracks):
+                lang = track.get("lang", f"aud{idx}")
+                var_parts.append(
+                    f"a:{idx},name:audio_{lang},agroup:audio,language:{lang}"
+                )
+            var_stream_map = " ".join(var_parts)
+
+            segment_pattern = str(self.output_dir / "seg%05d_%v.ts")
+            args.extend([
+                "-var_stream_map", var_stream_map,
+                "-master_pl_name", "playlist.m3u8",
+                "-hls_segment_filename", segment_pattern,
+                str(self.output_dir / "%v.m3u8"),
+            ])
+        else:
+            # Single muxed A/V output (original behavior)
+            segment_pattern = str(self.output_dir / "seg%05d.ts")
+            args.extend([
+                "-hls_segment_filename", segment_pattern,
+                str(self.playlist_path),
+            ])
+
         return args
+
+    @staticmethod
+    async def probe_subtitles(input_path: str) -> list[dict]:
+        """Probe the source file for embedded subtitle tracks.
+
+        Runs ffprobe to detect subtitle streams and extracts language,
+        label, and stream index metadata for each.
+
+        Args:
+            input_path: Path to the source video file.
+
+        Returns:
+            List of subtitle track dicts with keys: lang, label, stream_index.
+            Returns an empty list if no subtitles are found or ffprobe fails.
+        """
+        args = [
+            "ffprobe",
+            "-hide_banner",
+            "-loglevel", "error",
+            "-select_streams", "s",
+            "-show_streams",
+            "-print_format", "json",
+            input_path,
+        ]
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
+        except (FileNotFoundError, OSError) as exc:
+            log.warning("ffprobe not available for subtitle probe: %s", exc)
+            return []
+        except asyncio.TimeoutError:
+            log.warning("ffprobe subtitle probe timed out for %s", input_path)
+            return []
+
+        if proc.returncode != 0:
+            log.debug(
+                "ffprobe subtitle probe returned non-zero for %s: %s",
+                input_path,
+                stderr.decode(errors="replace").strip(),
+            )
+            return []
+
+        try:
+            data = json.loads(stdout)
+        except (json.JSONDecodeError, ValueError):
+            log.warning("ffprobe subtitle probe returned invalid JSON for %s", input_path)
+            return []
+
+        streams = data.get("streams", [])
+        tracks: list[dict] = []
+        subtitle_idx = 0
+
+        for stream in streams:
+            if stream.get("codec_type") != "subtitle":
+                continue
+
+            tags = stream.get("tags", {})
+            # Language: try tags.language, fall back to "und" or indexed name
+            lang = tags.get("language", "").strip().lower()
+            if not lang or lang == "und":
+                lang = f"sub{subtitle_idx}"
+
+            # Label: try tags.title, fall back to language code
+            label = tags.get("title", "").strip()
+            if not label:
+                label = lang.upper() if len(lang) <= 3 else lang.capitalize()
+
+            # Stream index from ffprobe output
+            stream_index = stream.get("index", subtitle_idx)
+
+            tracks.append({
+                "lang": lang,
+                "label": label,
+                "stream_index": stream_index,
+            })
+            subtitle_idx += 1
+
+        return tracks
+
+    @staticmethod
+    async def probe_audio_tracks(input_path: str) -> list[dict]:
+        """Probe the source file for embedded audio tracks.
+
+        Runs ffprobe to detect audio streams and extracts language,
+        label, and stream index metadata for each.
+
+        Args:
+            input_path: Path to the source video file.
+
+        Returns:
+            List of audio track dicts with keys: lang, label, stream_index.
+            Returns an empty list if no audio tracks are found or ffprobe fails.
+        """
+        args = [
+            "ffprobe",
+            "-hide_banner",
+            "-loglevel", "error",
+            "-select_streams", "a",
+            "-show_streams",
+            "-print_format", "json",
+            input_path,
+        ]
+
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *args,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=30.0)
+        except (FileNotFoundError, OSError) as exc:
+            log.warning("ffprobe not available for audio probe: %s", exc)
+            return []
+        except asyncio.TimeoutError:
+            log.warning("ffprobe audio probe timed out for %s", input_path)
+            return []
+
+        if proc.returncode != 0:
+            log.debug(
+                "ffprobe audio probe returned non-zero for %s: %s",
+                input_path,
+                stderr.decode(errors="replace").strip(),
+            )
+            return []
+
+        try:
+            data = json.loads(stdout)
+        except (json.JSONDecodeError, ValueError):
+            log.warning("ffprobe audio probe returned invalid JSON for %s", input_path)
+            return []
+
+        streams = data.get("streams", [])
+        tracks: list[dict] = []
+        audio_idx = 0
+
+        for stream in streams:
+            if stream.get("codec_type") != "audio":
+                continue
+
+            tags = stream.get("tags", {})
+            # Language: try tags.language, fall back to indexed name
+            lang = tags.get("language", "").strip().lower()
+            if not lang or lang == "und":
+                lang = f"aud{audio_idx}"
+
+            # Label: try tags.title, fall back to language code
+            label = tags.get("title", "").strip()
+            if not label:
+                label = lang.upper() if len(lang) <= 3 else lang.capitalize()
+
+            # Stream index from ffprobe output
+            stream_index = stream.get("index", audio_idx)
+
+            tracks.append({
+                "lang": lang,
+                "label": label,
+                "stream_index": stream_index,
+            })
+            audio_idx += 1
+
+        return tracks
+
+    async def extract_subtitles(
+        self, input_path: str, subtitle_tracks: list[dict]
+    ) -> None:
+        """Extract subtitle tracks from the source file as WebVTT sidecar files.
+
+        For each discovered subtitle track, runs ffmpeg to convert it to WebVTT
+        format and writes it to `output_dir/subtitles/{lang}.vtt`.
+
+        Args:
+            input_path: Path to the source video file.
+            subtitle_tracks: List of subtitle track dicts from probe_subtitles().
+        """
+        if not subtitle_tracks:
+            return
+
+        subtitles_dir = self.output_dir / "subtitles"
+        subtitles_dir.mkdir(parents=True, exist_ok=True)
+
+        for idx, track in enumerate(subtitle_tracks):
+            lang = track["lang"]
+            output_path = subtitles_dir / f"{lang}.vtt"
+
+            args = [
+                "ffmpeg",
+                "-hide_banner",
+                "-loglevel", "error",
+                "-y",
+                "-i", input_path,
+                "-map", f"0:s:{idx}",
+                "-f", "webvtt",
+                str(output_path),
+            ]
+
+            try:
+                proc = await asyncio.create_subprocess_exec(
+                    *args,
+                    stdout=asyncio.subprocess.DEVNULL,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                _, stderr = await asyncio.wait_for(proc.communicate(), timeout=60.0)
+            except (FileNotFoundError, OSError) as exc:
+                log.warning(
+                    "Failed to extract subtitle track %s (%s): %s",
+                    lang, track.get("label", ""), exc,
+                )
+                continue
+            except asyncio.TimeoutError:
+                log.warning(
+                    "Subtitle extraction timed out for track %s (%s)",
+                    lang, track.get("label", ""),
+                )
+                continue
+
+            if proc.returncode != 0:
+                log.warning(
+                    "ffmpeg subtitle extraction failed for track %s (%s): %s",
+                    lang,
+                    track.get("label", ""),
+                    stderr.decode(errors="replace").strip(),
+                )
+            else:
+                log.info("Extracted subtitle track: %s → %s", lang, output_path)
 
     async def start(self, input_path: str, resolution: Resolution) -> None:
         """Launch ffmpeg HLS transcode pipeline.
@@ -203,6 +485,29 @@ class HLSTranscodePipeline:
 
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # Probe and extract subtitles before starting the main transcode
+        self.subtitle_tracks = await self.probe_subtitles(input_path)
+        if self.subtitle_tracks:
+            log.info(
+                "Found %d subtitle track(s) for guild=%s session=%s: %s",
+                len(self.subtitle_tracks),
+                self.guild_id,
+                self.session_id,
+                [t["lang"] for t in self.subtitle_tracks],
+            )
+            await self.extract_subtitles(input_path, self.subtitle_tracks)
+
+        # Probe audio tracks
+        self.audio_tracks = await self.probe_audio_tracks(input_path)
+        if self.audio_tracks:
+            log.info(
+                "Found %d audio track(s) for guild=%s session=%s: %s",
+                len(self.audio_tracks),
+                self.guild_id,
+                self.session_id,
+                [t["lang"] for t in self.audio_tracks],
+            )
 
         args = self.build_ffmpeg_args(input_path, resolution)
         log.info("HLS transcode starting: %s", " ".join(args))

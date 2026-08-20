@@ -6,6 +6,12 @@ metadata:
   annotations:
     cert-manager.io/cluster-issuer: celestium-le-production
     traefik.ingress.kubernetes.io/affinity: "true"
+    # WebSocket: Traefik v2/v3 upgrades connections transparently when the
+    # client sends Upgrade: websocket. No additional annotation is required.
+    # The /activity/ prefix path covers /activity/ws/{guild_id} for the
+    # video Activity sync hub. Long-lived connections (up to 8h session max)
+    # are safe — Traefik does not apply read timeouts to upgraded WebSockets.
+    # Keepalive: pod sysctl tcp_keepalive_time=60s + WS hub 30s ping.
   labels:
     app.kubernetes.io/instance: hellodj
     app.kubernetes.io/managed-by: kubectl

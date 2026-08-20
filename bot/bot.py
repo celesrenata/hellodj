@@ -177,7 +177,7 @@ async def connect_lavalink():
     # WEB-family clients and complements OAuth (TV). Blank values are a no-op.
     await push_youtube_pot()
 
-    # Refresh Tidal token at startup (it expires every ~6 hours)
+    # Refresh Tidal token at startup (it expires every ~4 hours)
     await refresh_tidal_token()
 
 
@@ -336,14 +336,24 @@ async def refresh_tidal_token() -> bool:
 
     Writes the new access token back to the credential store and updates
     tidal.expires_at. Returns True on success.
+
+    Note: The refresh token may have been issued by tidalapi's internal client
+    (fX2JxdmntZWK0ixT) during the PKCE login flow in tidal-stream. The refresh
+    request MUST use the same client_id that issued the token.
     """
     import time as _time
     from credentials import creds as _creds
 
     refresh_token = cfg("tidal.refresh_token", "")
-    client_id = cfg("tidal.client_id", "")
-    if not refresh_token or not client_id:
+    if not refresh_token:
         return False
+
+    # Determine which client_id to use for refresh.
+    # Priority: issuing_client_id (stored during PKCE) > tidalapi internal > developer portal
+    client_id = (
+        cfg("tidal.issuing_client_id", "")
+        or "fX2JxdmntZWK0ixT"  # tidalapi internal client (most PKCE tokens use this)
+    )
 
     # Check if token is still valid (with 5 min buffer)
     expires_at = float(cfg("tidal.expires_at", "0") or "0")
@@ -363,9 +373,30 @@ async def refresh_tidal_token() -> bool:
             ) as resp:
                 if resp.status != 200:
                     body = await resp.text()
-                    log.warning("tidal-refresh: failed (status=%s): %s", resp.status, body[:200])
-                    return False
-                data = await resp.json()
+                    # If the primary client_id fails, try the developer portal one as fallback
+                    dev_client_id = cfg("tidal.client_id", "")
+                    if dev_client_id and dev_client_id != client_id:
+                        log.debug("tidal-refresh: retrying with developer portal client_id")
+                        async with session.post(
+                            "https://auth.tidal.com/v1/oauth2/token",
+                            data={
+                                "grant_type": "refresh_token",
+                                "refresh_token": refresh_token,
+                                "client_id": dev_client_id,
+                            },
+                            timeout=aiohttp.ClientTimeout(total=15),
+                        ) as resp2:
+                            if resp2.status != 200:
+                                body2 = await resp2.text()
+                                log.warning("tidal-refresh: failed (status=%s): %s", resp.status, body[:200])
+                                return False
+                            data = await resp2.json()
+                    else:
+                        log.warning("tidal-refresh: failed (status=%s): %s", resp.status, body[:200])
+                        return False
+                else:
+                    data = await resp.json()
+
                 new_access = data.get("access_token", "")
                 new_refresh = data.get("refresh_token", "")
                 expires_in = data.get("expires_in", 86400)
@@ -373,9 +404,11 @@ async def refresh_tidal_token() -> bool:
                     _creds.set("tidal.access_token", new_access)
                     _creds.set("tidal.api_token", new_access)
                     _creds.set("tidal.expires_at", str(_time.time() + expires_in))
+                    # Store which client_id successfully refreshed (for next time)
+                    _creds.set("tidal.issuing_client_id", client_id)
                     if new_refresh:
                         _creds.set("tidal.refresh_token", new_refresh)
-                    log.info("tidal-refresh: token refreshed (expires_in=%s)", expires_in)
+                    log.info("tidal-refresh: token refreshed (expires_in=%s, client=%s)", expires_in, client_id[:8])
                     return True
                 log.warning("tidal-refresh: no access_token in response")
                 return False
@@ -385,7 +418,7 @@ async def refresh_tidal_token() -> bool:
 
 
 async def _token_refresh_watchdog() -> None:
-    """Periodically refresh Tidal + Spotify tokens and re-push YouTube auth."""
+    """Periodically refresh Tidal token and re-push YouTube auth."""
     interval = 300  # every 5 minutes
     while True:
         await asyncio.sleep(interval)
@@ -429,6 +462,23 @@ async def setup_hook():
     # Clean up old uploaded files (default 24h) on startup.
     file_handler.cleanup_old_files()
 
+    # Clean up stale video temp files (>24h) on startup.
+    try:
+        from video.sources import _DOWNLOAD_DIR as _video_dir
+        import time as _time
+
+        if _video_dir.exists():
+            _cutoff = _time.time() - 86400  # 24 hours
+            for _f in _video_dir.iterdir():
+                if _f.is_file() and _f.stat().st_mtime < _cutoff:
+                    try:
+                        _f.unlink()
+                        dbg.debug("Cleaned up stale video file: %s", _f.name)
+                    except OSError:
+                        pass
+    except ImportError:
+        pass
+
     # Connect to Lavalink
     dbg.info("setup_hook: connecting to Lavalink at %s:%s", LAVALINK_HOST, LAVALINK_PORT)
     await connect_lavalink()
@@ -447,6 +497,13 @@ async def setup_hook():
     await bot.load_extension("cogs.voice")
     await bot.load_extension("cogs.stream")
 
+    # Video streaming cog (optional — bot still works without the video module)
+    try:
+        await bot.load_extension("cogs.video")
+        dbg.info("setup_hook: video cog loaded")
+    except Exception as _video_exc:
+        log.warning("setup_hook: could not load video cog (non-fatal): %s", _video_exc)
+
     # ── switchable voice-connect debug layer ─────────────────
     # Installs a socket raw-listener that logs whether the bot's OWN
     # VOICE_STATE_UPDATE / VOICE_SERVER_UPDATE events arrive after op-4,
@@ -454,8 +511,15 @@ async def setup_hook():
     # HELLODJ_VOICE_DEBUG=1 (default); set to 0 to disable.
     voice_debug.install_raw_listeners(bot)
 
-    await bot.tree.sync()
-    log.info("HelloDJ slash commands synced.")
+    try:
+        await bot.tree.sync()
+        log.info("HelloDJ slash commands synced.")
+    except discord.HTTPException as _sync_exc:
+        if _sync_exc.code == 50240:
+            # Activity Entry Point command conflict — sync without removing it
+            log.warning("tree.sync blocked by Entry Point command (50240), skipping bulk sync")
+        else:
+            raise
 
 
 bot.setup_hook = setup_hook

@@ -53,6 +53,9 @@ _MIME_AUDIO_PREFIXES = ("audio/",)
 _MIME_VIDEO_PREFIXES = ("video/",)
 _MIME_IMAGE_PREFIXES = ("image/",)
 
+# Maximum allowed upload size for video files (500 MB).
+_MAX_VIDEO_UPLOAD_BYTES: int = 500 * 1024 * 1024
+
 
 # ── type detection ────────────────────────────────────────────────────────
 
@@ -246,6 +249,106 @@ async def process_upload(attachment, player, channel) -> dict | None:
         "size_bytes": size,
         "source": "upload",
     }
+
+
+# ── video upload routing ───────────────────────────────────────────────────
+
+
+async def probe_video_file(file_path: Path) -> tuple[bool, str]:
+    """Quick ffprobe check to detect corrupted/unplayable video files.
+
+    Returns (True, "") if the file is valid, or (False, error_message) if
+    the file cannot be decoded.
+    """
+    if not ffprobe_available():
+        return True, ""
+
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "ffprobe",
+            "-v", "error",
+            "-select_streams", "v:0",
+            "-show_entries", "stream=codec_name,width,height,duration",
+            "-of", "csv=p=0",
+            str(file_path),
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15.0)
+    except asyncio.TimeoutError:
+        return False, "Video file could not be analyzed (ffprobe timed out)"
+    except (FileNotFoundError, OSError):
+        return True, ""
+
+    if proc.returncode != 0:
+        return False, "File is not a playable video"
+
+    output = stdout.decode(errors="replace").strip()
+    if not output:
+        return False, "File is not a playable video"
+
+    return True, ""
+
+
+async def handle_video_upload(
+    attachment,
+    guild_id: int,
+    uploader_name: str,
+    gpu_probe=None,
+) -> tuple:
+    """Process a video file upload for the video streaming pipeline.
+
+    Returns (VideoSource, None) on success, or (None, error_message) on failure.
+    """
+    # Check GPU availability
+    if gpu_probe is not None and not gpu_probe.gpu_available:
+        return None, "Video streaming unavailable: Intel GPU device not detected"
+
+    # File size validation
+    file_size = getattr(attachment, "size", 0) or 0
+    if file_size > _MAX_VIDEO_UPLOAD_BYTES:
+        actual_mb = file_size / (1024 * 1024)
+        max_mb = _MAX_VIDEO_UPLOAD_BYTES / (1024 * 1024)
+        return None, f"File size ({actual_mb:.1f}MB) exceeds maximum ({max_mb:.1f}MB)"
+
+    # Download the file
+    try:
+        path = await download_attachment(attachment)
+    except Exception as exc:
+        return None, f"Failed to download video: {exc}"
+
+    # Validate the video file is playable
+    is_valid, probe_error = await probe_video_file(path)
+    if not is_valid:
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            pass
+        return None, probe_error
+
+    title = getattr(attachment, "filename", None) or path.name
+    if len(title) > 128:
+        title = title[:128]
+
+    try:
+        from video import VideoSource
+        source = VideoSource(
+            source_type="upload",
+            file_path=str(path),
+            title=title,
+            duration_seconds=0,
+            metadata={"uploader": uploader_name},
+            audio_url=None,
+            cleanup_on_finish=True,
+        )
+    except ImportError:
+        return None, "Video streaming module not available"
+
+    log.info(
+        "file_handler: video upload ready for streaming — %s (%d bytes) from %s",
+        title, file_size, uploader_name,
+    )
+    return source, None
 
 
 # ── local PCM playback through the shared engine ──────────────────────────

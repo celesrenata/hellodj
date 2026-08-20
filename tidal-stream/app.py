@@ -422,6 +422,62 @@ async def handle_proxy(request: web.Request) -> web.StreamResponse:
     return response
 
 
+async def _token_persist_task(app: web.Application) -> None:
+    """Periodically persist the in-memory Tidal session tokens back to the credential DB.
+
+    tidalapi refreshes tokens internally but never writes them back.
+    This task syncs the in-memory session state to the DB every 5 minutes
+    so the bot and web-ui always see current token/expiry values.
+    """
+    import time as _time
+    await asyncio.sleep(30)  # Initial delay — let session load first
+    while True:
+        try:
+            if _session is not None and _session.access_token:
+                import sys as _sys
+                _sys.path.insert(0, "/app")
+                from credentials import creds as _creds
+                import datetime as dt
+
+                _creds.set("tidal.access_token", _session.access_token)
+                _creds.set("tidal.api_token", _session.access_token)
+                if _session.refresh_token:
+                    _creds.set("tidal.refresh_token", _session.refresh_token)
+
+                # Compute expires_at from session.expiry_time
+                if _session.expiry_time is not None:
+                    expiry = _session.expiry_time
+                    if expiry.tzinfo is None:
+                        expiry = expiry.replace(tzinfo=dt.timezone.utc)
+                    _creds.set("tidal.expires_at", str(expiry.timestamp()))
+                else:
+                    # No expiry known — assume 4 hours from now
+                    _creds.set("tidal.expires_at", str(_time.time() + 14400))
+
+                _creds.set("tidal.issuing_client_id", "fX2JxdmntZWK0ixT")
+                _creds.set("tidal.updated_at", _time.strftime('%Y-%m-%dT%H:%M:%S+00:00', _time.gmtime()))
+                log.debug("Token persisted to credential DB")
+        except Exception as exc:
+            log.warning("Token persist failed: %s", exc)
+        await asyncio.sleep(300)  # Every 5 minutes
+
+
+async def _start_background_tasks(app: web.Application) -> None:
+    """Start background tasks on app startup."""
+    app["token_persist_task"] = asyncio.ensure_future(_token_persist_task(app))
+
+
+async def _cleanup_background_tasks(app: web.Application) -> None:
+    """Cancel background tasks on app shutdown."""
+    task = app.get("token_persist_task")
+    if task:
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+
 def create_app() -> web.Application:
     app = web.Application()
     app.router.add_get("/stream/{track_id}", handle_stream)
@@ -432,6 +488,8 @@ def create_app() -> web.Application:
     app.router.add_get("/auth/callback", handle_auth_callback)
     app.router.add_get("/auth/tidal/callback", handle_auth_callback)
     app.router.add_get("/health", handle_health)
+    app.on_startup.append(_start_background_tasks)
+    app.on_cleanup.append(_cleanup_background_tasks)
     return app
 
 

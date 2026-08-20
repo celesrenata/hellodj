@@ -23,6 +23,7 @@ graph TD
     subgraph "Discord Client"
         A[Voice Channel UI] --> B[Activity iframe]
         B --> C[hls.js Player]
+        C --> WS_C[WebSocket Client]
     end
 
     subgraph "Bot Pod (hellodj)"
@@ -33,11 +34,17 @@ graph TD
         H --> I[Static Frontend /activity/]
         H --> J[Status API /activity/status/]
         H --> K[HLS Segments /activity/stream/]
+        H --> WS_S[WebSocket Hub /activity/ws/]
+        H --> SUB[Subtitle VTT /activity/stream/.../subtitles/]
+        D --> NP[Now Playing Embed + Seek Bar]
+        NP --> WS_S
     end
 
     C -->|"GET playlist.m3u8"| K
     C -->|"GET segXXXXX.ts"| K
     C -->|"GET /activity/status/{guild_id}"| J
+    C -->|"GET subtitles/{lang}.vtt"| SUB
+    WS_C <-->|"play/pause/seek sync"| WS_S
     B -->|"Embedded App SDK"| L[Discord API]
     D -->|"POST /channels/{id}/activities"| L
 
@@ -72,12 +79,15 @@ class ActivityStreamer:
     source: VideoSource | None
     pipeline: HLSTranscodePipeline | None
     queue: list[VideoSource]
+    history: list[VideoSource]  # Previously played videos (LIFO, max 20)
     start_time: float  # monotonic time when playback began
     max_queue_size: int = 50
+    max_history_size: int = 20
 
     async def play(self, source: VideoSource) -> None: ...
     async def stop(self) -> None: ...
     async def skip(self) -> None: ...
+    async def previous(self) -> bool: ...  # Go back to last played video; returns False if no history
     def enqueue(self, source: VideoSource) -> int: ...
     def get_elapsed_seconds(self) -> float: ...
     async def cleanup(self) -> None: ...
@@ -129,8 +139,17 @@ class ActivityBackend:
 
 Static files served by ActivityBackend:
 - `index.html` — Main page with hls.js player
-- `app.js` — Embedded App SDK initialization, status polling, hls.js setup
+- `app.js` — Embedded App SDK initialization, WebSocket sync, hls.js setup, controls
 - `style.css` — Minimal styling for Discord iframe dimensions
+
+Frontend player controls include:
+- Play/pause button (synced via WebSocket to all viewers)
+- Seek bar with drag-to-seek (synced via WebSocket)
+- Back 10s / Forward 10s buttons (synced via WebSocket)
+- Volume slider with mute toggle (per-user only, stored in localStorage)
+- Subtitle track selector with "for everyone" checkbox (hidden if no subtitles)
+- Audio language selector with "for everyone" checkbox (hidden if single track)
+- All sync controls broadcast via WebSocket; volume is always local-only
 
 ### 5. ActivityLauncher (`bot/video/activity_launcher.py`)
 
@@ -163,13 +182,77 @@ class SessionRegistry:
     def cancel_grace_period(self, guild_id: int) -> None: ...
 ```
 
-### 7. Updated VideoCog (`bot/cogs/video.py`)
+### 7. WebSocketHub (`bot/video/ws_hub.py`)
+
+Manages WebSocket connections per guild for synchronized playback control.
+
+```python
+class WebSocketHub:
+    """Per-guild WebSocket connection manager for playback synchronization.
+
+    All connected clients for a guild share playback state. When any client
+    sends a control message (play, pause, seek), it is broadcast to all other
+    clients in the same guild. Late joiners receive the current state on connect.
+    """
+
+    _connections: dict[int, set[web.WebSocketResponse]]  # guild_id → websocket set
+    _playback_state: dict[int, PlaybackState]  # guild_id → current state
+
+    async def handle_ws(self, request: web.Request) -> web.WebSocketResponse: ...
+    async def broadcast(self, guild_id: int, message: dict, *, exclude: web.WebSocketResponse | None = None) -> None: ...
+    async def broadcast_from_bot(self, guild_id: int, message: dict) -> None: ...
+    def get_state(self, guild_id: int) -> PlaybackState | None: ...
+    def set_state(self, guild_id: int, state: PlaybackState) -> None: ...
+    def disconnect_all(self, guild_id: int) -> None: ...
+
+
+@dataclass
+class PlaybackState:
+    """Server-authoritative playback state for a guild."""
+    playing: bool = True
+    position: float = 0.0  # seconds
+    last_update: float = 0.0  # monotonic time of last state change
+    subtitle_lang: str | None = None  # "for everyone" subtitle
+    audio_lang: str | None = None  # "for everyone" audio track
+```
+
+### WebSocket Protocol
+
+Messages are JSON with the following structure:
+
+```json
+// Client → Server (user action)
+{"type": "play", "position": 42.5}
+{"type": "pause", "position": 42.5}
+{"type": "seek", "position": 120.0}
+{"type": "subtitle_change", "lang": "en", "for_everyone": true}
+{"type": "audio_change", "lang": "ja", "for_everyone": true}
+
+// Server → Client (broadcast to all)
+{"type": "play", "position": 42.5, "timestamp": 1724180400.0}
+{"type": "pause", "position": 42.5, "timestamp": 1724180400.0}
+{"type": "seek", "position": 120.0, "timestamp": 1724180400.0}
+{"type": "state", "playing": true, "position": 42.5, "timestamp": 1724180400.0, "subtitle_lang": null, "audio_lang": null}
+{"type": "subtitle_change", "lang": "en", "timestamp": 1724180400.0}
+{"type": "audio_change", "lang": "ja", "timestamp": 1724180400.0}
+```
+
+The `state` message is sent to newly connected clients for late-joiner sync.
+
+### 8. Updated VideoCog (`bot/cogs/video.py`)
 
 Modified to use ActivityStreamer instead of VideoStreamer. Commands:
 - `/video play <query>` — Resolve source, launch Activity or enqueue
 - `/video stop` — Stop session, close Activity
-- `/video skip` — Skip current, play next in queue
+- `/video skip` (alias: `/video next`) — Skip current, play next in queue
+- `/video previous` (alias: `/video last`) — Go back to previous video from history
 - `/video queue` — Show queue embed
+
+The Now Playing embed includes:
+- Text-based seek bar: `▬🔘▬▬▬▬▬▬▬ 0:30 / 4:24`
+- Control buttons: ⏮ (previous), ⏪ (seek -10s), ⏯ (play/pause), ⏩ (seek +10s), ⏭ (next/skip), 🚫 (stop)
+- Buttons interact with the WebSocket hub to broadcast play/pause/seek to all Activity clients
+- Background task updates the embed every 30s to keep the seek bar current
 
 ## Data Models
 
@@ -198,18 +281,30 @@ class SessionStatus:
     playlist_url: str | None    # Relative URL to playlist.m3u8
     queue_length: int
     session_id: str
+    subtitles: list[dict]       # [{"lang": "en", "label": "English"}, ...]
+    audio_tracks: list[dict]    # [{"lang": "ja", "label": "Japanese"}, ...]
+    playing: bool               # Whether playback is active (not paused)
 ```
 
 ### HLS Output Structure
 
 ```
 /tmp/hellodj_hls/{guild_id}/{session_id}/
-├── playlist.m3u8
+├── playlist.m3u8              # Master playlist (references audio variants)
+├── video.m3u8                 # Video-only segments playlist
+├── audio_default.m3u8         # Default audio segments playlist
+├── audio_{lang}.m3u8          # Per-language audio segments (if multiple tracks)
 ├── seg00000.ts
 ├── seg00001.ts
 ├── seg00002.ts
+├── subtitles/
+│   ├── en.vtt                 # English subtitles (WebVTT)
+│   ├── es.vtt                 # Spanish subtitles (WebVTT)
+│   └── ...
 └── ...
 ```
+
+When multiple audio tracks exist, the master playlist uses `#EXT-X-MEDIA` tags for audio group selection. When only one audio track exists, audio is muxed into the `.ts` segments directly (current behavior).
 
 ### Activity Authentication Token
 
@@ -256,7 +351,7 @@ class ActivityToken:
 
 *For any* HTTP request to stream endpoints (`/activity/stream/` or `/activity/status/`): (a) requests without a session token SHALL receive HTTP 401, (b) requests with an invalid token SHALL receive HTTP 401, (c) requests with a valid token scoped to guild A accessing guild B's stream (where A ≠ B) SHALL receive HTTP 403.
 
-**Validates: Requirements 5.4, 10.3, 10.4**
+**Validates: Requirements 5.4, 15.3, 15.4**
 
 ### Property 6: Status API response completeness
 
@@ -272,9 +367,9 @@ class ActivityToken:
 
 ### Property 8: Skip advances or stops
 
-*For any* active session, calling `skip()` SHALL: (a) if the queue is non-empty, begin playback of the next item (queue length decreases by one, state transitions to RESOLVING/BUFFERING), (b) if the queue is empty, stop the session (state transitions to STOPPING then IDLE).
+*For any* active session, calling `skip()` SHALL: (a) if the queue is non-empty, push the current source onto history and begin playback of the next item (queue length decreases by one, history length increases by one, state transitions to RESOLVING/BUFFERING), (b) if the queue is empty, stop the session (state transitions to STOPPING then IDLE).
 
-**Validates: Requirements 7.2**
+**Validates: Requirements 7.2, 8.6**
 
 ### Property 9: Queue ordering and capacity
 
@@ -293,6 +388,42 @@ class ActivityToken:
 *For any* session directory containing HLS segment files and playlists, calling session cleanup SHALL remove all files and the directory itself. On bot startup, *for any* set of directories under `/tmp/hellodj_hls/` that do not correspond to active sessions, all such orphaned directories SHALL be removed.
 
 **Validates: Requirements 9.1, 9.2**
+
+### Property 12: WebSocket sync broadcast
+
+*For any* guild with N connected WebSocket clients (N ≥ 2), when any one client sends a `play`, `pause`, or `seek` message, all other N-1 clients SHALL receive the broadcast within 100ms. The sender SHALL NOT receive their own message back.
+
+**Validates: Requirements 10.3, 10.4, 10.5**
+
+### Property 13: WebSocket late-joiner state
+
+*For any* guild with an active session and known playback state, when a new client connects via WebSocket, it SHALL immediately receive a `state` message containing the current `playing` boolean, `position` float, and server `timestamp`.
+
+**Validates: Requirements 10.6**
+
+### Property 14: Volume is always per-user
+
+*For any* volume change action by any viewer, the change SHALL affect ONLY that viewer's local player state. No WebSocket message SHALL be sent for volume changes.
+
+**Validates: Requirements 13.2, 13.5**
+
+### Property 15: Subtitle/audio "for everyone" broadcasting
+
+*For any* subtitle or audio language change where `for_everyone=true`, ALL connected clients SHALL receive a broadcast message. *For any* change where `for_everyone=false` (or unset), NO broadcast SHALL occur — the change is local only.
+
+**Validates: Requirements 11.5, 11.6, 12.4, 12.5**
+
+### Property 16: Now Playing seek bar accuracy
+
+*For any* session with known duration D seconds and elapsed E seconds, the seek bar SHALL render with the indicator at position `floor(E / D * 10)` out of 10 segments, and the time display SHALL show `fmt(E) / fmt(D)`.
+
+**Validates: Requirements 14.1, 14.5**
+
+### Property 17: Previous restores from history
+
+*For any* active session with a non-empty history stack, calling `previous()` SHALL: (a) push the current source to the front of the queue, (b) pop the most recent entry from history, (c) begin playback of that entry. *For any* session with an empty history stack, calling `previous()` SHALL return False and leave the session unchanged.
+
+**Validates: Requirements 7.6, 8.7, 8.8**
 
 ## Error Handling
 
@@ -330,6 +461,51 @@ class ActivityToken:
 | Max duration exceeded (8h) | Background timer | Auto-stop session, clean up, notify text channel |
 | Queue full (50 items) | Length check on enqueue | Return error message to user, do not modify queue |
 | Source resolution failure | yt-dlp or HTTP download error | Send error embed, skip to next in queue or close session if queue empty |
+
+### Track-Change Race Conditions (skip/previous/auto-advance)
+
+Three operations can change the currently playing track: `skip()`, `previous()`, and `_auto_advance()`. Without coordination they race, leading to double-play, orphaned pipelines, or denied transitions.
+
+| Error | Detection | Response |
+|-------|-----------|----------|
+| Concurrent track-change attempts | Multiple callers try to change source simultaneously | `_transition_lock` (asyncio.Lock) serializes all source-change operations; second caller waits |
+| skip/previous during RESOLVING/BUFFERING | State check at start of operation | Raise `TransitionDeniedError`; cog responds "Can't do that right now — video is loading" |
+| Auto-advance fires after skip already replaced track | Lock + stale-pipeline check (compare pipeline ref) | Auto-advance detects mismatch, exits without action |
+| `_play_source` fails after skip/previous | State transitions to ERROR | Caller catches error, attempts next queue item; if queue empty, stops session and reports to user |
+| `previous()` on cleaned-up source (temp file deleted) | History entry has `cleanup_on_finish=True` and file missing | Skip that history entry or report "Previous video no longer available" |
+| `previous()` with empty history | History stack is empty | Return False; cog reports "No previous video" |
+| `_cancel_background_tasks` not awaiting | `.cancel()` without await leaves task running | Changed to await cancellation with short timeout before starting new source |
+
+**Solution: `_transition_lock`**
+
+```python
+class ActivityStreamer:
+    def __init__(self, ...):
+        ...
+        self._transition_lock = asyncio.Lock()
+
+    async def skip(self) -> None:
+        async with self._transition_lock:
+            if self.state not in (StreamState.STREAMING, StreamState.BUFFERING):
+                raise TransitionDeniedError("Cannot skip in current state")
+            # push to history, cancel tasks, stop pipeline, play next...
+
+    async def previous(self) -> bool:
+        async with self._transition_lock:
+            if self.state not in (StreamState.STREAMING, StreamState.BUFFERING):
+                raise TransitionDeniedError("Cannot go back in current state")
+            if not self.history:
+                return False
+            # push current to queue front, pop history, play...
+
+    async def _auto_advance(self) -> None:
+        await self.pipeline.wait_complete()
+        async with self._transition_lock:
+            # Re-check: if pipeline was replaced (skip happened), bail
+            if self.pipeline is not completed_pipeline:
+                return
+            # proceed with advance...
+```
 
 ### Graceful Degradation
 

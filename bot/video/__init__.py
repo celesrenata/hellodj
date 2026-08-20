@@ -110,3 +110,6 @@ class SessionStatus:
     playlist_url: str | None  # Relative URL to playlist.m3u8
     queue_length: int
     session_id: str
+    audio_tracks: list[dict] = field(default_factory=list)
+    subtitles: list[dict] = field(default_factory=list)
+    playing: bool = True

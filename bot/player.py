@@ -179,6 +179,9 @@ def get_state(guild_id: int) -> dict:
             # Mid-song recovery: how many times the CURRENT track has been
             # retried after a mid-song exception. Reset on successful start.
             "track_retries": 0,
+            # Video streaming state (Go Live screenshare)
+            "video_streamer": None,        # VideoStreamer instance or None
+            "video_queue": [],             # list[VideoSource] pending video playback
         }
     return guild_state[guild_id]
 
@@ -868,6 +871,18 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
 
         # Prefer explicit/original versions over remixes, covers, live versions
         if isinstance(tracks, list):
+            # Post-filter: prefer tracks whose title+author contain all search words
+            query_words = [w.lower() for w in (title or "").split() if len(w) > 1]
+            if query_words and len(tracks) > 1:
+                filtered = [
+                    t for t in tracks
+                    if all(
+                        w in (getattr(t, "title", "") + " " + getattr(t, "author", "")).lower()
+                        for w in query_words
+                    )
+                ]
+                if filtered:
+                    tracks = filtered
             tracks = _prefer_explicit_original(tracks, title)
             tracks = _prefer_highest_quality(tracks)
 

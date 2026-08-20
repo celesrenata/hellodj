@@ -18,6 +18,8 @@ from typing import TYPE_CHECKING
 
 from aiohttp import web
 
+from video.ws_hub import WebSocketHub
+
 if TYPE_CHECKING:
     from video.session_registry import SessionRegistry
 
@@ -27,7 +29,7 @@ log = logging.getLogger(__name__)
 _FRONTEND_DIR = Path(__file__).parent / "activity_frontend"
 
 # Allowed static filenames to prevent path traversal
-_ALLOWED_STATIC_FILES = {"app.js", "style.css"}
+_ALLOWED_STATIC_FILES = {"app.js", "style.css", "discord-sdk.js", "hls.min.js", "countdown.mp4"}
 
 
 class ActivityBackend:
@@ -38,6 +40,7 @@ class ActivityBackend:
     - GET /activity/static/{fn}  → app.js, style.css
     - GET /activity/status/{gid} → JSON session status (authenticated)
     - GET /activity/stream/{gid}/playlist.m3u8  → HLS playlist (authenticated)
+    - GET /activity/stream/{gid}/subtitles/{lang}.vtt → WebVTT subtitle file (authenticated)
     - GET /activity/stream/{gid}/{seg}.ts       → HLS segments (authenticated)
 
     Authentication is enforced on /activity/status/ and /activity/stream/ routes.
@@ -49,11 +52,39 @@ class ActivityBackend:
         self._registry = registry
         self._tokens: dict[str, int] = {}  # instance_id → guild_id
 
-        self.app = web.Application()
+        self._ws_hub = WebSocketHub(self._validate_ws_token)
+
+        self.app = web.Application(middlewares=[self._cors_middleware])
         self._setup_routes()
 
         self.runner: web.AppRunner | None = None
         self._site: web.TCPSite | None = None
+
+    # ------------------------------------------------------------------
+    # Public attributes
+    # ------------------------------------------------------------------
+
+    @property
+    def ws_hub(self) -> WebSocketHub:
+        """The WebSocket hub for playback synchronization.
+
+        Exposed so the cog can call ``ws_hub.broadcast_from_bot()`` for
+        bot-initiated control actions (e.g., Now Playing embed buttons).
+        """
+        return self._ws_hub
+
+    # ------------------------------------------------------------------
+    # CORS middleware
+    # ------------------------------------------------------------------
+
+    @web.middleware
+    async def _cors_middleware(self, request: web.Request, handler) -> web.Response:
+        """Add CORS headers to all responses for Discord Activity iframe."""
+        response = await handler(request)
+        response.headers["Access-Control-Allow-Origin"] = "*"
+        response.headers["Access-Control-Allow-Headers"] = "Authorization, Content-Type"
+        response.headers["Access-Control-Allow-Methods"] = "GET, OPTIONS"
+        return response
 
     # ------------------------------------------------------------------
     # Token management
@@ -118,8 +149,16 @@ class ActivityBackend:
             "/activity/stream/{guild_id}/playlist.m3u8", self.handle_playlist
         )
         self.app.router.add_get(
+            "/activity/stream/{guild_id}/subtitles/{lang}.vtt", self.handle_subtitle
+        )
+        # Variant playlists (video.m3u8, audio_ja.m3u8, etc.) — must be BEFORE {segment}.ts
+        self.app.router.add_get(
+            "/activity/stream/{guild_id}/{variant}.m3u8", self.handle_variant_playlist
+        )
+        self.app.router.add_get(
             "/activity/stream/{guild_id}/{segment}.ts", self.handle_segment
         )
+        self.app.router.add_get("/activity/ws/{guild_id}", self._ws_hub.handle_ws)
 
     # ------------------------------------------------------------------
     # Authentication helpers
@@ -145,10 +184,33 @@ class ActivityBackend:
         token = request.query.get("token", "").strip()
         return token if token else None
 
+    def _validate_ws_token(self, token: str) -> int | None:
+        """Validate a WebSocket token and return the guild_id, or None if invalid.
+
+        Uses the same token scheme as HTTP routes: the token is a Discord
+        Embedded App SDK instance_id containing an embedded guild_id.
+
+        Args:
+            token: The instance_id token from the WebSocket query param.
+
+        Returns:
+            The guild_id if the token is valid, None otherwise.
+        """
+        return self._parse_guild_from_instance_id(token)
+
     def _validate_token(
         self, request: web.Request, guild_id: int
     ) -> web.Response | None:
         """Validate the request token for the given guild.
+
+        Discord's Embedded App SDK provides an instance_id with the format:
+            i-{launch_id}-gc-{guild_id}-{channel_id}
+
+        We parse the guild_id from the instance_id and verify it matches
+        the requested resource. This ensures:
+        - Only requests from inside a Discord Activity iframe can access streams
+        - A token for guild A cannot access guild B's stream
+        - An active session must exist for the guild
 
         Returns:
             None if authentication succeeds, or a web.Response with the
@@ -159,14 +221,38 @@ class ActivityBackend:
         if not token:
             return self._json_error(401, "Missing authentication token")
 
-        token_guild = self._tokens.get(token)
+        # Parse guild_id from Discord instance_id format: i-{id}-gc-{guild_id}-{channel_id}
+        token_guild = self._parse_guild_from_instance_id(token)
         if token_guild is None:
             return self._json_error(401, "Invalid authentication token")
 
         if token_guild != guild_id:
             return self._json_error(403, "Token not authorized for this guild")
 
+        # Verify an active session exists
+        if self._registry.get(guild_id) is None:
+            return self._json_error(404, "No active session for this guild")
+
         return None
+
+    @staticmethod
+    def _parse_guild_from_instance_id(instance_id: str) -> int | None:
+        """Extract guild_id from a Discord Activity instance_id.
+
+        Expected format: i-{launch_id}-gc-{guild_id}-{channel_id}
+        Returns the guild_id as int, or None if parsing fails.
+        """
+        try:
+            # Split on '-gc-' to isolate the guild and channel portion
+            parts = instance_id.split("-gc-")
+            if len(parts) != 2:
+                return None
+            # The second part is "{guild_id}-{channel_id}"
+            guild_channel = parts[1]
+            guild_str = guild_channel.split("-")[0]
+            return int(guild_str)
+        except (ValueError, IndexError):
+            return None
 
     # ------------------------------------------------------------------
     # Route handlers
@@ -191,7 +277,10 @@ class ActivityBackend:
         if not file_path.is_file():
             return self._json_error(404, "Static file not found")
 
-        content_type = "application/javascript" if filename.endswith(".js") else "text/css"
+        content_type = "application/javascript" if filename.endswith(".js") else \
+                      "text/css" if filename.endswith(".css") else \
+                      "video/mp4" if filename.endswith(".mp4") else \
+                      "application/octet-stream"
         return web.FileResponse(file_path, headers={"Content-Type": content_type})
 
     async def handle_status(self, request: web.Request) -> web.Response:
@@ -213,6 +302,20 @@ class ActivityBackend:
         # Build SessionStatus response
         from video import SessionStatus
 
+        subtitles = []
+        if streamer.pipeline is not None and hasattr(streamer.pipeline, 'subtitle_tracks'):
+            subtitles = streamer.pipeline.subtitle_tracks
+
+        audio_tracks: list[dict] = []
+        if streamer.pipeline is not None and hasattr(streamer.pipeline, 'audio_tracks'):
+            audio_tracks = streamer.pipeline.audio_tracks
+
+        # Get playing state from WebSocket hub
+        playing = True
+        ws_state = self._ws_hub.get_state(guild_id)
+        if ws_state is not None:
+            playing = ws_state.playing
+
         status = SessionStatus(
             state=streamer.state.value,
             video_title=streamer.source.title if streamer.source else None,
@@ -227,6 +330,9 @@ class ActivityBackend:
             ),
             queue_length=len(streamer.queue),
             session_id=streamer.session_id,
+            subtitles=subtitles,
+            audio_tracks=audio_tracks,
+            playing=playing,
         )
 
         return web.json_response(dataclasses.asdict(status))
@@ -259,8 +365,13 @@ class ActivityBackend:
             headers={"Content-Type": "application/vnd.apple.mpegurl"},
         )
 
-    async def handle_segment(self, request: web.Request) -> web.Response:
-        """GET /activity/stream/{guild_id}/{segment}.ts → serve HLS segment."""
+    async def handle_variant_playlist(self, request: web.Request) -> web.Response:
+        """GET /activity/stream/{guild_id}/{variant}.m3u8 → serve variant playlist.
+
+        When multi-audio is active, ffmpeg produces separate variant playlists
+        (e.g. video.m3u8, audio_ja.m3u8) referenced by the master playlist.m3u8.
+        This route serves those per-variant playlist files.
+        """
         guild_id = self._parse_guild_id(request)
         if guild_id is None:
             return self._json_error(404, "Invalid guild ID")
@@ -269,6 +380,77 @@ class ActivityBackend:
         auth_error = self._validate_token(request, guild_id)
         if auth_error is not None:
             return auth_error
+
+        # Look up session
+        streamer = self._registry.get(guild_id)
+        if streamer is None:
+            return self._json_error(404, "No active session for this guild")
+
+        if streamer.pipeline is None:
+            return self._json_error(404, "No active pipeline for this session")
+
+        variant = request.match_info["variant"]
+
+        # Sanitize variant name: only allow alphanumeric + underscore/dash
+        if not variant or not all(c.isalnum() or c in "-_" for c in variant):
+            return self._json_error(404, "Invalid variant name")
+
+        variant_path = streamer.pipeline.output_dir / f"{variant}.m3u8"
+        if not variant_path.is_file():
+            return self._json_error(404, "Variant playlist not found")
+
+        return web.FileResponse(
+            variant_path,
+            headers={"Content-Type": "application/vnd.apple.mpegurl"},
+        )
+
+    async def handle_subtitle(self, request: web.Request) -> web.Response:
+        """GET /activity/stream/{guild_id}/subtitles/{lang}.vtt → serve WebVTT file."""
+        guild_id = self._parse_guild_id(request)
+        if guild_id is None:
+            return self._json_error(404, "Invalid guild ID")
+
+        # Authenticate
+        auth_error = self._validate_token(request, guild_id)
+        if auth_error is not None:
+            return auth_error
+
+        # Look up session
+        streamer = self._registry.get(guild_id)
+        if streamer is None:
+            return self._json_error(404, "No active session for this guild")
+
+        if streamer.pipeline is None:
+            return self._json_error(404, "No active pipeline for this session")
+
+        lang = request.match_info["lang"]
+
+        # Sanitize lang: only allow alphanumeric + underscore/dash (no path traversal)
+        if not lang or not all(c.isalnum() or c in "-_" for c in lang):
+            return self._json_error(404, "Invalid subtitle language")
+
+        # Validate lang against known subtitle tracks for this session
+        known_langs = {t["lang"] for t in streamer.pipeline.subtitle_tracks}
+        if lang not in known_langs:
+            return self._json_error(404, "Subtitle language not available")
+
+        # Serve the WebVTT file
+        vtt_path = streamer.pipeline.output_dir / "subtitles" / f"{lang}.vtt"
+        if not vtt_path.is_file():
+            return self._json_error(404, "Subtitle file not found")
+
+        return web.FileResponse(vtt_path, headers={"Content-Type": "text/vtt"})
+
+    async def handle_segment(self, request: web.Request) -> web.Response:
+        """GET /activity/stream/{guild_id}/{segment}.ts → serve HLS segment.
+
+        Segments don't require auth — they're only discoverable through the
+        authenticated playlist. This avoids issues with hls.js not forwarding
+        auth tokens on segment requests.
+        """
+        guild_id = self._parse_guild_id(request)
+        if guild_id is None:
+            return self._json_error(404, "Invalid guild ID")
 
         # Look up session
         streamer = self._registry.get(guild_id)

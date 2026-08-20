@@ -169,6 +169,10 @@ class ActivityLauncher:
 
         if response.status >= 400:
             message = await self._extract_error_message(response)
+            logger.error(
+                "Discord API error %d on %s %s: %s",
+                response.status, method, url, message,
+            )
             raise ActivityLaunchError(response.status, message)
 
         # 204 No Content (e.g. successful DELETE)
@@ -217,14 +221,20 @@ class ActivityLauncher:
         """Extract a human-readable error message from an API error response."""
         try:
             body = await response.json()
+            parts = []
             # Discord error responses have a "message" field
             if "message" in body:
                 msg = body["message"]
-                # Include error code if present
                 code = body.get("code")
                 if code:
-                    return f"{msg} (code: {code})"
-                return msg
+                    parts.append(f"{msg} (code: {code})")
+                else:
+                    parts.append(msg)
+            # Include field-level errors if present
+            if "errors" in body:
+                parts.append(f"errors: {body['errors']}")
+            if parts:
+                return " | ".join(parts)
         except Exception:
             pass
 

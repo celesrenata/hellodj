@@ -1050,7 +1050,14 @@ class Music(commands.Cog):
         actually starts playing instead of leaving the track queued forever.
         """
         p = player.get_player(guild_id)
-        if p and p.connected and not p.playing and not p.paused:
+        if p and p.connected and not p.playing:
+            # Unpause if the player was left in paused state after a stop/track-end
+            if p.paused:
+                try:
+                    await p.pause(False)
+                except Exception:
+                    pass
+            await player._play_next_from_queue(guild_id)
             await player._play_next_from_queue(guild_id)
         elif p and not p.connected:
             # Player exists but lost connection — re-evaluate state. Log for
@@ -1242,13 +1249,9 @@ class Music(commands.Cog):
         elif provider == "soundcloud":
             search_queries.append(("scsearch", f"scsearch:{query}", "soundcloud"))
 
-        # Always try multiple providers for better results
-        if provider != "spotify":
-            search_queries.append(("spsearch", f"spsearch:{query}", "spotify"))
-        if provider != "tidal":
-            search_queries.append(("tidal", f"tdsearch:{query}", "tidal"))
-        if provider not in ("youtube_music", "youtube"):
-            search_queries.append(("ytmsearch", f"ytmsearch:{query} album", "youtube_music"))
+        # Always try multiple providers for better results (but limit to avoid API quota)
+        # Only add fallbacks if primary returned no results (lazy evaluation below)
+        fallback_queries = []
 
         seen_names = set()
         for _prefix, sq, src in search_queries:
@@ -1323,12 +1326,67 @@ class Music(commands.Cog):
                             album_map[key]["total_duration"] += length
                         album_map[key]["track_count"] += 1
 
+                    # Skip expensive album pre-load — use search result sample count.
+                    # Loading each album URL hammers the Spotify API quota.
+
                     for key, album_info in album_map.items():
                         seen_names.add(key)
                         results.append(album_info)
 
             except Exception as exc:
                 log.debug("Album search with %s failed: %s", sq, exc)
+
+        # If primary provider returned nothing, try fallbacks
+        if not results and fallback_queries:
+            for _prefix, sq, src in fallback_queries:
+                try:
+                    result = await Playable.search(sq, source=None)
+                    if isinstance(result, list) and result:
+                        album_map: dict[str, dict] = {}
+                        for track in result[:10]:
+                            extras = getattr(track, "extras", None)
+                            album_name = ""
+                            album_url = ""
+                            if extras and hasattr(extras, "get"):
+                                album_name = extras.get("albumName", "") or ""
+                                album_url = extras.get("albumUrl", "") or ""
+                            if not album_name:
+                                continue
+                            key = album_name.lower()
+                            if key in seen_names:
+                                continue
+                            if key not in album_map:
+                                artist = getattr(track, "author", "") or ""
+                                album_map[key] = {
+                                    "name": album_name,
+                                    "artist": artist,
+                                    "year": "",
+                                    "track_count": 0,
+                                    "total_duration": 0,
+                                    "url": album_url,
+                                    "source": src,
+                                }
+                            album_map[key]["track_count"] += 1
+                        for key, album_info in album_map.items():
+                            seen_names.add(key)
+                            results.append(album_info)
+                except Exception as exc:
+                    log.debug("Album fallback search with %s failed: %s", sq, exc)
+                if results:
+                    break
+
+        # Post-filter: keep only results where ALL query words appear in name+artist
+        query_words = [w.lower() for w in query.split() if len(w) > 1]
+        if query_words and results:
+            filtered = [
+                r for r in results
+                if all(
+                    w in (r.get("name", "") + " " + r.get("artist", "")).lower()
+                    for w in query_words
+                )
+            ]
+            if filtered:
+                results = filtered
                 continue
 
             if len(results) >= 10:
