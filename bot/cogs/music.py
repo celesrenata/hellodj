@@ -235,6 +235,89 @@ class SearchSelectView(discord.ui.View):
                 pass
 
 
+class AlbumSelectView(discord.ui.View):
+    """Dropdown of album search results showing artist, year, track count, and total duration."""
+
+    def __init__(self, results: list[dict], invoker_id: int, on_pick):
+        super().__init__(timeout=60)
+        self.results = results
+        self.invoker_id = invoker_id
+        self.on_pick = on_pick
+        self.message: discord.Message | None = None
+
+        options = []
+        for i, info in enumerate(results[:25]):  # Discord max 25 options
+            name = (info.get("name") or info.get("title") or "Unknown Album").strip()
+            artist = (info.get("artist") or info.get("author") or "").strip()
+            year = info.get("year") or ""
+            track_count = info.get("track_count") or 0
+            total_duration_ms = info.get("total_duration") or 0
+
+            # Format total duration as M:SS or H:MM:SS
+            total_secs = int(total_duration_ms) // 1000
+            hours, remainder = divmod(total_secs, 3600)
+            mins, secs = divmod(remainder, 60)
+            if hours > 0:
+                time_str = f"{hours}:{mins:02d}:{secs:02d}"
+            else:
+                time_str = f"{mins}:{secs:02d}"
+
+            # Label: album name (max 100 chars)
+            label = name[:100]
+
+            # Description: "Artist • 2024 • 12 tracks • 45:30"
+            parts = []
+            if artist:
+                parts.append(artist[:40])
+            if year:
+                parts.append(str(year))
+            if track_count:
+                parts.append(f"{track_count} tracks")
+            parts.append(time_str)
+            desc = " • ".join(parts)
+            desc = desc[:100]
+
+            options.append(discord.SelectOption(label=label, value=str(i), description=desc))
+
+        if not options:
+            options.append(discord.SelectOption(label="No results", value="none"))
+
+        select = discord.ui.Select(placeholder="Choose an album…", options=options)
+        select.callback = self._on_select
+        self.add_item(select)
+
+        cancel = discord.ui.Button(label="Cancel", style=discord.ButtonStyle.secondary)
+        cancel.callback = self._on_cancel
+        self.add_item(cancel)
+
+    async def _on_cancel(self, interaction: discord.Interaction) -> None:
+        if interaction.user.id != self.invoker_id:
+            await interaction.response.send_message("Only the person who searched can cancel.", ephemeral=True)
+            return
+        await interaction.response.edit_message(content="Album search cancelled.", view=None)
+        self.stop()
+
+    async def _on_select(self, interaction: discord.Interaction) -> None:
+        if interaction.user.id != self.invoker_id:
+            await interaction.response.send_message("Only the person who searched can pick an album.", ephemeral=True)
+            return
+        idx = int(interaction.data["values"][0])
+        if idx >= len(self.results):
+            await interaction.response.edit_message(content="Invalid selection.", view=None)
+            self.stop()
+            return
+        info = self.results[idx]
+        await self.on_pick(info, interaction)
+        self.stop()
+
+    async def on_timeout(self) -> None:
+        if self.message:
+            try:
+                await self.message.edit(content="Album search timed out.", view=None)
+            except discord.HTTPException:
+                pass
+
+
 # ── /remote control panel ─────────────────────────────────
 # An all-in-one button panel: Pause⏸️ / Play▶️ / Skip⏭️ /
 # Lyrics🎤 / Samples💿 / Queue📄, plus a filter dropdown
@@ -1049,45 +1132,88 @@ class Music(commands.Cog):
             await interaction.followup.send(f"Could not play that URL: {exc}")
 
     async def _play_album_flow(self, interaction: discord.Interaction, query: str) -> None:
-        """Resolve an album (URL or search) and queue all of its tracks."""
+        """Resolve an album (URL or search) and show a selection dropdown or queue directly."""
         await interaction.response.defer()
-        await interaction.followup.send("🔄 Loading album…", ephemeral=True)
+        await interaction.followup.send("🔄 Searching for albums…", ephemeral=True)
         try:
             await self._ensure_player(interaction)
             state = player.get_state(interaction.guild.id)
             provider = state.get("source_provider", "youtube")
 
-            # Use the configured provider's source for search; URLs are
-            # handled natively by Lavalink (lavasrc intercepts Spotify URLs).
-            source_map = {
-                "youtube": TrackSource.YouTube,
-                "youtube_music": TrackSource.YouTubeMusic,
-                "soundcloud": TrackSource.SoundCloud,
-                "spotify": "spsearch",
-            }
-            source = source_map.get(provider, TrackSource.YouTube)
-            result = await Playable.search(query, source=source)
+            is_url = query.startswith("http://") or query.startswith("https://")
 
-            if isinstance(result, wavelink.Playlist):
-                tracks = result.tracks
-                if not tracks:
-                    await interaction.followup.send("That album/playlist has no tracks.")
+            # For URLs, load directly (no selection needed)
+            if is_url:
+                result = await Playable.search(query)
+                if isinstance(result, wavelink.Playlist):
+                    tracks = result.tracks
+                    if not tracks:
+                        await interaction.followup.send("That album/playlist has no tracks.")
+                        return
+                    for track in tracks:
+                        info = player._track_entry(track, provider)
+                        await player.add_track(state, interaction.guild.id, info)
+                    await self._start_if_idle(interaction.guild.id)
+                    await interaction.followup.send(
+                        f"HelloDJ added **{len(tracks)}** tracks from **{result.name}** to the queue."
+                    )
+                elif isinstance(result, list) and result:
+                    for track in result:
+                        info = player._track_entry(track, provider)
+                        await player.add_track(state, interaction.guild.id, info)
+                    await self._start_if_idle(interaction.guild.id)
+                    await interaction.followup.send(f"HelloDJ added **{len(result)}** tracks to the queue.")
+                else:
+                    await interaction.followup.send("Could not load that album URL.")
+                return
+
+            # For text searches, use provider-specific album search
+            album_results = await self._search_albums(query, provider)
+
+            if not album_results:
+                await interaction.followup.send("No albums found for that query.")
+                return
+
+            # Show selection dropdown
+            async def on_album_pick(album_info: dict, picker: discord.Interaction):
+                album_url = album_info.get("url")
+                album_name = album_info.get("name") or "Unknown Album"
+                if not album_url:
+                    await picker.response.edit_message(
+                        content=f"Could not load **{album_name}** — no URL available.", view=None
+                    )
                     return
-                for track in tracks:
-                    info = player._track_entry(track, provider)
-                    await player.add_track(state, interaction.guild.id, info)
-                await interaction.followup.send(
-                    f"HelloDJ added **{len(tracks)}** tracks from **{result.name}** to the queue."
+
+                await picker.response.edit_message(
+                    content=f"🔄 Loading **{album_name}**…", view=None
                 )
-            elif isinstance(result, list):
-                for track in result:
-                    info = player._track_entry(track, provider)
-                    await player.add_track(state, interaction.guild.id, info)
-                await interaction.followup.send(f"HelloDJ added **{len(result)}** tracks to the queue.")
-            else:
-                info = player._track_entry(result, provider)
-                await player.add_track(state, interaction.guild.id, info)
-                await interaction.followup.send(f"HelloDJ added to queue: **{info['title']}**")
+
+                try:
+                    result = await Playable.search(album_url)
+                    tracks = []
+                    if isinstance(result, wavelink.Playlist):
+                        tracks = result.tracks
+                    elif isinstance(result, list):
+                        tracks = result
+
+                    if not tracks:
+                        await picker.followup.send(f"**{album_name}** has no playable tracks.")
+                        return
+
+                    for track in tracks:
+                        info = player._track_entry(track, provider)
+                        await player.add_track(state, interaction.guild.id, info)
+                    await self._start_if_idle(interaction.guild.id)
+                    await picker.followup.send(
+                        f"HelloDJ added **{len(tracks)}** tracks from **{album_name}** to the queue."
+                    )
+                except Exception as exc:
+                    log.error("Album load failed for %s: %s", album_url, exc)
+                    await picker.followup.send(f"Could not load **{album_name}**: {exc}")
+
+            view = AlbumSelectView(album_results, interaction.user.id, on_album_pick)
+            msg = await interaction.followup.send("Select an album:", view=view)
+            view.message = msg
 
         except (wavelink.LavalinkLoadException, wavelink.NodeException) as exc:
             log.error("Play album failed (%s): %s", type(exc).__name__, exc)
@@ -1095,6 +1221,120 @@ class Music(commands.Cog):
         except Exception as exc:
             log.error("Play album failed (%s): %s", type(exc).__name__, exc)
             await interaction.followup.send(f"Could not load that album: {exc}")
+
+    async def _search_albums(self, query: str, provider: str) -> list[dict]:
+        """Search for albums across providers and return structured results.
+
+        Each result dict has: name, artist, year, track_count, total_duration, url
+        """
+        results = []
+
+        # Provider-specific album search prefixes
+        search_queries = []
+        if provider == "spotify":
+            search_queries.append(("spsearch", f"spsearch:{query}", "spotify"))
+        elif provider == "tidal":
+            search_queries.append(("tidal", f"tdsearch:{query}", "tidal"))
+        elif provider == "youtube_music":
+            search_queries.append(("ytmsearch", f"ytmsearch:{query} album", "youtube_music"))
+        elif provider == "youtube":
+            search_queries.append(("ytsearch", f"ytsearch:{query} album", "youtube"))
+        elif provider == "soundcloud":
+            search_queries.append(("scsearch", f"scsearch:{query}", "soundcloud"))
+
+        # Always try multiple providers for better results
+        if provider != "spotify":
+            search_queries.append(("spsearch", f"spsearch:{query}", "spotify"))
+        if provider != "tidal":
+            search_queries.append(("tidal", f"tdsearch:{query}", "tidal"))
+        if provider not in ("youtube_music", "youtube"):
+            search_queries.append(("ytmsearch", f"ytmsearch:{query} album", "youtube_music"))
+
+        seen_names = set()
+        for _prefix, sq, src in search_queries:
+            try:
+                result = await Playable.search(sq, source=None)
+                if isinstance(result, wavelink.Playlist):
+                    # Direct playlist result
+                    name = result.name or "Unknown Album"
+                    if name.lower() in seen_names:
+                        continue
+                    seen_names.add(name.lower())
+
+                    tracks = result.tracks or []
+                    total_dur = sum(getattr(t, "length", 0) or 0 for t in tracks)
+                    if total_dur > player._DURATION_MAX_MS:
+                        total_dur = 0
+                    artist = getattr(tracks[0], "author", "") if tracks else ""
+                    # Try to get year from extras
+                    year = ""
+                    if tracks:
+                        extras = getattr(tracks[0], "extras", None)
+                        if extras and hasattr(extras, "get"):
+                            year = extras.get("albumYear", "") or ""
+
+                    results.append({
+                        "name": name,
+                        "artist": artist,
+                        "year": year,
+                        "track_count": len(tracks),
+                        "total_duration": total_dur,
+                        "url": getattr(result, "uri", None) or getattr(result, "url", None) or "",
+                        "source": src,
+                    })
+                elif isinstance(result, list) and result:
+                    # For search results that return tracks, try to group by album
+                    # Extract unique album info from the track list
+                    album_map: dict[str, dict] = {}
+                    for track in result[:20]:
+                        extras = getattr(track, "extras", None)
+                        album_name = ""
+                        album_url = ""
+                        if extras and hasattr(extras, "get"):
+                            album_name = extras.get("albumName", "") or ""
+                            album_url = extras.get("albumUrl", "") or ""
+                        if not album_name:
+                            raw = getattr(track, "raw_data", None)
+                            if raw and isinstance(raw, dict):
+                                pi = raw.get("pluginInfo", {})
+                                album_name = pi.get("albumName", "") or ""
+                                album_url = pi.get("albumUrl", "") or ""
+                        if not album_name:
+                            continue
+                        key = album_name.lower()
+                        if key in seen_names:
+                            continue
+                        if key not in album_map:
+                            artist = getattr(track, "author", "") or ""
+                            year = ""
+                            if extras and hasattr(extras, "get"):
+                                year = extras.get("albumYear", "") or ""
+                            album_map[key] = {
+                                "name": album_name,
+                                "artist": artist,
+                                "year": year,
+                                "track_count": 0,
+                                "total_duration": 0,
+                                "url": album_url,
+                                "source": src,
+                            }
+                        length = getattr(track, "length", 0) or 0
+                        if length <= player._DURATION_MAX_MS:
+                            album_map[key]["total_duration"] += length
+                        album_map[key]["track_count"] += 1
+
+                    for key, album_info in album_map.items():
+                        seen_names.add(key)
+                        results.append(album_info)
+
+            except Exception as exc:
+                log.debug("Album search with %s failed: %s", sq, exc)
+                continue
+
+            if len(results) >= 10:
+                break
+
+        return results[:10]
 
     # ── Album ───────────────────────────────────────────────
 
@@ -1104,49 +1344,7 @@ class Music(commands.Cog):
         if not interaction.user.voice:
             await interaction.response.send_message("You need to be in a voice channel first.")
             return
-        await interaction.response.defer()
-
-        try:
-            await self._ensure_player(interaction)
-            state = player.get_state(interaction.guild.id)
-            provider = state.get("source_provider", "youtube")
-
-            source_map = {
-                "youtube": TrackSource.YouTube,
-                "youtube_music": TrackSource.YouTubeMusic,
-                "soundcloud": TrackSource.SoundCloud,
-                "spotify": "spsearch",
-            }
-            source = source_map.get(provider, TrackSource.YouTube)
-            result = await Playable.search(query, source=source)
-
-            if isinstance(result, wavelink.Playlist):
-                tracks = result.tracks
-                if not tracks:
-                    await interaction.followup.send("That album/playlist has no tracks.")
-                    return
-                for track in tracks:
-                    info = player._track_entry(track, provider)
-                    await player.add_track(state, interaction.guild.id, info)
-                await interaction.followup.send(
-                    f"HelloDJ added **{len(tracks)}** tracks from **{result.name}** to the queue."
-                )
-            elif isinstance(result, list):
-                for track in result:
-                    info = player._track_entry(track, provider)
-                    await player.add_track(state, interaction.guild.id, info)
-                await interaction.followup.send(f"HelloDJ added **{len(result)}** tracks to the queue.")
-            else:
-                info = player._track_entry(result, provider)
-                await player.add_track(state, interaction.guild.id, info)
-                await interaction.followup.send(f"HelloDJ added to queue: **{info['title']}**")
-
-        except (wavelink.LavalinkLoadException, wavelink.NodeException) as exc:
-            log.error("Album failed (%s): %s", type(exc).__name__, exc)
-            await interaction.followup.send("Could not load that album — the music source failed or was unavailable.")
-        except Exception as exc:
-            log.error("Album failed (%s): %s", type(exc).__name__, exc)
-            await interaction.followup.send(f"Could not load that album: {exc}")
+        await self._play_album_flow(interaction, query)
 
     # ── Pause / Resume ──────────────────────────────────────
 

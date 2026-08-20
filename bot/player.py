@@ -1424,12 +1424,31 @@ class NowPlayingView(discord.ui.View):
     """Unified remote control panel attached to the now-playing embed.
 
     The now-playing message posted when a song starts IS the remote control:
-    ⏮ Previous • ⏯ Play/Pause • ⏭ Next • ➕ Add to Playlist • Block: 🚫
+    Row 0: ⏮ Previous • ⏯ Play/Pause • ⏭ Next • ➕ Add to Playlist • 🚫 Block
+    Row 1: Filter/EQ dropdown (bassboost, nightcore, 8d, vaporwave, tune, EQ, reset)
     """
 
     def __init__(self, guild_id: int):
         super().__init__(timeout=300)
         self.guild_id = guild_id
+
+        # Add filter dropdown on row 1
+        filter_select = discord.ui.Select(
+            placeholder="🎛️ Filters & EQ…",
+            options=[
+                discord.SelectOption(label="Bass Boost", value="bassboost", emoji="🔊", description="Boost low-end frequencies"),
+                discord.SelectOption(label="Nightcore", value="nightcore", emoji="⚡", description="Speed up + pitch shift"),
+                discord.SelectOption(label="8D Audio", value="8d", emoji="🌀", description="Spatial panning effect"),
+                discord.SelectOption(label="Vaporwave", value="vaporwave", emoji="🌊", description="Slowed, mellow vibe"),
+                discord.SelectOption(label="Tune (Enhanced)", value="tune", emoji="✨", description="Studio master polish"),
+                discord.SelectOption(label="Equalizer", value="equalizer", emoji="🎛️", description="10-band custom EQ"),
+                discord.SelectOption(label="Reset Filters", value="reset", emoji="🔄", description="Remove all effects"),
+            ],
+            row=1,
+            custom_id="np_filter_select",
+        )
+        filter_select.callback = self._on_filter_select
+        self.add_item(filter_select)
 
     @discord.ui.button(label="⏮", style=discord.ButtonStyle.secondary, custom_id="np_prev", row=0)
     async def prev_track(self, interaction: discord.Interaction, _button: discord.ui.Button):
@@ -1542,6 +1561,99 @@ class NowPlayingView(discord.ui.View):
             view=view,
             ephemeral=True,
         )
+
+    async def _on_filter_select(self, interaction: discord.Interaction) -> None:
+        """Handle filter dropdown selection from the now-playing panel."""
+        value = interaction.data["values"][0]
+        player_obj = get_player(self.guild_id)
+        if not player_obj:
+            await interaction.response.send_message(
+                "HelloDJ is not connected to voice.", ephemeral=True
+            )
+            return
+
+        state = get_state(self.guild_id)
+
+        if value == "reset":
+            filters = player_obj.filters
+            filters.equalizer.reset()
+            filters.timescale.reset()
+            filters.rotation.reset()
+            filters.low_pass.reset()
+            filters.distortion.reset()
+            filters.vibrato.reset()
+            filters.tremolo.reset()
+            filters.karaoke.reset()
+            filters.channel_mix.reset()
+            await player_obj.set_filters(filters)
+            state["filters"] = {}
+            state["tune_enabled"] = False
+            persist(self.guild_id)
+            await interaction.response.send_message("🔄 All filters reset.", ephemeral=True)
+
+        elif value == "bassboost":
+            gains = [0.0, 0.1, 0.15, 0.1, 0.05, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            bands = [{"band": i, "gain": g} for i, g in enumerate(gains)]
+            filters = player_obj.filters
+            filters.equalizer.set(bands=bands)
+            await player_obj.set_filters(filters)
+            state["filters"]["bassboost"] = {"level": "moderate", "gains": gains}
+            persist(self.guild_id)
+            await interaction.response.send_message("🔊 Bass Boost applied.", ephemeral=True)
+
+        elif value == "nightcore":
+            filters = player_obj.filters
+            filters.timescale.set(speed=1.25, pitch=1.25, rate=1.0)
+            await player_obj.set_filters(filters)
+            state["filters"]["nightcore"] = {"speed": 1.25, "pitch": 1.25}
+            persist(self.guild_id)
+            await interaction.response.send_message("⚡ Nightcore applied.", ephemeral=True)
+
+        elif value == "8d":
+            filters = player_obj.filters
+            filters.rotation.set(rotation_hz=0.5)
+            await player_obj.set_filters(filters)
+            state["filters"]["8d"] = {"rotation": 0.5}
+            persist(self.guild_id)
+            await interaction.response.send_message("🌀 8D Audio applied.", ephemeral=True)
+
+        elif value == "vaporwave":
+            gains = [0.15, 0.15, 0.15, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]
+            bands = [{"band": i, "gain": g} for i, g in enumerate(gains)]
+            filters = player_obj.filters
+            filters.timescale.set(speed=0.85, pitch=0.9, rate=0.85)
+            filters.equalizer.set(bands=bands)
+            await player_obj.set_filters(filters)
+            state["filters"]["vaporwave"] = {"speed": 0.85, "pitch": 0.9}
+            persist(self.guild_id)
+            await interaction.response.send_message("🌊 Vaporwave applied.", ephemeral=True)
+
+        elif value == "tune":
+            # Toggle tune on/off
+            tune_on = not state.get("tune_enabled", False)
+            state["tune_enabled"] = tune_on
+            if tune_on:
+                await _apply_tune_to(player_obj)
+                persist(self.guild_id)
+                await interaction.response.send_message("✨ Tune (enhanced audio) enabled.", ephemeral=True)
+            else:
+                filters = player_obj.filters
+                filters.equalizer.reset()
+                filters.timescale.reset()
+                filters.distortion.reset()
+                await player_obj.set_filters(filters)
+                persist(self.guild_id)
+                await interaction.response.send_message("✨ Tune disabled.", ephemeral=True)
+
+        elif value == "equalizer":
+            from cogs.equalizer_view import EqualizerView
+            eq_view = EqualizerView(self.guild_id)
+            from cogs.equalizer_view import _build_eq_embed
+            embed = _build_eq_embed(eq_view.gains, eq_view.selected_band)
+            await interaction.response.send_message(embed=embed, view=eq_view, ephemeral=True)
+
+        else:
+            await interaction.response.send_message("Unknown filter.", ephemeral=True)
 
 
 class _PlaylistSelectView(discord.ui.View):
