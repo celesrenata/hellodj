@@ -469,6 +469,21 @@ async def permission_check(interaction: discord.Interaction) -> bool:
     gid = interaction.guild.id
     uid = interaction.user.id
 
+    # Allow /activate command through without any gates
+    if interaction.command and getattr(interaction.command, "name", "") == "activate":
+        return True
+
+    # Activation key gate: guilds must be activated before any commands work.
+    from credentials import creds as _creds
+    activated = _creds.get(f"guild.{gid}.activated", "")
+    if activated != "true":
+        await interaction.response.send_message(
+            "🔒 This server has not been activated. "
+            "An administrator must run `/activate <key>` to enable HelloDJ.",
+            ephemeral=True,
+        )
+        return False
+
     # Guild approval gate: only approved guilds can use commands.
     if not await _guild_policy.is_authorized(gid):
         await interaction.response.send_message(

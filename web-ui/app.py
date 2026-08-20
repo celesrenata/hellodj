@@ -1077,28 +1077,34 @@ def api_providers_status():
         expired = False
         error = None
 
-        # For Tidal: check the tidal-stream sidecar directly (it manages its own session)
+        # For Tidal: check the credential store (source of truth for tokens)
         if name == "tidal":
-            import requests as req
             try:
-                resp = req.get("http://hellodj.hellodj-service.svc.cluster.local:8801/health", timeout=3)
-                health = resp.json()
-                if health.get("status") == "ok":
-                    token_present = True
-                    expired = False
-                    error = None
-                else:
-                    expired = True
-                    error = "Tidal stream session not active"
-            except Exception:
-                pass  # Fall through to oauth.json check
+                from credentials import creds as _creds
+                tidal_token = _creds.get("tidal.access_token", "")
+                tidal_expires = _creds.get("tidal.expires_at", "")
+                tidal_updated = _creds.get("tidal.updated_at", "")
+                tidal_client_id = _creds.get("tidal.client_id", "")
+                token_present = bool(tidal_token)
+                expires_at = float(tidal_expires) if tidal_expires else None
+                expired = (expires_at is not None and now > expires_at) if token_present else False
+                error = None
+                configured = bool(tidal_client_id)
+            except Exception as e:
+                log.warning("Failed to read Tidal status from credential store: %s", e)
+                token_present = False
+                expires_at = None
+                expired = True
+                error = str(e)
+                configured = False
+                tidal_updated = None
             status[name] = {
-                "configured": True,
+                "configured": configured,
                 "label": prov["label"],
                 "token_present": token_present,
                 "token_expired": expired,
                 "expires_at": expires_at,
-                "updated_at": entry.get("updated_at") if entry else None,
+                "updated_at": tidal_updated,
                 "refresh_error": error,
             }
             continue
@@ -1775,18 +1781,34 @@ def guilds_page():
 def api_get_guilds():
     """Return the bot's authoritative guild list from bot_guilds.json.
 
-    Each guild includes its name, icon, member count, and channel list.
+    Each guild includes its name, icon, member count, channel list,
+    activation status, and its unique activation key.
     """
     if current_user() is None:
         return jsonify({"error": "Authentication required"}), 401
     guilds_data = read_json(GUILDS_FILE, {})
+
+    try:
+        from credentials import creds
+    except Exception:
+        creds = None
+
     guilds = []
     for gid, data in guilds_data.items():
         icon = data.get("icon")
-        # Normalize the icon: a full CDN URL (http) is passed through as the full
-        # src; a bare icon id is built into the standard Discord CDN URL.
         if icon and isinstance(icon, str) and not icon.startswith(("http://", "https://")):
             icon = f"https://cdn.discordapp.com/icons/{gid}/{icon}.webp?size=128"
+
+        activated = False
+        activation_key = ""
+        if creds:
+            activated = creds.get(f"guild.{gid}.activated", "") == "true"
+            # Get or generate a unique activation key for this guild
+            activation_key = creds.get(f"guild.{gid}.activation_key", "")
+            if not activation_key:
+                activation_key = secrets.token_urlsafe(16)
+                creds.set(f"guild.{gid}.activation_key", activation_key)
+
         guilds.append({
             "id": gid,
             "name": data.get("name", ""),
@@ -1795,6 +1817,8 @@ def api_get_guilds():
             "channels": data.get("channels", []),
             "permissions_ok": data.get("permissions_ok"),
             "missing_permissions": data.get("missing_permissions", []),
+            "activated": activated,
+            "activation_key": activation_key,
         })
     return jsonify({"guilds": guilds})
 
@@ -1809,6 +1833,37 @@ def api_clear_guild(gid):
         write_json(SESSIONS_FILE, sessions)
         return jsonify({"status": "ok", "message": f"Guild {gid} session cleared"})
     return jsonify({"error": "Guild not found"}), 404
+
+@app.route("/api/guilds/<gid>/deactivate", methods=["POST"])
+def api_deactivate_guild(gid):
+    """Deactivate a guild — revoke its activation and regenerate its key."""
+    if current_user() is None:
+        return jsonify({"error": "Authentication required"}), 401
+    if not is_admin(current_user()):
+        return jsonify({"error": "Admin only"}), 403
+    try:
+        from credentials import creds
+        creds.delete(f"guild.{gid}.activated")
+        # Regenerate the key so the old one can't be reused
+        new_key = secrets.token_urlsafe(16)
+        creds.set(f"guild.{gid}.activation_key", new_key)
+        log.info("api: guild %s deactivated by user %s (key regenerated)", gid, current_user())
+        return jsonify({"status": "ok", "message": f"Guild {gid} deactivated. A new key has been generated."})
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 500
+
+@app.route("/api/guilds/<gid>/reset-session", methods=["POST"])
+def api_reset_guild_session(gid):
+    """Reset a guild's playback session (clear queue, current track)."""
+    if current_user() is None:
+        return jsonify({"error": "Authentication required"}), 401
+    sessions = read_json(SESSIONS_FILE, {})
+    if gid in sessions:
+        del sessions[gid]
+        write_json(SESSIONS_FILE, sessions)
+        log.info("api: guild %s session reset by user %s", gid, current_user())
+        return jsonify({"status": "ok", "message": f"Guild {gid} session reset"})
+    return jsonify({"status": "ok", "message": f"Guild {gid} had no session to reset"})
 
 # ── Playlists ───────────────────────────────────────────────
 

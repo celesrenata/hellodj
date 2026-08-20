@@ -701,11 +701,12 @@ class Music(commands.Cog):
         source = source_map.get(provider, TrackSource.YouTube)
 
         if provider == "tidal":
-            # Tidal: use tdsearch: prefix for metadata lookup.
-            # If no Tidal video is available, fall back to YouTube.
+            # Tidal: use tdsearch: prefix for metadata lookup via LavasRC.
+            # Pass source=None so wavelink doesn't prepend ytsearch:/ytmsearch:.
+            # If no Tidal results, fall back to YouTube.
             tidal_query = f"tdsearch:{query}" if not query.startswith("http") else query
             try:
-                tracks = await Playable.search(tidal_query, source=TrackSource.YouTube)
+                tracks = await Playable.search(tidal_query, source=None)
             except Exception as exc:
                 log.warning("Tidal search failed for %r: %s", query, exc)
                 tracks = None
@@ -879,7 +880,10 @@ class Music(commands.Cog):
                         pos = queue_len
                         time_to_play_ms = 0
                         if p and p.playing:
-                            remaining = max(0, int(p.current.length or 0) - int(p.position or 0))
+                            cur_len = int(p.current.length or 0)
+                            if cur_len > player._DURATION_MAX_MS:
+                                cur_len = 0
+                            remaining = max(0, cur_len - int(p.position or 0))
                             time_to_play_ms += remaining
                         for item in state["queue"][:-1]:
                             time_to_play_ms += int(item.get("duration") or 0)

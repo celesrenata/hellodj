@@ -91,7 +91,7 @@ async def resolve_tidal_stream(track_url_or_id: str) -> str | None:
                     return None
                 data = await resp.json()
                 stream_url = data.get("url")
-                if stream_url:
+                if stream_url and stream_url.startswith("http"):
                     log.info(
                         "stream_resolver: resolved Tidal track %s → direct URL "
                         "(quality=%s, codec=%s, elapsed=%.0fms)",

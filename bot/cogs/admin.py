@@ -240,6 +240,53 @@ class Admin(commands.Cog):
             ephemeral=True,
         )
 
+    # ── Activation key ─────────────────────────────────────
+
+    @app_commands.command(name="activate", description="Activate HelloDJ in this server with a license key")
+    @app_commands.describe(key="Activation key for this server")
+    async def activate(self, interaction: discord.Interaction, key: str):
+        """Validate a per-guild activation key and enable HelloDJ for this guild."""
+        if not interaction.guild:
+            await interaction.response.send_message("This command can only be used in a server.", ephemeral=True)
+            return
+
+        from credentials import creds
+
+        gid = interaction.guild.id
+
+        # Check if already activated
+        if creds.get(f"guild.{gid}.activated", "") == "true":
+            await interaction.response.send_message("✅ This server is already activated.", ephemeral=True)
+            return
+
+        # Validate the key against this guild's unique key
+        guild_key = creds.get(f"guild.{gid}.activation_key", "")
+        if not guild_key:
+            log.warning("activate: no activation key generated for guild %s — cannot activate", gid)
+            await interaction.response.send_message(
+                "❌ No activation key has been generated for this server. "
+                "Ask the bot administrator to generate one from the web dashboard.",
+                ephemeral=True,
+            )
+            return
+
+        if key.strip() != guild_key.strip():
+            log.warning("activate: invalid key attempt by user %s in guild %s", interaction.user.id, gid)
+            await interaction.response.send_message("❌ Invalid activation key.", ephemeral=True)
+            return
+
+        # Activate the guild
+        creds.set(f"guild.{gid}.activated", "true")
+        log.info("activate: guild %s (%s) activated by user %s", interaction.guild.name, gid, interaction.user.id)
+
+        # Also auto-approve in guild_policy so it doesn't get stuck in pending
+        import guild_policy as _gp
+        await _gp.approve_guild(gid)
+
+        await interaction.response.send_message(
+            "✅ HelloDJ activated! All commands are now available in this server.",
+        )
+
 
 async def setup(bot: commands.Bot):
     await bot.add_cog(Admin(bot))

@@ -40,6 +40,11 @@ _connect_locks: dict[int, asyncio.Lock] = {}
 MAX_TRACK_RETRIES = int(os.getenv("HELLODJ_MAX_TRACK_RETRIES", "3"))
 RETRY_BACKOFF_SECONDS = float(os.getenv("HELLODJ_RETRY_BACKOFF_SECONDS", "1.5"))
 
+# ── duration sanity threshold ────────────────────────────────
+# Lavalink reports Long.MAX_VALUE (9223372036854775807) for HLS/live streams
+# that don't have a known duration. Treat anything > 24 hours as "unknown".
+_DURATION_MAX_MS = 86_400_000  # 24 hours in milliseconds
+
 # ── raw-event handshake instrumentation (diagnosis only) ────
 # discord.py only forwards VOICE_STATE_UPDATE / VOICE_SERVER_UPDATE to the
 # wavelink player when a registered voice client exists in
@@ -79,6 +84,7 @@ def _track_entry(track, provider: str | None = None) -> dict:
     title = getattr(track, "title", None) or "Unknown"
     author = getattr(track, "author", None) or ""
     length = getattr(track, "length", None) or 0
+    source = getattr(track, "source", None) or provider or "unknown"
     # Album name from lavasrc plugin info (Spotify/Tidal/Apple Music)
     album = ""
     extras = getattr(track, "extras", None)
@@ -94,12 +100,13 @@ def _track_entry(track, provider: str | None = None) -> dict:
         "title": title,
         "author": author,
         "album": album,
-        "duration": length,
+        "duration": length if length <= _DURATION_MAX_MS else 0,
+        "source": source,
     }
 
     log.debug(
-        "track_entry type=%s provider=%s uri=%r title=%r author=%r album=%r length=%r",
-        type(track).__name__, provider, uri, title, author, album, length,
+        "track_entry type=%s provider=%s uri=%r title=%r author=%r album=%r length=%r source=%r",
+        type(track).__name__, provider, uri, title, author, album, length, source,
     )
     return entry
 
@@ -673,6 +680,10 @@ def reset_crossfade(guild_id: int) -> None:
 async def add_track(state: dict, guild_id: int, entry: dict) -> None:
     state["queue"].append(entry)
     persist(guild_id)
+    # Auto-start playback if the player is idle (connected but not playing)
+    p = get_player(guild_id)
+    if p and p.connected and not p.playing and not p.paused:
+        await _play_next_from_queue(guild_id)
 
 
 async def enqueue_and_start(
@@ -751,8 +762,20 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
     url = entry.get("webpage_url") or entry.get("url")
     title = entry.get("title", "Unknown")
 
-    # DIAGNOSIS: log the effective source_provider at resolution time
+    # Detect the actual source from the URL — overrides the guild source_provider
+    # when the track URL clearly belongs to a specific service. This prevents
+    # mismatches like a Spotify URL being resolved through the Tidal path.
     sp = state.get("source_provider", "youtube")
+    if url:
+        if "spotify.com" in url or "spotify:" in url:
+            sp = "spotify"
+        elif "tidal.com" in url or "tidal:" in url:
+            sp = "tidal"
+        elif "youtube.com" in url or "youtu.be" in url or "music.youtube.com" in url:
+            sp = "youtube"
+        elif "soundcloud.com" in url:
+            sp = "soundcloud"
+
     log.info(
         "_resolve_and_play guild=%d title=%r source_provider=%r",
         guild_id, title, sp,
@@ -805,6 +828,9 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
                               resolved_length=track.length,
                               source_provider=f"{sp}_direct",
                               elapsed_ms=(time.monotonic() - resolve_start) * 1000)
+                    # Mark the current entry with the real source for embeds
+                    if state.get("current"):
+                        state["current"]["source"] = sp
                     await player.play(track)
                     return
                 log.info("Direct stream URL returned but Lavalink couldn't load it — falling back")
@@ -820,21 +846,11 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
         source = source_map.get(sp, TrackSource.YouTube)
 
         # For URLs, try to parse directly; for search, use Playable.search
-        if state.get("source_provider") == "tidal":
+        if sp == "tidal":
             tidal_query = f"tdsearch:{title}" if not (url and ("http://" in url or "https://" in url)) else (url or title)
-            tracks = await Playable.search(tidal_query, source=TrackSource.YouTube)
+            tracks = await Playable.search(tidal_query, source=None)
             if not tracks:
                 tracks = await Playable.search(title or url, source=TrackSource.YouTube)
-            else:
-                # Tidal is audio-only (no video). If the resolved track is a
-                # Tidal URL, redirect to YouTube so a video version is used.
-                first = tracks[0] if isinstance(tracks, list) else tracks
-                first_url = (getattr(first, "url", None) or "").lower()
-                if "tidal.com" in first_url or "tidal" in first_url:
-                    log.info("Tidal track has no video - redirecting to YouTube for %r", title)
-                    yt_tracks = await Playable.search(title or url, source=TrackSource.YouTube)
-                    if yt_tracks:
-                        tracks = yt_tracks
         elif url and ("http://" in url or "https://" in url):
             # Direct URL — try to get as a Playable
             tracks = await Playable.search(url, source=source)
@@ -1039,8 +1055,11 @@ async def on_track_start(guild_id: int, player: wavelink.Player, track: wavelink
     if cf > 0:
         tasks = []
         tasks.append(asyncio.ensure_future(_crossfade_fade_in(guild_id, player, cf)))
+        # Prefer entry duration over track.length (HLS streams report Long.MAX_VALUE)
         duration = getattr(track, "length", None) or 0
-        if duration > 0:
+        if duration <= 0 or duration > _DURATION_MAX_MS:
+            duration = (state.get("current") or {}).get("duration") or 0
+        if 0 < duration <= _DURATION_MAX_MS:
             tasks.append(asyncio.ensure_future(_crossfade_fade_out(guild_id, player, duration, cf)))
         state["crossfade_tasks"] = tasks
 
@@ -1137,12 +1156,21 @@ async def _send_now_playing(guild_id: int, player: wavelink.Player, track: wavel
         return
 
     # Prefer state["current"] (has correct metadata) over the live track object
-    # (which may report "Unknown title" for HTTP proxy streams).
+    # (which may report "Unknown title" / Long.MAX_VALUE duration for HLS proxy
+    # streams). Use the entry whenever it has ANY useful field — not just title.
     current_entry = state.get("current")
-    if current_entry and current_entry.get("title") and current_entry["title"] not in ("Unknown", "Unknown title"):
+    entry_useful = (
+        current_entry
+        and (
+            (current_entry.get("title") and current_entry["title"] not in ("Unknown", "Unknown title"))
+            or current_entry.get("author")
+            or (current_entry.get("duration") and 0 < current_entry["duration"] <= _DURATION_MAX_MS)
+        )
+    )
+    if entry_useful:
         embed = build_now_playing_embed_from_entry(current_entry)
     else:
-        embed = _build_now_playing_embed(track)
+        embed = _build_now_playing_embed(track, current_entry)
     view = NowPlayingView(guild_id)
 
     msg = state.get("now_playing_msg")
@@ -1159,8 +1187,8 @@ async def _send_now_playing(guild_id: int, player: wavelink.Player, track: wavel
 
 def _fmt_duration_ms(ms: int) -> str:
     """Format a duration in milliseconds to H:MM:SS or M:SS."""
-    if ms <= 0:
-        return "0:00"
+    if ms <= 0 or ms > _DURATION_MAX_MS:
+        return "LIVE" if ms > _DURATION_MAX_MS else "0:00"
     total_secs = ms // 1000
     hours, remainder = divmod(total_secs, 3600)
     mins, secs = divmod(remainder, 60)
@@ -1208,7 +1236,17 @@ def build_now_playing_embed_from_entry(entry: dict) -> discord.Embed:
     author = entry.get("author") or "Unknown Artist"
     song, artist = _split_title(raw_title, author)
     duration = entry.get("duration") or 0
+    if duration > _DURATION_MAX_MS:
+        duration = 0
     source = entry.get("source") or "unknown"
+
+    # Map http source to real provider based on URL pattern
+    url_for_source = entry.get("webpage_url") or entry.get("url") or ""
+    if source in ("unknown", "http"):
+        if "spotify.com" in url_for_source or "spotify:" in url_for_source:
+            source = "spotify"
+        elif "tidal.com" in url_for_source:
+            source = "tidal"
 
     embed = discord.Embed(title="🎵 HelloDJ — Now Playing", colour=discord.Colour.blurple())
     embed.add_field(name="Song", value=song, inline=True)
@@ -1223,12 +1261,31 @@ def build_now_playing_embed_from_entry(entry: dict) -> discord.Embed:
     return embed
 
 
-def _build_now_playing_embed(track: wavelink.Playable) -> discord.Embed:
+def _build_now_playing_embed(track: wavelink.Playable, entry: dict | None = None) -> discord.Embed:
     raw_title = track.title or "Unknown"
     author = track.author or "Unknown Artist"
+    # Prefer entry metadata for author/duration when the track object reports
+    # garbage (common for HLS/HTTP proxy streams).
+    if entry:
+        if entry.get("author") and author in ("Unknown Artist", ""):
+            author = entry["author"]
+        if entry.get("title") and raw_title in ("Unknown", "Unknown title"):
+            raw_title = entry["title"]
     song, artist = _split_title(raw_title, author)
     duration = track.length or 0
+    if duration > _DURATION_MAX_MS:
+        # Track reports Long.MAX_VALUE (HLS stream) — use entry's duration
+        duration = (entry or {}).get("duration") or 0
     source = getattr(track, "source", None) or "unknown"
+
+    # Map internal source names to user-friendly labels
+    uri = getattr(track, "uri", None) or ""
+    if source == "http":
+        # Direct stream sidecars use localhost URLs — map to real provider
+        if "8802/stream" in uri:
+            source = "spotify"
+        elif "8801/stream" in uri:
+            source = "tidal"
 
     # Album (may be None for some sources)
     album_name = None
@@ -1277,8 +1334,14 @@ async def _now_playing_updater(guild_id: int, player: wavelink.Player, track: wa
             current_entry = state.get("current")
             current = player.current or track
             position = player.position
-            duration = (current_entry or {}).get("duration") or current.length or 0
-            if duration <= 0:
+            # Prefer entry duration; only fall back to track.length if entry has none
+            entry_dur = (current_entry or {}).get("duration") or 0
+            track_dur = current.length or 0
+            if entry_dur > 0 and entry_dur <= _DURATION_MAX_MS:
+                duration = entry_dur
+            elif track_dur > 0 and track_dur <= _DURATION_MAX_MS:
+                duration = track_dur
+            else:
                 continue
 
             bar = _progress_bar(position, duration)
@@ -1288,7 +1351,7 @@ async def _now_playing_updater(guild_id: int, player: wavelink.Player, track: wa
             if current_entry and current_entry.get("title") and current_entry["title"] not in ("Unknown", "Unknown title"):
                 embed = build_now_playing_embed_from_entry(current_entry)
             else:
-                embed = _build_now_playing_embed(current)
+                embed = _build_now_playing_embed(current, current_entry)
             embed.description = f"`{bar}`  {pos_m}:{pos_s:02d} / {dur_m}:{dur_s:02d}"
             try:
                 await msg.edit(embed=embed)

@@ -63,113 +63,36 @@ spec:
           - name: net.ipv4.tcp_keepalive_time
             value: "60"
       initContainers:
-        # ── Render lavalink application.yml from the configmap ────────
-        # The configmap stores ${...} placeholders; lavalink's own image has no
-        # envsubst, so a busybox init container substitutes them from env into
-        # a writable emptyDir before the sidecar starts.
+        # ── Render lavalink application.yml from the credential store ─────
+        # Uses the bot image (has Python + cryptography) to run
+        # render_lavalink_config.py which reads ALL credentials (including
+        # refreshed Tidal tokens) directly from the encrypted SQLite DB.
+        # This ensures Lavalink always starts with current tokens.
         - name: render-lavalink-config
-          image: busybox:1.36
-          imagePullPolicy: IfNotPresent
+          image: registry.celestium.life/hellodj/bot:spotify-fix-2026-08-19
+          imagePullPolicy: Always
           env:
-            - name: TIDAL_COUNTRY_CODE
-              value: US
-            - name: TIDAL_SEARCH_LIMIT
-              value: "6"
-            - name: TIDAL_CLIENT_ID
+            - name: HELLODJ_DB_KEY
               valueFrom:
                 secretKeyRef:
-                  name: hellodj-secret
-                  key: TIDAL_CLIENT_ID
-                  optional: true
-            - name: TIDAL_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: hellodj-secret
-                  key: TIDAL_CLIENT_SECRET
-                  optional: true
-            - name: TIDAL_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: hellodj-secret
-                  key: TIDAL_TOKEN
-                  optional: true
-            - name: SPOTIFY_CLIENT_ID
-              valueFrom:
-                secretKeyRef:
-                  name: hellodj-secret
-                  key: SPOTIFY_CLIENT_ID
-                  optional: true
-            - name: SPOTIFY_CLIENT_SECRET
-              valueFrom:
-                secretKeyRef:
-                  name: hellodj-secret
-                  key: SPOTIFY_CLIENT_SECRET
-                  optional: true
-            - name: PROVIDER_YOUTUBE
-              value: "true"
-            - name: PROVIDER_YOUTUBEMUSIC
-              value: "true"
-            - name: PROVIDER_SOUNDCLOUD
-              value: "true"
-            - name: PROVIDER_SPOTIFY
-              value: "true"
-            - name: PROVIDER_TIDAL
-              value: "true"
-            # ── youtube-source plugin OAuth (optional) ───────────────────
-            # The youtube-source plugin does NOT support email/password; it uses an
-            # OAuth refresh token instead. Leave enabled=false until real values are
-            # filled in the youtube-secret (see kube/youtube-secret.yaml).
-            - name: YOUTUBE_OAUTH_ENABLED
-              value: "true"
-            - name: YOUTUBE_OAUTH_REFRESH_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: youtube-secret
-                  key: YOUTUBE_OAUTH_REFRESH_TOKEN
-                  optional: true
-            # ── yt-cipher remote cipher server token ───────────────────
-            # Shared with the yt-cipher container (API_TOKEN env var).
-            # Rendered into the Lavalink application.yml remoteCipher.password.
-            - name: YTCIPHER_API_TOKEN
-              valueFrom:
-                secretKeyRef:
-                  name: yt-cipher-secret
-                  key: API_TOKEN
-            # ── YouTube poToken (Proof of Origin) ──────────────────────
-            # Pushed at runtime by the bot, but also rendered into config for
-            # plugin initialization. Empty values are inert.
-            - name: POT_TOKEN
-              valueFrom:
-                configMapKeyRef:
-                  name: hellodj-bot-config
-                  key: POT_TOKEN
-                  optional: true
-            - name: POT_VISITOR_DATA
-              valueFrom:
-                configMapKeyRef:
-                  name: hellodj-bot-config
-                  key: POT_VISITOR_DATA
-                  optional: true
+                  name: hellodj-db-key
+                  key: HELLODJ_DB_KEY
+            - name: DATA_DIR
+              value: /app/data
           command:
-            - /bin/sh
-            - -c
-            - |
-              set -e
-              cp /cfg/application.yml /out/application.yml
-              for v in TIDAL_COUNTRY_CODE TIDAL_SEARCH_LIMIT TIDAL_CLIENT_ID TIDAL_CLIENT_SECRET TIDAL_TOKEN SPOTIFY_CLIENT_ID SPOTIFY_CLIENT_SECRET PROVIDER_YOUTUBE PROVIDER_YOUTUBEMUSIC PROVIDER_SOUNDCLOUD PROVIDER_SPOTIFY PROVIDER_TIDAL YOUTUBE_OAUTH_ENABLED YOUTUBE_OAUTH_REFRESH_TOKEN YTCIPHER_API_TOKEN POT_TOKEN POT_VISITOR_DATA; do
-                val=$(eval echo \${$v})
-                sed -i "s|\${$v}|$val|g" /out/application.yml
-              done
+            - python
+            - /app/render_lavalink_config.py
+            - /out/application.yml
           volumeMounts:
-            - name: lavalink-config-src
-              mountPath: /cfg
+            - name: hellodj-data
+              mountPath: /app/data
               readOnly: true
             - name: lavalink-config-rendered
               mountPath: /out
       containers:
         # ── Discord Bot ─────────────────────────────────────────────
         - name: bot
-          image: registry.celestium.life/hellodj/bot:batch-fixes-2026-08-18-fix1
+          image: registry.celestium.life/hellodj/bot:latest
           imagePullPolicy: Always
           envFrom:
             - configMapRef:
@@ -302,7 +225,7 @@ spec:
 
         # ── Lavalink sidecar ───────────────────────────────────────
         - name: lavalink
-          image: registry.celestium.life/hellodj/lavalink:sabr-2026-08-19
+          image: registry.celestium.life/hellodj/lavalink:fmp4-hls
           imagePullPolicy: Always
           ports:
             - containerPort: 2333
@@ -384,7 +307,7 @@ spec:
         # Direct audio streaming from Tidal via tidalapi.
         # Reads OAuth tokens from /app/data/oauth.json (shared with bot + web-ui).
         - name: tidal-stream
-          image: registry.celestium.life/hellodj/tidal-stream:latest
+          image: registry.celestium.life/hellodj/tidal-stream:v2-fix
           imagePullPolicy: Always
           ports:
             - containerPort: 8801
@@ -396,7 +319,12 @@ spec:
             - name: TIDAL_STREAM_PORT
               value: "8801"
             - name: TIDAL_QUALITY
-              value: high_lossless
+              value: low_320k
+            - name: HELLODJ_DB_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-db-key
+                  key: HELLODJ_DB_KEY
           resources:
             requests:
               cpu: 100m
@@ -471,13 +399,6 @@ spec:
             claimName: hellodj-config-pvc
         - name: hellodj-config-backups
           emptyDir: {}
-        - configMap:
-            defaultMode: 420
-            items:
-              - key: application.yml
-                path: application.yml
-            name: lavalink-config
-          name: lavalink-config-src
         - name: lavalink-config-rendered
           emptyDir: {}
         - name: hellodj-models

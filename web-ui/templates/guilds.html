@@ -11,6 +11,17 @@
     </div>
 </div>
 
+<!-- Activation Info -->
+<div class="row mb-3">
+    <div class="col-12">
+        <div class="alert alert-info">
+            <i class="bi bi-info-circle"></i>
+            Each server has a unique activation key. Copy the key for a server and run
+            <code>/activate &lt;key&gt;</code> in that Discord server to enable HelloDJ.
+        </div>
+    </div>
+</div>
+
 <div class="row">
     <div class="col-12">
         <div class="card">
@@ -25,15 +36,14 @@
                     <table class="table table-hover" id="guilds-table">
                         <thead>
                             <tr>
-                                <th>Guild ID</th>
-                                <th>Name</th>
+                                <th>Guild</th>
                                 <th>Members</th>
-                                <th>Channels</th>
+                                <th>Status</th>
                                 <th>Actions</th>
                             </tr>
                         </thead>
                         <tbody id="guilds-body">
-                            <tr><td colspan="5" class="text-muted text-center">Loading...</td></tr>
+                            <tr><td colspan="4" class="text-muted text-center">Loading...</td></tr>
                         </tbody>
                     </table>
                 </div>
@@ -55,67 +65,89 @@ async function refreshGuilds() {
 
     const tbody = $('#guilds-body');
     if (!data.guilds || data.guilds.length === 0) {
-        tbody.html('<tr><td colspan="5" class="text-muted text-center">No guilds connected</td></tr>');
+        tbody.html('<tr><td colspan="4" class="text-muted text-center">No guilds connected</td></tr>');
         return;
     }
 
     tbody.html(data.guilds.map(g => `
         <tr>
-            <td><code>${g.id}</code></td>
             <td>
                 ${iconHtml(g)}
-                ${g.name || '—'}
+                <strong>${g.name || '—'}</strong>
+                <br>
+                <code class="small text-muted">${g.id}</code>
                 <br>
                 ${permissionsHtml(g)}
             </td>
-            <td>${g.member_count} member(s)</td>
+            <td>${g.member_count}</td>
             <td>
-                ${(g.channels || []).length
-                    ? g.channels.map(c => `<span class="badge bg-secondary me-1">${c.name}</span>`).join('')
-                    : '—'}
+                ${g.activated
+                    ? '<span class="badge bg-success"><i class="bi bi-check-circle"></i> Activated</span>'
+                    : '<span class="badge bg-danger"><i class="bi bi-lock"></i> Not Activated</span>'}
+                <br>
+                <div class="input-group input-group-sm mt-1" style="max-width:280px;">
+                    <input type="text" class="form-control form-control-sm font-monospace" value="${g.activation_key || ''}" readonly>
+                    <button class="btn btn-outline-secondary btn-sm" onclick="copyGuildKey('${g.activation_key || ''}')">
+                        <i class="bi bi-clipboard"></i>
+                    </button>
+                </div>
             </td>
             <td>
-                <button class="btn btn-sm btn-outline-danger" onclick="clearGuild('${g.id}')">
-                    <i class="bi bi-x-circle"></i>
-                </button>
+                <div class="btn-group-vertical btn-group-sm" role="group">
+                    <button class="btn btn-outline-warning" onclick="resetSession('${g.id}')" title="Reset session (clear queue)">
+                        <i class="bi bi-arrow-counterclockwise"></i> Reset
+                    </button>
+                    ${g.activated ? `
+                    <button class="btn btn-outline-danger" onclick="deactivateGuild('${g.id}', '${(g.name||'').replace(/'/g, "\\'")}')" title="Deactivate — revoke activation">
+                        <i class="bi bi-x-octagon"></i> Deactivate
+                    </button>
+                    ` : ''}
+                </div>
             </td>
         </tr>
     `).join(''));
 }
 
-// Icon: a full CDN URL (http) is used directly; a bare icon id is built into
-// the standard Discord CDN URL (matching the app's normalization).
 function iconHtml(g) {
     if (!g.icon) return '';
     const src = /^https?:/.test(g.icon)
         ? g.icon
         : `https://cdn.discordapp.com/icons/${g.id}/${g.icon}.webp?size=128`;
-    return `<img src="${src}" alt="" style="width:24px;height:24px;border-radius:50%;vertical-align:middle;margin-right:6px;">`;
+    return `<img src="${src}" alt="" style="width:28px;height:28px;border-radius:50%;vertical-align:middle;margin-right:8px;">`;
 }
 
-// Permissions health strip: green when permissions are OK, red/amber when
-// permissions are missing, graceful "—" when the fields are absent.
 function permissionsHtml(g) {
     const missing = g.missing_permissions || [];
-    const ok = g.permissions_ok === true || (g.permissions_ok === undefined && missing.length === 0);
-    if (g.permissions_ok === undefined && g.missing_permissions === undefined) {
-        return '<span class="text-muted">—</span>';
-    }
     if (missing.length > 0) {
         const list = missing.map(m => m.name || m).join(', ');
-        return `<span class="badge bg-warning text-dark mt-1" title="Missing permissions">⚠️ Missing: ${list}</span>`;
+        return `<span class="badge bg-warning text-dark mt-1" title="Missing: ${list}">⚠️ Perms</span>`;
     }
-    if (ok) {
-        return '<span class="badge bg-success mt-1">✅ Permissions OK</span>';
+    if (g.permissions_ok === true) {
+        return '<span class="badge bg-success mt-1">✅ Perms OK</span>';
     }
-    return '<span class="badge bg-danger mt-1">⚠️ Permissions missing</span>';
+    return '';
 }
 
-async function clearGuild(gid) {
-    if (!confirm(`Clear session for guild ${gid}?`)) return;
-    const result = await apiFetch(`/api/guilds/${gid}`, { method: 'DELETE' });
+function copyGuildKey(key) {
+    navigator.clipboard.writeText(key).then(() => {
+        showToast('Activation key copied to clipboard', 'success');
+    });
+}
+
+async function resetSession(gid) {
+    if (!confirm(`Reset the playback session for this guild? This clears the queue and current track.`)) return;
+    const result = await apiFetch(`/api/guilds/${gid}/reset-session`, { method: 'POST' });
     if (result && result.status === 'ok') {
         showToast(result.message, 'success');
+    }
+}
+
+async function deactivateGuild(gid, name) {
+    if (!confirm(`Deactivate "${name}"? The server will need to run /activate again to use HelloDJ.`)) return;
+    const result = await apiFetch(`/api/guilds/${gid}/deactivate`, { method: 'POST' });
+    if (result && result.status === 'ok') {
+        showToast(result.message, 'success');
+        await refreshGuilds();
     }
 }
 </script>

@@ -56,6 +56,13 @@ spec:
               value: /app/config
             - name: HELLODJ_BACKUP_DIR
               value: /app/config-backups
+            - name: DATA_DIR
+              value: /app/data
+            - name: HELLODJ_DB_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-db-key
+                  key: HELLODJ_DB_KEY
             - name: DISCORD_TOKEN
               valueFrom:
                 secretKeyRef:
