@@ -317,7 +317,7 @@ import { DiscordSDK } from './discord-sdk.js';
   // --- HLS Setup ---
   let hls = null;
 
-  const initHls = (playlistUrl) => {
+  const initHls = (playlistUrl, seekToStart = true) => {
     if (hls) { hls.destroy(); hls = null; }
 
     if (!Hls.isSupported()) {
@@ -335,10 +335,14 @@ import { DiscordSDK } from './discord-sdk.js';
       startLevel: 0,
       startPosition: 0,
     });
+    hls._seekToStart = seekToStart;
     hls.loadSource(playlistUrl);
     hls.attachMedia(videoEl);
 
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
+      if (hls._seekToStart) {
+        videoEl.currentTime = 0;
+      }
       videoEl.play().catch(() => {});
       // Connect WebSocket after HLS is initialized
       connectWebSocket();
@@ -585,7 +589,7 @@ import { DiscordSDK } from './discord-sdk.js';
 
     // Late joiner: if stream already has elapsed time, skip countdown and go directly to HLS
     if (status.elapsed_seconds > 15) {
-      initHls(playlistUrl);
+      initHls(playlistUrl, false);
     } else {
       // First viewer or stream just started — show countdown, then switch to HLS
       videoEl.src = 'static/countdown.mp4';
