@@ -134,7 +134,7 @@ import { initWhiteboardSync } from './ws_whiteboard.js';
     }
 
     const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
-    const wsUrl = `${proto}//${location.host}/activity/ws/${guildId}?token=${encodeURIComponent(instanceId)}`;
+    const wsUrl = `${proto}//${location.host}/ws/${guildId}?token=${encodeURIComponent(instanceId)}`;
 
     _wsIntentionalClose = false;
     ws = new WebSocket(wsUrl);
