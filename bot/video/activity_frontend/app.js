@@ -334,8 +334,10 @@ import { initWhiteboardSync } from './ws_whiteboard.js';
   };
 
   // --- Player Controls ---
-  // Unmute on first interaction
-  const unmute = () => {
+  // Unmute on first interaction with the video area (not UI buttons)
+  const unmute = (e) => {
+    // Don't unmute from button/control clicks
+    if (e.target.closest('.controls-row') || e.target.closest('.whiteboard-hud') || e.target.closest('.hud-btn') || e.target.closest('.ctrl-btn')) return;
     if (videoEl.muted) {
       videoEl.muted = false;
       document.removeEventListener('click', unmute);

@@ -71,6 +71,7 @@ export class WhiteboardOverlay {
    */
   activate() {
     this.mode = 'active';
+    this.hud.classList.add('visible');
     this.hud.style.display = '';
     this.canvas.style.pointerEvents = 'auto';
     this.toggleButton.dataset.active = 'true';
@@ -82,7 +83,8 @@ export class WhiteboardOverlay {
    */
   deactivate() {
     this.mode = 'inactive';
-    this.hud.style.display = 'none';
+    this.hud.classList.remove('visible');
+    this.hud.style.display = '';
     this.canvas.style.pointerEvents = 'none';
     this.toggleButton.dataset.active = 'false';
   }
