@@ -633,16 +633,7 @@ async def setup_hook():
     except discord.HTTPException as _clear_exc:
         log.debug("Global command clear failed (non-fatal): %s", _clear_exc)
 
-    # Sync commands per-guild (instant propagation, avoids Entry Point 50240 conflict)
-    synced = 0
-    for guild in bot.guilds:
-        try:
-            bot.tree.copy_global_to(guild=guild)
-            await bot.tree.sync(guild=guild)
-            synced += 1
-        except Exception as _g_exc:
-            log.debug("Guild sync failed for %s: %s", guild.id, _g_exc)
-    log.info("Per-guild command sync complete (%d/%d guilds).", synced, len(bot.guilds))
+    # Per-guild sync happens in on_ready (guild cache is empty here in setup_hook)
 
 
 bot.setup_hook = setup_hook
@@ -889,6 +880,18 @@ async def on_ready():
     # (startup re-check; unauthorized guilds are left).
     await _recheck_guilds()
     await oauth_store.write_guilds(_build_guilds_data(), force=True)
+
+    # Sync commands per-guild (guild cache is populated now)
+    synced = 0
+    for guild in bot.guilds:
+        try:
+            bot.tree.copy_global_to(guild=guild)
+            await bot.tree.sync(guild=guild)
+            synced += 1
+        except Exception as _g_exc:
+            log.debug("Guild sync failed for %s: %s", guild.id, _g_exc)
+    log.info("Per-guild command sync complete (%d/%d guilds).", synced, len(bot.guilds))
+
     global _resumed
     if not _resumed:
         _resumed = True

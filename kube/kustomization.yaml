@@ -29,7 +29,7 @@ resources:
 # Image tags
 images:
   - name: registry.celestium.life/hellodj/bot
-    newTag: cmd-dedup-2026-08-21
+    newTag: sync-fix-2026-08-21
   - name: registry.celestium.life/hellodj/web-ui
     newTag: latest
   - name: registry.celestium.life/hellodj/tidal-stream
