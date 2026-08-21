@@ -873,6 +873,10 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
     """
     state = get_state(guild_id)
 
+    # Set flag to prevent on_track_end from re-advancing the queue
+    # when we disconnect the audio player intentionally
+    state["_video_transition"] = True
+
     # Disconnect audio player if connected
     p = get_player(guild_id)
     if p and p.connected:
@@ -882,6 +886,9 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
             state["player"] = None
         except Exception as exc:
             log.warning("Failed to disconnect audio before video: %s", exc)
+
+    # Clear the transition flag — disconnect is done
+    state.pop("_video_transition", None)
 
     # Get the bot and VideoCog
     if _bot_ref is None:
@@ -1306,6 +1313,12 @@ async def on_track_start(guild_id: int, player: wavelink.Player, track: wavelink
 
 async def on_track_end(guild_id: int, player: wavelink.Player, track: wavelink.Playable, reason: str) -> None:
     state = get_state(guild_id)
+
+    # If we're transitioning to a video entry, suppress queue advancement
+    # (the disconnect that triggers this event is intentional, not a track finishing)
+    if state.get("_video_transition"):
+        dbg.debug("on_track_end: suppressed during video transition guild=%d", guild_id)
+        return
 
     np_task = state.get("now_playing_task")
     if np_task and not np_task.done():
