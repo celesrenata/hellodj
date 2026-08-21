@@ -104,18 +104,20 @@ import { DiscordSDK } from './discord-sdk.js';
   // --- Backend API ---
   const authHeaders = { Authorization: `Bearer ${instanceId}` };
 
-  const fetchStatus = async () => {
+  const fetchStatus = async (suppressErrors = false) => {
     try {
       const resp = await fetch(`status/${guildId}`, { headers: authHeaders });
       if (!resp.ok) {
-        if (resp.status === 404) showError('No active video session.');
-        else if (resp.status === 401) showError('Auth failed.');
-        else showError(`Status error: HTTP ${resp.status}`);
+        if (!suppressErrors) {
+          if (resp.status === 404) showError('No active video session.');
+          else if (resp.status === 401) showError('Auth failed.');
+          else showError(`Status error: HTTP ${resp.status}`);
+        }
         return null;
       }
       return await resp.json();
     } catch (e) {
-      showError(`Fetch error: ${e.message}`);
+      if (!suppressErrors) showError(`Fetch error: ${e.message}`);
       return null;
     }
   };
@@ -634,8 +636,8 @@ import { DiscordSDK } from './discord-sdk.js';
   let currentSessionId = status.session_id;
 
   const _checkForNextSession = async () => {
-    const updated = await fetchStatus();
-    if (!updated) return;
+    const updated = await fetchStatus(true); // suppress errors — 404 is expected during transitions
+    if (!updated) return; // Server unavailable or no session yet — retry next interval
     const formattedTitle = formatTitle(updated.video_title, updated.uploader);
     if (updated.video_title && formattedTitle !== titleBar.textContent) {
       titleBar.textContent = formattedTitle;
@@ -649,8 +651,11 @@ import { DiscordSDK } from './discord-sdk.js';
         const playlistUrl = `stream/${guildId}/playlist.m3u8?token=${encodeURIComponent(instanceId)}`;
         initHls(playlistUrl);
       }
+    } else if (updated.state === 'streaming' && updated.session_id === currentSessionId) {
+      // Still streaming same session — clear any stale error overlay
+      errorOverlay.classList.remove('visible');
     } else if (updated.state === 'idle' || !updated.session_id) {
-      // Session ended with no next video
+      // Session ended with no next video — show message but keep polling
       showError('Playback complete — queue is empty.');
     }
   };
