@@ -39,7 +39,8 @@ _MODULES_DIR = Path(__file__).parent / "activity"
 # Allowed static filenames to prevent path traversal
 _ALLOWED_STATIC_FILES = {
     "app.js", "style.css", "discord-sdk.js", "hls.min.js", "countdown.mp4",
-    # Whiteboard modules
+    "whiteboard-bundle.js",
+    # Individual whiteboard modules (kept for direct access/debugging)
     "canvas_resize.js", "color_picker.js", "controls_passthrough.js",
     "coords.js", "eraser_tool.js", "hittest.js", "line_tool.js",
     "pen_tool.js", "renderer.js", "reset.js", "shape_tool.js",

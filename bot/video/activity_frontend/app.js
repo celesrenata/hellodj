@@ -5,22 +5,6 @@
  * scrubber with drag-to-seek, WebSocket sync, and auto-hiding UI.
  */
 import { DiscordSDK } from './discord-sdk.js';
-import { WhiteboardOverlay } from './whiteboard.js';
-import { ToolManager } from './tools.js';
-import { PenTool } from './pen_tool.js';
-import { LineTool } from './line_tool.js';
-import { ShapeTool } from './shape_tool.js';
-import { TextTool } from './text_tool.js';
-import { EraserTool } from './eraser_tool.js';
-import { StickerTool } from './sticker_tool.js';
-import { StickerPicker } from './sticker_picker.js';
-import { ColorPicker } from './color_picker.js';
-import { initUndo } from './undo.js';
-import { initReset } from './reset.js';
-import { initTextBgToggle, getTextBg } from './text_bg_toggle.js';
-import { initCanvasResize } from './canvas_resize.js';
-import { ControlsPassthrough } from './controls_passthrough.js';
-import { initWhiteboardSync } from './ws_whiteboard.js';
 
 (async () => {
   // DOM
@@ -572,6 +556,12 @@ import { initWhiteboardSync } from './ws_whiteboard.js';
   const btnWhiteboard = document.getElementById('btn-whiteboard');
 
   if (whiteboardCanvas && whiteboardHud && btnWhiteboard) {
+    const {
+      WhiteboardOverlay, ToolManager, PenTool, LineTool, ShapeTool,
+      TextTool, EraserTool, StickerTool, StickerPicker, ColorPicker,
+      initUndo, initReset, initTextBgToggle, getTextBg,
+      initCanvasResize, ControlsPassthrough, initWhiteboardSync,
+    } = window.WhiteboardBundle;
     // Use instanceId as a unique viewer identifier (it's per-user per-session)
     const localAuthorId = instanceId || crypto.randomUUID();
 
