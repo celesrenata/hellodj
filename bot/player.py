@@ -26,6 +26,15 @@ dbg = get_debug_logger("player")
 # Per-guild state
 guild_state: dict[int, dict] = {}
 
+# Bot reference — set by bot.py at startup for cross-module access
+_bot_ref: "discord.ext.commands.Bot | None" = None
+
+
+def set_bot(bot) -> None:
+    """Store a reference to the bot instance (called once from bot.py)."""
+    global _bot_ref
+    _bot_ref = bot
+
 # Per-guild connect locks: serialize voice-channel connects so the
 # wakeword/voice pipeline and /play cannot race and trigger
 # `ClientException('Already connected to a voice channel.')`.
@@ -862,7 +871,6 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
 
     Disconnects the audio player and delegates to the VideoCog.
     """
-    import importlib
     state = get_state(guild_id)
 
     # Disconnect audio player if connected
@@ -876,8 +884,10 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
             log.warning("Failed to disconnect audio before video: %s", exc)
 
     # Get the bot and VideoCog
-    from bot import bot as _bot
-    video_cog = _bot.get_cog("Video")
+    if _bot_ref is None:
+        log.error("_start_video_from_queue: bot reference not set")
+        return
+    video_cog = _bot_ref.get_cog("Video")
     if video_cog is None:
         log.error("_start_video_from_queue: VideoCog not loaded, skipping video entry")
         # Skip to next in queue
@@ -921,7 +931,7 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
 
         # Launch Activity
         assert video_cog._launcher is not None
-        application_id = _bot.user.id
+        application_id = _bot_ref.user.id
         invite_data = await video_cog._launcher.launch(voice_channel.id, application_id)
 
         # Start playback

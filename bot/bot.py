@@ -89,6 +89,7 @@ intents.members = True
 intents.presences = True
 intents.guild_typing = False
 bot = commands.Bot(command_prefix="!", intents=intents)
+player.set_bot(bot)
 
 # ── Unified playback components (optional — non-fatal if unavailable) ──────
 
