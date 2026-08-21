@@ -314,7 +314,14 @@ class ActivityBackend:
         index_path = _FRONTEND_DIR / "index.html"
         if not index_path.is_file():
             return self._json_error(404, "Activity frontend not found")
-        return web.FileResponse(index_path, headers={"Content-Type": "text/html"})
+        return web.FileResponse(
+            index_path,
+            headers={
+                "Content-Type": "text/html",
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+            },
+        )
 
     async def handle_static(self, request: web.Request) -> web.Response:
         """GET /activity/static/{filename} → serve allowed static files."""
