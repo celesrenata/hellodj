@@ -205,6 +205,7 @@ class HLSTranscodePipeline:
             "-f", "hls",
             "-hls_time", str(_HLS_SEGMENT_DURATION),
             "-hls_list_size", "0",
+            "-hls_playlist_type", "event",
             "-hls_flags", "independent_segments",
         ])
 
