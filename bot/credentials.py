@@ -87,7 +87,9 @@ class CredentialStore:
         """Get a thread-local SQLite connection."""
         if not hasattr(self._local, "conn") or self._local.conn is None:
             if self._read_only:
-                uri = f"file:{self._db_path}?mode=ro"
+                # Use immutable=1 to skip WAL/SHM file access on read-only mounts.
+                # mode=ro alone still requires WAL journal access if the DB uses WAL.
+                uri = f"file:{self._db_path}?mode=ro&immutable=1"
                 self._local.conn = sqlite3.connect(
                     uri, uri=True, timeout=30, check_same_thread=False
                 )
