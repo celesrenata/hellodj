@@ -5,22 +5,22 @@
  * scrubber with drag-to-seek, WebSocket sync, and auto-hiding UI.
  */
 import { DiscordSDK } from './discord-sdk.js';
-import { WhiteboardOverlay } from '../modules/whiteboard.js';
-import { ToolManager } from '../modules/tools.js';
-import { PenTool } from '../modules/pen_tool.js';
-import { LineTool } from '../modules/line_tool.js';
-import { ShapeTool } from '../modules/shape_tool.js';
-import { TextTool } from '../modules/text_tool.js';
-import { EraserTool } from '../modules/eraser_tool.js';
-import { StickerTool } from '../modules/sticker_tool.js';
-import { StickerPicker } from '../modules/sticker_picker.js';
-import { ColorPicker } from '../modules/color_picker.js';
-import { initUndo } from '../modules/undo.js';
-import { initReset } from '../modules/reset.js';
-import { initTextBgToggle, getTextBg } from '../modules/text_bg_toggle.js';
-import { initCanvasResize } from '../modules/canvas_resize.js';
-import { ControlsPassthrough } from '../modules/controls_passthrough.js';
-import { initWhiteboardSync } from '../modules/ws_whiteboard.js';
+import { WhiteboardOverlay } from '/activity/modules/whiteboard.js';
+import { ToolManager } from '/activity/modules/tools.js';
+import { PenTool } from '/activity/modules/pen_tool.js';
+import { LineTool } from '/activity/modules/line_tool.js';
+import { ShapeTool } from '/activity/modules/shape_tool.js';
+import { TextTool } from '/activity/modules/text_tool.js';
+import { EraserTool } from '/activity/modules/eraser_tool.js';
+import { StickerTool } from '/activity/modules/sticker_tool.js';
+import { StickerPicker } from '/activity/modules/sticker_picker.js';
+import { ColorPicker } from '/activity/modules/color_picker.js';
+import { initUndo } from '/activity/modules/undo.js';
+import { initReset } from '/activity/modules/reset.js';
+import { initTextBgToggle, getTextBg } from '/activity/modules/text_bg_toggle.js';
+import { initCanvasResize } from '/activity/modules/canvas_resize.js';
+import { ControlsPassthrough } from '/activity/modules/controls_passthrough.js';
+import { initWhiteboardSync } from '/activity/modules/ws_whiteboard.js';
 
 (async () => {
   // DOM
