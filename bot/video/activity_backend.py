@@ -314,12 +314,15 @@ class ActivityBackend:
         index_path = _FRONTEND_DIR / "index.html"
         if not index_path.is_file():
             return self._json_error(404, "Activity frontend not found")
-        return web.FileResponse(
-            index_path,
+        # Read and serve as body (not FileResponse) to prevent ETag/Last-Modified caching
+        content = index_path.read_text()
+        return web.Response(
+            text=content,
+            content_type="text/html",
             headers={
-                "Content-Type": "text/html",
                 "Cache-Control": "no-cache, no-store, must-revalidate",
                 "Pragma": "no-cache",
+                "Expires": "0",
             },
         )
 
