@@ -71,7 +71,7 @@ spec:
         # refreshed Tidal tokens) directly from the encrypted SQLite DB.
         # This ensures Lavalink always starts with current tokens.
         - name: render-lavalink-config
-          image: registry.celestium.life/hellodj/bot:volume-fix-2026-08-20
+          image: registry.celestium.life/hellodj/bot:video-activity-2026-08-20
           imagePullPolicy: Always
           env:
             - name: HELLODJ_DB_KEY
@@ -94,7 +94,7 @@ spec:
       containers:
         # ── Discord Bot ─────────────────────────────────────────────
         - name: bot
-          image: registry.celestium.life/hellodj/bot:volume-fix-2026-08-20
+          image: registry.celestium.life/hellodj/bot:video-activity-2026-08-20
           imagePullPolicy: Always
           envFrom:
             - configMapRef:
@@ -321,7 +321,7 @@ spec:
         # Direct audio streaming from Tidal via tidalapi.
         # Reads OAuth tokens from /app/data/oauth.json (shared with bot + web-ui).
         - name: tidal-stream
-          image: registry.celestium.life/hellodj/tidal-stream:tidal-refresh-2026-08-20
+          image: registry.celestium.life/hellodj/tidal-stream:video-activity-2026-08-20
           imagePullPolicy: Always
           ports:
             - containerPort: 8801
