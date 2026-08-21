@@ -350,10 +350,10 @@ async def refresh_tidal_token() -> bool:
         return False
 
     # Determine which client_id to use for refresh.
-    # Priority: issuing_client_id (stored during PKCE) > tidalapi internal > developer portal
+    # Priority: issuing_client_id (stored during PKCE) > tidalapi PKCE client > developer portal
     client_id = (
         cfg("tidal.issuing_client_id", "")
-        or "fX2JxdmntZWK0ixT"  # tidalapi internal client (most PKCE tokens use this)
+        or "6BDSRdpK9hqEBTgU"  # tidalapi PKCE client (all PKCE tokens use this)
     )
 
     # Check if token is still valid (with 5 min buffer)

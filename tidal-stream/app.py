@@ -369,6 +369,7 @@ async def handle_auth_callback(request: web.Request) -> web.Response:
             _creds.set("tidal.api_token", token_json["access_token"])
             _creds.set("tidal.refresh_token", token_json["refresh_token"])
             _creds.set("tidal.expires_at", str(_time.time() + token_json["expires_in"]))
+            _creds.set("tidal.issuing_client_id", "6BDSRdpK9hqEBTgU")
             _creds.set("tidal.updated_at", _time.strftime('%Y-%m-%dT%H:%M:%S+00:00', _time.gmtime()))
             log.info("Tidal session saved to credential DB")
         except Exception as save_exc:
@@ -477,7 +478,7 @@ async def _token_persist_task(app: web.Application) -> None:
                     # No expiry known — assume 4 hours from now
                     _creds.set("tidal.expires_at", str(_time.time() + 14400))
 
-                _creds.set("tidal.issuing_client_id", "fX2JxdmntZWK0ixT")
+                _creds.set("tidal.issuing_client_id", "6BDSRdpK9hqEBTgU")
                 _creds.set("tidal.updated_at", _time.strftime('%Y-%m-%dT%H:%M:%S+00:00', _time.gmtime()))
                 log.debug("Token persisted to credential DB")
         except Exception as exc:
