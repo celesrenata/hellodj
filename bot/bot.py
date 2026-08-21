@@ -624,26 +624,25 @@ async def setup_hook():
     # HELLODJ_VOICE_DEBUG=1 (default); set to 0 to disable.
     voice_debug.install_raw_listeners(bot)
 
+    # Clear stale global commands (Entry Point conflict makes global sync fail,
+    # so we use per-guild only). This removes duplicates from old global registrations.
     try:
+        bot.tree.clear_commands(guild=None)
         await bot.tree.sync()
-        log.info("HelloDJ slash commands synced.")
-    except discord.HTTPException as _sync_exc:
-        if _sync_exc.code == 50240:
-            # Activity Entry Point command conflict — global sync can't overwrite it.
-            # Sync per-guild instead so commands still register.
-            log.warning(
-                "tree.sync blocked by Entry Point command (50240) — "
-                "syncing per-guild instead"
-            )
-            for guild in bot.guilds:
-                try:
-                    bot.tree.copy_global_to(guild=guild)
-                    await bot.tree.sync(guild=guild)
-                except Exception as _g_exc:
-                    log.debug("Guild sync failed for %s: %s", guild.id, _g_exc)
-            log.info("Per-guild command sync complete.")
-        else:
-            raise
+        log.info("Cleared stale global command registrations.")
+    except discord.HTTPException as _clear_exc:
+        log.debug("Global command clear failed (non-fatal): %s", _clear_exc)
+
+    # Sync commands per-guild (instant propagation, avoids Entry Point 50240 conflict)
+    synced = 0
+    for guild in bot.guilds:
+        try:
+            bot.tree.copy_global_to(guild=guild)
+            await bot.tree.sync(guild=guild)
+            synced += 1
+        except Exception as _g_exc:
+            log.debug("Guild sync failed for %s: %s", guild.id, _g_exc)
+    log.info("Per-guild command sync complete (%d/%d guilds).", synced, len(bot.guilds))
 
 
 bot.setup_hook = setup_hook
