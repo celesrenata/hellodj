@@ -17,7 +17,7 @@ from typing import Callable
 
 from aiohttp import web
 
-from bot.video.stroke_registry import StrokeData, StrokeRegistry
+from video.stroke_registry import StrokeData, StrokeRegistry
 
 log = logging.getLogger(__name__)
 
