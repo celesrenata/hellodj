@@ -239,6 +239,34 @@ def _force_remove_stale(guild: discord.Guild | None, guild_id: int) -> None:
         )
 
 
+async def _gateway_leave_channel(guild: discord.Guild | None, guild_id: int) -> None:
+    """Send op-4 with channel_id=None to tell Discord the bot has LEFT the voice channel.
+
+    This is the critical step missing from the stale-state recovery: if Discord
+    already believes the bot is in the target channel, re-sending op-4 to JOIN
+    the same channel is a no-op — Discord won't issue a new VOICE_SERVER_UPDATE.
+    By explicitly leaving first, the next join is treated as a fresh connection
+    and Discord responds with both VOICE_STATE_UPDATE and VOICE_SERVER_UPDATE.
+
+    Waits a short period after sending the disconnect for Discord to process it.
+    """
+    if guild is None:
+        return
+    try:
+        await guild.change_voice_state(channel=None)
+        log.info(
+            "connect_player: sent gateway LEAVE (op-4 channel=None) for guild_id=%s",
+            guild_id,
+        )
+        # Give Discord a moment to process the leave before we re-join.
+        await asyncio.sleep(0.5)
+    except Exception:
+        log.exception(
+            "connect_player: gateway LEAVE failed for guild_id=%s — proceeding anyway",
+            guild_id,
+        )
+
+
 async def _reissue_voice_join(channel, cls, guild, guild_id: int) -> wavelink.Player | None:
     """Re-send opcode 4 on a fresh player so a dropped handshake self-recovers.
 
@@ -352,6 +380,35 @@ async def connect_player(channel: discord.abc.Connectable) -> wavelink.Player:
         # Speak denial from a registration race.
         voice_debug.log_per_channel_perms(guild, channel, label="connect_player")
         voice_debug.log_op4_send(guild, channel)
+
+        # ── pre-connect stale state detection ─────────────────────
+        # If Discord already thinks the bot is in the target channel (voice_client
+        # exists or bot's voice state points at this channel) but there's no live
+        # connection, leave first to ensure a fresh VOICE_SERVER_UPDATE on re-join.
+        if guild is not None:
+            existing_vc = guild.voice_client
+            bot_voice_state = guild.me.voice if guild.me else None
+            already_in_channel = (
+                (existing_vc is not None)
+                or (bot_voice_state is not None and bot_voice_state.channel is not None)
+            )
+            if already_in_channel:
+                # Check if the existing connection is actually alive
+                has_live_connection = False
+                if existing_vc is not None:
+                    has_live_connection = await _handshake_complete(existing_vc)
+                if not has_live_connection:
+                    log.info(
+                        "connect_player: detected stale voice presence in guild_id=%s "
+                        "(voice_client=%s bot_voice_state.channel=%s) — "
+                        "sending gateway LEAVE to force fresh handshake",
+                        guild_id,
+                        existing_vc is not None,
+                        getattr(bot_voice_state, "channel", None) if bot_voice_state else None,
+                    )
+                    _force_remove_stale(guild, guild_id)
+                    await _gateway_leave_channel(guild, guild_id)
+
         # Short per-attempt window; the outer loop enforces the overall ~30s budget.
         # 10s (instead of 5s) gives the first join enough room to complete the
         # handshake, so the dropped-event recovery path no longer fires on every
@@ -460,6 +517,26 @@ async def connect_player(channel: discord.abc.Connectable) -> wavelink.Player:
                 )
 
             # ── re-issue opcode 4 on a fresh, registered player ─────
+            # If Discord never sent VOICE_SERVER_UPDATE (token/endpoint are None),
+            # the bot is likely stuck in a "ghost connected" state from Discord's
+            # perspective. Leave the channel first so the next join is treated as
+            # fresh, then re-issue.
+            try:
+                vs_check = getattr(player, "_voice_state", {}) or {}
+                v_check = vs_check.get("voice", {}) or {}
+                no_server_update = not v_check.get("token") and not v_check.get("endpoint")
+            except Exception:
+                no_server_update = True
+
+            if no_server_update:
+                log.info(
+                    "connect_player: no VOICE_SERVER_UPDATE received (guild_id=%s) "
+                    "— sending gateway LEAVE before re-join to force fresh handshake",
+                    guild_id,
+                )
+                _force_remove_stale(guild, guild_id)
+                await _gateway_leave_channel(guild, guild_id)
+
             reissued = await _reissue_voice_join(channel, cls, guild, guild_id)
             if reissued is not None and await _handshake_complete(reissued):
                 log.info(
