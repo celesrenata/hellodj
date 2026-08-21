@@ -584,7 +584,7 @@ import { DiscordSDK } from './discord-sdk.js';
     const playlistUrl = `stream/${guildId}/playlist.m3u8?token=${encodeURIComponent(instanceId)}`;
 
     // Late joiner: if stream already has elapsed time, skip countdown and go directly to HLS
-    if (status.elapsed_seconds > 5) {
+    if (status.elapsed_seconds > 15) {
       initHls(playlistUrl);
     } else {
       // First viewer or stream just started — show countdown, then switch to HLS

@@ -42,18 +42,19 @@ class PlaybackCog(commands.Cog, name="Playback"):
     @app_commands.command(name="play", description="Play a song or video")
     @app_commands.describe(
         query="Song name, URL, or video link",
-        mode="Force audio or video playback (default: auto-detect)",
+        type="Force playback type (default: auto-detect)",
         attachment="Upload a video file to play",
     )
+    @app_commands.rename(type="type")
     async def play(
         self,
         interaction: discord.Interaction,
         query: str,
-        mode: Literal["auto", "audio", "video"] = "auto",
+        type: Literal["auto", "audio", "video", "music_video"] = "auto",
         attachment: discord.Attachment | None = None,
     ) -> None:
-        """Play audio or video content — auto-detected or forced via mode."""
-        await self.router.play(interaction, query, mode=mode, attachment=attachment)
+        """Play audio or video content — auto-detected or forced via type."""
+        await self.router.play(interaction, query, mode=type, attachment=attachment)
 
     @app_commands.command(name="skip", description="Skip the current track")
     async def skip(self, interaction: discord.Interaction) -> None:

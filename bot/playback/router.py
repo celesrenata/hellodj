@@ -106,7 +106,7 @@ class PlaybackRouter:
         interaction: discord.Interaction,
         query: str,
         *,
-        mode: Literal["auto", "audio", "video"] = "auto",
+        mode: Literal["auto", "audio", "video", "music_video"] = "auto",
         attachment: discord.Attachment | None = None,
     ) -> None:
         """Classify content → resolve or create session → enqueue/play.
@@ -115,10 +115,11 @@ class PlaybackRouter:
         1. Resolve user's voice channel (error if not in VC)
         2. Classify content type
         3. Check content filter
-        4. If audio: check channel exclusivity constraints
-        5. If session exists for same type: enqueue
-        6. If no session: create new session
-        7. If conflicting type: create new session (dual-session allowed)
+        4. If music_video: route directly to music video resolver
+        5. If audio: check channel exclusivity constraints
+        6. If session exists for same type: enqueue
+        7. If no session: create new session
+        8. If conflicting type: create new session (dual-session allowed)
         """
         # Ban check — must happen before ANY other logic
         guild_id = interaction.guild_id  # type: ignore[union-attr]
@@ -135,6 +136,11 @@ class PlaybackRouter:
             await interaction.response.send_message(
                 "Join a voice channel first.", ephemeral=True
             )
+            return
+
+        # music_video mode: bypass classifier, route directly to video cog's music_video handler
+        if mode == "music_video":
+            await self._handle_music_video_play(interaction, query, guild_id, channel_id)
             return
 
         # Classify the input
@@ -552,6 +558,31 @@ class PlaybackRouter:
 
         # No existing video session in this channel — create new
         await self._start_video_session(interaction, query, guild_id, channel_id)
+
+    async def _handle_music_video_play(
+        self,
+        interaction: discord.Interaction,
+        query: str,
+        guild_id: int,
+        channel_id: int,
+    ) -> None:
+        """Handle a play request with mode=music_video.
+
+        Delegates to the VideoCog's music_video handler which uses
+        MusicVideoResolver → ActivityStreamer pipeline.
+        """
+        # Get the VideoCog and delegate to its music_video handler
+        from cogs.video import VideoCog
+
+        video_cog: VideoCog | None = interaction.client.get_cog("Video")  # type: ignore[assignment]
+        if video_cog is None:
+            await interaction.response.send_message(
+                "❌ Video system is not available.", ephemeral=True
+            )
+            return
+
+        # Synthesize the same call path as /video music_video
+        await video_cog.video_music_video.callback(video_cog, interaction, query)
 
     # ------------------------------------------------------------------
     # Stub backend methods (to be wired in Task 12)
