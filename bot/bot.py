@@ -624,14 +624,19 @@ async def setup_hook():
     # HELLODJ_VOICE_DEBUG=1 (default); set to 0 to disable.
     voice_debug.install_raw_listeners(bot)
 
-    # Clear stale global commands (Entry Point conflict makes global sync fail,
-    # so we use per-guild only). This removes duplicates from old global registrations.
+    # Sync commands globally. If Entry Point conflict (50240) happens,
+    # fall back to per-guild sync in on_ready.
     try:
-        bot.tree.clear_commands(guild=None)
         await bot.tree.sync()
-        log.info("Cleared stale global command registrations.")
-    except discord.HTTPException as _clear_exc:
-        log.debug("Global command clear failed (non-fatal): %s", _clear_exc)
+        log.info("Global slash command sync complete.")
+        bot._global_sync_ok = True
+    except discord.HTTPException as _sync_exc:
+        if _sync_exc.code == 50240:
+            log.warning("Global sync blocked by Entry Point (50240) — will sync per-guild in on_ready")
+            bot._global_sync_ok = False
+        else:
+            log.error("Global sync failed: %s", _sync_exc)
+            bot._global_sync_ok = False
 
     # Per-guild sync happens in on_ready (guild cache is empty here in setup_hook)
 
@@ -882,15 +887,26 @@ async def on_ready():
     await oauth_store.write_guilds(_build_guilds_data(), force=True)
 
     # Sync commands per-guild (guild cache is populated now)
-    synced = 0
-    for guild in bot.guilds:
-        try:
-            bot.tree.copy_global_to(guild=guild)
-            await bot.tree.sync(guild=guild)
-            synced += 1
-        except Exception as _g_exc:
-            log.debug("Guild sync failed for %s: %s", guild.id, _g_exc)
-    log.info("Per-guild command sync complete (%d/%d guilds).", synced, len(bot.guilds))
+    # Only needed if global sync failed (Entry Point conflict)
+    if not getattr(bot, '_global_sync_ok', False):
+        synced = 0
+        for guild in bot.guilds:
+            try:
+                bot.tree.copy_global_to(guild=guild)
+                await bot.tree.sync(guild=guild)
+                synced += 1
+            except Exception as _g_exc:
+                log.debug("Guild sync failed for %s: %s", guild.id, _g_exc)
+        log.info("Per-guild command sync complete (%d/%d guilds).", synced, len(bot.guilds))
+    else:
+        # Global sync succeeded — clear any stale per-guild overrides
+        for guild in bot.guilds:
+            try:
+                bot.tree.clear_commands(guild=guild)
+                await bot.tree.sync(guild=guild)
+            except Exception:
+                pass
+        log.info("Cleared per-guild command overrides (%d guilds).", len(bot.guilds))
 
     global _resumed
     if not _resumed:
@@ -1179,6 +1195,19 @@ async def on_guild_remove(guild: discord.Guild):
 
 @bot.tree.error
 async def on_error(interaction: discord.Interaction, error: Exception) -> None:
+    from discord.app_commands import CommandNotFound
+    if isinstance(error, CommandNotFound):
+        # Stale cached global command — tell user to refresh
+        try:
+            await interaction.response.send_message(
+                "⚠️ Commands just updated — please close and re-open Discord, "
+                "or press Ctrl+R to refresh. Then try again.",
+                ephemeral=True,
+            )
+        except Exception:
+            pass
+        return
+
     log.exception("App-command error in %s: %s", interaction.command, error)
     try:
         if interaction.response.is_deferred():
