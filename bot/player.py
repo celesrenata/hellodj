@@ -69,11 +69,17 @@ _DURATION_MAX_MS = 86_400_000  # 24 hours in milliseconds
 # ── helpers ───────────────────────────────────────────────
 
 def _to_entry(info: dict) -> dict:
-    """Lightweight ``{webpage_url, title}`` form for persistence."""
-    return {
+    """Lightweight ``{webpage_url, title, type}`` form for persistence."""
+    entry = {
         "webpage_url": info.get("webpage_url") or info.get("url"),
         "title": info.get("title", "Unknown"),
     }
+    # Preserve entry type for video entries
+    if info.get("type"):
+        entry["type"] = info["type"]
+    if info.get("query"):
+        entry["query"] = info["query"]
+    return entry
 
 
 # ── wavelink 3.5.2 track → dict conversion ─────────────────
