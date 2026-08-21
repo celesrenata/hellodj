@@ -615,10 +615,16 @@ class VideoCog(commands.Cog, name="Video"):
 
             self._registry.unregister(guild_id, channel_id)
 
-            await interaction.followup.send(
-                "⏭️ Skipped! Queue is empty — Activity closed."
-                + self._deprecation_notice("skip")
-            )
+            # Check if there are more tracks in the unified player queue
+            import player as _player
+            state = _player.get_state(guild_id)
+            if state["queue"]:
+                await interaction.followup.send("⏭️ Skipped! Resuming audio queue...")
+                await _player._play_next_from_queue(guild_id)
+            else:
+                await interaction.followup.send(
+                    "⏭️ Skipped! Queue is empty — Activity closed."
+                )
 
     # ── video previous (internal — called by PlaybackRouter) ──
 

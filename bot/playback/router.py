@@ -206,6 +206,8 @@ class PlaybackRouter:
 
         if session == "audio_player":
             await self._skip_audio_direct(interaction)
+        elif session == "video_session":
+            await self._skip_video_direct(interaction)
         elif session.session_type == "audio":
             await self._skip_audio(interaction, session)
         else:
@@ -228,6 +230,8 @@ class PlaybackRouter:
 
         if session == "audio_player":
             await self._stop_audio_direct(interaction)
+        elif session == "video_session":
+            await self._stop_video_direct(interaction)
         elif session.session_type == "audio":
             await self._stop_audio(interaction, session)
         else:
@@ -250,6 +254,8 @@ class PlaybackRouter:
 
         if session == "audio_player":
             await self._pause_audio_direct(interaction)
+        elif session == "video_session":
+            await self._pause_video(interaction, session)  # video pause handled by Activity
         elif session.session_type == "audio":
             await self._pause_audio(interaction, session)
         else:
@@ -974,11 +980,12 @@ class PlaybackRouter:
     async def _get_session_or_error_or_player(
         self, interaction: discord.Interaction
     ) -> ChannelSession | str | None:
-        """Resolve the user's session, or fall back to active wavelink player.
+        """Resolve the user's session, or fall back to active wavelink player or video session.
 
         Returns:
         - A ChannelSession if found in the registry.
         - The string "audio_player" if no session but a wavelink player is active.
+        - The string "video_session" if a video Activity session is active.
         - None if an error message was sent (user not in VC, nothing playing).
         """
         import player
@@ -999,6 +1006,13 @@ class PlaybackRouter:
         p = player.get_player(guild_id)
         if p and p.connected:
             return "audio_player"
+
+        # Check if there's an active video session (Activity streaming)
+        video_cog = interaction.client.get_cog("Video")  # type: ignore[union-attr]
+        if video_cog is not None:
+            streamer = video_cog._registry.get(guild_id, channel_id)
+            if streamer is not None and streamer.is_active:
+                return "video_session"
 
         await interaction.response.send_message(
             "Nothing is playing in your channel.", ephemeral=True
@@ -1092,3 +1106,19 @@ class PlaybackRouter:
         player.clear_queue(state)
         player.persist(guild_id)
         await interaction.response.send_message("🗑️ Queue cleared.", ephemeral=False)
+
+    async def _skip_video_direct(self, interaction: discord.Interaction) -> None:
+        """Skip video via VideoCog — no PlaybackRouter session registry needed."""
+        video_cog = interaction.client.get_cog("Video")  # type: ignore[union-attr]
+        if video_cog is not None:
+            await video_cog.video_skip(interaction)
+        else:
+            await interaction.response.send_message("❌ Video system unavailable.", ephemeral=True)
+
+    async def _stop_video_direct(self, interaction: discord.Interaction) -> None:
+        """Stop video via VideoCog — no PlaybackRouter session registry needed."""
+        video_cog = interaction.client.get_cog("Video")  # type: ignore[union-attr]
+        if video_cog is not None:
+            await video_cog.video_stop(interaction)
+        else:
+            await interaction.response.send_message("❌ Video system unavailable.", ephemeral=True)
