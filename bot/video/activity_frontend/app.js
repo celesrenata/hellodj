@@ -505,7 +505,7 @@ import { initWhiteboardSync } from './ws_whiteboard.js';
 
   if (status.state === 'streaming' && status.playlist_url) {
     // Stream is ready — play countdown first, then switch to HLS
-    videoEl.src = 'static/countdown.mp4'; videoEl.muted = true;
+    videoEl.src = 'static/countdown.mp4';
     videoEl.play().catch(() => {});
 
     videoEl.addEventListener('ended', () => {
@@ -518,7 +518,7 @@ import { initWhiteboardSync } from './ws_whiteboard.js';
   } else if (status.state === 'buffering') {
     // Still transcoding — show countdown, then poll until streaming
     titleBar.textContent = `${status.video_title || 'Loading...'} — Preparing stream...`;
-    videoEl.src = 'static/countdown.mp4'; videoEl.muted = true;
+    videoEl.src = 'static/countdown.mp4';
     videoEl.play().catch(() => {});
 
     // Poll until stream is ready
