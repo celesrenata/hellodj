@@ -1621,13 +1621,29 @@ function initUndo(button, overlay, sendRemove) {
 // ─── reset.js ────────────────────────────────────────────────────────────────
 
 function initReset(button, overlay, sendReset) {
+  let armed = false;
+  let armedTimer = null;
+
   button.addEventListener('click', () => {
-    const confirmed = confirm('Clear entire whiteboard? This removes all drawings.');
-    if (!confirmed) return;
-
-    overlay.clearAll();
-
-    sendReset();
+    if (!armed) {
+      // First click — arm the button (show red state for 3 seconds)
+      armed = true;
+      button.style.background = 'rgba(220, 38, 38, 0.7)';
+      button.title = 'Click again to confirm reset';
+      armedTimer = setTimeout(() => {
+        armed = false;
+        button.style.background = '';
+        button.title = 'Reset whiteboard';
+      }, 3000);
+    } else {
+      // Second click within 3s — execute reset
+      clearTimeout(armedTimer);
+      armed = false;
+      button.style.background = '';
+      button.title = 'Reset whiteboard';
+      overlay.clearAll();
+      sendReset();
+    }
   });
 }
 
