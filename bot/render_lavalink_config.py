@@ -14,7 +14,11 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 os.environ.setdefault("DATA_DIR", "/app/data")
 
-from credentials import creds
+from credentials import CredentialStore
+
+# Init container mounts data volume read-only; use read_only=True to avoid
+# WAL mode and schema creation attempts.
+creds = CredentialStore(read_only=True)
 
 
 def render() -> str:

@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 
 import aiohttp
@@ -42,6 +43,7 @@ from video.sources import (
 )
 from video.tidal_resolver import TidalResolver, TidalResolverError
 from video.upload_handler import UploadHandler, UploadHandlerError
+from video.music_video_resolver import MusicVideoResolver, MusicVideoResolverError
 
 log = logging.getLogger(__name__)
 
@@ -379,6 +381,119 @@ class VideoCog(commands.Cog, name="Video"):
 
         # Send deprecation notice
         await interaction.followup.send(self._deprecation_notice("play"), ephemeral=True)
+
+    # ── /video music_video ─────────────────────────────────
+
+    @video_group.command(name="music_video", description="Play a music video from URL or search")
+    @app_commands.describe(query="YouTube/Tidal/Spotify URL or text search query")
+    async def video_music_video(self, interaction: discord.Interaction, query: str) -> None:
+        # Pre-checks
+        voice_err = self._check_voice(interaction)
+        if voice_err:
+            await interaction.response.send_message(voice_err, ephemeral=True)
+            return
+
+        gpu_err = self._check_gpu()
+        if gpu_err:
+            await interaction.response.send_message(gpu_err, ephemeral=True)
+            return
+
+        await interaction.response.defer()
+
+        guild_id = interaction.guild_id
+        assert guild_id is not None
+
+        voice_channel = interaction.user.voice.channel  # type: ignore[union-attr]
+
+        # Resolve via MusicVideoResolver
+        try:
+            resolver = MusicVideoResolver()
+            source = await resolver.resolve(query)
+        except MusicVideoResolverError as exc:
+            await interaction.followup.send(f"❌ {exc.user_message}", ephemeral=True)
+            return
+        except Exception as exc:
+            log.error("Unexpected error in /video music_video: %s", exc, exc_info=True)
+            await interaction.followup.send(
+                "❌ An unexpected error occurred while resolving the music video.",
+                ephemeral=True,
+            )
+            return
+
+        # Check if there's an active session for this guild+channel
+        streamer = self._registry.get(guild_id, voice_channel.id)
+
+        if streamer is not None and streamer.is_active:
+            # Session active — enqueue
+            try:
+                queue_len = streamer.enqueue(source)
+                await interaction.followup.send(
+                    f"📥 Added to queue (position {queue_len}): **{source.title}**"
+                )
+            except QueueFullError as exc:
+                await interaction.followup.send(f"❌ {exc}", ephemeral=True)
+            return
+
+        # No active session — create streamer, launch Activity, start playback
+        streamer = ActivityStreamer(guild_id=guild_id, channel_id=voice_channel.id, ws_hub=self._backend.ws_hub)
+        self._registry.register(guild_id, voice_channel.id, streamer)
+
+        # Launch Discord Activity
+        assert self._launcher is not None
+        application_id = self.bot.user.id  # type: ignore[union-attr]
+
+        try:
+            invite_data = await self._launcher.launch(voice_channel.id, application_id)
+        except ActivityLaunchError as exc:
+            self._registry.unregister(guild_id, voice_channel.id)
+            # Clean up resolved file if needed
+            if source.cleanup_on_finish:
+                try:
+                    os.unlink(source.file_path)
+                except OSError:
+                    pass
+            await interaction.followup.send(
+                f"❌ Failed to launch Activity: {exc.message}",
+                ephemeral=True,
+            )
+            return
+
+        # Build the Activity invite URL
+        invite_code = invite_data.get("code", "")
+        activity_url = f"https://discord.gg/{invite_code}" if invite_code else None
+
+        # Start playback
+        try:
+            await streamer.play(source)
+        except Exception as exc:
+            log.error("Error starting playback for guild %d: %s", guild_id, exc, exc_info=True)
+            self._registry.unregister(guild_id, voice_channel.id)
+            # Clean up resolved file if needed
+            if source.cleanup_on_finish:
+                try:
+                    os.unlink(source.file_path)
+                except OSError:
+                    pass
+            await interaction.followup.send(
+                "❌ An error occurred while starting video playback.",
+                ephemeral=True,
+            )
+            return
+
+        # Initialize WebSocketHub playback state for this guild
+        self._backend.ws_hub.set_state(
+            guild_id,
+            PlaybackState(playing=True, position=0.0, last_update=time.monotonic()),
+        )
+
+        # Send "Now Playing" embed with control buttons
+        embed = _build_now_playing_embed(source, len(streamer.queue), activity_url=activity_url, elapsed_seconds=0.0)
+        msg = await interaction.followup.send(embed=embed, view=VideoControlView(self), wait=True)
+        key = (guild_id, voice_channel.id)
+        self._now_playing_messages[key] = msg
+        if activity_url:
+            self._activity_urls[key] = activity_url
+        self._start_seek_bar_update(key)
 
     # ── /video stop ────────────────────────────────────────
 

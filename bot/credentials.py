@@ -76,8 +76,9 @@ CREATE TABLE IF NOT EXISTS credentials (
 class CredentialStore:
     """Thread-safe encrypted key-value store backed by SQLite."""
 
-    def __init__(self, db_path: Path | None = None):
+    def __init__(self, db_path: Path | None = None, read_only: bool = False):
         self._db_path = db_path or DB_PATH
+        self._read_only = read_only
         self._fernet: Fernet | None = None
         self._local = threading.local()
         self._init_db()
@@ -85,15 +86,23 @@ class CredentialStore:
     def _get_conn(self) -> sqlite3.Connection:
         """Get a thread-local SQLite connection."""
         if not hasattr(self._local, "conn") or self._local.conn is None:
-            self._local.conn = sqlite3.connect(
-                str(self._db_path), timeout=30, check_same_thread=False
-            )
-            self._local.conn.execute("PRAGMA journal_mode=WAL")
-            self._local.conn.execute("PRAGMA busy_timeout=5000")
+            if self._read_only:
+                uri = f"file:{self._db_path}?mode=ro"
+                self._local.conn = sqlite3.connect(
+                    uri, uri=True, timeout=30, check_same_thread=False
+                )
+            else:
+                self._local.conn = sqlite3.connect(
+                    str(self._db_path), timeout=30, check_same_thread=False
+                )
+                self._local.conn.execute("PRAGMA journal_mode=WAL")
+                self._local.conn.execute("PRAGMA busy_timeout=5000")
         return self._local.conn
 
     def _init_db(self):
         """Create the database and table if they don't exist."""
+        if self._read_only:
+            return  # Skip schema creation in read-only mode
         self._db_path.parent.mkdir(parents=True, exist_ok=True)
         conn = self._get_conn()
         conn.executescript(_SCHEMA)
@@ -203,4 +212,14 @@ class CredentialStore:
 
 # ── Singleton ──────────────────────────────────────────────────────────────────
 
-creds = CredentialStore()
+def _create_default_store() -> "CredentialStore":
+    """Create the default credential store, auto-detecting read-only filesystems."""
+    try:
+        return CredentialStore()
+    except (sqlite3.OperationalError, OSError):
+        # Likely a read-only filesystem (e.g., init container with ro mount).
+        # Fall back to read-only mode.
+        return CredentialStore(read_only=True)
+
+
+creds = _create_default_store()
