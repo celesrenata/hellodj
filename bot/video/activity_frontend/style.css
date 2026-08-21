@@ -35,14 +35,17 @@ body {
     position: relative;
     width: 100%;
     height: 100%;
-    display: flex;
-    flex-direction: column;
 }
 
-/* Whiteboard HUD — sits above the video as a flex row */
+/* Whiteboard HUD — positioned at top of video container */
 .whiteboard-hud {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
     display: none;
     align-items: center;
+    justify-content: center;
     gap: 8px;
     padding: 6px 12px;
     background: var(--bg-overlay);
@@ -55,11 +58,11 @@ body {
     display: flex;
 }
 
-/* Video container — takes remaining space */
+/* Video container — fills viewport */
 .video-container {
     position: relative;
-    flex: 1;
-    min-height: 0;
+    width: 100%;
+    height: 100%;
     overflow: hidden;
 }
 
