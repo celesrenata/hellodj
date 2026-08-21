@@ -3,9 +3,10 @@
 Stores guild-level configuration in data/guild_settings.json.
 Currently supports:
   - mode: "restrictive" (default) or "allow_all"
+  - visualizer_engine: one of dvd, projectm, vgalizer, varda, fosfora, audiovis, native, random, off (default: "dvd")
 
 Shape of data/guild_settings.json:
-    { "<guild_id>": { "mode": "restrictive" | "allow_all" }, ... }
+    { "<guild_id>": { "mode": "restrictive" | "allow_all", "visualizer_engine": "dvd" | ... }, ... }
 """
 
 import json
@@ -101,3 +102,37 @@ def set_guild_mode(guild_id: int, mode: str) -> None:
     if mode not in ("restrictive", "allow_all"):
         raise ValueError(f"Invalid mode '{mode}'; must be 'restrictive' or 'allow_all'")
     set_setting(guild_id, "mode", mode)
+
+
+# ---------------------------------------------------------------------------
+# Visualizer engine configuration
+# ---------------------------------------------------------------------------
+
+VALID_VISUALIZER_ENGINES: set[str] = {
+    "dvd", "projectm", "vgalizer", "varda", "fosfora", "audiovis", "native", "random", "off",
+}
+
+DEFAULT_VISUALIZER_ENGINE: str = "dvd"
+
+
+def get_visualizer_engine(guild_id: int) -> str:
+    """Return the configured visualizer engine for a guild.
+
+    Falls back to DEFAULT_VISUALIZER_ENGINE if the stored value is missing or invalid.
+    """
+    engine = get_setting(guild_id, "visualizer_engine", DEFAULT_VISUALIZER_ENGINE)
+    if engine not in VALID_VISUALIZER_ENGINES:
+        return DEFAULT_VISUALIZER_ENGINE
+    return engine
+
+
+def set_visualizer_engine(guild_id: int, engine: str) -> None:
+    """Set the visualizer engine for a guild and persist.
+
+    Raises ValueError if the engine is not in VALID_VISUALIZER_ENGINES.
+    """
+    if engine not in VALID_VISUALIZER_ENGINES:
+        raise ValueError(
+            f"Invalid visualizer engine '{engine}'; must be one of: {', '.join(sorted(VALID_VISUALIZER_ENGINES))}"
+        )
+    set_setting(guild_id, "visualizer_engine", engine)

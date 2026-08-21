@@ -34,6 +34,11 @@ import { DiscordSDK } from './discord-sdk.js';
   const titleBar = document.getElementById('title-bar');
   const errorOverlay = document.getElementById('error-overlay');
   const errorMessage = document.getElementById('error-message');
+  const countdownOverlay = document.getElementById('countdown-overlay');
+  const countdownTitle = document.getElementById('countdown-title');
+  const countdownNumber = document.getElementById('countdown-number');
+  const dvdContainer = document.getElementById('dvd-container');
+  const visualizerLoading = document.getElementById('visualizer-loading');
   const scrubber = document.getElementById('scrubber');
   const scrubberFill = document.getElementById('scrubber-fill');
   const scrubberBuffered = document.getElementById('scrubber-buffered');
@@ -67,6 +72,249 @@ import { DiscordSDK } from './discord-sdk.js';
   const showError = (msg) => {
     errorMessage.textContent = msg;
     errorOverlay.classList.add('visible');
+  };
+
+  // --- Frontend State Machine ---
+  // Modes: IDLE, COUNTDOWN, VIDEO_PLAYING, VISUALIZER_DVD, VISUALIZER_HLS
+  let mode = 'IDLE';
+  let _dvdScreensaver = null;
+  let _vizPreMutedState = false; // Saved muted state before entering VISUALIZER_HLS
+
+  // --- DVD Screensaver (Task 3.3) ---
+  class DVDScreensaver {
+    constructor(container, avatarUrl, trackInfo) {
+      this.container = container;
+      this.logo = document.createElement('img');
+      this.logo.src = avatarUrl;
+      this.logo.className = 'dvd-logo';
+      this.x = Math.random() * (container.clientWidth - 128);
+      this.y = Math.random() * (container.clientHeight - 128);
+      this.dx = 2;  // pixels per frame (constant velocity)
+      this.dy = 2;
+      this.hue = 0;
+      this.animFrame = null;
+      this.trackInfo = trackInfo || null;
+      this._trackLabel = null;
+    }
+
+    start() {
+      this.container.appendChild(this.logo);
+      if (this.trackInfo && (this.trackInfo.title || this.trackInfo.artist)) {
+        this._createTrackLabel();
+      }
+      this._animate();
+    }
+
+    stop() {
+      cancelAnimationFrame(this.animFrame);
+      this.animFrame = null;
+      this.logo.remove();
+      if (this._trackLabel) {
+        this._trackLabel.remove();
+        this._trackLabel = null;
+      }
+    }
+
+    updateTrack(trackInfo) {
+      this.trackInfo = trackInfo;
+      if (this._trackLabel) {
+        this._trackLabel.textContent = this._formatTrack();
+      } else if (trackInfo && (trackInfo.title || trackInfo.artist)) {
+        this._createTrackLabel();
+      }
+    }
+
+    _formatTrack() {
+      if (!this.trackInfo) return '';
+      const { title, artist } = this.trackInfo;
+      if (title && artist) return `${title} — ${artist}`;
+      return title || artist || '';
+    }
+
+    _createTrackLabel() {
+      this._trackLabel = document.createElement('div');
+      this._trackLabel.className = 'dvd-track-label';
+      this._trackLabel.textContent = this._formatTrack();
+      this.container.appendChild(this._trackLabel);
+    }
+
+    _animate() {
+      const w = this.container.clientWidth - 128;
+      const h = this.container.clientHeight - 128;
+
+      this.x += this.dx;
+      this.y += this.dy;
+
+      let hitEdge = false;
+      if (this.x <= 0 || this.x >= w) { this.dx = -this.dx; hitEdge = true; }
+      if (this.y <= 0 || this.y >= h) { this.dy = -this.dy; hitEdge = true; }
+
+      if (hitEdge) {
+        this.hue = (this.hue + 60) % 360;
+        this.logo.style.filter = `hue-rotate(${this.hue}deg)`;
+      }
+
+      this.logo.style.transform = `translate(${this.x}px, ${this.y}px)`;
+      this.animFrame = requestAnimationFrame(() => this._animate());
+    }
+  }
+
+  const setMode = (newMode) => {
+    if (mode === newMode) return;
+    const oldMode = mode;
+    _rlog(`[Mode] ${oldMode} → ${newMode}`);
+    mode = newMode;
+
+    // Clean up previous mode
+    if (oldMode === 'COUNTDOWN') {
+      countdownOverlayCtrl.cancel();
+      countdownOverlay.style.display = 'none';
+    }
+    if (oldMode === 'VISUALIZER_DVD') {
+      dvdContainer.style.display = 'none';
+      if (_dvdScreensaver) {
+        _dvdScreensaver.stop();
+        _dvdScreensaver = null;
+      }
+    }
+    if (oldMode === 'VISUALIZER_HLS') {
+      visualizerLoading.style.display = 'none';
+      // Restore muted state and destroy viz HLS instance
+      videoEl.muted = _vizPreMutedState;
+      if (hls) { hls.destroy(); hls = null; }
+      videoEl.removeAttribute('src');
+      videoEl.load();
+      // Restore controls visibility
+      controlsOverlay.classList.remove('viz-live');
+    }
+
+    // Activate new mode
+    switch (newMode) {
+      case 'IDLE':
+        videoEl.style.display = 'none';
+        countdownOverlay.style.display = 'none';
+        dvdContainer.style.display = 'none';
+        visualizerLoading.style.display = 'none';
+        break;
+      case 'COUNTDOWN':
+        videoEl.style.display = 'none';
+        countdownOverlay.style.display = '';
+        dvdContainer.style.display = 'none';
+        visualizerLoading.style.display = 'none';
+        break;
+      case 'VIDEO_PLAYING':
+        videoEl.style.display = '';
+        countdownOverlay.style.display = 'none';
+        dvdContainer.style.display = 'none';
+        visualizerLoading.style.display = 'none';
+        break;
+      case 'VISUALIZER_DVD':
+        videoEl.style.display = 'none';
+        countdownOverlay.style.display = 'none';
+        dvdContainer.style.display = '';
+        visualizerLoading.style.display = 'none';
+        break;
+      case 'VISUALIZER_HLS':
+        // Save muted state and mute (viz stream has no audio track)
+        _vizPreMutedState = videoEl.muted;
+        videoEl.muted = true;
+        videoEl.style.display = '';
+        countdownOverlay.style.display = 'none';
+        dvdContainer.style.display = 'none';
+        visualizerLoading.style.display = 'none';
+        // Hide scrubber/time (live stream — no seeking) and show "LIVE" indicator
+        controlsOverlay.classList.add('viz-live');
+        break;
+    }
+  };
+
+  /**
+   * CountdownOverlay — manages the 3-2-1 countdown animation with CSS pop effects.
+   * Replaces the old setTimeout-based placeholder with proper animation re-triggering.
+   */
+  class CountdownOverlay {
+    constructor({ container, titleEl, numberEl, onComplete }) {
+      this._container = container;
+      this._titleEl = titleEl;
+      this._numberEl = numberEl;
+      this._onComplete = onComplete;
+      this._timer = null;
+      this._active = false;
+    }
+
+    /**
+     * Start the countdown from the given number of seconds.
+     * @param {number} seconds — may be a float for late-joiners (rounded to nearest int)
+     * @param {string} videoTitle — displayed above the countdown number
+     */
+    start(seconds, videoTitle) {
+      this.cancel(); // Clear any previous countdown
+
+      // Round to nearest integer for late-joiners receiving fractional remaining time
+      let remaining = Math.round(seconds);
+      if (remaining < 1) remaining = 1;
+
+      this._active = true;
+      this._titleEl.textContent = videoTitle || '';
+      this._showNumber(remaining);
+
+      this._timer = setInterval(() => {
+        remaining--;
+        if (remaining > 0) {
+          this._showNumber(remaining);
+        } else {
+          // Countdown complete — hide overlay and notify
+          this._finish();
+        }
+      }, 1000);
+    }
+
+    /**
+     * Cancel an in-progress countdown (used when mode changes away).
+     */
+    cancel() {
+      if (this._timer) {
+        clearInterval(this._timer);
+        this._timer = null;
+      }
+      this._active = false;
+    }
+
+    /**
+     * Display a number with CSS animation re-trigger.
+     * Removes and re-applies the animation to get the countdown-pop effect on each tick.
+     */
+    _showNumber(num) {
+      this._numberEl.textContent = num;
+      // Force animation restart by resetting and triggering reflow
+      this._numberEl.style.animation = 'none';
+      this._numberEl.offsetHeight; // trigger reflow
+      this._numberEl.style.animation = '';
+    }
+
+    /**
+     * Complete the countdown — hide overlay and invoke the onComplete callback.
+     */
+    _finish() {
+      this.cancel();
+      this._container.style.display = 'none';
+      if (this._onComplete) {
+        this._onComplete();
+      }
+    }
+  }
+
+  // Instantiate the CountdownOverlay
+  const countdownOverlayCtrl = new CountdownOverlay({
+    container: countdownOverlay,
+    titleEl: countdownTitle,
+    numberEl: countdownNumber,
+    onComplete: () => wsSend({ type: 'ready' }),
+  });
+
+  /** Start countdown (convenience wrapper used by WS message handler) */
+  const startCountdown = (seconds, videoTitle) => {
+    countdownOverlayCtrl.start(seconds, videoTitle);
   };
 
   // --- Controls visibility (auto-hide after 4s, show on hover/tap) ---
@@ -215,6 +463,7 @@ import { DiscordSDK } from './discord-sdk.js';
       case 'state':
         // Late-joiner sync: apply full state (preserve muted state)
         _remoteAction = true;
+        if (mode !== 'VIDEO_PLAYING') setMode('VIDEO_PLAYING');
         {
           const wasMuted = videoEl.muted;
           // Only seek if position differs by more than 5s to avoid keyframe corruption
@@ -239,6 +488,80 @@ import { DiscordSDK } from './discord-sdk.js';
           switchAudioTrack(data.audio_lang);
         }
         _remoteAction = false;
+        break;
+
+      case 'countdown':
+        // Received countdown signal — transition to COUNTDOWN mode
+        setMode('COUNTDOWN');
+        startCountdown(data.seconds || 3, data.video_title || '');
+        break;
+
+      case 'start':
+        // Countdown complete on server side — begin HLS playback at position 0
+        setMode('VIDEO_PLAYING');
+        {
+          const playlistUrl = `stream/${guildId}/playlist.m3u8?token=${encodeURIComponent(instanceId)}`;
+          initHls(playlistUrl, true);
+        }
+        break;
+
+      case 'visualizer':
+        // Visualizer activation/update message
+        if (data.engine === 'dvd') {
+          // Stop existing DVD screensaver if re-activated in same mode
+          if (_dvdScreensaver) {
+            _dvdScreensaver.stop();
+            _dvdScreensaver = null;
+          }
+          setMode('VISUALIZER_DVD');
+          const avatarUrl = data.config?.avatar_url || '';
+          const trackInfo = data.config?.track || null;
+          _dvdScreensaver = new DVDScreensaver(dvdContainer, avatarUrl, trackInfo);
+          _dvdScreensaver.start();
+          if (trackInfo && trackInfo.title) {
+            titleBar.textContent = formatTitle(trackInfo.title, trackInfo.artist);
+          }
+        } else if (data.hls_ready) {
+          // Server-rendered engine ready — switch to HLS playback
+          setMode('VISUALIZER_HLS');
+          visualizerLoading.style.display = 'none';
+          if (data.playlist_url) {
+            initHls(data.playlist_url, false, true);
+          }
+        } else if (data.state === 'starting') {
+          // Engine is starting up, show loading state
+          // Switch mode to VISUALIZER_HLS (shows videoEl) but overlay loading on top
+          if (mode === 'VISUALIZER_HLS' && hls) {
+            // Already in viz mode with active stream — destroy it for restart
+            hls.destroy();
+            hls = null;
+          }
+          setMode('VISUALIZER_HLS');
+          visualizerLoading.style.display = '';
+        }
+        break;
+
+      case 'session_end':
+        // Session ended — clean up and go idle
+        setMode('IDLE');
+        if (hls) { hls.destroy(); hls = null; }
+        videoEl.pause();
+        videoEl.removeAttribute('src');
+        videoEl.load();
+        titleBar.textContent = '';
+        break;
+
+      case 'track_change':
+        // Track metadata updated while in visualizer mode
+        if (mode === 'VISUALIZER_DVD' || mode === 'VISUALIZER_HLS') {
+          if (data.title) {
+            titleBar.textContent = formatTitle(data.title, data.artist);
+          }
+          // Update DVDScreensaver track info if active
+          if (mode === 'VISUALIZER_DVD' && _dvdScreensaver) {
+            _dvdScreensaver.updateTrack({ title: data.title || '', artist: data.artist || '' });
+          }
+        }
         break;
 
       case 'subtitle_change':
@@ -319,7 +642,7 @@ import { DiscordSDK } from './discord-sdk.js';
   // --- HLS Setup ---
   let hls = null;
 
-  const initHls = (playlistUrl, seekToStart = true) => {
+  const initHls = (playlistUrl, seekToStart = true, isLive = false) => {
     if (hls) { hls.destroy(); hls = null; }
 
     if (!Hls.isSupported()) {
@@ -329,15 +652,22 @@ import { DiscordSDK } from './discord-sdk.js';
       return;
     }
 
-    hls = new Hls({
+    const hlsConfig = {
       enableWorker: true,
-      lowLatencyMode: false,
-      maxBufferLength: 30,
-      maxMaxBufferLength: 60,
+      lowLatencyMode: isLive,
+      maxBufferLength: isLive ? 10 : 30,
+      maxMaxBufferLength: isLive ? 20 : 60,
       startLevel: 0,
-      startPosition: 0,
-    });
+      startPosition: isLive ? -1 : 0,
+    };
+    if (isLive) {
+      hlsConfig.liveDurationInfinity = true;
+      hlsConfig.liveBackBufferLength = 0;
+    }
+
+    hls = new Hls(hlsConfig);
     hls._seekToStart = seekToStart;
+    hls._isLive = isLive;
     hls.loadSource(playlistUrl);
     hls.attachMedia(videoEl);
 
@@ -346,6 +676,10 @@ import { DiscordSDK } from './discord-sdk.js';
         videoEl.currentTime = 0;
       }
       videoEl.play().catch(() => {});
+      // Hide visualizer loading overlay once manifest is parsed and playback starts
+      if (hls._isLive && mode === 'VISUALIZER_HLS') {
+        visualizerLoading.style.display = 'none';
+      }
       // Connect WebSocket after HLS is initialized
       connectWebSocket();
     });
@@ -509,6 +843,13 @@ import { DiscordSDK } from './discord-sdk.js';
   videoEl.addEventListener('play', () => { btnPlayPause.textContent = '⏸️'; });
   videoEl.addEventListener('pause', () => { btnPlayPause.textContent = '▶️'; });
 
+  // Hide visualizer loading overlay once video actually starts playing
+  videoEl.addEventListener('playing', () => {
+    if (mode === 'VISUALIZER_HLS') {
+      visualizerLoading.style.display = 'none';
+    }
+  });
+
   // --- Scrubber drag-to-seek ---
   let dragging = false;
 
@@ -587,9 +928,11 @@ import { DiscordSDK } from './discord-sdk.js';
 
     // Late joiner: if stream already has elapsed time, skip countdown and go directly to HLS
     if (status.elapsed_seconds > 15) {
+      setMode('VIDEO_PLAYING');
       initHls(playlistUrl, false);
     } else {
       // First viewer or stream just started — show countdown, then switch to HLS
+      setMode('VIDEO_PLAYING');
       videoEl.src = 'static/countdown.mp4';
       videoEl.play().catch(() => {});
 
@@ -600,6 +943,7 @@ import { DiscordSDK } from './discord-sdk.js';
     }
   } else if (status.state === 'buffering') {
     // Still transcoding — show countdown, then poll until streaming
+    setMode('VIDEO_PLAYING');
     titleBar.textContent = `${status.video_title || 'Loading...'} — Preparing stream...`;
     videoEl.src = 'static/countdown.mp4';
     videoEl.play().catch(() => {});
@@ -644,6 +988,7 @@ import { DiscordSDK } from './discord-sdk.js';
       disconnectWebSocket();
       if (updated.playlist_url) {
         errorOverlay.classList.remove('visible');
+        setMode('VIDEO_PLAYING');
         const playlistUrl = `stream/${guildId}/playlist.m3u8?token=${encodeURIComponent(instanceId)}`;
         initHls(playlistUrl);
       }

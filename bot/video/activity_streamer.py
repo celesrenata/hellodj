@@ -59,6 +59,7 @@ class ActivityStreamer:
     def __init__(
         self, guild_id: int, channel_id: int, *, ws_hub: WebSocketHub | None = None,
         on_session_end=None,
+        on_session_start=None,
     ) -> None:
         self.guild_id: int = guild_id
         self.channel_id: int = channel_id
@@ -72,6 +73,7 @@ class ActivityStreamer:
         self.max_queue_size: int = _MAX_QUEUE_SIZE
         self._ws_hub: WebSocketHub | None = ws_hub
         self._on_session_end = on_session_end
+        self._on_session_start = on_session_start
 
         # Background tasks
         self._advance_task: asyncio.Task[None] | None = None
@@ -79,6 +81,13 @@ class ActivityStreamer:
 
         # Lock guarding all source-change operations
         self._transition_lock: asyncio.Lock = asyncio.Lock()
+
+        # Countdown protocol sub-states
+        self.waiting_for_viewer: bool = False
+        self.countdown_active: bool = False
+        self.countdown_start_time: float = 0.0
+        self.countdown_seconds: int = 3
+        self.playback_started: bool = False
 
     @property
     def is_active(self) -> bool:
@@ -152,6 +161,12 @@ class ActivityStreamer:
             self.source = None
             self.start_time = 0.0
             self.state = StreamState.IDLE
+
+            # Reset countdown sub-states
+            self.waiting_for_viewer = False
+            self.countdown_active = False
+            self.countdown_start_time = 0.0
+            self.playback_started = False
 
             log.info("Activity session stopped for guild=%d", self.guild_id)
 
@@ -348,6 +363,89 @@ class ActivityStreamer:
 
         return elapsed
 
+    # ------------------------------------------------------------------
+    # Countdown protocol
+    # ------------------------------------------------------------------
+
+    def start_countdown(self) -> None:
+        """Begin the countdown sequence.
+
+        Sets countdown_active and records the start time. The WebSocketHub
+        is responsible for broadcasting the countdown message to clients.
+        """
+        if self.countdown_active or self.playback_started:
+            return
+        self.countdown_active = True
+        self.countdown_start_time = time.monotonic()
+        self.waiting_for_viewer = False
+        log.info(
+            "Countdown started for guild=%d (seconds=%d)",
+            self.guild_id,
+            self.countdown_seconds,
+        )
+
+    def on_ready_received(self) -> bool:
+        """Handle a client's `ready` message after countdown completes.
+
+        Returns True if this is the first ready (triggers start broadcast),
+        False if playback already started or countdown not active.
+        """
+        if not self.countdown_active:
+            # Stale or spurious ready — ignore
+            return False
+        if self.playback_started:
+            # Already started from a previous ready — ignore duplicate
+            return False
+
+        # Mark position 0: reset start_time to now
+        self.start_time = time.monotonic()
+        self.playback_started = True
+        self.countdown_active = False
+        log.info(
+            "Playback started (ready received) for guild=%d — position reset to 0",
+            self.guild_id,
+        )
+        return True
+
+    def cancel_countdown(self) -> None:
+        """Cancel an active countdown (e.g., all viewers disconnected).
+
+        Resets countdown state without starting playback.
+        """
+        if not self.countdown_active:
+            return
+        self.countdown_active = False
+        self.countdown_start_time = 0.0
+        self.waiting_for_viewer = True
+        log.info(
+            "Countdown cancelled for guild=%d (all viewers disconnected)",
+            self.guild_id,
+        )
+
+    def get_countdown_remaining(self) -> float:
+        """Return remaining countdown seconds, or 0 if not active."""
+        if not self.countdown_active or self.countdown_start_time == 0.0:
+            return 0.0
+        elapsed = time.monotonic() - self.countdown_start_time
+        remaining = self.countdown_seconds - elapsed
+        return max(0.0, remaining)
+
+    def should_countdown(self) -> bool:
+        """Return True if a countdown should be triggered for a new viewer.
+
+        Conditions: in BUFFERING/STREAMING, elapsed < 5s, countdown not already
+        fired, playback not yet started.
+        """
+        if self.state not in (StreamState.BUFFERING, StreamState.STREAMING):
+            return False
+        if self.playback_started:
+            return False
+        if self.countdown_active:
+            # Already counting down — new joiners get the remaining time
+            return False
+        elapsed = self.get_elapsed_seconds()
+        return elapsed < 5.0
+
     async def cleanup(self) -> None:
         """Delete all HLS files for the current session.
 
@@ -416,6 +514,12 @@ class ActivityStreamer:
         self.source = None
         self.start_time = 0.0
         self.state = StreamState.IDLE
+
+        # Reset countdown sub-states
+        self.waiting_for_viewer = False
+        self.countdown_active = False
+        self.countdown_start_time = 0.0
+        self.playback_started = False
 
         log.info("Activity session stopped for guild=%d", self.guild_id)
 
@@ -495,12 +599,25 @@ class ActivityStreamer:
         self.state = StreamState.STREAMING
         self.start_time = time.monotonic()
 
+        # Enter WAITING_FOR_VIEWER sub-state: countdown hasn't fired yet
+        self.waiting_for_viewer = True
+        self.countdown_active = False
+        self.countdown_start_time = 0.0
+        self.playback_started = False
+
         log.info(
             "Activity now streaming for guild=%d session=%s title='%s'",
             self.guild_id,
             self.session_id,
             source.title,
         )
+
+        # Notify on_session_start callback (e.g., VisualizerRegistry)
+        if self._on_session_start:
+            try:
+                await self._on_session_start(self.guild_id)
+            except Exception as exc:
+                log.warning("on_session_start callback failed: %s", exc)
 
         # Start background tasks
         self._advance_task = asyncio.create_task(

@@ -13,11 +13,15 @@ import dataclasses
 import json
 import logging
 import time
-from typing import Callable
+from collections.abc import Awaitable
+from typing import TYPE_CHECKING, Callable
 
 from aiohttp import web
 
 from video.stroke_registry import StrokeData, StrokeRegistry
+
+if TYPE_CHECKING:
+    from video.activity_streamer import ActivityStreamer
 
 log = logging.getLogger(__name__)
 
@@ -54,6 +58,74 @@ class WebSocketHub:
         self._connections: dict[int, set[web.WebSocketResponse]] = {}
         self._playback_state: dict[int, PlaybackState] = {}
         self._stroke_registries: dict[int, StrokeRegistry] = {}  # guild_id → registry
+        self._viewer_count_callback: Callable[[int, int, int], Awaitable[None]] | None = None
+        self._streamers: dict[int, ActivityStreamer] = {}  # guild_id → streamer
+
+    def set_viewer_count_callback(
+        self, callback: Callable[[int, int, int], Awaitable[None]]
+    ) -> None:
+        """Register a callback for viewer count transitions.
+
+        The callback receives (guild_id, old_count, new_count) and is invoked
+        when the viewer count transitions from 0→1 or reaches 0.
+
+        Args:
+            callback: Async callable(guild_id, old_count, new_count).
+        """
+        self._viewer_count_callback = callback
+
+    def viewer_count(self, guild_id: int) -> int:
+        """Return the number of connected viewers for a guild."""
+        return len(self._connections.get(guild_id, set()))
+
+    def register_streamer(self, guild_id: int, streamer: ActivityStreamer) -> None:
+        """Register an ActivityStreamer for countdown protocol integration.
+
+        The WebSocketHub uses the streamer to check elapsed time, trigger
+        countdowns, and handle ready messages.
+
+        Args:
+            guild_id: Guild ID this streamer belongs to.
+            streamer: The ActivityStreamer instance.
+        """
+        self._streamers[guild_id] = streamer
+        log.debug("Registered streamer for guild %d", guild_id)
+
+    def unregister_streamer(self, guild_id: int) -> None:
+        """Unregister the ActivityStreamer for a guild.
+
+        Called when a video session ends or the streamer is destroyed.
+
+        Args:
+            guild_id: Guild ID to unregister.
+        """
+        self._streamers.pop(guild_id, None)
+        log.debug("Unregistered streamer for guild %d", guild_id)
+
+    async def _on_viewer_count_change(
+        self, guild_id: int, old_count: int, new_count: int
+    ) -> None:
+        """Notify the registered callback of a viewer count transition.
+
+        Logs the transition and swallows any callback exceptions to prevent
+        viewer tracking issues from disrupting WebSocket operation.
+        """
+        log.debug(
+            "Viewer count change for guild %d: %d → %d",
+            guild_id,
+            old_count,
+            new_count,
+        )
+        if self._viewer_count_callback is not None:
+            try:
+                await self._viewer_count_callback(guild_id, old_count, new_count)
+            except Exception:
+                log.exception(
+                    "Viewer count callback error for guild %d (%d → %d)",
+                    guild_id,
+                    old_count,
+                    new_count,
+                )
 
     async def handle_ws(self, request: web.Request) -> web.WebSocketResponse:
         """Handle incoming WebSocket connection request.
@@ -90,15 +162,55 @@ class WebSocketHub:
         # Register connection
         if guild_id not in self._connections:
             self._connections[guild_id] = set()
+        old_count = len(self._connections[guild_id])
         self._connections[guild_id].add(ws)
+        new_count = len(self._connections[guild_id])
 
-        log.debug("WebSocket connected for guild %d (total: %d)", guild_id, len(self._connections[guild_id]))
+        log.debug("WebSocket connected for guild %d (total: %d)", guild_id, new_count)
+
+        # Notify viewer count change (0→1 transition)
+        if old_count == 0 and new_count == 1:
+            await self._on_viewer_count_change(guild_id, 0, 1)
 
         # Send current state to late joiner (always includes strokes)
         state = self._playback_state.get(guild_id)
         strokes = self.get_stroke_registry(guild_id).get_all()
-        if state is not None or strokes:
-            # Compute current position from elapsed time if playing
+        streamer = self._streamers.get(guild_id)
+
+        # Countdown protocol integration:
+        # If a streamer is active and within the first 5s, trigger or join countdown
+        # instead of sending the regular state message.
+        countdown_sent = False
+        if streamer is not None and streamer.state.value in ("buffering", "streaming"):
+            if streamer.should_countdown():
+                # First viewer within 5s — start the countdown
+                streamer.start_countdown()
+                countdown_msg = {
+                    "type": "countdown",
+                    "seconds": streamer.countdown_seconds,
+                    "video_title": streamer.source.title if streamer.source else "",
+                }
+                # Broadcast to ALL clients (including this new one)
+                await self.broadcast(guild_id, countdown_msg)
+                countdown_sent = True
+            elif streamer.countdown_active and not streamer.playback_started:
+                # Countdown already in progress — send remaining time to new joiner
+                remaining = streamer.get_countdown_remaining()
+                if remaining > 0:
+                    countdown_msg = {
+                        "type": "countdown",
+                        "seconds": remaining,
+                        "video_title": streamer.source.title if streamer.source else "",
+                    }
+                    try:
+                        await ws.send_json(countdown_msg)
+                    except (ConnectionResetError, RuntimeError):
+                        self._connections[guild_id].discard(ws)
+                        return ws
+                    countdown_sent = True
+
+        if not countdown_sent and (state is not None or strokes):
+            # Standard late-joiner sync: send computed position
             if state and state.playing:
                 elapsed = time.monotonic() - state.last_update
                 current_position = state.position + elapsed
@@ -128,12 +240,24 @@ class WebSocketHub:
                 elif msg.type in (web.WSMsgType.ERROR, web.WSMsgType.CLOSE):
                     break
         finally:
-            self._connections.get(guild_id, set()).discard(ws)
+            conns = self._connections.get(guild_id, set())
+            was_present = ws in conns
+            conns.discard(ws)
+            remaining = len(conns)
             log.debug(
                 "WebSocket disconnected for guild %d (remaining: %d)",
                 guild_id,
-                len(self._connections.get(guild_id, set())),
+                remaining,
             )
+            # Cancel countdown if all viewers disconnected
+            if was_present and remaining == 0:
+                streamer = self._streamers.get(guild_id)
+                if streamer is not None and streamer.countdown_active:
+                    streamer.cancel_countdown()
+
+            # Notify viewer count change (1→0 transition)
+            if was_present and remaining == 0:
+                await self._on_viewer_count_change(guild_id, 1, 0)
 
         return ws
 
@@ -147,6 +271,11 @@ class WebSocketHub:
             return
 
         msg_type = data.get("type")
+
+        # Countdown protocol: handle `ready` message
+        if msg_type == "ready":
+            await self._handle_ready(guild_id, sender)
+            return
 
         # Whiteboard message dispatch
         if msg_type == "stroke_add":
@@ -186,6 +315,49 @@ class WebSocketHub:
         # Broadcast to all other clients in this guild
         broadcast_msg = {**data, "timestamp": time.time()}
         await self.broadcast(guild_id, broadcast_msg, exclude=sender)
+
+    async def _handle_ready(
+        self, guild_id: int, sender: web.WebSocketResponse
+    ) -> None:
+        """Handle a client's `ready` message after countdown completes.
+
+        Only the first `ready` triggers the `start` broadcast. Subsequent
+        `ready` messages are ignored (edge case: multiple clients finish
+        countdown at slightly different times).
+        """
+        streamer = self._streamers.get(guild_id)
+        if streamer is None:
+            # No active streamer — ignore stale ready
+            return
+
+        if not streamer.countdown_active:
+            # No active countdown — ignore spurious ready
+            return
+
+        triggered = streamer.on_ready_received()
+        if not triggered:
+            # Playback already started or countdown not active — ignore
+            return
+
+        # Broadcast `start` to all connected clients
+        start_msg = {
+            "type": "start",
+            "position": 0.0,
+            "timestamp": time.time(),
+        }
+        await self.broadcast(guild_id, start_msg)
+
+        # Update the PlaybackState to reflect position 0 playing
+        state = self._playback_state.setdefault(guild_id, PlaybackState())
+        state.playing = True
+        state.position = 0.0
+        state.last_update = time.monotonic()
+
+        log.info(
+            "Countdown complete for guild %d — broadcast start to %d clients",
+            guild_id,
+            len(self._connections.get(guild_id, set())),
+        )
 
     async def _handle_stroke_add(
         self, guild_id: int, sender: web.WebSocketResponse, data: dict
@@ -290,9 +462,14 @@ class WebSocketHub:
             except (ConnectionResetError, RuntimeError):
                 stale.append(ws)
 
-        # Clean up stale connections
-        for ws in stale:
-            connections.discard(ws)
+        # Clean up stale connections and check for viewer count transitions
+        if stale:
+            count_before = len(connections)
+            for ws in stale:
+                connections.discard(ws)
+            count_after = len(connections)
+            if count_before > 0 and count_after == 0:
+                await self._on_viewer_count_change(guild_id, count_before, 0)
 
     async def broadcast_from_bot(self, guild_id: int, message: dict) -> None:
         """Send a JSON message to ALL connected clients for a guild.
@@ -317,12 +494,16 @@ class WebSocketHub:
     async def disconnect_all(self, guild_id: int) -> None:
         """Close all WebSocket connections for a guild (on session end)."""
         connections = self._connections.pop(guild_id, set())
+        previous_count = len(connections)
         for ws in connections:
             try:
                 await ws.close()
             except (ConnectionResetError, RuntimeError):
                 pass
         self._playback_state.pop(guild_id, None)
+        # Notify viewer count change if viewers were connected
+        if previous_count > 0:
+            await self._on_viewer_count_change(guild_id, previous_count, 0)
         log.debug("Disconnected all WebSocket clients for guild %d", guild_id)
 
     # ------------------------------------------------------------------

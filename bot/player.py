@@ -35,6 +35,23 @@ def set_bot(bot) -> None:
     global _bot_ref
     _bot_ref = bot
 
+# ── track-start callback (visualizer integration) ───────────
+# A fire-and-forget callback invoked when a new track starts playing.
+# The VisualizerRegistry subscribes here during setup — player.py MUST NOT
+# import from visualizer modules (audio independence, Req 8).
+_on_track_start_callback = None
+
+
+def set_on_track_start_callback(callback) -> None:
+    """Register a callback for track start events.
+
+    Args:
+        callback: An async callable (guild_id: int, metadata: dict) -> None.
+                  Exceptions are swallowed to preserve audio independence.
+    """
+    global _on_track_start_callback
+    _on_track_start_callback = callback
+
 # Per-guild connect locks: serialize voice-channel connects so the
 # wakeword/voice pipeline and /play cannot race and trigger
 # `ClientException('Already connected to a voice channel.')`.
@@ -1328,6 +1345,23 @@ async def on_track_start(guild_id: int, player: wavelink.Player, track: wavelink
             )
 
     await _send_now_playing(guild_id, player, track)
+
+    # ── visualizer track-change callback (Req 3.5, 5.5) ──────
+    # Fire-and-forget: notify the visualizer system of the new track.
+    # Exceptions are swallowed to maintain audio independence (Req 8).
+    if _on_track_start_callback:
+        entry = state.get("current") or {}
+        metadata = {
+            "title": entry.get("title", track.title or ""),
+            "artist": entry.get("author", track.author or ""),
+            "artwork_url": entry.get("artwork_url") or getattr(track, "artwork", None),
+            "duration_ms": entry.get("duration") or getattr(track, "length", 0),
+            "position_ms": 0,
+        }
+        try:
+            await _on_track_start_callback(guild_id, metadata)
+        except Exception:
+            log.debug("Track start callback failed (visualizer)", exc_info=True)
 
 
 async def on_track_end(guild_id: int, player: wavelink.Player, track: wavelink.Playable, reason: str) -> None:

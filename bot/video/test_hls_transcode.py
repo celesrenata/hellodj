@@ -153,3 +153,160 @@ def _res_720p():
     """Create a 720p Resolution for testing."""
     from video import Resolution
     return Resolution.RES_720P
+
+
+class TestBuildVisualizerFfmpegArgs:
+    """Tests for build_visualizer_ffmpeg_args() — rawvideo stdin → QSV HLS."""
+
+    def test_default_args_structure(self, pipeline):
+        """Default parameters produce a valid ffmpeg command for rawvideo input."""
+        args = pipeline.build_visualizer_ffmpeg_args()
+
+        assert args[0] == "ffmpeg"
+        assert "-hide_banner" in args
+        assert "-y" in args
+
+    def test_rawvideo_input_format(self, pipeline):
+        """Input should be raw video from stdin (pipe:0)."""
+        args = pipeline.build_visualizer_ffmpeg_args()
+
+        # rawvideo format
+        f_idx = args.index("-f")
+        assert args[f_idx + 1] == "rawvideo"
+
+        # pixel format
+        pf_idx = args.index("-pixel_format")
+        assert args[pf_idx + 1] == "rgba"
+
+        # input is stdin pipe
+        i_idx = args.index("-i")
+        assert args[i_idx + 1] == "pipe:0"
+
+    def test_default_resolution(self, pipeline):
+        """Default resolution is 1280x720."""
+        args = pipeline.build_visualizer_ffmpeg_args()
+
+        vs_idx = args.index("-video_size")
+        assert args[vs_idx + 1] == "1280x720"
+
+    def test_custom_resolution(self, pipeline):
+        """Custom width/height are reflected in -video_size."""
+        args = pipeline.build_visualizer_ffmpeg_args(width=1920, height=1080)
+
+        vs_idx = args.index("-video_size")
+        assert args[vs_idx + 1] == "1920x1080"
+
+    def test_default_framerate(self, pipeline):
+        """Default framerate is 30."""
+        args = pipeline.build_visualizer_ffmpeg_args()
+
+        fr_idx = args.index("-framerate")
+        assert args[fr_idx + 1] == "30"
+
+    def test_custom_framerate(self, pipeline):
+        """Custom fps is reflected in -framerate."""
+        args = pipeline.build_visualizer_ffmpeg_args(fps=60)
+
+        fr_idx = args.index("-framerate")
+        assert args[fr_idx + 1] == "60"
+
+    def test_qsv_encode_settings(self, pipeline):
+        """Should use h264_qsv encoder with veryfast preset."""
+        args = pipeline.build_visualizer_ffmpeg_args()
+
+        assert "-c:v" in args
+        cv_idx = args.index("-c:v")
+        assert args[cv_idx + 1] == "h264_qsv"
+
+        assert "-preset" in args
+        p_idx = args.index("-preset")
+        assert args[p_idx + 1] == "veryfast"
+
+    def test_hwupload_filter(self, pipeline):
+        """Should have format=nv12,hwupload filter for QSV upload."""
+        args = pipeline.build_visualizer_ffmpeg_args()
+
+        vf_idx = args.index("-vf")
+        assert args[vf_idx + 1] == "format=nv12,hwupload=extra_hw_frames=64"
+
+    def test_hls_output_format(self, pipeline):
+        """HLS output settings: 2s segments, rolling window of 5."""
+        args = pipeline.build_visualizer_ffmpeg_args()
+
+        # Find the HLS format flag (second -f occurrence, after rawvideo)
+        f_indices = [i for i, a in enumerate(args) if a == "-f"]
+        assert len(f_indices) == 2
+        assert args[f_indices[1] + 1] == "hls"
+
+        # Segment duration
+        ht_idx = args.index("-hls_time")
+        assert args[ht_idx + 1] == "2"
+
+        # Rolling window size
+        hls_idx = args.index("-hls_list_size")
+        assert args[hls_idx + 1] == "5"
+
+    def test_hls_flags_delete_and_append(self, pipeline):
+        """HLS flags should include delete_segments+append_list for live-like streaming."""
+        args = pipeline.build_visualizer_ffmpeg_args()
+
+        hf_idx = args.index("-hls_flags")
+        assert args[hf_idx + 1] == "delete_segments+append_list"
+
+    def test_output_path_uses_guild_id(self, pipeline):
+        """Output path should be /tmp/hellodj_hls/{guild_id}/viz/playlist.m3u8."""
+        args = pipeline.build_visualizer_ffmpeg_args()
+
+        # Last arg is the output playlist path
+        output_path = args[-1]
+        assert "/tmp/hellodj_hls/123456/viz/playlist.m3u8" in output_path
+
+    def test_segment_filename_pattern(self, pipeline):
+        """Segment filename should be in the viz directory."""
+        args = pipeline.build_visualizer_ffmpeg_args()
+
+        seg_idx = args.index("-hls_segment_filename")
+        seg_pattern = args[seg_idx + 1]
+        assert "/tmp/hellodj_hls/123456/viz/seg%05d.ts" in seg_pattern
+
+    def test_bitrate_settings(self, pipeline):
+        """Should set 2500k bitrate with 3000k maxrate and 6000k bufsize."""
+        args = pipeline.build_visualizer_ffmpeg_args()
+
+        bv_idx = args.index("-b:v")
+        assert args[bv_idx + 1] == "2500k"
+
+        mr_idx = args.index("-maxrate")
+        assert args[mr_idx + 1] == "3000k"
+
+        bs_idx = args.index("-bufsize")
+        assert args[bs_idx + 1] == "6000k"
+
+
+class TestStdinPipeProperty:
+    """Tests for the stdin_pipe property."""
+
+    def test_stdin_pipe_none_when_no_process(self, pipeline):
+        """stdin_pipe returns None when no process is running."""
+        assert pipeline.stdin_pipe is None
+
+    def test_stdin_pipe_none_when_process_has_no_stdin(self, pipeline):
+        """stdin_pipe returns None when process exists but has no stdin."""
+        from unittest.mock import MagicMock
+
+        mock_process = MagicMock()
+        mock_process.stdin = None
+        pipeline.process = mock_process
+
+        assert pipeline.stdin_pipe is None
+
+    def test_stdin_pipe_returns_stdin_when_available(self, pipeline):
+        """stdin_pipe returns the process stdin when available."""
+        from unittest.mock import MagicMock
+
+        mock_stdin = MagicMock()
+        mock_process = MagicMock()
+        mock_process.stdin = mock_stdin
+        pipeline.process = mock_process
+
+        assert pipeline.stdin_pipe is mock_stdin

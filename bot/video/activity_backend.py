@@ -190,6 +190,14 @@ class ActivityBackend:
         self.app.router.add_get(
             "/activity/stream/{guild_id}/subtitles/{lang}.vtt", self.handle_subtitle
         )
+        # Visualizer HLS routes — must be BEFORE {variant}.m3u8 and {segment}.ts
+        # so "viz" isn't captured as a variant or segment name
+        self.app.router.add_get(
+            "/activity/stream/{guild_id}/viz/playlist.m3u8", self.handle_viz_playlist
+        )
+        self.app.router.add_get(
+            "/activity/stream/{guild_id}/viz/{segment}", self.handle_viz_segment
+        )
         # Variant playlists (video.m3u8, audio_ja.m3u8, etc.) — must be BEFORE {segment}.ts
         self.app.router.add_get(
             "/activity/stream/{guild_id}/{variant}.m3u8", self.handle_variant_playlist
@@ -269,6 +277,34 @@ class ActivityBackend:
             The guild_id if the token is valid, None otherwise.
         """
         return self._parse_guild_from_instance_id(token)
+
+    def _validate_guild_token(
+        self, request: web.Request, guild_id: int
+    ) -> web.Response | None:
+        """Validate the request token for the given guild (no session required).
+
+        Lighter-weight validation for routes that don't require an active
+        video session (e.g., visualizer HLS routes). Checks only that:
+        - A token is present
+        - The token's guild_id matches the requested guild
+
+        Returns:
+            None if authentication succeeds, or a web.Response with the
+            appropriate error status if it fails.
+        """
+        token = self._extract_token(request)
+
+        if not token:
+            return self._json_error(401, "Missing authentication token")
+
+        token_guild = self._parse_guild_from_instance_id(token)
+        if token_guild is None:
+            return self._json_error(401, "Invalid authentication token")
+
+        if token_guild != guild_id:
+            return self._json_error(403, "Token not authorized for this guild")
+
+        return None
 
     def _validate_token(
         self, request: web.Request, guild_id: int
@@ -607,6 +643,55 @@ class ActivityBackend:
             return self._json_error(404, "Invalid segment name")
 
         segment_path = streamer.pipeline.output_dir / segment_name
+        if not segment_path.is_file():
+            return self._json_error(404, "Segment not found")
+
+        return web.FileResponse(
+            segment_path,
+            headers={"Content-Type": "video/MP2T"},
+        )
+
+    async def handle_viz_playlist(self, request: web.Request) -> web.Response:
+        """GET /activity/stream/{guild_id}/viz/playlist.m3u8 → serve visualizer HLS playlist."""
+        guild_id = self._parse_guild_id(request)
+        if guild_id is None:
+            return self._json_error(404, "Invalid guild ID")
+
+        # Authenticate (guild-level, no session required)
+        auth_error = self._validate_guild_token(request, guild_id)
+        if auth_error is not None:
+            return auth_error
+
+        playlist_path = Path(f"/tmp/hellodj_hls/{guild_id}/viz/playlist.m3u8")
+        if not playlist_path.is_file():
+            return self._json_error(404, "No active visualizer stream")
+
+        return web.FileResponse(
+            playlist_path,
+            headers={"Content-Type": "application/vnd.apple.mpegurl"},
+        )
+
+    async def handle_viz_segment(self, request: web.Request) -> web.Response:
+        """GET /activity/stream/{guild_id}/viz/{segment} → serve visualizer HLS segment."""
+        guild_id = self._parse_guild_id(request)
+        if guild_id is None:
+            return self._json_error(404, "Invalid guild ID")
+
+        # Authenticate (guild-level, no session required)
+        auth_error = self._validate_guild_token(request, guild_id)
+        if auth_error is not None:
+            return auth_error
+
+        segment = request.match_info["segment"]
+
+        # Sanitize segment filename: only allow alphanumeric, underscore, dash, dot
+        # Reject path traversal attempts (no slashes, no ..)
+        if not segment or ".." in segment or "/" in segment or "\\" in segment:
+            return self._json_error(404, "Invalid segment name")
+        if not all(c.isalnum() or c in "-_." for c in segment):
+            return self._json_error(404, "Invalid segment name")
+
+        segment_path = Path(f"/tmp/hellodj_hls/{guild_id}/viz/{segment}")
         if not segment_path.is_file():
             return self._json_error(404, "Segment not found")
 

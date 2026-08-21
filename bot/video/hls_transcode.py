@@ -728,6 +728,138 @@ class HLSTranscodePipeline:
         line_lower = line.lower()
         return any(pattern.lower() in line_lower for pattern in _QSV_ERROR_PATTERNS)
 
+    # ------------------------------------------------------------------
+    # Visualizer raw-frame input pipeline
+    # ------------------------------------------------------------------
+
+    def build_visualizer_ffmpeg_args(
+        self,
+        width: int = 1280,
+        height: int = 720,
+        fps: int = 30,
+    ) -> list[str]:
+        """Build ffmpeg args for raw frame input → QSV HLS output.
+
+        Constructs an ffmpeg command that reads raw RGBA frames from stdin,
+        uploads to QSV for hardware-accelerated H.264 encoding, and outputs
+        a live-like HLS stream with short segments and a rolling window.
+
+        The output directory is guild-level:
+            /tmp/hellodj_hls/{guild_id}/viz/
+
+        Args:
+            width: Frame width in pixels (default 1280).
+            height: Frame height in pixels (default 720).
+            fps: Frames per second (default 30).
+
+        Returns:
+            Complete ffmpeg argument list suitable for asyncio subprocess.
+        """
+        viz_output_dir = _HLS_BASE_DIR / str(self.guild_id) / "viz"
+        return [
+            "ffmpeg", "-hide_banner", "-y",
+            # Input: raw RGBA from stdin
+            "-f", "rawvideo",
+            "-pixel_format", "rgba",
+            "-video_size", f"{width}x{height}",
+            "-framerate", str(fps),
+            "-i", "pipe:0",
+            # Hardware upload + QSV encode
+            "-vf", "format=nv12,hwupload=extra_hw_frames=64",
+            "-c:v", "h264_qsv",
+            "-preset", "veryfast",
+            "-b:v", "2500k",
+            "-maxrate", "3000k",
+            "-bufsize", "6000k",
+            # HLS output
+            "-f", "hls",
+            "-hls_time", "2",
+            "-hls_list_size", "5",
+            "-hls_flags", "delete_segments+append_list",
+            "-hls_segment_filename", str(viz_output_dir / "seg%05d.ts"),
+            str(viz_output_dir / "playlist.m3u8"),
+        ]
+
+    @property
+    def stdin_pipe(self) -> asyncio.StreamWriter | None:
+        """Access the ffmpeg process stdin for writing raw frames.
+
+        Returns None if the process has not been started with
+        start_visualizer() or the process has exited.
+        """
+        if self.process is not None and self.process.stdin is not None:
+            return self.process.stdin
+        return None
+
+    async def start_visualizer(
+        self,
+        width: int = 1280,
+        height: int = 720,
+        fps: int = 30,
+    ) -> asyncio.StreamWriter:
+        """Launch ffmpeg visualizer pipeline reading raw frames from stdin.
+
+        Creates the visualizer output directory, builds the ffmpeg command
+        for rawvideo stdin input with QSV HLS encoding, and spawns the
+        process with stdin=PIPE.
+
+        The segment watcher and watchdog are started as with the normal
+        pipeline, so `self.ready` is set when the first .ts segment appears.
+
+        Args:
+            width: Frame width in pixels (default 1280).
+            height: Frame height in pixels (default 720).
+            fps: Frames per second (default 30).
+
+        Returns:
+            The process stdin pipe (asyncio.StreamWriter) for writing
+            raw RGBA frame data.
+
+        Raises:
+            HLSTranscodePipelineError: If the process fails to start.
+        """
+        self._running = True
+        self.ready.clear()
+        self._complete_event.clear()
+
+        # Visualizer output goes to guild-level "viz" subdirectory
+        viz_output_dir = _HLS_BASE_DIR / str(self.guild_id) / "viz"
+        self.output_dir = viz_output_dir
+        self.playlist_path = viz_output_dir / "playlist.m3u8"
+
+        # Ensure output directory exists
+        viz_output_dir.mkdir(parents=True, exist_ok=True)
+
+        args = self.build_visualizer_ffmpeg_args(width, height, fps)
+        log.info("HLS visualizer pipeline starting: %s", " ".join(args))
+
+        try:
+            self.process = await asyncio.create_subprocess_exec(
+                *args,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except (FileNotFoundError, OSError) as exc:
+            self._running = False
+            raise HLSTranscodePipelineError(
+                f"Failed to start ffmpeg visualizer pipeline: {exc}"
+            ) from exc
+
+        # Start stderr monitoring
+        self._stderr_buffer = []
+        self._stderr_task = asyncio.ensure_future(self._monitor_stderr())
+
+        # Start segment watcher (sets ready event on first .ts file)
+        self._segment_watcher_task = asyncio.ensure_future(self._watch_segments())
+
+        # Start watchdog
+        self._last_segment_time = asyncio.get_event_loop().time()
+        self._timeout_task = asyncio.ensure_future(self._watchdog())
+
+        assert self.process.stdin is not None
+        return self.process.stdin
+
     async def _fallback_software_decode(self) -> None:
         """Restart the pipeline using software decode but keeping QSV encode.
 

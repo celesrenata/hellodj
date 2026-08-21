@@ -8,7 +8,7 @@
     <link rel="stylesheet" href="static/style.css?v=18">
     <script src="static/hls.min.js"></script>
     <script src="static/whiteboard-bundle.js?v=5"></script>
-    <script type="module" src="static/app.js?v=34"></script>
+    <script type="module" src="static/app.js?v=35"></script>
 </head>
 <body>
     <div id="app">
@@ -61,6 +61,18 @@
         <div class="video-container" id="video-container">
             <video id="player" autoplay playsinline></video>
             <canvas id="whiteboard-canvas"></canvas>
+
+            <!-- Countdown overlay (3-2-1 animation before video start) -->
+            <div class="countdown-overlay" id="countdown-overlay" style="display:none;">
+                <div class="countdown-title" id="countdown-title"></div>
+                <div class="countdown-number" id="countdown-number"></div>
+            </div>
+
+            <!-- DVD screensaver container -->
+            <div class="dvd-container" id="dvd-container" style="display:none;"></div>
+
+            <!-- Visualizer loading state -->
+            <div class="visualizer-loading" id="visualizer-loading" style="display:none;">Starting visualizer...</div>
 
             <!-- Sticker picker -->
             <div class="sticker-picker" id="sticker-picker" style="display: none;">
