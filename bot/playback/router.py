@@ -597,47 +597,74 @@ class PlaybackRouter:
         *,
         use_primary: bool = False,
     ) -> None:
-        """Create a new audio session and begin playback.
+        """Create a new audio session and begin playback via the existing player system.
 
-        When *use_primary* is True, the primary bot's voice connection is used
-        directly (no orchestrator assignment). Otherwise, a secondary instance
-        is assigned via the orchestrator.
-
-        Stub: assigns an instance via orchestrator (or uses primary), registers
-        session, and acknowledges. Actual wavelink playback wired in integration task.
+        Delegates to player.py which handles wavelink connection, resolution,
+        and queue management.
         """
-        if use_primary:
-            log.info(
-                "Starting audio session (primary bot): guild=%d channel=%d query=%r",
-                guild_id,
-                channel_id,
-                query,
-            )
-            # TODO(task-12): Create ChannelSession with primary bot, register,
-            # connect voice via primary bot, play track
-            await interaction.response.send_message(
-                f"\U0001f3b5 Starting playback: {query}", ephemeral=False
-            )
-            return
-
-        instance = await self._orchestrator.assign_instance(guild_id, channel_id)
-        if instance is None:
-            await interaction.response.send_message(
-                "All music slots are in use.", ephemeral=True
-            )
-            return
+        import player
 
         log.info(
-            "Starting audio session: guild=%d channel=%d instance=%d query=%r",
+            "Starting audio session (primary bot): guild=%d channel=%d query=%r",
             guild_id,
             channel_id,
-            instance.index,
             query,
         )
-        # TODO(task-12): Create ChannelSession, register, connect voice, play track
-        await interaction.response.send_message(
-            f"\U0001f3b5 Starting playback: {query}", ephemeral=False
-        )
+
+        # Get the voice channel object
+        voice_channel = interaction.client.get_channel(channel_id)
+        if voice_channel is None:
+            await interaction.response.send_message(
+                "Could not find voice channel.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer()
+
+        # Connect player to voice channel if not already connected
+        state = player.get_state(guild_id)
+        existing_player = state.get("player")
+
+        if existing_player is None or not existing_player.connected:
+            try:
+                wp = await player.connect_player(voice_channel)
+                state["player"] = wp
+            except Exception as exc:
+                log.error("Failed to connect player: %s", exc, exc_info=True)
+                await interaction.followup.send(
+                    "❌ Failed to connect to voice channel.", ephemeral=True
+                )
+                return
+        else:
+            wp = existing_player
+
+        # Store text channel for now-playing updates
+        state["text_channel"] = interaction.channel
+        state["voice_channel"] = voice_channel
+
+        # Resolve and play via the player system
+        entry = {"query": query, "webpage_url": query if "://" in query else None}
+        state.setdefault("queue", []).append(entry)
+
+        if state.get("current") is None:
+            # Nothing playing — start immediately
+            next_entry = state["queue"].pop(0)
+            state["current"] = next_entry
+            player.persist(guild_id)
+            try:
+                await player._resolve_and_play(wp, guild_id, next_entry)
+            except Exception as exc:
+                log.error("Resolve and play failed: %s", exc, exc_info=True)
+                await interaction.followup.send(
+                    f"❌ Failed to play: {exc}", ephemeral=True
+                )
+                return
+            await interaction.followup.send(f"🎵 Now playing: **{query}**")
+        else:
+            # Already playing — enqueued
+            player.persist(guild_id)
+            pos = len(state["queue"])
+            await interaction.followup.send(f"🎵 Added to queue (position {pos}): **{query}**")
 
     async def _start_video_session(
         self,
