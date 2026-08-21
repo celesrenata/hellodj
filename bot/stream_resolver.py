@@ -120,20 +120,20 @@ async def resolve_tidal_stream(track_url_or_id: str) -> str | None:
 async def resolve_spotify_stream(track_url_or_id: str) -> str | None:
     """Resolve a Spotify track to a streaming proxy URL via the spotify-stream service.
 
-    Preloads the track first (so audio is ready when Lavalink fetches /stream),
-    then returns the proxy URL. Returns None on failure.
+    Returns the proxy URL immediately — the spotify-stream sidecar handles
+    loading on-demand when Lavalink fetches the stream. No preload needed.
     """
     track_id = extract_spotify_id(track_url_or_id)
     if not track_id:
         log.debug("stream_resolver: could not extract Spotify track ID from %r", track_url_or_id)
         return None
 
-    # First verify the service is healthy
+    # Quick health check (should be <50ms)
     health_url = f"{SPOTIFY_STREAM_URL}/health"
     t0 = time.monotonic()
 
     try:
-        async with aiohttp.ClientSession(timeout=RESOLVE_TIMEOUT) as session:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=2)) as session:
             async with session.get(health_url) as resp:
                 if resp.status != 200:
                     log.warning("stream_resolver: spotify-stream health check failed (%d)", resp.status)
@@ -146,25 +146,8 @@ async def resolve_spotify_stream(track_url_or_id: str) -> str | None:
         log.warning("stream_resolver: spotify-stream health check failed: %s", exc)
         return None
 
-    # Preload the track (this does the slow key exchange with Spotify)
-    preload_url = f"{SPOTIFY_STREAM_URL}/preload/{track_id}"
-    preload_timeout = aiohttp.ClientTimeout(total=15)
-
-    try:
-        async with aiohttp.ClientSession(timeout=preload_timeout) as session:
-            async with session.get(preload_url) as resp:
-                if resp.status != 200:
-                    body = await resp.text()
-                    log.warning(
-                        "stream_resolver: spotify-stream preload failed (%d) for track %s: %s",
-                        resp.status, track_id, body[:200],
-                    )
-                    return None
-    except Exception as exc:
-        log.warning("stream_resolver: spotify-stream preload failed for track %s: %s", track_id, exc)
-        return None
-
-    # Return the streaming proxy URL — track is preloaded and ready
+    # Return the streaming proxy URL immediately — no preload wait
+    # The spotify-stream sidecar loads on-demand when Lavalink fetches /stream
     stream_url = f"{SPOTIFY_STREAM_URL}/stream/{track_id}"
     log.info(
         "stream_resolver: resolved Spotify track %s → proxy URL (elapsed=%.0fms)",
