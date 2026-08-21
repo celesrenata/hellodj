@@ -84,6 +84,10 @@ _KEY_TO_ENV = {
     "llm.api_key": "LLM_API_KEY",
     "llm.model": "LLM_MODEL",
 
+    # Ollama (voice intent extraction)
+    "ollama.url": "OLLAMA_URL",
+    "ollama.model": "OLLAMA_MODEL",
+
     # STT
     "stt.engine": "STT_ENGINE",
     "stt.api_key": "STT_API_KEY",

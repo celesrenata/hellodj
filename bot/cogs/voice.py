@@ -98,6 +98,7 @@ class VoiceCog(commands.Cog):
         self._tick_task: asyncio.Task | None = None
         self._enabled_guilds: set[int] = set()
         self._disabled_guilds: set[int] = set()
+        self._wakeword_guilds: set[int] = set()
         self._sinks: dict[int, object] = {}
         # Master switch: when VOICE_ENABLED=true the bot listens by default in
         from config import cfg
@@ -111,11 +112,14 @@ class VoiceCog(commands.Cog):
         Order of precedence:
           1. A guild explicitly toggled off via /voice disable never listens.
           2. VOICE_ENABLED=true enables listening by default everywhere.
-          3. Otherwise fall back to the per-guild /voice toggle (_enabled_guilds).
+          3. /wakeword on activates listening for the guild.
+          4. Otherwise fall back to the per-guild /voice toggle (_enabled_guilds).
         """
         if guild_id in self._disabled_guilds:
             return False
         if self._voice_enabled:
+            return True
+        if guild_id in self._wakeword_guilds:
             return True
         return guild_id in self._enabled_guilds
 
@@ -171,6 +175,42 @@ class VoiceCog(commands.Cog):
             self._stop_receive(guild_id)
             await interaction.response.send_message(
                 "HelloDJ voice activation **disabled**.",
+                ephemeral=True,
+            )
+
+    @app_commands.command(
+        name="wakeword",
+        description="Toggle wake word listening for this server",
+    )
+    @app_commands.describe(state="Enable or disable wake word listening")
+    @app_commands.choices(
+        state=[
+            app_commands.Choice(name="On", value="on"),
+            app_commands.Choice(name="Off", value="off"),
+        ]
+    )
+    async def wakeword_toggle(
+        self, interaction: discord.Interaction, state: str
+    ) -> None:
+        """Toggle wake word listening independently of /voice."""
+        if not interaction.user.guild_permissions.manage_guild:
+            await interaction.response.send_message(
+                "You need Manage Server permission to toggle wake word.",
+                ephemeral=True,
+            )
+            return
+
+        guild_id = interaction.guild.id
+        if state == "on":
+            self._wakeword_guilds.add(guild_id)
+            await interaction.response.send_message(
+                "🎙️ Wake word listening **enabled**. Say 'Hello DJ' to interact.",
+                ephemeral=True,
+            )
+        else:
+            self._wakeword_guilds.discard(guild_id)
+            await interaction.response.send_message(
+                "🎙️ Wake word listening **disabled**.",
                 ephemeral=True,
             )
 
@@ -401,6 +441,8 @@ class VoiceCog(commands.Cog):
             self._tick_task.cancel()
         for guild_id in list(self._sinks):
             self._stop_receive(guild_id)
+        if self._orchestrator:
+            await self._orchestrator.close()
 
 
 async def setup(bot: commands.Bot):
