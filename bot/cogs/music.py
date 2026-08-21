@@ -747,6 +747,30 @@ class Music(commands.Cog):
             except Exception as exc:
                 log.warning("sleep: could not notify text channel: %s", exc)
 
+    # ── Same-channel guard ─────────────────────────────────
+
+    def _check_same_channel(self, interaction: discord.Interaction) -> str | None:
+        """Verify the invoking user is in the same voice channel as the bot.
+
+        Returns an error message if:
+          - The user is not in any voice channel, OR
+          - The bot is connected but in a DIFFERENT voice channel.
+        Returns None if the check passes (user is in the bot's channel, or bot
+        is not connected anywhere — in which case there's nothing to guard).
+        """
+        user_voice = interaction.user.voice
+        if not user_voice or not user_voice.channel:
+            return "You need to be in a voice channel first."
+
+        player_obj = player.get_player(interaction.guild.id)
+        if player_obj and player_obj.connected and player_obj.channel:
+            if user_voice.channel.id != player_obj.channel.id:
+                return (
+                    f"HelloDJ is active in **{player_obj.channel.name}** — "
+                    f"you need to be in that channel to control playback."
+                )
+        return None
+
     # ── Connection ──────────────────────────────────────────
 
     @app_commands.command(name="join", description="Join your current voice channel")
@@ -1413,6 +1437,10 @@ class Music(commands.Cog):
 
     @app_commands.command(name="pause", description="Pause playback")
     async def pause(self, interaction: discord.Interaction):
+        err = self._check_same_channel(interaction)
+        if err:
+            await interaction.response.send_message(err, ephemeral=True)
+            return
         player_obj = player.get_player(interaction.guild.id)
         if player_obj and player_obj.playing:
             await player_obj.pause(True)
@@ -1422,6 +1450,10 @@ class Music(commands.Cog):
 
     @app_commands.command(name="resume", description="Resume playback")
     async def resume(self, interaction: discord.Interaction):
+        err = self._check_same_channel(interaction)
+        if err:
+            await interaction.response.send_message(err, ephemeral=True)
+            return
         player_obj = player.get_player(interaction.guild.id)
         if player_obj and player_obj.paused:
             await player_obj.pause(False)
@@ -1431,6 +1463,10 @@ class Music(commands.Cog):
 
     @app_commands.command(name="start", description="Alias for /resume")
     async def start(self, interaction: discord.Interaction):
+        err = self._check_same_channel(interaction)
+        if err:
+            await interaction.response.send_message(err, ephemeral=True)
+            return
         player_obj = player.get_player(interaction.guild.id)
         if player_obj and player_obj.paused:
             await player_obj.pause(False)
@@ -1442,6 +1478,10 @@ class Music(commands.Cog):
 
     @app_commands.command(name="skip", description="Skip the current song")
     async def skip(self, interaction: discord.Interaction):
+        err = self._check_same_channel(interaction)
+        if err:
+            await interaction.response.send_message(err, ephemeral=True)
+            return
         player_obj = player.get_player(interaction.guild.id)
         if player_obj and (player_obj.playing or player_obj.paused):
             await player_obj.stop()
@@ -1451,6 +1491,10 @@ class Music(commands.Cog):
 
     @app_commands.command(name="next", description="Alias for /skip")
     async def next_cmd(self, interaction: discord.Interaction):
+        err = self._check_same_channel(interaction)
+        if err:
+            await interaction.response.send_message(err, ephemeral=True)
+            return
         player_obj = player.get_player(interaction.guild.id)
         if player_obj and (player_obj.playing or player_obj.paused):
             await player_obj.stop()
@@ -1462,6 +1506,10 @@ class Music(commands.Cog):
 
     @app_commands.command(name="stop", description="Stop playback and clear the queue")
     async def stop(self, interaction: discord.Interaction):
+        err = self._check_same_channel(interaction)
+        if err:
+            await interaction.response.send_message(err, ephemeral=True)
+            return
         gid = interaction.guild.id
         state = player.get_state(gid)
         had_content = bool(state.get("current")) or bool(state["queue"])
@@ -1491,8 +1539,17 @@ class Music(commands.Cog):
             msg = "HelloDJ stopped and cleared the queue."
         await interaction.edit_original_response(content=msg, view=None)
 
-    @app_commands.command(name="clear", description="Stop and discard the queue (no save prompt)")
-    async def clear_cmd(self, interaction: discord.Interaction):
+    clear_group = app_commands.Group(
+        name="clear",
+        description="Stop and discard a queue (music or video)",
+    )
+
+    @clear_group.command(name="music", description="Stop and discard the music queue (no save prompt)")
+    async def clear_music_cmd(self, interaction: discord.Interaction):
+        err = self._check_same_channel(interaction)
+        if err:
+            await interaction.response.send_message(err, ephemeral=True)
+            return
         gid = interaction.guild.id
         state = player.get_state(gid)
         state["persist_enabled"] = False
@@ -1502,7 +1559,65 @@ class Music(commands.Cog):
             await player_obj.stop()
         state["current"] = None
         await session.clear(gid)
-        await interaction.response.send_message("HelloDJ cleared the queue.")
+        await interaction.response.send_message("HelloDJ cleared the music queue.")
+
+    @clear_group.command(name="video", description="Stop and discard the video queue")
+    async def clear_video_cmd(self, interaction: discord.Interaction):
+        gid = interaction.guild.id
+
+        user_voice = interaction.user.voice
+        if not user_voice or not user_voice.channel:
+            await interaction.response.send_message(
+                "You need to be in a voice channel first.", ephemeral=True
+            )
+            return
+
+        video_cog = self.bot.get_cog("Video")
+        if video_cog is None:
+            await interaction.response.send_message(
+                "Video cog is not loaded.", ephemeral=True
+            )
+            return
+
+        streamer = video_cog._registry.get(gid)
+        if streamer is None or not streamer.is_active:
+            await interaction.response.send_message(
+                "No active video session to clear.", ephemeral=True
+            )
+            return
+
+        # Verify user is in the same channel as the video activity
+        if user_voice.channel.id != streamer.channel_id:
+            channel = interaction.guild.get_channel(streamer.channel_id)
+            channel_name = channel.name if channel else f"ID {streamer.channel_id}"
+            await interaction.response.send_message(
+                f"The video Activity is in **{channel_name}** — "
+                f"you need to be in that channel to control it.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer()
+        try:
+            await streamer.stop()
+        except Exception as exc:
+            log.error("Error stopping video streamer during /clear video for guild %d: %s", gid, exc)
+
+        # Disconnect WebSocket clients
+        await video_cog._backend.ws_hub.disconnect_all(gid)
+
+        # Stop seek bar updates
+        video_cog._stop_seek_bar_update(gid)
+
+        # Close the Activity (best-effort)
+        if video_cog._launcher is not None:
+            try:
+                await video_cog._launcher.close(streamer.channel_id)
+            except Exception as exc:
+                log.warning("Error closing Activity during /clear video for guild %d: %s", gid, exc)
+
+        video_cog._registry.unregister(gid)
+        await interaction.followup.send("HelloDJ cleared the video queue and stopped the Activity.")
 
     # ── Queue display ───────────────────────────────────────
 
@@ -1742,6 +1857,10 @@ class Music(commands.Cog):
 
     @app_commands.command(name="leave", description="Disconnect HelloDJ from voice")
     async def leave(self, interaction: discord.Interaction):
+        err = self._check_same_channel(interaction)
+        if err:
+            await interaction.response.send_message(err, ephemeral=True)
+            return
         gid = interaction.guild.id
         state = player.get_state(gid)
         player_obj = player.get_player(gid)

@@ -125,6 +125,28 @@ class VideoCog(commands.Cog, name="Video"):
             return "You must join a voice channel first."
         return None
 
+    def _check_same_channel(self, interaction: discord.Interaction) -> str | None:
+        """Return an error if the user is not in the same channel as the video Activity.
+
+        Returns None if the check passes or there's no active session (nothing to guard).
+        """
+        user_voice = interaction.user.voice  # type: ignore[union-attr]
+        if not user_voice or not user_voice.channel:
+            return "You must join a voice channel first."
+
+        guild_id = interaction.guild_id
+        assert guild_id is not None
+        streamer = self._registry.get(guild_id)
+        if streamer is not None and streamer.is_active:
+            if user_voice.channel.id != streamer.channel_id:
+                channel = interaction.guild.get_channel(streamer.channel_id)
+                channel_name = channel.name if channel else f"ID {streamer.channel_id}"
+                return (
+                    f"The video Activity is in **{channel_name}** — "
+                    f"you need to be in that channel to control it."
+                )
+        return None
+
     def _check_gpu(self) -> str | None:
         """Return an error message if GPU is unavailable, else None."""
         if not self._gpu_probe.gpu_available:
@@ -289,6 +311,11 @@ class VideoCog(commands.Cog, name="Video"):
         guild_id = interaction.guild_id
         assert guild_id is not None
 
+        err = self._check_same_channel(interaction)
+        if err:
+            await interaction.response.send_message(err, ephemeral=True)
+            return
+
         streamer = self._registry.get(guild_id)
         if streamer is None or not streamer.is_active:
             await interaction.response.send_message(
@@ -332,6 +359,11 @@ class VideoCog(commands.Cog, name="Video"):
     async def video_skip(self, interaction: discord.Interaction) -> None:
         guild_id = interaction.guild_id
         assert guild_id is not None
+
+        err = self._check_same_channel(interaction)
+        if err:
+            await interaction.response.send_message(err, ephemeral=True)
+            return
 
         streamer = self._registry.get(guild_id)
         if streamer is None or not streamer.is_active:
@@ -407,6 +439,11 @@ class VideoCog(commands.Cog, name="Video"):
     async def video_previous(self, interaction: discord.Interaction) -> None:
         guild_id = interaction.guild_id
         assert guild_id is not None
+
+        err = self._check_same_channel(interaction)
+        if err:
+            await interaction.response.send_message(err, ephemeral=True)
+            return
 
         streamer = self._registry.get(guild_id)
         if streamer is None or not streamer.is_active:
