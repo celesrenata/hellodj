@@ -630,6 +630,13 @@ async def _resume_sessions():
             guild = bot.get_guild(gid)
             if guild is None:
                 continue
+
+            # Skip guilds that aren't activated
+            from credentials import creds as _resume_creds
+            if _resume_creds.get(f"guild.{gid}.activated", "") != "true":
+                log.info("resume: skipping guild %d — not activated", gid)
+                continue
+
             voice_channel = guild.get_channel(saved.get("voice_channel_id"))
             text_channel = guild.get_channel(saved.get("text_channel_id"))
             if voice_channel is None or text_channel is None:
