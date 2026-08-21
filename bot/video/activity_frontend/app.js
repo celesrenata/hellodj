@@ -215,7 +215,11 @@ import { DiscordSDK } from './discord-sdk.js';
         _remoteAction = true;
         {
           const wasMuted = videoEl.muted;
-          if (data.position != null) videoEl.currentTime = data.position;
+          // Only seek if position differs by more than 5s to avoid keyframe corruption
+          if (data.position != null) {
+            const drift = Math.abs(videoEl.currentTime - data.position);
+            if (drift > 5) videoEl.currentTime = data.position;
+          }
           if (data.playing) {
             videoEl.play().catch(() => {});
           } else {
@@ -344,6 +348,12 @@ import { DiscordSDK } from './discord-sdk.js';
       if (!data.fatal) return;
       if (data.type === Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); return; }
       showError(`Stream error: ${data.details}`);
+    });
+
+    // Handle end of VOD — stop playback, don't loop
+    videoEl.addEventListener('ended', () => {
+      if (hls) { hls.stopLoad(); }
+      videoEl.pause();
     });
   };
 
