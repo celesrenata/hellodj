@@ -289,6 +289,7 @@ class StrokeRenderer {
     const lineWidth = denormalizeWidth(stroke.width, w);
 
     ctx.save();
+    ctx.globalAlpha = stroke.opacity != null ? stroke.opacity : 1.0;
     ctx.strokeStyle = stroke.color;
     ctx.fillStyle = stroke.color;
     ctx.lineWidth = lineWidth;
@@ -565,6 +566,8 @@ class PenTool {
 
     this._getCanvas = config.getCanvas;
     this._getColor = config.getColor;
+    this._getWidth = config.getWidth || (() => 3);
+    this._getOpacity = config.getOpacity || (() => 1.0);
 
     this._points = [];
     this._capturing = false;
@@ -636,9 +639,10 @@ class PenTool {
     const h = canvas.height;
     if (w === 0 || h === 0) return;
 
-    const lineWidth = denormalizeWidth(normalizeWidth(3, w), w);
+    const lineWidth = denormalizeWidth(normalizeWidth(this._getWidth(), w), w);
 
     ctx.save();
+    ctx.globalAlpha = this._getOpacity();
     ctx.strokeStyle = this._getColor();
     ctx.lineWidth = lineWidth;
     ctx.lineCap = 'round';
@@ -685,7 +689,7 @@ class PenTool {
 
     const canvas = this._getCanvas();
     const w = canvas.width;
-    const strokeWidth = normalizeWidth(3, w);
+    const strokeWidth = normalizeWidth(this._getWidth(), w);
 
     return {
       id: crypto.randomUUID(),
@@ -693,6 +697,7 @@ class PenTool {
       points,
       color: this._getColor(),
       width: strokeWidth,
+      opacity: this._getOpacity(),
     };
   }
 }
@@ -706,6 +711,8 @@ class LineTool {
 
     this._getColor = config.getColor;
     this._getCanvas = config.getCanvas;
+    this._getWidth = config.getWidth || (() => 3);
+    this._getOpacity = config.getOpacity || (() => 1.0);
 
     this._startPoint = null;
     this._currentPoint = null;
@@ -773,8 +780,9 @@ class LineTool {
     const [x1, y1] = denormalize(this._currentPoint[0], this._currentPoint[1], w, h);
 
     ctx.save();
+    ctx.globalAlpha = this._getOpacity();
     ctx.strokeStyle = this._getColor();
-    ctx.lineWidth = 3;
+    ctx.lineWidth = this._getWidth();
     ctx.lineCap = 'round';
     ctx.beginPath();
     ctx.moveTo(x0, y0);
@@ -795,7 +803,8 @@ class LineTool {
       type: 'line',
       points: [this._startPoint, endPoint],
       color: this._getColor(),
-      width: normalizeWidth(3, viewportWidth),
+      width: normalizeWidth(this._getWidth(), viewportWidth),
+      opacity: this._getOpacity(),
     };
   }
 
@@ -1803,6 +1812,8 @@ class WhiteboardOverlay {
     this.mode = 'inactive';
     this.currentTool = null;
     this.currentColor = '#FFFFFF';
+    this.currentWidth = 3;
+    this.currentOpacity = 1.0;
     this.undoStack = [];
 
     this.renderer = new StrokeRenderer(
@@ -1896,6 +1907,7 @@ function initWhiteboardSync(wsSend, overlay) {
       points: stroke.points,
       color: stroke.color,
       width: stroke.width,
+      opacity: stroke.opacity,
       author: overlay.localAuthorId,
       ...(stroke.text != null && { text: stroke.text }),
       ...(stroke.text_bg != null && { text_bg: stroke.text_bg }),
@@ -1955,6 +1967,7 @@ function initWhiteboardSync(wsSend, overlay) {
       points: data.points,
       color: data.color,
       width: data.width,
+      opacity: data.opacity,
       author: data.author,
     };
 
@@ -1996,6 +2009,7 @@ function initWhiteboardSync(wsSend, overlay) {
         points: s.points,
         color: s.color,
         width: s.width,
+        opacity: s.opacity,
         author: s.author,
       };
 

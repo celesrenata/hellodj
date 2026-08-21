@@ -39,6 +39,10 @@ export class WhiteboardOverlay {
     this.currentTool = null;
     /** @type {string} hex color e.g. '#FF0000' */
     this.currentColor = '#FFFFFF';
+    /** @type {number} stroke width in CSS pixels (1–20) */
+    this.currentWidth = 3;
+    /** @type {number} stroke opacity (0.1–1.0) */
+    this.currentOpacity = 1.0;
     /** @type {string[]} stroke IDs authored by this viewer (most recent last) */
     this.undoStack = [];
 

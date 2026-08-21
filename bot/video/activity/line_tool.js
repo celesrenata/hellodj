@@ -20,6 +20,8 @@ export class LineTool {
    * @param {object} config
    * @param {() => string} config.getColor — returns current hex color
    * @param {() => HTMLCanvasElement} config.getCanvas — returns the whiteboard canvas
+   * @param {() => number} [config.getWidth] — returns the current stroke width (1–20)
+   * @param {() => number} [config.getOpacity] — returns the current opacity (0.1–1.0)
    */
   constructor(config) {
     this.name = 'line';
@@ -29,6 +31,10 @@ export class LineTool {
     this._getColor = config.getColor;
     /** @type {() => HTMLCanvasElement} */
     this._getCanvas = config.getCanvas;
+    /** @type {() => number} */
+    this._getWidth = config.getWidth || (() => 3);
+    /** @type {() => number} */
+    this._getOpacity = config.getOpacity || (() => 1.0);
 
     /** @type {[number, number] | null} */
     this._startPoint = null;
@@ -125,8 +131,9 @@ export class LineTool {
     const [x1, y1] = denormalize(this._currentPoint[0], this._currentPoint[1], w, h);
 
     ctx.save();
+    ctx.globalAlpha = this._getOpacity();
     ctx.strokeStyle = this._getColor();
-    ctx.lineWidth = 3;
+    ctx.lineWidth = this._getWidth();
     ctx.lineCap = 'round';
     ctx.beginPath();
     ctx.moveTo(x0, y0);
@@ -157,7 +164,8 @@ export class LineTool {
       type: 'line',
       points: [this._startPoint, endPoint],
       color: this._getColor(),
-      width: normalizeWidth(3, viewportWidth),
+      width: normalizeWidth(this._getWidth(), viewportWidth),
+      opacity: this._getOpacity(),
     };
   }
 

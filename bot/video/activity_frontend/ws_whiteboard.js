@@ -45,6 +45,7 @@ export function initWhiteboardSync(wsSend, overlay) {
       points: stroke.points,
       color: stroke.color,
       width: stroke.width,
+      opacity: stroke.opacity,
       author: overlay.localAuthorId,
       // Optional fields for text strokes
       ...(stroke.text != null && { text: stroke.text }),
@@ -136,6 +137,7 @@ export function initWhiteboardSync(wsSend, overlay) {
       points: data.points,
       color: data.color,
       width: data.width,
+      opacity: data.opacity,
       author: data.author,
     };
 
@@ -201,6 +203,7 @@ export function initWhiteboardSync(wsSend, overlay) {
         points: s.points,
         color: s.color,
         width: s.width,
+        opacity: s.opacity,
         author: s.author,
       };
 

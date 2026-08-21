@@ -53,6 +53,7 @@ export class StrokeRenderer {
     const lineWidth = denormalizeWidth(stroke.width, w);
 
     ctx.save();
+    ctx.globalAlpha = stroke.opacity != null ? stroke.opacity : 1.0;
     ctx.strokeStyle = stroke.color;
     ctx.fillStyle = stroke.color;
     ctx.lineWidth = lineWidth;

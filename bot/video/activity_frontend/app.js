@@ -705,8 +705,8 @@ import { DiscordSDK } from './discord-sdk.js';
     const getColor = () => colorPicker.getColor();
 
     // Register tools
-    const penTool = new PenTool({ getCanvas, getColor });
-    const lineTool = new LineTool({ getCanvas, getColor });
+    const penTool = new PenTool({ getCanvas, getColor, getWidth: () => overlay.currentWidth, getOpacity: () => overlay.currentOpacity });
+    const lineTool = new LineTool({ getCanvas, getColor, getWidth: () => overlay.currentWidth, getOpacity: () => overlay.currentOpacity });
     const shapeTool = new ShapeTool();
     const textTool = new TextTool({
       getCanvasSize: () => ({ width: whiteboardCanvas.width, height: whiteboardCanvas.height }),
@@ -762,6 +762,14 @@ import { DiscordSDK } from './discord-sdk.js';
     });
     // Set initial active state on pen button
     document.querySelector('.hud-btn[data-tool="pen"]')?.classList.add('active');
+
+    // Wire size and opacity sliders
+    document.getElementById('stroke-size')?.addEventListener('input', (e) => {
+      overlay.currentWidth = parseInt(e.target.value, 10);
+    });
+    document.getElementById('stroke-opacity')?.addEventListener('input', (e) => {
+      overlay.currentOpacity = parseInt(e.target.value, 10) / 100;
+    });
 
     // Wire canvas pointer events to active tool
     whiteboardCanvas.addEventListener('pointerdown', (e) => {

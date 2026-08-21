@@ -16,6 +16,8 @@ export class PenTool {
    * @param {object} config
    * @param {() => HTMLCanvasElement} config.getCanvas — returns the whiteboard canvas element
    * @param {() => string} config.getColor             — returns the current hex color string
+   * @param {() => number} [config.getWidth]           — returns the current stroke width (1–20)
+   * @param {() => number} [config.getOpacity]         — returns the current opacity (0.1–1.0)
    */
   constructor(config) {
     this.name = 'pen';
@@ -25,6 +27,10 @@ export class PenTool {
     this._getCanvas = config.getCanvas;
     /** @type {() => string} */
     this._getColor = config.getColor;
+    /** @type {() => number} */
+    this._getWidth = config.getWidth || (() => 3);
+    /** @type {() => number} */
+    this._getOpacity = config.getOpacity || (() => 1.0);
 
     /** @type {Array<[number, number]>} Normalized points captured during draw */
     this._points = [];
@@ -128,9 +134,10 @@ export class PenTool {
     const h = canvas.height;
     if (w === 0 || h === 0) return;
 
-    const lineWidth = denormalizeWidth(normalizeWidth(3, w), w);
+    const lineWidth = denormalizeWidth(normalizeWidth(this._getWidth(), w), w);
 
     ctx.save();
+    ctx.globalAlpha = this._getOpacity();
     ctx.strokeStyle = this._getColor();
     ctx.lineWidth = lineWidth;
     ctx.lineCap = 'round';
@@ -183,7 +190,7 @@ export class PenTool {
 
     const canvas = this._getCanvas();
     const w = canvas.width;
-    const strokeWidth = normalizeWidth(3, w);
+    const strokeWidth = normalizeWidth(this._getWidth(), w);
 
     return {
       id: crypto.randomUUID(),
@@ -191,6 +198,7 @@ export class PenTool {
       points,
       color: this._getColor(),
       width: strokeWidth,
+      opacity: this._getOpacity(),
     };
   }
 }
