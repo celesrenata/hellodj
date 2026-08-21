@@ -978,18 +978,31 @@ def _build_now_playing_embed(source: VideoSource, queue_length: int, *, activity
 
 
 class BlockConfirmView(discord.ui.View):
-    """Confirmation view for blocking a track — requires a second click."""
+    """Confirmation view for blocking/unblocking a track — requires a second click.
 
-    def __init__(self, cog: VideoCog, guild_id: int, channel_id: int, streamer) -> None:
+    Block flow:  first click (red ⊘) → ephemeral prompt → second click (darker red ⊘) → blocked + skip
+    Unblock flow: first click (green ⊘) → ephemeral prompt → second click (brighter green ⊘) → unblocked
+    """
+
+    def __init__(self, cog: VideoCog, guild_id: int, channel_id: int, streamer, *, unblock: bool = False) -> None:
         super().__init__(timeout=15)
         self._cog = cog
         self._guild_id = guild_id
         self._channel_id = channel_id
         self._streamer = streamer
+        self._unblock = unblock
 
-    @discord.ui.button(label="⊘", style=discord.ButtonStyle.danger, custom_id="video_block_confirm")
-    async def confirm_block(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
-        """Confirm the block — add to blacklist and skip."""
+        # Set button style based on action
+        if unblock:
+            self.confirm_btn.style = discord.ButtonStyle.success
+            self.confirm_btn.label = "⊘ Unblock"
+        else:
+            self.confirm_btn.style = discord.ButtonStyle.danger
+            self.confirm_btn.label = "⊘ Block"
+
+    @discord.ui.button(label="⊘ Block", style=discord.ButtonStyle.danger, custom_id="video_block_confirm")
+    async def confirm_btn(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
+        """Confirm the block or unblock action."""
         streamer = self._streamer
         if streamer.source is None:
             await interaction.response.edit_message(content="Nothing to block.", view=None)
@@ -999,59 +1012,74 @@ class BlockConfirmView(discord.ui.View):
         title = source.title
         key = (self._guild_id, self._channel_id)
 
-        # Block the current track by URL and title
-        block_url = source.metadata.get("tidal_url") or source.metadata.get("url") or source.file_path
         from blacklist import track_blacklist, save_track_blacklist
-        guild_list = track_blacklist.setdefault(self._guild_id, [])
 
-        if block_url and block_url not in guild_list:
-            guild_list.append(block_url)
+        block_url = source.metadata.get("tidal_url") or source.metadata.get("url") or source.file_path
         title_key = f"title:{title.lower().strip()}"
-        if title_key not in guild_list:
-            guild_list.append(title_key)
-        save_track_blacklist()
-        log.info("Blocked video %r (url=%r) in guild %d", title, block_url, self._guild_id)
 
-        # Skip to next
-        try:
-            await streamer.skip()
-        except Exception:
-            pass
+        if self._unblock:
+            # Remove from blacklist
+            guild_list = track_blacklist.get(self._guild_id, [])
+            if block_url and block_url in guild_list:
+                guild_list.remove(block_url)
+            if title_key in guild_list:
+                guild_list.remove(title_key)
+            save_track_blacklist()
+            log.info("Unblocked video %r (url=%r) in guild %d", title, block_url, self._guild_id)
 
-        await interaction.response.edit_message(
-            content=f"⊘ Blocked **{title}** — it won't play again in this server.",
-            view=None,
-        )
-
-        # Update the now-playing embed if still streaming
-        if streamer.is_active and streamer.source:
-            import time as _time
-            new_state = PlaybackState(playing=True, position=0.0, last_update=_time.monotonic())
-            self._cog._backend.ws_hub.set_state(self._guild_id, new_state)
-            await self._cog._backend.ws_hub.broadcast_from_bot(self._guild_id, {
-                "type": "state",
-                "playing": True,
-                "position": 0.0,
-                "timestamp": _time.time(),
-                "subtitle_lang": None,
-                "audio_lang": None,
-            })
-            embed = _build_now_playing_embed(streamer.source, len(streamer.queue), elapsed_seconds=0.0)
-            # Send new now-playing as a followup in the channel
-            channel = interaction.channel
-            if channel:
-                msg = await channel.send(embed=embed, view=VideoControlView(self._cog))
-                self._cog._now_playing_messages[key] = msg
-                self._cog._start_seek_bar_update(key)
+            await interaction.response.edit_message(
+                content=f"✅ Unblocked **{title}** — it can play again in this server.",
+                view=None,
+            )
         else:
-            self._cog._stop_seek_bar_update(key)
-            await self._cog._backend.ws_hub.disconnect_all(self._guild_id)
-            if self._cog._launcher is not None:
-                try:
-                    await self._cog._launcher.close(self._channel_id)
-                except Exception:
-                    pass
-            self._cog._registry.unregister(self._guild_id, self._channel_id)
+            # Add to blacklist
+            guild_list = track_blacklist.setdefault(self._guild_id, [])
+            if block_url and block_url not in guild_list:
+                guild_list.append(block_url)
+            if title_key not in guild_list:
+                guild_list.append(title_key)
+            save_track_blacklist()
+            log.info("Blocked video %r (url=%r) in guild %d", title, block_url, self._guild_id)
+
+            # Skip to next
+            try:
+                await streamer.skip()
+            except Exception:
+                pass
+
+            await interaction.response.edit_message(
+                content=f"⊘ Blocked **{title}** — it won't play again in this server.",
+                view=None,
+            )
+
+            # Update the now-playing embed if still streaming
+            if streamer.is_active and streamer.source:
+                import time as _time
+                new_state = PlaybackState(playing=True, position=0.0, last_update=_time.monotonic())
+                self._cog._backend.ws_hub.set_state(self._guild_id, new_state)
+                await self._cog._backend.ws_hub.broadcast_from_bot(self._guild_id, {
+                    "type": "state",
+                    "playing": True,
+                    "position": 0.0,
+                    "timestamp": _time.time(),
+                    "subtitle_lang": None,
+                    "audio_lang": None,
+                })
+                embed = _build_now_playing_embed(streamer.source, len(streamer.queue), elapsed_seconds=0.0)
+                channel = interaction.channel
+                if channel:
+                    msg = await channel.send(embed=embed, view=VideoControlView(self._cog))
+                    self._cog._now_playing_messages[key] = msg
+                    self._cog._start_seek_bar_update(key)
+            else:
+                self._cog._stop_seek_bar_update(key)
+                await self._cog._backend.ws_hub.disconnect_all(self._guild_id)
+                if self._cog._launcher is not None:
+                    try:
+                        await self._cog._launcher.close(self._channel_id)
+                    except Exception:
+                        pass
+                self._cog._registry.unregister(self._guild_id, self._channel_id)
 
     async def on_timeout(self) -> None:
         """Remove the confirmation if not clicked within 15s."""
@@ -1300,9 +1328,9 @@ class VideoControlView(discord.ui.View):
             if interaction.message:
                 await interaction.message.edit(view=self)
 
-    @discord.ui.button(label="⊘", style=discord.ButtonStyle.danger, custom_id="video_block", row=1)
+    @discord.ui.button(label="⊘", style=discord.ButtonStyle.secondary, custom_id="video_block", row=1)
     async def stop_video(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
-        """Block the currently playing video — first click shows confirmation."""
+        """Block/unblock toggle — first click shows confirmation with color indicator."""
         guild_id = interaction.guild_id
         assert guild_id is not None
 
@@ -1316,14 +1344,32 @@ class VideoControlView(discord.ui.View):
             await interaction.response.send_message("No video is currently streaming.", ephemeral=True)
             return
 
-        # Show confirmation view
         title = streamer.source.title
-        confirm_view = BlockConfirmView(self._cog, guild_id, channel_id, streamer)
-        await interaction.response.send_message(
-            f"Block **{title}**? It won't play again in this server.",
-            view=confirm_view,
-            ephemeral=True,
-        )
+        source = streamer.source
+        block_url = source.metadata.get("tidal_url") or source.metadata.get("url") or source.file_path
+        title_key = f"title:{title.lower().strip()}"
+
+        # Check if already blocked
+        from blacklist import track_blacklist
+        guild_list = track_blacklist.get(guild_id, [])
+        is_blocked = (block_url and block_url in guild_list) or title_key in guild_list
+
+        if is_blocked:
+            # Show unblock confirmation (green)
+            confirm_view = BlockConfirmView(self._cog, guild_id, channel_id, streamer, unblock=True)
+            await interaction.response.send_message(
+                f"🟢 Unblock **{title}**? It will be allowed to play again.",
+                view=confirm_view,
+                ephemeral=True,
+            )
+        else:
+            # Show block confirmation (red)
+            confirm_view = BlockConfirmView(self._cog, guild_id, channel_id, streamer, unblock=False)
+            await interaction.response.send_message(
+                f"🔴 Block **{title}**? It won't play again in this server.",
+                view=confirm_view,
+                ephemeral=True,
+            )
 
     def _disable_all(self) -> None:
         for item in self.children:

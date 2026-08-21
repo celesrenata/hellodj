@@ -1822,14 +1822,16 @@ class Music(commands.Cog):
         player.clear_queue(state)
         state["current"] = None
         await player_obj.disconnect()
+        state["player"] = None
 
         if not had_content:
             await session.clear(gid)
+            state["persist_enabled"] = True
             await interaction.response.send_message("HelloDJ disconnected.")
             return
 
         view = SaveQueueView(interaction.user.id)
-        message = await interaction.response.send_message(
+        await interaction.response.send_message(
             "HelloDJ disconnected. Save this queue so you can `/continue` later?", view=view
         )
         await view.wait()
@@ -1838,8 +1840,10 @@ class Music(commands.Cog):
             text = "HelloDJ saved — use `/continue` to resume this queue."
         else:
             await session.clear(gid)
-            text = "HelloDJ disconnected."
-        await message.edit(content=text, view=None)
+            text = "HelloDJ queue discarded."
+        state["persist_enabled"] = True
+        msg = await interaction.original_response()
+        await msg.edit(content=text, view=None)
 
     @app_commands.command(name="fuckoff", description="Disconnect HelloDJ from voice (alias for /leave)")
     async def fuckoff(self, interaction: discord.Interaction):

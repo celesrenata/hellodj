@@ -41,6 +41,21 @@ __all__ = ["PlaybackRouter"]
 # Inactivity timeout: 5 minutes with no humans in the voice channel
 _INACTIVITY_TIMEOUT_S = 300.0
 
+# URL patterns that indicate a playlist (should use allow_playlist=True)
+_PLAYLIST_PATTERNS = (
+    "/playlist",       # YouTube, Spotify, Tidal playlists
+    "/album",          # Spotify/Tidal album URLs
+    "/sets/",          # SoundCloud sets (playlists)
+    "?list=",          # YouTube ?list= parameter
+    "&list=",          # YouTube &list= parameter
+)
+
+
+def _is_playlist_url(url: str) -> bool:
+    """Heuristic: detect if a URL points to a playlist/album rather than a single track."""
+    lower = url.lower()
+    return any(pat in lower for pat in _PLAYLIST_PATTERNS)
+
 
 class PlaybackRouter:
     """Routes playback commands to the appropriate backend.
@@ -106,7 +121,7 @@ class PlaybackRouter:
         interaction: discord.Interaction,
         query: str,
         *,
-        mode: Literal["auto", "audio", "video", "music_video"] = "auto",
+        mode: Literal["auto", "audio", "video"] = "auto",
         attachment: discord.Attachment | None = None,
     ) -> None:
         """Classify content → resolve or create session → enqueue/play.
@@ -115,11 +130,10 @@ class PlaybackRouter:
         1. Resolve user's voice channel (error if not in VC)
         2. Classify content type
         3. Check content filter
-        4. If music_video: route directly to music video resolver
-        5. If audio: check channel exclusivity constraints
-        6. If session exists for same type: enqueue
-        7. If no session: create new session
-        8. If conflicting type: create new session (dual-session allowed)
+        4. If audio: check channel exclusivity constraints
+        5. If session exists for same type: enqueue
+        6. If no session: create new session
+        7. If conflicting type: create new session (dual-session allowed)
         """
         # Ban check — must happen before ANY other logic
         guild_id = interaction.guild_id  # type: ignore[union-attr]
@@ -136,11 +150,6 @@ class PlaybackRouter:
             await interaction.response.send_message(
                 "Join a voice channel first.", ephemeral=True
             )
-            return
-
-        # music_video mode: bypass classifier, route directly to video cog's music_video handler
-        if mode == "music_video":
-            await self._handle_music_video_play(interaction, query, guild_id, channel_id)
             return
 
         # Classify the input
@@ -185,11 +194,13 @@ class PlaybackRouter:
             )
             return
 
-        session = await self._get_session_or_error(interaction)
+        session = await self._get_session_or_error_or_player(interaction)
         if session is None:
             return
 
-        if session.session_type == "audio":
+        if session == "audio_player":
+            await self._skip_audio_direct(interaction)
+        elif session.session_type == "audio":
             await self._skip_audio(interaction, session)
         else:
             await self._skip_video(interaction, session)
@@ -205,11 +216,13 @@ class PlaybackRouter:
             )
             return
 
-        session = await self._get_session_or_error(interaction)
+        session = await self._get_session_or_error_or_player(interaction)
         if session is None:
             return
 
-        if session.session_type == "audio":
+        if session == "audio_player":
+            await self._stop_audio_direct(interaction)
+        elif session.session_type == "audio":
             await self._stop_audio(interaction, session)
         else:
             await self._stop_video(interaction, session)
@@ -225,11 +238,13 @@ class PlaybackRouter:
             )
             return
 
-        session = await self._get_session_or_error(interaction)
+        session = await self._get_session_or_error_or_player(interaction)
         if session is None:
             return
 
-        if session.session_type == "audio":
+        if session == "audio_player":
+            await self._pause_audio_direct(interaction)
+        elif session.session_type == "audio":
             await self._pause_audio(interaction, session)
         else:
             await self._pause_video(interaction, session)
@@ -245,11 +260,13 @@ class PlaybackRouter:
             )
             return
 
-        session = await self._get_session_or_error(interaction)
+        session = await self._get_session_or_error_or_player(interaction)
         if session is None:
             return
 
-        if session.session_type == "audio":
+        if session == "audio_player":
+            await self._show_audio_queue_direct(interaction)
+        elif session.session_type == "audio":
             await self._show_audio_queue(interaction, session)
         else:
             await self._show_video_queue(interaction, session)
@@ -265,11 +282,13 @@ class PlaybackRouter:
             )
             return
 
-        session = await self._get_session_or_error(interaction)
+        session = await self._get_session_or_error_or_player(interaction)
         if session is None:
             return
 
-        if session.session_type == "audio":
+        if session == "audio_player":
+            await self._clear_audio_direct(interaction)
+        elif session.session_type == "audio":
             await self._clear_audio(interaction, session)
         else:
             await self._clear_video(interaction, session)
@@ -559,33 +578,8 @@ class PlaybackRouter:
         # No existing video session in this channel — create new
         await self._start_video_session(interaction, query, guild_id, channel_id)
 
-    async def _handle_music_video_play(
-        self,
-        interaction: discord.Interaction,
-        query: str,
-        guild_id: int,
-        channel_id: int,
-    ) -> None:
-        """Handle a play request with mode=music_video.
-
-        Delegates to the VideoCog's music_video handler which uses
-        MusicVideoResolver → ActivityStreamer pipeline.
-        """
-        # Get the VideoCog and delegate to its music_video handler
-        from cogs.video import VideoCog
-
-        video_cog: VideoCog | None = interaction.client.get_cog("Video")  # type: ignore[assignment]
-        if video_cog is None:
-            await interaction.response.send_message(
-                "❌ Video system is not available.", ephemeral=True
-            )
-            return
-
-        # Synthesize the same call path as /video music_video
-        await video_cog.video_music_video.callback(video_cog, interaction, query)
-
     # ------------------------------------------------------------------
-    # Stub backend methods (to be wired in Task 12)
+    # Audio backend — delegates to Music cog's player/wavelink system
     # ------------------------------------------------------------------
 
     async def _start_audio_session(
@@ -597,74 +591,37 @@ class PlaybackRouter:
         *,
         use_primary: bool = False,
     ) -> None:
-        """Create a new audio session and begin playback via the existing player system.
+        """Create a new audio session and begin playback.
 
-        Delegates to player.py which handles wavelink connection, resolution,
-        and queue management.
+        Delegates to the Music cog's internal helpers which handle wavelink
+        connection, track resolution, and queue management via player.py.
         """
-        import player
-
         log.info(
-            "Starting audio session (primary bot): guild=%d channel=%d query=%r",
+            "Starting audio session: guild=%d channel=%d query=%r use_primary=%s",
             guild_id,
             channel_id,
             query,
+            use_primary,
         )
 
-        # Get the voice channel object
-        voice_channel = interaction.client.get_channel(channel_id)
-        if voice_channel is None:
+        # Get the Music cog and delegate
+        music_cog = interaction.client.get_cog("Music")  # type: ignore[union-attr]
+        if music_cog is None:
+            log.error("Music cog not loaded — cannot start audio session")
             await interaction.response.send_message(
-                "Could not find voice channel.", ephemeral=True
+                "❌ Music system is not available.", ephemeral=True
             )
             return
 
-        await interaction.response.defer()
-
-        # Connect player to voice channel if not already connected
-        state = player.get_state(guild_id)
-        existing_player = state.get("player")
-
-        if existing_player is None or not existing_player.connected:
-            try:
-                wp = await player.connect_player(voice_channel)
-                state["player"] = wp
-            except Exception as exc:
-                log.error("Failed to connect player: %s", exc, exc_info=True)
-                await interaction.followup.send(
-                    "❌ Failed to connect to voice channel.", ephemeral=True
-                )
-                return
+        # Route: playlist URL → _play_playlist, other URL → _play_link, search → _play_song
+        is_url = query.startswith("http://") or query.startswith("https://")
+        if is_url:
+            if _is_playlist_url(query):
+                await music_cog._play_playlist(interaction, query)
+            else:
+                await music_cog._play_link(interaction, query)
         else:
-            wp = existing_player
-
-        # Store text channel for now-playing updates
-        state["text_channel"] = interaction.channel
-        state["voice_channel"] = voice_channel
-
-        # Resolve and play via the player system
-        entry = {"query": query, "webpage_url": query if "://" in query else None}
-        state.setdefault("queue", []).append(entry)
-
-        if state.get("current") is None:
-            # Nothing playing — start immediately
-            next_entry = state["queue"].pop(0)
-            state["current"] = next_entry
-            player.persist(guild_id)
-            try:
-                await player._resolve_and_play(wp, guild_id, next_entry)
-            except Exception as exc:
-                log.error("Resolve and play failed: %s", exc, exc_info=True)
-                await interaction.followup.send(
-                    f"❌ Failed to play: {exc}", ephemeral=True
-                )
-                return
-            await interaction.followup.send(f"🎵 Now playing: **{query}**")
-        else:
-            # Already playing — enqueued
-            player.persist(guild_id)
-            pos = len(state["queue"])
-            await interaction.followup.send(f"🎵 Added to queue (position {pos}): **{query}**")
+            await music_cog._play_song(interaction, query)
 
     async def _start_video_session(
         self,
@@ -697,7 +654,7 @@ class PlaybackRouter:
     ) -> None:
         """Enqueue a track to an existing audio session.
 
-        Stub: appends to session queue and acknowledges.
+        Delegates to Music cog — player.py handles queueing when already playing.
         """
         log.info(
             "Enqueuing audio: guild=%d channel=%d query=%r",
@@ -705,11 +662,22 @@ class PlaybackRouter:
             session.channel_id,
             query,
         )
-        # TODO(task-12): Resolve track, append to session.queue
-        session.queue.append({"query": query})
-        await interaction.response.send_message(
-            f"🎵 Added to queue: {query}", ephemeral=False
-        )
+
+        music_cog = interaction.client.get_cog("Music")  # type: ignore[union-attr]
+        if music_cog is None:
+            await interaction.response.send_message(
+                "❌ Music system is not available.", ephemeral=True
+            )
+            return
+
+        is_url = query.startswith("http://") or query.startswith("https://")
+        if is_url:
+            if _is_playlist_url(query):
+                await music_cog._play_playlist(interaction, query)
+            else:
+                await music_cog._play_link(interaction, query)
+        else:
+            await music_cog._play_song(interaction, query)
 
     async def _enqueue_video(
         self,
@@ -736,17 +704,22 @@ class PlaybackRouter:
     async def _skip_audio(
         self, interaction: discord.Interaction, session: ChannelSession
     ) -> None:
-        """Skip the current audio track.
+        """Skip the current audio track via wavelink player.stop()."""
+        import player
 
-        Stub: acknowledges skip. Actual wavelink skip wired in integration.
-        """
         log.info(
             "Skipping audio: guild=%d channel=%d",
             session.guild_id,
             session.channel_id,
         )
-        # TODO(task-12): Call player.skip() or advance queue
-        await interaction.response.send_message("⏭️ Skipped.", ephemeral=False)
+        p = player.get_player(session.guild_id)
+        if p and p.connected:
+            await p.stop()  # triggers on_wavelink_track_end → plays next
+            await interaction.response.send_message("⏭️ Skipped.", ephemeral=False)
+        else:
+            await interaction.response.send_message(
+                "Nothing is playing right now.", ephemeral=True
+            )
 
     async def _skip_video(
         self, interaction: discord.Interaction, session: ChannelSession
@@ -766,10 +739,9 @@ class PlaybackRouter:
     async def _stop_audio(
         self, interaction: discord.Interaction, session: ChannelSession
     ) -> None:
-        """Stop audio playback and tear down the session.
+        """Stop audio playback, disconnect player, and tear down the session."""
+        import player
 
-        Stub: unregisters session, cancels inactivity timer, and releases instance.
-        """
         log.info(
             "Stopping audio: guild=%d channel=%d",
             session.guild_id,
@@ -778,7 +750,19 @@ class PlaybackRouter:
         self.cancel_inactivity_timer(session.guild_id, session.channel_id)
         self._registry.unregister(session.guild_id, session.channel_id)
         await self._orchestrator.release_instance(session.guild_id, session.channel_id)
-        # TODO(task-12): Disconnect player, cleanup
+
+        # Disconnect the wavelink player
+        p = player.get_player(session.guild_id)
+        if p and p.connected:
+            await p.disconnect()
+
+        # Clear player state
+        state = player.get_state(session.guild_id)
+        state["current"] = None
+        state["queue"] = []
+        state["player"] = None
+        player.persist(session.guild_id)
+
         await interaction.response.send_message("\u23f9\ufe0f Stopped.", ephemeral=False)
 
     async def _stop_video(
@@ -800,17 +784,26 @@ class PlaybackRouter:
     async def _pause_audio(
         self, interaction: discord.Interaction, session: ChannelSession
     ) -> None:
-        """Toggle pause on audio playback.
+        """Toggle pause on audio playback via wavelink."""
+        import player
 
-        Stub: acknowledges pause toggle.
-        """
         log.info(
             "Toggling pause (audio): guild=%d channel=%d",
             session.guild_id,
             session.channel_id,
         )
-        # TODO(task-12): Toggle player.pause()
-        await interaction.response.send_message("⏸️ Toggled pause.", ephemeral=False)
+        p = player.get_player(session.guild_id)
+        if p and p.connected:
+            if p.paused:
+                await p.pause(False)
+                await interaction.response.send_message("▶️ Resumed.", ephemeral=False)
+            else:
+                await p.pause(True)
+                await interaction.response.send_message("⏸️ Paused.", ephemeral=False)
+        else:
+            await interaction.response.send_message(
+                "Nothing is playing right now.", ephemeral=True
+            )
 
     async def _pause_video(
         self, interaction: discord.Interaction, session: ChannelSession
@@ -938,6 +931,40 @@ class PlaybackRouter:
 
         return session
 
+    async def _get_session_or_error_or_player(
+        self, interaction: discord.Interaction
+    ) -> ChannelSession | str | None:
+        """Resolve the user's session, or fall back to active wavelink player.
+
+        Returns:
+        - A ChannelSession if found in the registry.
+        - The string "audio_player" if no session but a wavelink player is active.
+        - None if an error message was sent (user not in VC, nothing playing).
+        """
+        import player
+
+        channel_id = self._resolve_user_channel(interaction)
+        if channel_id is None:
+            await interaction.response.send_message(
+                "Join a voice channel first.", ephemeral=True
+            )
+            return None
+
+        guild_id = interaction.guild_id  # type: ignore[union-attr]
+        session = self._resolve_session(guild_id, channel_id)
+        if session is not None:
+            return session
+
+        # No session in registry — check if there's an active wavelink player
+        p = player.get_player(guild_id)
+        if p and p.connected:
+            return "audio_player"
+
+        await interaction.response.send_message(
+            "Nothing is playing in your channel.", ephemeral=True
+        )
+        return None
+
     async def _get_channel_name(
         self, interaction: discord.Interaction, channel_id: int
     ) -> str:
@@ -951,3 +978,77 @@ class PlaybackRouter:
             if channel is not None:
                 return channel.name
         return f"Channel {channel_id}"
+
+    # ------------------------------------------------------------------
+    # Direct player.py methods (bypass session registry)
+    # ------------------------------------------------------------------
+
+    async def _skip_audio_direct(self, interaction: discord.Interaction) -> None:
+        """Skip audio via player.py — no session registry needed."""
+        import player
+
+        guild_id = interaction.guild_id  # type: ignore[union-attr]
+        p = player.get_player(guild_id)
+        if p and p.connected:
+            await p.stop()  # triggers on_wavelink_track_end → plays next
+            await interaction.response.send_message("⏭️ Skipped.", ephemeral=False)
+        else:
+            await interaction.response.send_message(
+                "Nothing is playing right now.", ephemeral=True
+            )
+
+    async def _stop_audio_direct(self, interaction: discord.Interaction) -> None:
+        """Stop audio and disconnect via player.py — no session registry needed."""
+        import player
+
+        guild_id = interaction.guild_id  # type: ignore[union-attr]
+        p = player.get_player(guild_id)
+        if p and p.connected:
+            await p.disconnect()
+
+        state = player.get_state(guild_id)
+        state["current"] = None
+        state["queue"] = []
+        state["player"] = None
+        player.persist(guild_id)
+
+        await interaction.response.send_message("\u23f9\ufe0f Stopped.", ephemeral=False)
+
+    async def _pause_audio_direct(self, interaction: discord.Interaction) -> None:
+        """Toggle pause via player.py — no session registry needed."""
+        import player
+
+        guild_id = interaction.guild_id  # type: ignore[union-attr]
+        p = player.get_player(guild_id)
+        if p and p.connected:
+            if p.paused:
+                await p.pause(False)
+                await interaction.response.send_message("▶️ Resumed.", ephemeral=False)
+            else:
+                await p.pause(True)
+                await interaction.response.send_message("⏸️ Paused.", ephemeral=False)
+        else:
+            await interaction.response.send_message(
+                "Nothing is playing right now.", ephemeral=True
+            )
+
+    async def _show_audio_queue_direct(self, interaction: discord.Interaction) -> None:
+        """Show queue via player.py state — no session registry needed."""
+        import player
+        from cogs.music import QueuePaginatedView
+
+        guild_id = interaction.guild_id  # type: ignore[union-attr]
+        view = QueuePaginatedView(guild_id)
+        await interaction.response.send_message(
+            embed=view._embed(), view=view, ephemeral=False
+        )
+
+    async def _clear_audio_direct(self, interaction: discord.Interaction) -> None:
+        """Clear the audio queue via player.py — no session registry needed."""
+        import player
+
+        guild_id = interaction.guild_id  # type: ignore[union-attr]
+        state = player.get_state(guild_id)
+        player.clear_queue(state)
+        player.persist(guild_id)
+        await interaction.response.send_message("🗑️ Queue cleared.", ephemeral=False)
