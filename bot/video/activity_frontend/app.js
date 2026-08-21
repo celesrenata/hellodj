@@ -343,21 +343,6 @@ import { initWhiteboardSync } from './ws_whiteboard.js';
   };
 
   // --- Player Controls ---
-  // Unmute on first interaction with the video area (not UI buttons or canvas)
-  const unmute = (e) => {
-    // Don't unmute from button/control/canvas clicks
-    if (e.target.closest('.controls-row') || e.target.closest('.whiteboard-hud') || 
-        e.target.closest('.hud-btn') || e.target.closest('.ctrl-btn') ||
-        e.target.id === 'whiteboard-canvas' || e.target.closest('.sticker-picker')) return;
-    if (videoEl.muted) {
-      videoEl.muted = false;
-      document.removeEventListener('click', unmute);
-      document.removeEventListener('touchstart', unmute);
-    }
-  };
-  document.addEventListener('click', unmute);
-  document.addEventListener('touchstart', unmute);
-
   // Volume slider
   let _savedVolume = 0.8; // remember volume before mute
   volumeSlider.addEventListener('input', () => {
