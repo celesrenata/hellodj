@@ -98,10 +98,17 @@ class WebSocketHub:
         state = self._playback_state.get(guild_id)
         strokes = self.get_stroke_registry(guild_id).get_all()
         if state is not None or strokes:
+            # Compute current position from elapsed time if playing
+            if state and state.playing:
+                elapsed = time.monotonic() - state.last_update
+                current_position = state.position + elapsed
+            else:
+                current_position = state.position if state else 0.0
+
             state_msg = {
                 "type": "state",
                 "playing": state.playing if state else False,
-                "position": state.position if state else 0.0,
+                "position": current_position,
                 "timestamp": time.time(),
                 "subtitle_lang": state.subtitle_lang if state else None,
                 "audio_lang": state.audio_lang if state else None,
