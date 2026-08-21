@@ -2137,6 +2137,435 @@ def api_get_logs():
         "bot": tail_file(BOT_LOG_PATH, lines),
     })
 
+# ── Instances ──────────────────────────────────────────────
+
+@app.route("/instances")
+def instances_page():
+    """Bot Instances management page — login-required."""
+    if require_auth():
+        return require_auth()
+    return render_template("instances.html", active="instances")
+
+
+@app.route("/api/instances")
+def api_get_instances():
+    """List all configured bot instances with status.
+
+    Reads instance credentials from the credential store and returns
+    index, display name, app_id, and status for each.
+    """
+    guard = require_auth()
+    if guard:
+        return guard
+
+    try:
+        from credentials import creds
+    except Exception as exc:
+        return jsonify({"error": f"Credential store unavailable: {exc}"}), 500
+
+    count = creds.get_int("playback.instance_count", 0)
+    instances = []
+
+    for i in range(count):
+        prefix = f"instance.{i}"
+        token = creds.get(f"{prefix}.token")
+        app_id = creds.get(f"{prefix}.app_id", "")
+        name = creds.get(f"{prefix}.name", f"HelloDJ #{i + 2}")
+        # Status comes from the live status endpoint; here we report config state
+        status = "available" if token else "unknown"
+        channel_id = None  # Live data from orchestrator — not persisted
+
+        if token:
+            instances.append({
+                "index": i,
+                "name": name,
+                "app_id": app_id,
+                "status": status,
+                "channel_id": channel_id,
+                "guild_id": None,
+            })
+
+    return jsonify({"instances": instances, "count": count})
+
+
+@app.route("/api/instances", methods=["POST"])
+def api_add_instance():
+    """Add a new bot instance to the credential store.
+
+    Expects JSON body: { "token": "...", "app_id": "...", "name": "..." }
+    Appends the instance at the next available index and increments instance_count.
+    """
+    guard = require_auth()
+    if guard:
+        return guard
+    if not is_admin(current_user()):
+        return jsonify({"error": "Admin access required"}), 403
+
+    data = request.get_json(silent=True) or {}
+    token = (data.get("token") or "").strip()
+    app_id = (data.get("app_id") or "").strip()
+    name = (data.get("name") or "").strip()
+
+    if not token:
+        return jsonify({"error": "Token is required"}), 400
+    if not app_id:
+        return jsonify({"error": "Application ID is required"}), 400
+
+    # Validate app_id looks like a snowflake
+    if not app_id.isdigit() or len(app_id) < 17:
+        return jsonify({"error": "Application ID must be a valid Discord snowflake (17+ digits)"}), 400
+
+    try:
+        from credentials import creds
+    except Exception as exc:
+        return jsonify({"error": f"Credential store unavailable: {exc}"}), 500
+
+    # Determine the next index
+    count = creds.get_int("playback.instance_count", 0)
+    # Cap at 10 instances
+    if count >= 10:
+        return jsonify({"error": "Maximum of 10 instances reached"}), 400
+
+    new_index = count
+    default_name = name or f"HelloDJ #{new_index + 2}"
+
+    # Store credentials
+    prefix = f"instance.{new_index}"
+    creds.set(f"{prefix}.token", token)
+    creds.set(f"{prefix}.app_id", app_id)
+    creds.set(f"{prefix}.name", default_name)
+
+    # Increment instance count
+    creds.set("playback.instance_count", str(count + 1))
+
+    log.info("Added bot instance %d (%s) via web UI", new_index, default_name)
+    return jsonify({
+        "status": "ok",
+        "message": f"Instance '{default_name}' added at index {new_index}.",
+        "index": new_index,
+    })
+
+
+@app.route("/api/instances/<int:index>", methods=["DELETE"])
+def api_remove_instance(index):
+    """Remove a bot instance by index.
+
+    Deletes the instance's credentials from the store and decrements instance_count.
+    If the removed instance is not the last, shifts subsequent instances down.
+    """
+    guard = require_auth()
+    if guard:
+        return guard
+    if not is_admin(current_user()):
+        return jsonify({"error": "Admin access required"}), 403
+
+    try:
+        from credentials import creds
+    except Exception as exc:
+        return jsonify({"error": f"Credential store unavailable: {exc}"}), 500
+
+    count = creds.get_int("playback.instance_count", 0)
+    if index < 0 or index >= count:
+        return jsonify({"error": f"Instance index {index} out of range (0–{count - 1})"}), 404
+
+    # Get the name before removing for the response message
+    name = creds.get(f"instance.{index}.name", f"Instance #{index}")
+
+    # Remove the instance credentials
+    prefix = f"instance.{index}"
+    for suffix in ("token", "app_id", "name"):
+        creds.delete(f"{prefix}.{suffix}")
+
+    # Shift subsequent instances down to fill the gap
+    for i in range(index + 1, count):
+        src_prefix = f"instance.{i}"
+        dst_prefix = f"instance.{i - 1}"
+        for suffix in ("token", "app_id", "name"):
+            val = creds.get(f"{src_prefix}.{suffix}")
+            if val:
+                creds.set(f"{dst_prefix}.{suffix}", val)
+            creds.delete(f"{src_prefix}.{suffix}")
+
+    # Decrement count
+    new_count = max(0, count - 1)
+    creds.set("playback.instance_count", str(new_count))
+
+    log.info("Removed bot instance %d (%s) via web UI, new count=%d", index, name, new_count)
+    return jsonify({
+        "status": "ok",
+        "message": f"Instance '{name}' removed. {new_count} instance(s) remaining.",
+    })
+
+
+@app.route("/api/instances/status")
+def api_instances_status():
+    """Return live health/status of all instances.
+
+    Returns each instance's current status and channel assignments.
+    In production, this will query the InstanceOrchestrator's in-memory state
+    via an IPC mechanism. For now, returns config-based data with placeholder
+    status.
+    """
+    guard = require_auth()
+    if guard:
+        return guard
+
+    try:
+        from credentials import creds
+    except Exception as exc:
+        return jsonify({"error": f"Credential store unavailable: {exc}"}), 500
+
+    count = creds.get_int("playback.instance_count", 0)
+    instances = []
+    assignments = []
+
+    for i in range(count):
+        prefix = f"instance.{i}"
+        token = creds.get(f"{prefix}.token")
+        if not token:
+            continue
+
+        app_id = creds.get(f"{prefix}.app_id", "")
+        name = creds.get(f"{prefix}.name", f"HelloDJ #{i + 2}")
+
+        # Live status would come from orchestrator IPC — for now, report as available
+        # The orchestrator runs in the bot container; the web-ui reads a shared
+        # status file or will use a future IPC channel.
+        status_file = os.path.join(DATA_DIR, "instance_status.json")
+        live_status = "available"
+        channel_id = None
+        guild_id = None
+
+        # Try to read live status from shared data volume
+        try:
+            if os.path.exists(status_file):
+                status_data = read_json(status_file, {})
+                inst_status = status_data.get(str(i), {})
+                live_status = inst_status.get("status", "available")
+                channel_id = inst_status.get("channel_id")
+                guild_id = inst_status.get("guild_id")
+        except Exception:
+            pass
+
+        inst_info = {
+            "index": i,
+            "name": name,
+            "app_id": app_id,
+            "status": live_status,
+            "channel_id": channel_id,
+            "guild_id": guild_id,
+        }
+        instances.append(inst_info)
+
+        # Track assignments (instances currently connected to channels)
+        if live_status == "connected" and channel_id:
+            assignments.append({
+                "index": i,
+                "instance_name": name,
+                "guild_id": guild_id,
+                "channel_id": channel_id,
+                "status": live_status,
+            })
+
+    return jsonify({
+        "instances": instances,
+        "assignments": assignments,
+        "total": count,
+        "available": sum(1 for inst in instances if inst["status"] == "available"),
+        "connected": sum(1 for inst in instances if inst["status"] == "connected"),
+        "unhealthy": sum(1 for inst in instances if inst["status"] == "unhealthy"),
+    })
+
+
+# ── Moderation (Content Filters & User Bans) ──────────────
+
+# File paths for moderation data (shared via NFS data volume with the bot)
+CONTENT_FILTERS_FILE = os.path.join(DATA_DIR, "content_filters.json")
+USER_BANS_FILE = os.path.join(DATA_DIR, "user_bans.json")
+
+
+@app.route("/moderation")
+def moderation_page():
+    """Moderation management page — login-required, admin-only."""
+    if require_auth():
+        return require_auth()
+    return render_template("moderation.html", active="moderation")
+
+
+@app.route("/api/moderation/<int:guild_id>/filters")
+def api_get_filters(guild_id):
+    """Return all content filter rules for a guild."""
+    if current_user() is None:
+        return jsonify({"error": "Authentication required"}), 401
+    if not is_admin(current_user()):
+        return jsonify({"error": "Admin access required"}), 403
+
+    data = read_json(CONTENT_FILTERS_FILE, {})
+    guild_data = data.get(str(guild_id), {})
+    rules = guild_data.get("rules", [])
+    return jsonify({"rules": rules, "guild_id": guild_id})
+
+
+@app.route("/api/moderation/<int:guild_id>/filters", methods=["POST"])
+def api_add_filter(guild_id):
+    """Add a content filter rule to a guild.
+
+    Expects JSON: {"type": "artist|track|domain|keyword", "value": "..."}
+    """
+    if current_user() is None:
+        return jsonify({"error": "Authentication required"}), 401
+    if not is_admin(current_user()):
+        return jsonify({"error": "Admin access required"}), 403
+
+    body = request.get_json(silent=True) or {}
+    rule_type = body.get("type", "").strip()
+    value = body.get("value", "").strip()
+
+    valid_types = {"artist", "track", "domain", "keyword"}
+    if rule_type not in valid_types:
+        return jsonify({"error": f"Invalid type. Must be one of: {', '.join(sorted(valid_types))}"}), 400
+    if not value:
+        return jsonify({"error": "Value is required"}), 400
+
+    import uuid as _uuid
+    rule_id = str(_uuid.uuid4())
+    rule = {
+        "id": rule_id,
+        "type": rule_type,
+        "value": value,
+        "added_by": int(current_user()),
+        "added_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    data = read_json(CONTENT_FILTERS_FILE, {})
+    gid_str = str(guild_id)
+    if gid_str not in data:
+        data[gid_str] = {"rules": []}
+    data[gid_str]["rules"].append(rule)
+    write_json(CONTENT_FILTERS_FILE, data)
+
+    log.info("Moderation: added %s filter %r for guild %s by user %s",
+             rule_type, value, guild_id, current_user())
+    return jsonify({"status": "ok", "rule_id": rule_id})
+
+
+@app.route("/api/moderation/<int:guild_id>/filters/<rule_id>", methods=["DELETE"])
+def api_delete_filter(guild_id, rule_id):
+    """Remove a content filter rule by its ID."""
+    if current_user() is None:
+        return jsonify({"error": "Authentication required"}), 401
+    if not is_admin(current_user()):
+        return jsonify({"error": "Admin access required"}), 403
+
+    data = read_json(CONTENT_FILTERS_FILE, {})
+    gid_str = str(guild_id)
+    guild_data = data.get(gid_str)
+    if guild_data is None:
+        return jsonify({"error": "No filters found for this guild"}), 404
+
+    rules = guild_data.get("rules", [])
+    for i, rule in enumerate(rules):
+        if rule.get("id") == rule_id:
+            rules.pop(i)
+            # Clean up empty guild entries
+            if not rules:
+                del data[gid_str]
+            else:
+                data[gid_str]["rules"] = rules
+            write_json(CONTENT_FILTERS_FILE, data)
+            log.info("Moderation: removed filter %s from guild %s by user %s",
+                     rule_id, guild_id, current_user())
+            return jsonify({"status": "ok"})
+
+    return jsonify({"error": "Rule not found"}), 404
+
+
+@app.route("/api/moderation/<int:guild_id>/bans")
+def api_get_bans(guild_id):
+    """Return all banned users for a guild."""
+    if current_user() is None:
+        return jsonify({"error": "Authentication required"}), 401
+    if not is_admin(current_user()):
+        return jsonify({"error": "Admin access required"}), 403
+
+    data = read_json(USER_BANS_FILE, {})
+    guild_data = data.get(str(guild_id), {})
+    bans = guild_data.get("banned_users", [])
+    return jsonify({"bans": bans, "guild_id": guild_id})
+
+
+@app.route("/api/moderation/<int:guild_id>/bans", methods=["POST"])
+def api_add_ban(guild_id):
+    """Ban a user from playback in a guild.
+
+    Expects JSON: {"user_id": 123456789}
+    """
+    if current_user() is None:
+        return jsonify({"error": "Authentication required"}), 401
+    if not is_admin(current_user()):
+        return jsonify({"error": "Admin access required"}), 403
+
+    body = request.get_json(silent=True) or {}
+    user_id = body.get("user_id")
+
+    if not user_id or not isinstance(user_id, int):
+        return jsonify({"error": "user_id (integer) is required"}), 400
+
+    data = read_json(USER_BANS_FILE, {})
+    gid_str = str(guild_id)
+    if gid_str not in data:
+        data[gid_str] = {"banned_users": []}
+
+    banned_users = data[gid_str]["banned_users"]
+
+    # Check if already banned
+    for entry in banned_users:
+        if entry.get("user_id") == user_id:
+            return jsonify({"error": "User is already banned"}), 409
+
+    banned_users.append({
+        "user_id": user_id,
+        "banned_by": int(current_user()),
+        "banned_at": datetime.now(timezone.utc).isoformat(),
+    })
+    write_json(USER_BANS_FILE, data)
+
+    log.info("Moderation: banned user %s in guild %s by user %s",
+             user_id, guild_id, current_user())
+    return jsonify({"status": "ok"})
+
+
+@app.route("/api/moderation/<int:guild_id>/bans/<int:user_id>", methods=["DELETE"])
+def api_delete_ban(guild_id, user_id):
+    """Remove a user ban."""
+    if current_user() is None:
+        return jsonify({"error": "Authentication required"}), 401
+    if not is_admin(current_user()):
+        return jsonify({"error": "Admin access required"}), 403
+
+    data = read_json(USER_BANS_FILE, {})
+    gid_str = str(guild_id)
+    guild_data = data.get(gid_str)
+    if guild_data is None:
+        return jsonify({"error": "No bans found for this guild"}), 404
+
+    banned_users = guild_data.get("banned_users", [])
+    for i, entry in enumerate(banned_users):
+        if entry.get("user_id") == user_id:
+            banned_users.pop(i)
+            # Clean up empty guild entries
+            if not banned_users:
+                del data[gid_str]
+            else:
+                data[gid_str]["banned_users"] = banned_users
+            write_json(USER_BANS_FILE, data)
+            log.info("Moderation: unbanned user %s in guild %s by user %s",
+                     user_id, guild_id, current_user())
+            return jsonify({"status": "ok"})
+
+    return jsonify({"error": "User not found in ban list"}), 404
+
+
 # ── Main ───────────────────────────────────────────────────
 
 if __name__ == "__main__":

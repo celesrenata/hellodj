@@ -235,6 +235,27 @@ class ActivityBackend:
         token = request.query.get("token", "").strip()
         return token if token else None
 
+    def _get_streamer_from_request(self, request: web.Request, guild_id: int):
+        """Get the ActivityStreamer for the given request using composite key lookup.
+
+        Extracts channel_id from the request token and looks up the session
+        using the composite (guild_id, channel_id) key. Falls back to searching
+        all sessions for the guild if channel_id cannot be extracted from token.
+
+        Returns the streamer or None.
+        """
+        token = self._extract_token(request)
+        if token:
+            channel_id = self._parse_channel_from_instance_id(token)
+            if channel_id is not None:
+                return self._registry.get(guild_id, channel_id)
+
+        # Fallback: find any active session in this guild
+        sessions = self._registry.get_by_guild(guild_id)
+        if sessions:
+            return sessions[0][1]  # Return first (channel_id, streamer) pair's streamer
+        return None
+
     def _validate_ws_token(self, token: str) -> int | None:
         """Validate a WebSocket token and return the guild_id, or None if invalid.
 
@@ -261,7 +282,7 @@ class ActivityBackend:
         the requested resource. This ensures:
         - Only requests from inside a Discord Activity iframe can access streams
         - A token for guild A cannot access guild B's stream
-        - An active session must exist for the guild
+        - An active session must exist for the guild+channel
 
         Returns:
             None if authentication succeeds, or a web.Response with the
@@ -280,8 +301,13 @@ class ActivityBackend:
         if token_guild != guild_id:
             return self._json_error(403, "Token not authorized for this guild")
 
-        # Verify an active session exists
-        if self._registry.get(guild_id) is None:
+        # Parse channel_id for composite key lookup
+        token_channel = self._parse_channel_from_instance_id(token)
+        if token_channel is None:
+            return self._json_error(401, "Invalid authentication token (missing channel)")
+
+        # Verify an active session exists using composite key
+        if self._registry.get(guild_id, token_channel) is None:
             return self._json_error(404, "No active session for this guild")
 
         return None
@@ -302,6 +328,26 @@ class ActivityBackend:
             guild_channel = parts[1]
             guild_str = guild_channel.split("-")[0]
             return int(guild_str)
+        except (ValueError, IndexError):
+            return None
+
+    @staticmethod
+    def _parse_channel_from_instance_id(instance_id: str) -> int | None:
+        """Extract channel_id from a Discord Activity instance_id.
+
+        Expected format: i-{launch_id}-gc-{guild_id}-{channel_id}
+        Returns the channel_id as int, or None if parsing fails.
+        """
+        try:
+            parts = instance_id.split("-gc-")
+            if len(parts) != 2:
+                return None
+            # The second part is "{guild_id}-{channel_id}"
+            guild_channel = parts[1]
+            segments = guild_channel.split("-")
+            if len(segments) < 2:
+                return None
+            return int(segments[1])
         except (ValueError, IndexError):
             return None
 
@@ -384,7 +430,7 @@ class ActivityBackend:
             return auth_error
 
         # Look up session
-        streamer = self._registry.get(guild_id)
+        streamer = self._get_streamer_from_request(request, guild_id)
         if streamer is None:
             return self._json_error(404, "No active session for this guild")
 
@@ -443,7 +489,7 @@ class ActivityBackend:
             return auth_error
 
         # Look up session
-        streamer = self._registry.get(guild_id)
+        streamer = self._get_streamer_from_request(request, guild_id)
         if streamer is None:
             return self._json_error(404, "No active session for this guild")
 
@@ -476,7 +522,7 @@ class ActivityBackend:
             return auth_error
 
         # Look up session
-        streamer = self._registry.get(guild_id)
+        streamer = self._get_streamer_from_request(request, guild_id)
         if streamer is None:
             return self._json_error(404, "No active session for this guild")
 
@@ -510,7 +556,7 @@ class ActivityBackend:
             return auth_error
 
         # Look up session
-        streamer = self._registry.get(guild_id)
+        streamer = self._get_streamer_from_request(request, guild_id)
         if streamer is None:
             return self._json_error(404, "No active session for this guild")
 
@@ -547,7 +593,7 @@ class ActivityBackend:
             return self._json_error(404, "Invalid guild ID")
 
         # Look up session
-        streamer = self._registry.get(guild_id)
+        streamer = self._get_streamer_from_request(request, guild_id)
         if streamer is None:
             return self._json_error(404, "No active session for this guild")
 

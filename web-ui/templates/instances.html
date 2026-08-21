@@ -1,0 +1,303 @@
+{% extends "base.html" %}
+{% block title %}Instances{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2 class="mb-4">
+            <i class="bi bi-diagram-3"></i> Bot Instances
+            <small class="text-muted fs-6">— Multi-channel music orchestration</small>
+        </h2>
+    </div>
+</div>
+
+<!-- Instance List -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-list-ul"></i> Configured Instances</span>
+                <div>
+                    <button class="btn btn-sm btn-outline-hellodj me-2" onclick="refreshStatus()">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh
+                    </button>
+                    <button class="btn btn-sm btn-hellodj" data-bs-toggle="modal" data-bs-target="#addInstanceModal">
+                        <i class="bi bi-plus-circle"></i> Add Instance
+                    </button>
+                </div>
+            </div>
+            <div class="card-body">
+                <div id="instances-list">
+                    <p class="text-muted">Loading...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Per-Guild Channel View -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-broadcast"></i> Active Channel Assignments
+            </div>
+            <div class="card-body">
+                <div id="channel-assignments">
+                    <p class="text-muted">Loading...</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Add Instance Modal -->
+<div class="modal fade" id="addInstanceModal" tabindex="-1" aria-labelledby="addInstanceModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="addInstanceModalLabel">
+                    <i class="bi bi-plus-circle"></i> Add Bot Instance
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <form id="add-instance-form">
+                    <div class="mb-3">
+                        <label for="inst-token" class="form-label">Bot Token</label>
+                        <input type="password" class="form-control" id="inst-token" placeholder="Bot MTIz..." required>
+                        <div class="form-text text-muted">The Discord bot token for this instance.</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="inst-app-id" class="form-label">Application ID</label>
+                        <input type="text" class="form-control" id="inst-app-id" placeholder="1234567890123456789" required>
+                        <div class="form-text text-muted">Discord application ID (snowflake).</div>
+                    </div>
+                    <div class="mb-3">
+                        <label for="inst-name" class="form-label">Display Name</label>
+                        <input type="text" class="form-control" id="inst-name" placeholder="HelloDJ #2">
+                        <div class="form-text text-muted">Human-readable name (e.g. "HelloDJ #2").</div>
+                    </div>
+                </form>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-hellodj" onclick="addInstance()">
+                    <i class="bi bi-plus-circle"></i> Add Instance
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Remove Confirmation Modal -->
+<div class="modal fade" id="removeInstanceModal" tabindex="-1" aria-labelledby="removeInstanceModalLabel" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="removeInstanceModalLabel">
+                    <i class="bi bi-trash"></i> Remove Instance
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <p>Are you sure you want to remove instance <strong id="remove-inst-name"></strong>?</p>
+                <p class="text-danger"><i class="bi bi-exclamation-triangle"></i> This will delete the stored credentials for this instance.</p>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-outline-danger" id="confirm-remove-btn" onclick="confirmRemoveInstance()">
+                    <i class="bi bi-trash"></i> Remove
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let removeIndex = null;
+let statusInterval = null;
+
+$(async function() {
+    await refreshInstances();
+    await refreshStatus();
+    // Poll status every 15 seconds
+    statusInterval = setInterval(refreshStatus, 15000);
+});
+
+function statusBadge(status) {
+    const colors = {
+        'available': 'success',
+        'connected': 'primary',
+        'unhealthy': 'danger',
+        'unknown': 'secondary'
+    };
+    const icons = {
+        'available': 'bi-check-circle-fill',
+        'connected': 'bi-play-circle-fill',
+        'unhealthy': 'bi-exclamation-triangle-fill',
+        'unknown': 'bi-question-circle'
+    };
+    const color = colors[status] || 'secondary';
+    const icon = icons[status] || 'bi-question-circle';
+    return `<span class="badge bg-${color}"><i class="bi ${icon}"></i> ${status}</span>`;
+}
+
+async function refreshInstances() {
+    const data = await apiFetch('/api/instances');
+    if (!data) return;
+
+    const container = $('#instances-list');
+    const instances = data.instances || [];
+
+    if (instances.length === 0) {
+        container.html(`
+            <div class="text-center py-4">
+                <i class="bi bi-diagram-3 display-4 text-muted"></i>
+                <p class="text-muted mt-2">No secondary instances configured.</p>
+                <p class="text-muted">Add bot instances to enable multi-channel music playback.</p>
+            </div>
+        `);
+        return;
+    }
+
+    let html = `
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>#</th>
+                        <th>Display Name</th>
+                        <th>Application ID</th>
+                        <th>Status</th>
+                        <th>Channel</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+    for (const inst of instances) {
+        const channel = inst.channel_id
+            ? `<code>${inst.channel_id}</code>`
+            : '<span class="text-muted">—</span>';
+        html += `
+            <tr>
+                <td><span class="badge badge-hellodj">${inst.index}</span></td>
+                <td>${escapeHtml(inst.name)}</td>
+                <td><code>${escapeHtml(inst.app_id)}</code></td>
+                <td>${statusBadge(inst.status)}</td>
+                <td>${channel}</td>
+                <td>
+                    <button class="btn btn-sm btn-outline-danger" onclick="removeInstance(${inst.index}, '${escapeHtml(inst.name)}')">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            </tr>`;
+    }
+
+    html += `</tbody></table></div>`;
+    html += `<p class="text-muted mt-2"><small>Instance count: ${instances.length} configured</small></p>`;
+    container.html(html);
+}
+
+async function refreshStatus() {
+    const data = await apiFetch('/api/instances/status');
+    if (!data) return;
+
+    // Update status badges in instance list
+    const instances = data.instances || [];
+    // Re-render the instance list with updated status
+    if (instances.length > 0) {
+        await refreshInstances();
+    }
+
+    // Update channel assignments
+    const container = $('#channel-assignments');
+    const assignments = data.assignments || [];
+
+    if (assignments.length === 0) {
+        container.html('<p class="text-muted">No instances currently assigned to channels.</p>');
+        return;
+    }
+
+    let html = `
+        <div class="table-responsive">
+            <table class="table table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Guild</th>
+                        <th>Channel</th>
+                        <th>Instance</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+    for (const a of assignments) {
+        html += `
+            <tr>
+                <td><code>${a.guild_id}</code></td>
+                <td><code>${a.channel_id}</code></td>
+                <td>${escapeHtml(a.instance_name)} <span class="badge badge-hellodj">#${a.index}</span></td>
+                <td>${statusBadge(a.status)}</td>
+            </tr>`;
+    }
+
+    html += `</tbody></table></div>`;
+    container.html(html);
+}
+
+async function addInstance() {
+    const token = $('#inst-token').val().trim();
+    const appId = $('#inst-app-id').val().trim();
+    const name = $('#inst-name').val().trim();
+
+    if (!token || !appId) {
+        showToast('Token and Application ID are required.', 'danger');
+        return;
+    }
+
+    const data = await apiFetch('/api/instances', {
+        method: 'POST',
+        body: JSON.stringify({ token, app_id: appId, name: name || undefined })
+    });
+
+    if (data && data.status === 'ok') {
+        showToast(data.message || 'Instance added successfully.', 'success');
+        bootstrap.Modal.getInstance(document.getElementById('addInstanceModal')).hide();
+        $('#add-instance-form')[0].reset();
+        await refreshInstances();
+    }
+}
+
+function removeInstance(index, name) {
+    removeIndex = index;
+    $('#remove-inst-name').text(name || `Instance #${index}`);
+    new bootstrap.Modal(document.getElementById('removeInstanceModal')).show();
+}
+
+async function confirmRemoveInstance() {
+    if (removeIndex === null) return;
+
+    const data = await apiFetch(`/api/instances/${removeIndex}`, {
+        method: 'DELETE'
+    });
+
+    if (data && data.status === 'ok') {
+        showToast(data.message || 'Instance removed.', 'success');
+        bootstrap.Modal.getInstance(document.getElementById('removeInstanceModal')).hide();
+        removeIndex = null;
+        await refreshInstances();
+    }
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}

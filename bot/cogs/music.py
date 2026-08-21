@@ -655,10 +655,8 @@ class Music(commands.Cog):
         description="Configure join/leave chime sounds",
     )
 
-    play_group = app_commands.Group(
-        name="play",
-        description="Play music — search a song, direct link, album, playlist, video, or music video",
-    )
+    # NOTE: play_group REMOVED — unified /play is now handled by PlaybackCog.
+    # The underlying _play_*_flow helpers are preserved for the router to call.
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -843,53 +841,45 @@ class Music(commands.Cog):
         return player_obj
 
     # ── /play group ─────────────────────────────────────────
-    # Each subcommand delegates to a private ``_play_*`` flow so the
-    # underlying resolution/queueing logic is shared and the subcommands
-    # stay thin wrappers around the slash UI.
+    # NOTE: Slash command registrations REMOVED — unified /play is handled by
+    # PlaybackCog. These methods are kept as internal helpers callable from
+    # the PlaybackRouter (Task 12 wiring).
 
-    @play_group.command(name="song", description="Search for a song and pick it from a dropdown")
-    @app_commands.describe(query="Search terms (e.g. artist, song title)")
-    async def play_song(self, interaction: discord.Interaction, query: str):
+    async def _play_song(self, interaction: discord.Interaction, query: str):
+        """Internal: search-and-pick flow. Called by PlaybackRouter."""
         if not interaction.user.voice:
             await interaction.response.send_message("You need to be in a voice channel first.")
             return
         await self._play_search_flow(interaction, query)
 
-    @play_group.command(name="link", description="Play a direct track or video URL")
-    @app_commands.describe(url="Direct track or video URL (http(s)://…)")
-    async def play_link(self, interaction: discord.Interaction, url: str):
+    async def _play_link(self, interaction: discord.Interaction, url: str):
+        """Internal: direct URL play flow. Called by PlaybackRouter."""
         if not interaction.user.voice:
             await interaction.response.send_message("You need to be in a voice channel first.")
             return
         await self._play_url_flow(interaction, url, allow_playlist=False)
 
-    @play_group.command(name="album", description="Play an album (URL or search terms)")
-    @app_commands.describe(query="Album URL or search terms")
-    async def play_album(self, interaction: discord.Interaction, query: str):
+    async def _play_album(self, interaction: discord.Interaction, query: str):
+        """Internal: album play flow. Called by PlaybackRouter."""
         if not interaction.user.voice:
             await interaction.response.send_message("You need to be in a voice channel first.")
             return
         await self._play_album_flow(interaction, query)
 
-    @play_group.command(name="playlist", description="Play a Spotify/Tidal/YouTube playlist URL")
-    @app_commands.describe(url="Playlist URL (Spotify, Tidal, YouTube, SoundCloud)")
-    async def play_playlist(self, interaction: discord.Interaction, url: str):
+    async def _play_playlist(self, interaction: discord.Interaction, url: str):
+        """Internal: playlist play flow. Called by PlaybackRouter."""
         if not interaction.user.voice:
             await interaction.response.send_message("You need to be in a voice channel first.")
             return
         await self._play_url_flow(interaction, url, allow_playlist=True)
 
-    @play_group.command(name="video", description="Play a video URL or an uploaded audio/video file")
-    @app_commands.describe(
-        url="Optional video URL (http(s)://…) — leave empty to attach an audio/video file",
-        file="Optional audio or video file to upload and play",
-    )
-    async def play_video(
+    async def _play_video(
         self,
         interaction: discord.Interaction,
         url: str = "",
         file: discord.Attachment | None = None,
     ):
+        """Internal: video/file upload play flow. Called by PlaybackRouter."""
         if not interaction.user.voice:
             await interaction.response.send_message("You need to be in a voice channel first.")
             return
@@ -929,9 +919,8 @@ class Music(commands.Cog):
         # URL path: same resolution as /play link.
         await self._play_url_flow(interaction, url, allow_playlist=False)
 
-    @play_group.command(name="music_video", description="Find or play a music video by URL, artist, or song")
-    @app_commands.describe(query="Music video URL, or 'Artist — Song' search terms")
-    async def play_music_video(self, interaction: discord.Interaction, query: str):
+    async def _play_music_video(self, interaction: discord.Interaction, query: str):
+        """Internal: music video play flow. Called by PlaybackRouter."""
         if not interaction.user.voice:
             await interaction.response.send_message("You need to be in a voice channel first.")
             return
@@ -1425,18 +1414,19 @@ class Music(commands.Cog):
 
     # ── Album ───────────────────────────────────────────────
 
-    @app_commands.command(name="album", description="Play an album (URL or search)")
-    @app_commands.describe(query="Album URL or search terms")
-    async def album(self, interaction: discord.Interaction, query: str):
+    # ── Album (internal helper) ────────────────────────────
+
+    async def _album(self, interaction: discord.Interaction, query: str):
+        """Internal: album play flow (standalone). Called by PlaybackRouter."""
         if not interaction.user.voice:
             await interaction.response.send_message("You need to be in a voice channel first.")
             return
         await self._play_album_flow(interaction, query)
 
-    # ── Pause / Resume ──────────────────────────────────────
+    # ── Pause / Resume (internal helpers) ──────────────────
 
-    @app_commands.command(name="pause", description="Pause playback")
-    async def pause(self, interaction: discord.Interaction):
+    async def _do_pause(self, interaction: discord.Interaction):
+        """Internal: pause playback. Called by PlaybackRouter."""
         err = self._check_same_channel(interaction)
         if err:
             await interaction.response.send_message(err, ephemeral=True)
@@ -1448,8 +1438,8 @@ class Music(commands.Cog):
         else:
             await interaction.response.send_message("HelloDJ: Nothing is playing.")
 
-    @app_commands.command(name="resume", description="Resume playback")
-    async def resume(self, interaction: discord.Interaction):
+    async def _do_resume(self, interaction: discord.Interaction):
+        """Internal: resume playback. Called by PlaybackRouter."""
         err = self._check_same_channel(interaction)
         if err:
             await interaction.response.send_message(err, ephemeral=True)
@@ -1461,23 +1451,10 @@ class Music(commands.Cog):
         else:
             await interaction.response.send_message("HelloDJ: Nothing is paused.")
 
-    @app_commands.command(name="start", description="Alias for /resume")
-    async def start(self, interaction: discord.Interaction):
-        err = self._check_same_channel(interaction)
-        if err:
-            await interaction.response.send_message(err, ephemeral=True)
-            return
-        player_obj = player.get_player(interaction.guild.id)
-        if player_obj and player_obj.paused:
-            await player_obj.pause(False)
-            await interaction.response.send_message("HelloDJ resumed.")
-        else:
-            await interaction.response.send_message("HelloDJ: Nothing is paused.")
+    # ── Skip (internal helper) ─────────────────────────────
 
-    # ── Skip ────────────────────────────────────────────────
-
-    @app_commands.command(name="skip", description="Skip the current song")
-    async def skip(self, interaction: discord.Interaction):
+    async def _do_skip(self, interaction: discord.Interaction):
+        """Internal: skip current track. Called by PlaybackRouter."""
         err = self._check_same_channel(interaction)
         if err:
             await interaction.response.send_message(err, ephemeral=True)
@@ -1489,23 +1466,10 @@ class Music(commands.Cog):
         else:
             await interaction.response.send_message("HelloDJ: Nothing to skip.")
 
-    @app_commands.command(name="next", description="Alias for /skip")
-    async def next_cmd(self, interaction: discord.Interaction):
-        err = self._check_same_channel(interaction)
-        if err:
-            await interaction.response.send_message(err, ephemeral=True)
-            return
-        player_obj = player.get_player(interaction.guild.id)
-        if player_obj and (player_obj.playing or player_obj.paused):
-            await player_obj.stop()
-            await interaction.response.send_message("HelloDJ skipped.")
-        else:
-            await interaction.response.send_message("HelloDJ: Nothing to skip.")
+    # ── Stop / Clear (internal helpers) ───────────────────
 
-    # ── Stop / Clear ────────────────────────────────────────
-
-    @app_commands.command(name="stop", description="Stop playback and clear the queue")
-    async def stop(self, interaction: discord.Interaction):
+    async def _do_stop(self, interaction: discord.Interaction):
+        """Internal: stop playback and offer save. Called by PlaybackRouter."""
         err = self._check_same_channel(interaction)
         if err:
             await interaction.response.send_message(err, ephemeral=True)
@@ -1539,13 +1503,11 @@ class Music(commands.Cog):
             msg = "HelloDJ stopped and cleared the queue."
         await interaction.edit_original_response(content=msg, view=None)
 
-    clear_group = app_commands.Group(
-        name="clear",
-        description="Stop and discard a queue (music or video)",
-    )
+    # NOTE: clear_group REMOVED — unified /clear is now handled by PlaybackCog.
+    # Internal helpers preserved for router delegation.
 
-    @clear_group.command(name="music", description="Stop and discard the music queue (no save prompt)")
-    async def clear_music_cmd(self, interaction: discord.Interaction):
+    async def _do_clear_music(self, interaction: discord.Interaction):
+        """Internal: clear music queue without save prompt. Called by PlaybackRouter."""
         err = self._check_same_channel(interaction)
         if err:
             await interaction.response.send_message(err, ephemeral=True)
@@ -1561,8 +1523,8 @@ class Music(commands.Cog):
         await session.clear(gid)
         await interaction.response.send_message("HelloDJ cleared the music queue.")
 
-    @clear_group.command(name="video", description="Stop and discard the video queue")
-    async def clear_video_cmd(self, interaction: discord.Interaction):
+    async def _do_clear_video(self, interaction: discord.Interaction):
+        """Internal: clear video queue. Called by PlaybackRouter."""
         gid = interaction.guild.id
 
         user_voice = interaction.user.voice
@@ -1579,7 +1541,7 @@ class Music(commands.Cog):
             )
             return
 
-        streamer = video_cog._registry.get(gid)
+        streamer = video_cog._registry.get(gid, user_voice.channel.id)
         if streamer is None or not streamer.is_active:
             await interaction.response.send_message(
                 "No active video session to clear.", ephemeral=True
@@ -1601,34 +1563,28 @@ class Music(commands.Cog):
         try:
             await streamer.stop()
         except Exception as exc:
-            log.error("Error stopping video streamer during /clear video for guild %d: %s", gid, exc)
+            log.error("Error stopping video streamer during clear video for guild %d: %s", gid, exc)
 
         # Disconnect WebSocket clients
         await video_cog._backend.ws_hub.disconnect_all(gid)
 
         # Stop seek bar updates
-        video_cog._stop_seek_bar_update(gid)
+        video_cog._stop_seek_bar_update((gid, user_voice.channel.id))
 
         # Close the Activity (best-effort)
         if video_cog._launcher is not None:
             try:
                 await video_cog._launcher.close(streamer.channel_id)
             except Exception as exc:
-                log.warning("Error closing Activity during /clear video for guild %d: %s", gid, exc)
+                log.warning("Error closing Activity during clear video for guild %d: %s", gid, exc)
 
-        video_cog._registry.unregister(gid)
+        video_cog._registry.unregister(gid, user_voice.channel.id)
         await interaction.followup.send("HelloDJ cleared the video queue and stopped the Activity.")
 
-    # ── Queue display ───────────────────────────────────────
+    # ── Queue display (internal helper) ───────────────────
 
-    @app_commands.command(name="queue", description="Show the current queue (paginated)")
-    @app_commands.choices(
-        view_type=[
-            app_commands.Choice(name="Simple list", value="simple"),
-            app_commands.Choice(name="Paginated embed", value="paginated"),
-        ]
-    )
-    async def queue_cmd(self, interaction: discord.Interaction, view_type: str = "simple"):
+    async def _do_queue(self, interaction: discord.Interaction, view_type: str = "simple"):
+        """Internal: show current queue. Called by PlaybackRouter."""
         state = player.get_state(interaction.guild.id)
         current = state.get("current")
         items = state["queue"]
@@ -1646,14 +1602,6 @@ class Music(commands.Cog):
             lines.append(f"HelloDJ now playing: **{current.get('title', 'Unknown')}**")
         lines += [f"{i + 1}. **{item.get('title', 'Unknown')}**" for i, item in enumerate(items)]
         await interaction.response.send_message("\n".join(lines))
-
-    @app_commands.command(name="list", description="Alias for /queue (paginated)")
-    async def list_cmd(self, interaction: discord.Interaction):
-        await self.queue_cmd.callback(self, interaction, "paginated")
-
-    @app_commands.command(name="q", description="Alias for /queue (simple)")
-    async def q_cmd(self, interaction: discord.Interaction):
-        await self.queue_cmd.callback(self, interaction, "simple")
 
     # ── Now playing ─────────────────────────────────────────
 

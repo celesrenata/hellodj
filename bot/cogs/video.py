@@ -64,9 +64,10 @@ class VideoCog(commands.Cog, name="Video"):
         self._backend = ActivityBackend(self._registry)
         self._launcher: ActivityLauncher | None = None
         self._http_session: aiohttp.ClientSession | None = None
-        self._now_playing_messages: dict[int, discord.Message] = {}
-        self._seek_bar_tasks: dict[int, asyncio.Task] = {}
-        self._activity_urls: dict[int, str] = {}  # guild_id → Activity invite URL
+        # All dicts keyed by (guild_id, channel_id) composite key
+        self._now_playing_messages: dict[tuple[int, int], discord.Message] = {}
+        self._seek_bar_tasks: dict[tuple[int, int], asyncio.Task] = {}
+        self._activity_urls: dict[tuple[int, int], str] = {}  # (guild_id, channel_id) → Activity invite URL
 
     async def cog_load(self) -> None:
         """Probe GPU, start Activity backend, and prepare launcher on cog load."""
@@ -95,16 +96,19 @@ class VideoCog(commands.Cog, name="Video"):
         self._now_playing_messages.clear()
 
         # Stop all active sessions
-        for guild_id in list(self._registry.active_sessions()):
-            streamer = self._registry.get(guild_id)
+        for guild_id, channel_id in list(self._registry.active_sessions()):
+            streamer = self._registry.get(guild_id, channel_id)
             if streamer is not None:
                 try:
                     await streamer.stop()
                 except Exception as exc:
-                    log.warning("Error stopping streamer on unload for guild %d: %s", guild_id, exc)
+                    log.warning(
+                        "Error stopping streamer on unload for guild %d channel %d: %s",
+                        guild_id, channel_id, exc,
+                    )
             # Disconnect WebSocket clients for this guild
             await self._backend.ws_hub.disconnect_all(guild_id)
-            self._registry.unregister(guild_id)
+            self._registry.unregister(guild_id, channel_id)
 
         # Stop backend
         await self._backend.stop()
@@ -116,6 +120,57 @@ class VideoCog(commands.Cog, name="Video"):
 
         self._launcher = None
         log.info("VideoCog unloaded: all sessions stopped, backend shut down")
+
+    # ── Legacy deprecation helpers ────────────────────────
+
+    # Replacement mapping: legacy command → unified equivalent
+    _LEGACY_REPLACEMENTS: dict[str, str] = {
+        "play": "/play <query> mode:video",
+        "stop": "/stop",
+        "skip": "/skip",
+        "previous": "/skip (with unified queue logic)",
+        "queue": "/queue",
+    }
+
+    async def _check_legacy_allowed(self, interaction: discord.Interaction, command_name: str) -> bool:
+        """Check if legacy /video commands are allowed.
+
+        Returns True if the command should proceed (with deprecation notice appended later).
+        Returns False if the command was rejected (already sent error message).
+        """
+        from playback.instance_config import is_legacy_video_enabled
+
+        replacement = self._LEGACY_REPLACEMENTS.get(command_name, "/play")
+
+        if not is_legacy_video_enabled():
+            # Globally disabled — reject with replacement listing
+            await interaction.response.send_message(
+                f"The `/video` commands have been removed. Use `{replacement}` instead.",
+                ephemeral=True,
+            )
+            return False
+
+        # Check guild-specific immediate migration
+        guild_id = interaction.guild_id
+        if guild_id is not None:
+            from guild_settings import get_setting
+
+            immediate_migration = get_setting(guild_id, "unified_playback_immediate", False)
+            if immediate_migration:
+                await interaction.response.send_message(
+                    f"Legacy `/video` commands are disabled for this server. "
+                    f"Use `{replacement}` instead.",
+                    ephemeral=True,
+                )
+                return False
+
+        # Transition period active — proceed with deprecation notice
+        return True
+
+    def _deprecation_notice(self, command_name: str) -> str:
+        """Return the deprecation notice string for a given legacy command."""
+        replacement = self._LEGACY_REPLACEMENTS.get(command_name, "/play")
+        return f"\n⚠️ This command is deprecated. Use `{replacement}` instead."
 
     # ── Shared checks ──────────────────────────────────────
 
@@ -136,11 +191,13 @@ class VideoCog(commands.Cog, name="Video"):
 
         guild_id = interaction.guild_id
         assert guild_id is not None
-        streamer = self._registry.get(guild_id)
-        if streamer is not None and streamer.is_active:
-            if user_voice.channel.id != streamer.channel_id:
-                channel = interaction.guild.get_channel(streamer.channel_id)
-                channel_name = channel.name if channel else f"ID {streamer.channel_id}"
+        channel_id = user_voice.channel.id
+
+        # Check if there's a session in ANY channel for this guild that isn't the user's channel
+        for ch_id, streamer in self._registry.get_by_guild(guild_id):
+            if streamer.is_active and ch_id != channel_id:
+                channel = interaction.guild.get_channel(ch_id)
+                channel_name = channel.name if channel else f"ID {ch_id}"
                 return (
                     f"The video Activity is in **{channel_name}** — "
                     f"you need to be in that channel to control it."
@@ -151,6 +208,16 @@ class VideoCog(commands.Cog, name="Video"):
         """Return an error message if GPU is unavailable, else None."""
         if not self._gpu_probe.gpu_available:
             return "Video streaming unavailable: Intel GPU device not detected."
+        return None
+
+    def _get_user_channel(self, interaction: discord.Interaction) -> int | None:
+        """Extract the user's voice channel ID from an interaction.
+
+        Returns None if the user is not in a voice channel.
+        """
+        user_voice = interaction.user.voice  # type: ignore[union-attr]
+        if user_voice and user_voice.channel:
+            return user_voice.channel.id
         return None
 
     # ── /video play ────────────────────────────────────────
@@ -166,6 +233,10 @@ class VideoCog(commands.Cog, name="Video"):
         query: str | None = None,
         attachment: discord.Attachment | None = None,
     ) -> None:
+        # Legacy deprecation check — must be first
+        if not await self._check_legacy_allowed(interaction, "play"):
+            return
+
         # Pre-checks
         voice_err = self._check_voice(interaction)
         if voice_err:
@@ -242,8 +313,8 @@ class VideoCog(commands.Cog, name="Video"):
             )
             return
 
-        # Check if there's an active session for this guild
-        streamer = self._registry.get(guild_id)
+        # Check if there's an active session for this guild+channel
+        streamer = self._registry.get(guild_id, voice_channel.id)
 
         if streamer is not None and streamer.is_active:
             # Session active — enqueue
@@ -251,6 +322,7 @@ class VideoCog(commands.Cog, name="Video"):
                 queue_len = streamer.enqueue(source)
                 await interaction.followup.send(
                     f"📥 Added to queue (position {queue_len}): **{source.title}**"
+                    + self._deprecation_notice("play")
                 )
             except QueueFullError as exc:
                 await interaction.followup.send(f"❌ {exc}", ephemeral=True)
@@ -258,7 +330,7 @@ class VideoCog(commands.Cog, name="Video"):
 
         # No active session — create streamer, launch Activity, start playback
         streamer = ActivityStreamer(guild_id=guild_id, channel_id=voice_channel.id, ws_hub=self._backend.ws_hub)
-        self._registry.register(guild_id, streamer)
+        self._registry.register(guild_id, voice_channel.id, streamer)
 
         # Launch Discord Activity
         assert self._launcher is not None
@@ -267,7 +339,7 @@ class VideoCog(commands.Cog, name="Video"):
         try:
             invite_data = await self._launcher.launch(voice_channel.id, application_id)
         except ActivityLaunchError as exc:
-            self._registry.unregister(guild_id)
+            self._registry.unregister(guild_id, voice_channel.id)
             await interaction.followup.send(
                 f"❌ Failed to launch Activity: {exc.message}",
                 ephemeral=True,
@@ -283,7 +355,7 @@ class VideoCog(commands.Cog, name="Video"):
             await streamer.play(source)
         except Exception as exc:
             log.error("Error starting playback for guild %d: %s", guild_id, exc, exc_info=True)
-            self._registry.unregister(guild_id)
+            self._registry.unregister(guild_id, voice_channel.id)
             await interaction.followup.send(
                 "❌ An error occurred while starting video playback.",
                 ephemeral=True,
@@ -299,15 +371,23 @@ class VideoCog(commands.Cog, name="Video"):
         # Send "Now Playing" embed with control buttons
         embed = _build_now_playing_embed(source, len(streamer.queue), activity_url=activity_url, elapsed_seconds=0.0)
         msg = await interaction.followup.send(embed=embed, view=VideoControlView(self), wait=True)
-        self._now_playing_messages[guild_id] = msg
+        key = (guild_id, voice_channel.id)
+        self._now_playing_messages[key] = msg
         if activity_url:
-            self._activity_urls[guild_id] = activity_url
-        self._start_seek_bar_update(guild_id)
+            self._activity_urls[key] = activity_url
+        self._start_seek_bar_update(key)
+
+        # Send deprecation notice
+        await interaction.followup.send(self._deprecation_notice("play"), ephemeral=True)
 
     # ── /video stop ────────────────────────────────────────
 
     @video_group.command(name="stop", description="Stop the current video and close the Activity")
     async def video_stop(self, interaction: discord.Interaction) -> None:
+        # Legacy deprecation check — must be first
+        if not await self._check_legacy_allowed(interaction, "stop"):
+            return
+
         guild_id = interaction.guild_id
         assert guild_id is not None
 
@@ -316,7 +396,11 @@ class VideoCog(commands.Cog, name="Video"):
             await interaction.response.send_message(err, ephemeral=True)
             return
 
-        streamer = self._registry.get(guild_id)
+        channel_id = self._get_user_channel(interaction)
+        assert channel_id is not None
+        key = (guild_id, channel_id)
+
+        streamer = self._registry.get(guild_id, channel_id)
         if streamer is None or not streamer.is_active:
             await interaction.response.send_message(
                 "No video is currently streaming.", ephemeral=True
@@ -339,7 +423,7 @@ class VideoCog(commands.Cog, name="Video"):
         await self._backend.ws_hub.disconnect_all(guild_id)
 
         # Stop seek bar updates
-        self._stop_seek_bar_update(guild_id)
+        self._stop_seek_bar_update(key)
 
         # Close the Activity (best-effort)
         if self._launcher is not None:
@@ -349,14 +433,21 @@ class VideoCog(commands.Cog, name="Video"):
                 log.warning("Error closing Activity for guild %d: %s", guild_id, exc)
 
         # Unregister session
-        self._registry.unregister(guild_id)
+        self._registry.unregister(guild_id, channel_id)
 
-        await interaction.followup.send("⏹️ Video stream stopped and Activity closed.")
+        await interaction.followup.send(
+            "⏹️ Video stream stopped and Activity closed."
+            + self._deprecation_notice("stop")
+        )
 
     # ── /video skip ────────────────────────────────────────
 
     @video_group.command(name="skip", description="Skip to the next video in the queue")
     async def video_skip(self, interaction: discord.Interaction) -> None:
+        # Legacy deprecation check — must be first
+        if not await self._check_legacy_allowed(interaction, "skip"):
+            return
+
         guild_id = interaction.guild_id
         assert guild_id is not None
 
@@ -365,7 +456,11 @@ class VideoCog(commands.Cog, name="Video"):
             await interaction.response.send_message(err, ephemeral=True)
             return
 
-        streamer = self._registry.get(guild_id)
+        channel_id = self._get_user_channel(interaction)
+        assert channel_id is not None
+        key = (guild_id, channel_id)
+
+        streamer = self._registry.get(guild_id, channel_id)
         if streamer is None or not streamer.is_active:
             await interaction.response.send_message(
                 "No video is currently streaming.", ephemeral=True
@@ -386,7 +481,7 @@ class VideoCog(commands.Cog, name="Video"):
         except Exception as exc:
             log.error("Error skipping for guild %d: %s", guild_id, exc, exc_info=True)
             # Attempt recovery: try next item in queue
-            recovery_ok = await self._attempt_skip_recovery(streamer, guild_id)
+            recovery_ok = await self._attempt_skip_recovery(streamer, guild_id, channel_id)
             if recovery_ok:
                 if streamer.is_active and streamer.source:
                     embed = _build_now_playing_embed(streamer.source, len(streamer.queue))
@@ -415,11 +510,13 @@ class VideoCog(commands.Cog, name="Video"):
             })
             embed = _build_now_playing_embed(streamer.source, len(streamer.queue), elapsed_seconds=0.0)
             msg = await interaction.followup.send("⏭️ Skipped!", embed=embed, view=VideoControlView(self), wait=True)
-            self._now_playing_messages[guild_id] = msg
-            self._start_seek_bar_update(guild_id)
+            self._now_playing_messages[key] = msg
+            self._start_seek_bar_update(key)
+            # Send deprecation notice
+            await interaction.followup.send(self._deprecation_notice("skip"), ephemeral=True)
         else:
             # Queue was empty, session stopped
-            self._stop_seek_bar_update(guild_id)
+            self._stop_seek_bar_update(key)
             # Disconnect WebSocket clients
             await self._backend.ws_hub.disconnect_all(guild_id)
             # Clean up Activity
@@ -429,14 +526,21 @@ class VideoCog(commands.Cog, name="Video"):
                 except Exception as exc:
                     log.warning("Error closing Activity after skip for guild %d: %s", guild_id, exc)
 
-            self._registry.unregister(guild_id)
+            self._registry.unregister(guild_id, channel_id)
 
-            await interaction.followup.send("⏭️ Skipped! Queue is empty — Activity closed.")
+            await interaction.followup.send(
+                "⏭️ Skipped! Queue is empty — Activity closed."
+                + self._deprecation_notice("skip")
+            )
 
     # ── /video previous ───────────────────────────────────
 
     @video_group.command(name="previous", description="Go back to the previously played video")
     async def video_previous(self, interaction: discord.Interaction) -> None:
+        # Legacy deprecation check — must be first
+        if not await self._check_legacy_allowed(interaction, "previous"):
+            return
+
         guild_id = interaction.guild_id
         assert guild_id is not None
 
@@ -445,7 +549,11 @@ class VideoCog(commands.Cog, name="Video"):
             await interaction.response.send_message(err, ephemeral=True)
             return
 
-        streamer = self._registry.get(guild_id)
+        channel_id = self._get_user_channel(interaction)
+        assert channel_id is not None
+        key = (guild_id, channel_id)
+
+        streamer = self._registry.get(guild_id, channel_id)
         if streamer is None or not streamer.is_active:
             await interaction.response.send_message(
                 "No video is currently streaming.", ephemeral=True
@@ -464,7 +572,7 @@ class VideoCog(commands.Cog, name="Video"):
         except Exception as exc:
             log.error("Error going to previous for guild %d: %s", guild_id, exc, exc_info=True)
             # Attempt recovery: try next item in queue
-            recovery_ok = await self._attempt_skip_recovery(streamer, guild_id)
+            recovery_ok = await self._attempt_skip_recovery(streamer, guild_id, channel_id)
             if recovery_ok:
                 if streamer.is_active and streamer.source:
                     embed = _build_now_playing_embed(streamer.source, len(streamer.queue))
@@ -497,10 +605,15 @@ class VideoCog(commands.Cog, name="Video"):
             })
             embed = _build_now_playing_embed(streamer.source, len(streamer.queue), elapsed_seconds=0.0)
             msg = await interaction.followup.send("⏮️ Playing previous video!", embed=embed, view=VideoControlView(self), wait=True)
-            self._now_playing_messages[guild_id] = msg
-            self._start_seek_bar_update(guild_id)
+            self._now_playing_messages[key] = msg
+            self._start_seek_bar_update(key)
+            # Send deprecation notice
+            await interaction.followup.send(self._deprecation_notice("previous"), ephemeral=True)
         else:
-            await interaction.followup.send("⏮️ Went back to previous video.")
+            await interaction.followup.send(
+                "⏮️ Went back to previous video."
+                + self._deprecation_notice("previous")
+            )
 
     @video_group.command(name="last", description="Go back to the previously played video (alias for /video previous)")
     async def video_last(self, interaction: discord.Interaction) -> None:
@@ -511,16 +624,28 @@ class VideoCog(commands.Cog, name="Video"):
 
     @video_group.command(name="queue", description="Show the current video queue")
     async def video_queue(self, interaction: discord.Interaction) -> None:
+        # Legacy deprecation check — must be first
+        if not await self._check_legacy_allowed(interaction, "queue"):
+            return
+
         guild_id = interaction.guild_id
         assert guild_id is not None
 
-        streamer = self._registry.get(guild_id)
+        channel_id = self._get_user_channel(interaction)
+        # For queue, allow viewing even if not in a voice channel — show nothing
+        if channel_id is not None:
+            streamer = self._registry.get(guild_id, channel_id)
+        else:
+            streamer = None
 
         current_source = streamer.source if streamer and streamer.is_active else None
         queue = list(streamer.queue) if streamer and streamer.is_active else []
 
         embed = _build_queue_embed(current_source, queue)
-        await interaction.response.send_message(embed=embed)
+        await interaction.response.send_message(
+            embed=embed,
+            content=self._deprecation_notice("queue"),
+        )
 
     # ── Voice state listener (grace period) ────────────────
 
@@ -537,40 +662,43 @@ class VideoCog(commands.Cog, name="Video"):
             return
 
         guild_id = member.guild.id
-        streamer = self._registry.get(guild_id)
-        if streamer is None or not streamer.is_active:
-            return
 
-        channel_id = streamer.channel_id
+        # Someone left a voice channel — check if there's a session in that channel
+        if before.channel:
+            channel_id = before.channel.id
+            streamer = self._registry.get(guild_id, channel_id)
+            if streamer is not None and streamer.is_active:
+                # Check if voice channel is now empty of human users
+                human_members = [m for m in before.channel.members if not m.bot]
+                if not human_members:
+                    # All humans left — start grace period
+                    await self._registry.start_grace_period(
+                        guild_id, channel_id, _GRACE_PERIOD_SECONDS
+                    )
 
-        # Someone left the voice channel where the Activity is running
-        if before.channel and before.channel.id == channel_id:
-            # Check if voice channel is now empty of human users
-            channel = before.channel
-            human_members = [m for m in channel.members if not m.bot]
-            if not human_members:
-                # All humans left — start grace period
-                await self._registry.start_grace_period(guild_id, _GRACE_PERIOD_SECONDS)
-
-        # Someone joined the voice channel where the Activity is running
-        if after.channel and after.channel.id == channel_id:
-            # Cancel grace period if someone rejoined
-            self._registry.cancel_grace_period(guild_id)
+        # Someone joined a voice channel — cancel grace period if there's a session there
+        if after.channel:
+            channel_id = after.channel.id
+            streamer = self._registry.get(guild_id, channel_id)
+            if streamer is not None and streamer.is_active:
+                self._registry.cancel_grace_period(guild_id, channel_id)
 
 
     # ── Recovery helper ───────────────────────────────────
 
-    async def _attempt_skip_recovery(self, streamer: ActivityStreamer, guild_id: int) -> bool:
+    async def _attempt_skip_recovery(self, streamer: ActivityStreamer, guild_id: int, channel_id: int) -> bool:
         """Attempt to recover from a playback error by trying the next queue item.
 
         If the queue is also empty, stops the session and returns False.
         Returns True if recovery succeeded (next item is now playing).
         """
+        key = (guild_id, channel_id)
         if streamer.queue:
             next_source = streamer.queue.pop(0)
             log.info(
-                "Attempting playback recovery for guild=%d with next queue item: %s",
+                "Attempting playback recovery for guild=%d channel=%d with next queue item: %s",
                 guild_id,
+                channel_id,
                 next_source.title,
             )
             try:
@@ -583,7 +711,7 @@ class VideoCog(commands.Cog, name="Video"):
                 )
 
         # Recovery failed or queue empty — stop session
-        log.warning("Playback recovery failed for guild %d — stopping session", guild_id)
+        log.warning("Playback recovery failed for guild %d channel %d — stopping session", guild_id, channel_id)
         try:
             await streamer.stop()
         except Exception:
@@ -593,7 +721,7 @@ class VideoCog(commands.Cog, name="Video"):
         await self._backend.ws_hub.disconnect_all(guild_id)
 
         # Stop seek bar updates
-        self._stop_seek_bar_update(guild_id)
+        self._stop_seek_bar_update(key)
 
         if self._launcher is not None:
             try:
@@ -601,33 +729,34 @@ class VideoCog(commands.Cog, name="Video"):
             except Exception:
                 pass
 
-        self._registry.unregister(guild_id)
+        self._registry.unregister(guild_id, channel_id)
         return False
 
     # ── Seek bar update background task ───────────────────
 
-    def _start_seek_bar_update(self, guild_id: int) -> None:
-        """Start (or restart) the periodic seek bar update task for a guild."""
-        if guild_id in self._seek_bar_tasks:
-            self._seek_bar_tasks[guild_id].cancel()
-        task = asyncio.create_task(self._update_seek_bar_loop(guild_id))
-        self._seek_bar_tasks[guild_id] = task
+    def _start_seek_bar_update(self, key: tuple[int, int]) -> None:
+        """Start (or restart) the periodic seek bar update task for a session."""
+        if key in self._seek_bar_tasks:
+            self._seek_bar_tasks[key].cancel()
+        task = asyncio.create_task(self._update_seek_bar_loop(key))
+        self._seek_bar_tasks[key] = task
 
-    def _stop_seek_bar_update(self, guild_id: int) -> None:
+    def _stop_seek_bar_update(self, key: tuple[int, int]) -> None:
         """Cancel the seek bar update task and clean up message reference."""
-        if guild_id in self._seek_bar_tasks:
-            self._seek_bar_tasks[guild_id].cancel()
-            del self._seek_bar_tasks[guild_id]
-        self._now_playing_messages.pop(guild_id, None)
-        self._activity_urls.pop(guild_id, None)
+        if key in self._seek_bar_tasks:
+            self._seek_bar_tasks[key].cancel()
+            del self._seek_bar_tasks[key]
+        self._now_playing_messages.pop(key, None)
+        self._activity_urls.pop(key, None)
 
-    async def _update_seek_bar_loop(self, guild_id: int) -> None:
+    async def _update_seek_bar_loop(self, key: tuple[int, int]) -> None:
         """Background loop that edits the Now Playing embed every 30s with an updated seek bar."""
+        guild_id, channel_id = key
         try:
             while True:
                 await asyncio.sleep(30)
-                streamer = self._registry.get(guild_id)
-                msg = self._now_playing_messages.get(guild_id)
+                streamer = self._registry.get(guild_id, channel_id)
+                msg = self._now_playing_messages.get(key)
                 if streamer is None or not streamer.is_active or msg is None:
                     break
 
@@ -651,7 +780,7 @@ class VideoCog(commands.Cog, name="Video"):
                     elapsed = duration
 
                 # Rebuild embed with updated seek bar
-                activity_url = self._activity_urls.get(guild_id)
+                activity_url = self._activity_urls.get(key)
                 embed = _build_now_playing_embed(streamer.source, len(streamer.queue), activity_url=activity_url, elapsed_seconds=elapsed)
 
                 try:
@@ -663,7 +792,7 @@ class VideoCog(commands.Cog, name="Video"):
             pass
         finally:
             # Clean up references if we exited naturally
-            self._seek_bar_tasks.pop(guild_id, None)
+            self._seek_bar_tasks.pop(key, None)
 
 
 # ── Embed builders ─────────────────────────────────────────
@@ -756,7 +885,13 @@ class VideoControlView(discord.ui.View):
         guild_id = interaction.guild_id
         assert guild_id is not None
 
-        streamer = self._cog._registry.get(guild_id)
+        channel_id = self._cog._get_user_channel(interaction)
+        if channel_id is None:
+            await interaction.response.send_message("You must be in a voice channel.", ephemeral=True)
+            return
+        key = (guild_id, channel_id)
+
+        streamer = self._cog._registry.get(guild_id, channel_id)
         if streamer is None or not streamer.is_active:
             await interaction.response.send_message("No video is currently streaming.", ephemeral=True)
             return
@@ -773,7 +908,7 @@ class VideoControlView(discord.ui.View):
         except Exception as exc:
             log.error("Error going to previous (button) for guild %d: %s", guild_id, exc, exc_info=True)
             # Attempt recovery
-            recovery_ok = await self._cog._attempt_skip_recovery(streamer, guild_id)
+            recovery_ok = await self._cog._attempt_skip_recovery(streamer, guild_id, channel_id)
             if recovery_ok:
                 if streamer.is_active and streamer.source:
                     embed = _build_now_playing_embed(streamer.source, len(streamer.queue))
@@ -809,8 +944,8 @@ class VideoControlView(discord.ui.View):
             })
             embed = _build_now_playing_embed(streamer.source, len(streamer.queue), elapsed_seconds=0.0)
             msg = await interaction.followup.send("⏮ Playing previous video!", embed=embed, view=VideoControlView(self._cog), wait=True)
-            self._cog._now_playing_messages[guild_id] = msg
-            self._cog._start_seek_bar_update(guild_id)
+            self._cog._now_playing_messages[key] = msg
+            self._cog._start_seek_bar_update(key)
         else:
             await interaction.followup.send("⏮ Went back to previous video.")
 
@@ -898,7 +1033,13 @@ class VideoControlView(discord.ui.View):
         guild_id = interaction.guild_id
         assert guild_id is not None
 
-        streamer = self._cog._registry.get(guild_id)
+        channel_id = self._cog._get_user_channel(interaction)
+        if channel_id is None:
+            await interaction.response.send_message("You must be in a voice channel.", ephemeral=True)
+            return
+        key = (guild_id, channel_id)
+
+        streamer = self._cog._registry.get(guild_id, channel_id)
         if streamer is None or not streamer.is_active:
             await interaction.response.send_message("No video is currently streaming.", ephemeral=True)
             return
@@ -916,7 +1057,7 @@ class VideoControlView(discord.ui.View):
         except Exception as exc:
             log.error("Error skipping (button) for guild %d: %s", guild_id, exc, exc_info=True)
             # Attempt recovery
-            recovery_ok = await self._cog._attempt_skip_recovery(streamer, guild_id)
+            recovery_ok = await self._cog._attempt_skip_recovery(streamer, guild_id, channel_id)
             if recovery_ok:
                 if streamer.is_active and streamer.source:
                     embed = _build_now_playing_embed(streamer.source, len(streamer.queue))
@@ -947,17 +1088,17 @@ class VideoControlView(discord.ui.View):
             })
             embed = _build_now_playing_embed(streamer.source, len(streamer.queue), elapsed_seconds=0.0)
             msg = await interaction.followup.send("⏭ Skipped!", embed=embed, view=VideoControlView(self._cog), wait=True)
-            self._cog._now_playing_messages[guild_id] = msg
-            self._cog._start_seek_bar_update(guild_id)
+            self._cog._now_playing_messages[key] = msg
+            self._cog._start_seek_bar_update(key)
         else:
-            self._cog._stop_seek_bar_update(guild_id)
+            self._cog._stop_seek_bar_update(key)
             await self._cog._backend.ws_hub.disconnect_all(guild_id)
             if self._cog._launcher is not None:
                 try:
                     await self._cog._launcher.close(streamer.channel_id)
                 except Exception:
                     pass
-            self._cog._registry.unregister(guild_id)
+            self._cog._registry.unregister(guild_id, channel_id)
             await interaction.followup.send("⏭ Queue empty — stopped.")
             self._disable_all()
             if interaction.message:
@@ -969,20 +1110,25 @@ class VideoControlView(discord.ui.View):
         guild_id = interaction.guild_id
         assert guild_id is not None
 
-        streamer = self._cog._registry.get(guild_id)
+        channel_id = self._cog._get_user_channel(interaction)
+        if channel_id is None:
+            await interaction.response.send_message("You must be in a voice channel.", ephemeral=True)
+            return
+        key = (guild_id, channel_id)
+
+        streamer = self._cog._registry.get(guild_id, channel_id)
         if streamer is None or not streamer.is_active:
             await interaction.response.send_message("No video is currently streaming.", ephemeral=True)
             return
 
         await interaction.response.defer()
-        channel_id = streamer.channel_id
         await streamer.stop()
 
         # Disconnect all WebSocket clients for this guild
         await self._cog._backend.ws_hub.disconnect_all(guild_id)
 
         # Stop seek bar updates
-        self._cog._stop_seek_bar_update(guild_id)
+        self._cog._stop_seek_bar_update(key)
 
         if self._cog._launcher is not None:
             try:
@@ -990,7 +1136,7 @@ class VideoControlView(discord.ui.View):
             except Exception:
                 pass
 
-        self._cog._registry.unregister(guild_id)
+        self._cog._registry.unregister(guild_id, channel_id)
         await interaction.followup.send("⏹️ Video stopped.")
         self._disable_all()
         if interaction.message:

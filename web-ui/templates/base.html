@@ -254,6 +254,16 @@
                         </a>
                     </li>
                     <li class="nav-item">
+                        <a class="nav-link {% if active == 'moderation' %}active{% endif %}" href="{{ url_for('moderation_page') }}">
+                            <i class="bi bi-shield-check"></i> Moderation
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link {% if active == 'instances' %}active{% endif %}" href="{{ url_for('instances_page') }}">
+                            <i class="bi bi-diagram-3"></i> Instances
+                        </a>
+                    </li>
+                    <li class="nav-item">
                         <a class="nav-link {% if active == 'admins' %}active{% endif %}" href="{{ url_for('admins_page') }}">
                             <i class="bi bi-person-gear"></i> Admins
                         </a>

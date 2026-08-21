@@ -27,6 +27,21 @@ import file_handler
 import guild_policy as _guild_policy
 from debug import get_debug_logger, log_debug_config
 
+# ── Unified playback imports (optional — bot works without them) ──────────
+_unified_import_exc_msg: str = ""
+try:
+    from playback.session_registry import SessionRegistry
+    from playback.orchestrator import InstanceOrchestrator
+    from playback.content_filter import ContentFilter
+    from playback.user_bans import UserBans
+    import playback.classifier as content_classifier
+    import playback.persistence as unified_persistence
+
+    _UNIFIED_PLAYBACK_AVAILABLE = True
+except ImportError as _unified_import_exc:
+    _UNIFIED_PLAYBACK_AVAILABLE = False
+    _unified_import_exc_msg = str(_unified_import_exc)
+
 load_dotenv()
 dbg = get_debug_logger("bot")
 
@@ -74,6 +89,46 @@ intents.members = True
 intents.presences = True
 intents.guild_typing = False
 bot = commands.Bot(command_prefix="!", intents=intents)
+
+# ── Unified playback components (optional — non-fatal if unavailable) ──────
+
+if _UNIFIED_PLAYBACK_AVAILABLE:
+    _unified_registry = SessionRegistry()
+    _content_filter = ContentFilter()
+    _user_bans = UserBans()
+    _orchestrator = InstanceOrchestrator(bot, _unified_registry)
+
+    # PlaybackRouter imported lazily — router.py uses bot.playback.xxx paths
+    # that may not resolve depending on sys.path configuration at startup.
+    # If the router fails to import, the playback cog will create its own
+    # stub router from bot.playback_router being unset.
+    try:
+        from playback.router import PlaybackRouter
+
+        _playback_router = PlaybackRouter(
+            classifier=content_classifier,
+            registry=_unified_registry,
+            orchestrator=_orchestrator,
+            activity_backend=None,  # Wired after video cog loads
+            primary_bot=bot,
+            content_filter=_content_filter,
+            user_bans=_user_bans,
+        )
+        # Store on bot for cog access
+        bot.playback_router = _playback_router
+    except ImportError as _router_exc:
+        logging.getLogger(__name__).debug(
+            "PlaybackRouter not importable at startup (cog will handle): %s", _router_exc
+        )
+        _playback_router = None  # type: ignore[assignment]
+
+    bot.unified_registry = _unified_registry
+    bot.content_filter = _content_filter
+    bot.user_bans = _user_bans
+else:
+    logging.getLogger(__name__).warning(
+        "Unified playback modules not available: %s", _unified_import_exc_msg
+    )
 
 # ── Lavalink config ────────────────────────────────────────
 
@@ -541,6 +596,27 @@ async def setup_hook():
     except Exception as _video_exc:
         log.warning("setup_hook: could not load video cog (non-fatal): %s", _video_exc)
 
+    # Wire video cog's activity_backend into the unified router
+    if _UNIFIED_PLAYBACK_AVAILABLE and _playback_router is not None:
+        video_cog = bot.get_cog("Video")
+        if video_cog and hasattr(video_cog, "_backend"):
+            _playback_router._activity_backend = video_cog._backend
+
+    # Unified playback cog (optional — requires unified playback modules)
+    if _UNIFIED_PLAYBACK_AVAILABLE:
+        try:
+            await bot.load_extension("cogs.playback")
+            dbg.info("setup_hook: unified playback cog loaded")
+        except Exception as _playback_exc:
+            log.warning("setup_hook: could not load playback cog (non-fatal): %s", _playback_exc)
+
+        # Admin panel cog (optional — provides /hellodj command group)
+        try:
+            await bot.load_extension("cogs.admin_panel")
+            dbg.info("setup_hook: admin panel cog loaded")
+        except Exception as _admin_exc:
+            log.warning("setup_hook: could not load admin panel cog (non-fatal): %s", _admin_exc)
+
     # ── switchable voice-connect debug layer ─────────────────
     # Installs a socket raw-listener that logs whether the bot's OWN
     # VOICE_STATE_UPDATE / VOICE_SERVER_UPDATE events arrive after op-4,
@@ -716,6 +792,8 @@ _watchdog_started = False
 _yt_oauth_task_started = False
 # Guild-authorization periodic re-check watchdog (started once per process)
 _guild_policy_task_started = False
+# Unified playback orchestrator health check (started once per process)
+_orchestrator_health_started = False
 
 
 async def _gateway_health_watchdog() -> None:
@@ -775,6 +853,20 @@ async def on_connect():
         log.info("gateway health watchdog started (on_connect)")
 
 
+# ── Unified playback: orchestrator health loop ─────────────
+
+
+async def _orchestrator_health_loop():
+    """Run orchestrator health checks every 30 seconds."""
+    await bot.wait_until_ready()
+    while not bot.is_closed():
+        try:
+            await _orchestrator.health_check()
+        except Exception as exc:
+            log.warning("Orchestrator health check error: %s", exc)
+        await asyncio.sleep(30)
+
+
 @bot.event
 async def on_ready():
     global _ready_at
@@ -808,6 +900,34 @@ async def on_ready():
         _guild_policy_task_started = True
         bot.loop.create_task(_guild_policy_watchdog())
         log.info("guild_policy: periodic re-check watchdog started")
+
+    # ── Unified playback: orchestrator init + persistence + health check ──
+    global _orchestrator_health_started
+    if _UNIFIED_PLAYBACK_AVAILABLE:
+        # Load unified persistence (runs migration if legacy keys found)
+        try:
+            await unified_persistence.load_all()
+            log.info("Unified persistence loaded (migration applied if needed)")
+        except Exception as exc:
+            log.warning("Unified persistence load failed (non-fatal): %s", exc)
+
+        # Initialize multi-instance orchestrator (loads credentials, connects clients)
+        try:
+            await _orchestrator.initialize()
+            log.info(
+                "InstanceOrchestrator initialized (%d instances available)",
+                _orchestrator.available_count,
+            )
+        except Exception as exc:
+            log.warning("InstanceOrchestrator initialization failed (non-fatal): %s", exc)
+
+        # Start periodic health check for bot instances
+        if not _orchestrator_health_started:
+            _orchestrator_health_started = True
+            bot.loop.create_task(
+                _orchestrator_health_loop(), name="orchestrator-health"
+            )
+            log.info("orchestrator: health check loop started (30s interval)")
 
 
 # ── file upload playback ────────────────────────────────────

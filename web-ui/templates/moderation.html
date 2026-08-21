@@ -1,0 +1,318 @@
+{% extends "base.html" %}
+{% block title %}Moderation{% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-12">
+        <h2 class="mb-4">
+            <i class="bi bi-shield-check"></i> Moderation
+            <small class="text-muted fs-6">— Content filters &amp; user bans</small>
+        </h2>
+    </div>
+</div>
+
+<!-- Guild Selector -->
+<div class="row mb-4">
+    <div class="col-md-4">
+        <label for="guild-select" class="form-label">Select Guild</label>
+        <select class="form-select" id="guild-select" onchange="onGuildChange()">
+            <option value="">— Choose a guild —</option>
+        </select>
+    </div>
+</div>
+
+<div class="row" id="moderation-content" style="display: none;">
+    <!-- Content Filters Card -->
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-funnel"></i> Content Filters</span>
+                <span class="badge badge-hellodj" id="filter-count">0</span>
+            </div>
+            <div class="card-body">
+                <div id="filters-table-container">
+                    <p class="text-muted">Select a guild to view filters.</p>
+                </div>
+
+                <!-- Add Filter Form -->
+                <hr class="border-secondary">
+                <h6 class="text-muted mb-3"><i class="bi bi-plus-circle"></i> Add Filter</h6>
+                <form id="add-filter-form" onsubmit="addFilter(event)">
+                    <div class="row g-2">
+                        <div class="col-md-4">
+                            <select class="form-select" id="filter-type" required>
+                                <option value="artist">🎤 Artist</option>
+                                <option value="track">🎵 Track URL</option>
+                                <option value="domain">🌐 Domain</option>
+                                <option value="keyword">🔤 Keyword</option>
+                            </select>
+                        </div>
+                        <div class="col-md-5">
+                            <input type="text" class="form-control" id="filter-value"
+                                   placeholder="Value to block..." required>
+                        </div>
+                        <div class="col-md-3">
+                            <button type="submit" class="btn btn-hellodj w-100">
+                                <i class="bi bi-plus"></i> Add
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <!-- User Bans Card -->
+    <div class="col-lg-6 mb-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-person-x"></i> User Bans</span>
+                <span class="badge badge-hellodj" id="ban-count">0</span>
+            </div>
+            <div class="card-body">
+                <div id="bans-table-container">
+                    <p class="text-muted">Select a guild to view bans.</p>
+                </div>
+
+                <!-- Add Ban Form -->
+                <hr class="border-secondary">
+                <h6 class="text-muted mb-3"><i class="bi bi-plus-circle"></i> Ban User</h6>
+                <form id="add-ban-form" onsubmit="addBan(event)">
+                    <div class="row g-2">
+                        <div class="col-md-8">
+                            <input type="text" class="form-control" id="ban-user-id"
+                                   placeholder="Discord User ID (e.g. 123456789012345678)" required
+                                   pattern="\d{17,20}">
+                        </div>
+                        <div class="col-md-4">
+                            <button type="submit" class="btn btn-hellodj w-100">
+                                <i class="bi bi-hammer"></i> Ban
+                            </button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentGuildId = null;
+
+$(async function() {
+    await loadGuilds();
+});
+
+async function loadGuilds() {
+    const data = await apiFetch('/api/guilds');
+    if (!data || !data.guilds) return;
+
+    const select = $('#guild-select');
+    select.find('option:not(:first)').remove();
+
+    for (const guild of data.guilds) {
+        select.append(`<option value="${guild.id}">${escapeHtml(guild.name)} (${guild.id})</option>`);
+    }
+}
+
+function onGuildChange() {
+    const guildId = $('#guild-select').val();
+    if (!guildId) {
+        currentGuildId = null;
+        $('#moderation-content').hide();
+        return;
+    }
+    currentGuildId = guildId;
+    $('#moderation-content').show();
+    refreshFilters();
+    refreshBans();
+}
+
+// ── Content Filters ──────────────────────────────────────
+
+async function refreshFilters() {
+    if (!currentGuildId) return;
+
+    const data = await apiFetch(`/api/moderation/${currentGuildId}/filters`);
+    if (!data) return;
+
+    const rules = data.rules || [];
+    $('#filter-count').text(rules.length);
+
+    const container = $('#filters-table-container');
+
+    if (rules.length === 0) {
+        container.html('<p class="text-muted">No content filters configured for this guild.</p>');
+        return;
+    }
+
+    const typeIcons = { artist: '🎤', track: '🎵', domain: '🌐', keyword: '🔤' };
+
+    let html = `
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>Type</th>
+                        <th>Value</th>
+                        <th>Added By</th>
+                        <th>Date</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+    for (const rule of rules) {
+        const icon = typeIcons[rule.type] || '❓';
+        const value = escapeHtml(rule.value.length > 60 ? rule.value.substring(0, 57) + '...' : rule.value);
+        const addedBy = rule.added_by ? `<code>${rule.added_by}</code>` : '<span class="text-muted">—</span>';
+        const date = rule.added_at ? rule.added_at.split('T')[0] : '—';
+
+        html += `
+            <tr>
+                <td><span title="${rule.type}">${icon} ${rule.type}</span></td>
+                <td><code>${value}</code></td>
+                <td>${addedBy}</td>
+                <td><small>${date}</small></td>
+                <td>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteFilter('${rule.id}')" title="Remove filter">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            </tr>`;
+    }
+
+    html += `</tbody></table></div>`;
+    container.html(html);
+}
+
+async function addFilter(event) {
+    event.preventDefault();
+    if (!currentGuildId) return;
+
+    const type = $('#filter-type').val();
+    const value = $('#filter-value').val().trim();
+    if (!value) return;
+
+    const data = await apiFetch(`/api/moderation/${currentGuildId}/filters`, {
+        method: 'POST',
+        body: JSON.stringify({ type, value })
+    });
+
+    if (data && data.status === 'ok') {
+        showToast(`Filter added: ${type} — ${value}`, 'success');
+        $('#filter-value').val('');
+        await refreshFilters();
+    }
+}
+
+async function deleteFilter(ruleId) {
+    if (!currentGuildId) return;
+    if (!confirm('Remove this filter rule?')) return;
+
+    const data = await apiFetch(`/api/moderation/${currentGuildId}/filters/${ruleId}`, {
+        method: 'DELETE'
+    });
+
+    if (data && data.status === 'ok') {
+        showToast('Filter removed.', 'success');
+        await refreshFilters();
+    }
+}
+
+// ── User Bans ────────────────────────────────────────────
+
+async function refreshBans() {
+    if (!currentGuildId) return;
+
+    const data = await apiFetch(`/api/moderation/${currentGuildId}/bans`);
+    if (!data) return;
+
+    const bans = data.bans || [];
+    $('#ban-count').text(bans.length);
+
+    const container = $('#bans-table-container');
+
+    if (bans.length === 0) {
+        container.html('<p class="text-muted">No users are banned in this guild.</p>');
+        return;
+    }
+
+    let html = `
+        <div class="table-responsive">
+            <table class="table table-hover align-middle mb-0">
+                <thead>
+                    <tr>
+                        <th>User ID</th>
+                        <th>Username</th>
+                        <th>Date Banned</th>
+                        <th></th>
+                    </tr>
+                </thead>
+                <tbody>`;
+
+    for (const ban of bans) {
+        const userId = ban.user_id || '—';
+        const username = ban.username || '<span class="text-muted">Unknown</span>';
+        const date = ban.banned_at ? ban.banned_at.split('T')[0] : '—';
+
+        html += `
+            <tr>
+                <td><code>${userId}</code></td>
+                <td>${escapeHtml(username)}</td>
+                <td><small>${date}</small></td>
+                <td>
+                    <button class="btn btn-sm btn-outline-danger" onclick="deleteBan(${userId})" title="Remove ban">
+                        <i class="bi bi-trash"></i>
+                    </button>
+                </td>
+            </tr>`;
+    }
+
+    html += `</tbody></table></div>`;
+    container.html(html);
+}
+
+async function addBan(event) {
+    event.preventDefault();
+    if (!currentGuildId) return;
+
+    const userId = $('#ban-user-id').val().trim();
+    if (!userId) return;
+
+    const data = await apiFetch(`/api/moderation/${currentGuildId}/bans`, {
+        method: 'POST',
+        body: JSON.stringify({ user_id: parseInt(userId) })
+    });
+
+    if (data && data.status === 'ok') {
+        showToast(`User ${userId} banned.`, 'success');
+        $('#ban-user-id').val('');
+        await refreshBans();
+    }
+}
+
+async function deleteBan(userId) {
+    if (!currentGuildId) return;
+    if (!confirm(`Unban user ${userId}?`)) return;
+
+    const data = await apiFetch(`/api/moderation/${currentGuildId}/bans/${userId}`, {
+        method: 'DELETE'
+    });
+
+    if (data && data.status === 'ok') {
+        showToast('User unbanned.', 'success');
+        await refreshBans();
+    }
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}
