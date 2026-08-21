@@ -81,6 +81,7 @@ COPY bot.py metrics.py player.py oauth_store.py session.py storage.py blacklist.
 COPY cogs/ ./cogs/
 COPY voice/ ./voice/
 COPY video/ ./video/
+COPY playback/ ./playback/
 
 # Copy wake word model (optional — the artifact is a training output and may be
 # absent from the build context; it can be mounted at runtime instead).
