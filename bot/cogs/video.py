@@ -66,6 +66,7 @@ class VideoCog(commands.Cog, name="Video"):
         self._http_session: aiohttp.ClientSession | None = None
         self._now_playing_messages: dict[int, discord.Message] = {}
         self._seek_bar_tasks: dict[int, asyncio.Task] = {}
+        self._activity_urls: dict[int, str] = {}  # guild_id → Activity invite URL
 
     async def cog_load(self) -> None:
         """Probe GPU, start Activity backend, and prepare launcher on cog load."""
@@ -277,6 +278,8 @@ class VideoCog(commands.Cog, name="Video"):
         embed = _build_now_playing_embed(source, len(streamer.queue), activity_url=activity_url, elapsed_seconds=0.0)
         msg = await interaction.followup.send(embed=embed, view=VideoControlView(self), wait=True)
         self._now_playing_messages[guild_id] = msg
+        if activity_url:
+            self._activity_urls[guild_id] = activity_url
         self._start_seek_bar_update(guild_id)
 
     # ── /video stop ────────────────────────────────────────
@@ -579,6 +582,7 @@ class VideoCog(commands.Cog, name="Video"):
             self._seek_bar_tasks[guild_id].cancel()
             del self._seek_bar_tasks[guild_id]
         self._now_playing_messages.pop(guild_id, None)
+        self._activity_urls.pop(guild_id, None)
 
     async def _update_seek_bar_loop(self, guild_id: int) -> None:
         """Background loop that edits the Now Playing embed every 30s with an updated seek bar."""
@@ -610,7 +614,8 @@ class VideoCog(commands.Cog, name="Video"):
                     elapsed = duration
 
                 # Rebuild embed with updated seek bar
-                embed = _build_now_playing_embed(streamer.source, len(streamer.queue), elapsed_seconds=elapsed)
+                activity_url = self._activity_urls.get(guild_id)
+                embed = _build_now_playing_embed(streamer.source, len(streamer.queue), activity_url=activity_url, elapsed_seconds=elapsed)
 
                 try:
                     await msg.edit(embed=embed)
