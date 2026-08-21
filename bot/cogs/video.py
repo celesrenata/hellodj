@@ -22,7 +22,6 @@ import time
 
 import aiohttp
 import discord
-from discord import app_commands
 from discord.ext import commands
 
 from video import VideoSource
@@ -52,12 +51,7 @@ _GRACE_PERIOD_SECONDS: float = 30.0
 
 
 class VideoCog(commands.Cog, name="Video"):
-    """Video streaming commands — stream video to Discord via Activity."""
-
-    video_group = app_commands.Group(
-        name="video",
-        description="Stream video into the voice channel via Discord Activity",
-    )
+    """Video streaming backend — Activity-based video playback via /play mode:video|music_video."""
 
     def __init__(self, bot: commands.Bot) -> None:
         self.bot = bot
@@ -135,44 +129,12 @@ class VideoCog(commands.Cog, name="Video"):
     }
 
     async def _check_legacy_allowed(self, interaction: discord.Interaction, command_name: str) -> bool:
-        """Check if legacy /video commands are allowed.
-
-        Returns True if the command should proceed (with deprecation notice appended later).
-        Returns False if the command was rejected (already sent error message).
-        """
-        from playback.instance_config import is_legacy_video_enabled
-
-        replacement = self._LEGACY_REPLACEMENTS.get(command_name, "/play")
-
-        if not is_legacy_video_enabled():
-            # Globally disabled — reject with replacement listing
-            await interaction.response.send_message(
-                f"The `/video` commands have been removed. Use `{replacement}` instead.",
-                ephemeral=True,
-            )
-            return False
-
-        # Check guild-specific immediate migration
-        guild_id = interaction.guild_id
-        if guild_id is not None:
-            from guild_settings import get_setting
-
-            immediate_migration = get_setting(guild_id, "unified_playback_immediate", False)
-            if immediate_migration:
-                await interaction.response.send_message(
-                    f"Legacy `/video` commands are disabled for this server. "
-                    f"Use `{replacement}` instead.",
-                    ephemeral=True,
-                )
-                return False
-
-        # Transition period active — proceed with deprecation notice
+        """Legacy check — always allowed now that /video is removed."""
         return True
 
     def _deprecation_notice(self, command_name: str) -> str:
-        """Return the deprecation notice string for a given legacy command."""
-        replacement = self._LEGACY_REPLACEMENTS.get(command_name, "/play")
-        return f"\n⚠️ This command is deprecated. Use `{replacement}` instead."
+        """No-op — deprecation notices removed."""
+        return ""
 
     # ── Shared checks ──────────────────────────────────────
 
@@ -222,13 +184,8 @@ class VideoCog(commands.Cog, name="Video"):
             return user_voice.channel.id
         return None
 
-    # ── /video play ────────────────────────────────────────
+    # ── video play (internal — called by PlaybackRouter) ────
 
-    @video_group.command(name="play", description="Play a video in the voice channel Activity")
-    @app_commands.describe(
-        query="YouTube URL/search, Tidal URL, tidal:search, or direct video URL",
-        attachment="Upload a video file directly",
-    )
     async def video_play(
         self,
         interaction: discord.Interaction,
@@ -382,10 +339,8 @@ class VideoCog(commands.Cog, name="Video"):
         # Send deprecation notice
         await interaction.followup.send(self._deprecation_notice("play"), ephemeral=True)
 
-    # ── /video music_video ─────────────────────────────────
+    # ── video music_video (internal — called by PlaybackRouter) ──
 
-    @video_group.command(name="music_video", description="Play a music video from URL or search")
-    @app_commands.describe(query="YouTube/Tidal/Spotify URL or text search query")
     async def video_music_video(self, interaction: discord.Interaction, query: str) -> None:
         # Pre-checks
         voice_err = self._check_voice(interaction)
@@ -495,9 +450,8 @@ class VideoCog(commands.Cog, name="Video"):
             self._activity_urls[key] = activity_url
         self._start_seek_bar_update(key)
 
-    # ── /video stop ────────────────────────────────────────
+    # ── video stop (internal — called by PlaybackRouter) ────
 
-    @video_group.command(name="stop", description="Stop the current video and close the Activity")
     async def video_stop(self, interaction: discord.Interaction) -> None:
         # Legacy deprecation check — must be first
         if not await self._check_legacy_allowed(interaction, "stop"):
@@ -555,9 +509,8 @@ class VideoCog(commands.Cog, name="Video"):
             + self._deprecation_notice("stop")
         )
 
-    # ── /video skip ────────────────────────────────────────
+    # ── video skip (internal — called by PlaybackRouter) ────
 
-    @video_group.command(name="skip", description="Skip to the next video in the queue")
     async def video_skip(self, interaction: discord.Interaction) -> None:
         # Legacy deprecation check — must be first
         if not await self._check_legacy_allowed(interaction, "skip"):
@@ -648,9 +601,8 @@ class VideoCog(commands.Cog, name="Video"):
                 + self._deprecation_notice("skip")
             )
 
-    # ── /video previous ───────────────────────────────────
+    # ── video previous (internal — called by PlaybackRouter) ──
 
-    @video_group.command(name="previous", description="Go back to the previously played video")
     async def video_previous(self, interaction: discord.Interaction) -> None:
         # Legacy deprecation check — must be first
         if not await self._check_legacy_allowed(interaction, "previous"):
@@ -730,14 +682,12 @@ class VideoCog(commands.Cog, name="Video"):
                 + self._deprecation_notice("previous")
             )
 
-    @video_group.command(name="last", description="Go back to the previously played video (alias for /video previous)")
     async def video_last(self, interaction: discord.Interaction) -> None:
         """Alias for /video previous."""
         await self.video_previous.callback(self, interaction)
 
-    # ── /video queue ───────────────────────────────────────
+    # ── video queue (internal — called by PlaybackRouter) ──
 
-    @video_group.command(name="queue", description="Show the current video queue")
     async def video_queue(self, interaction: discord.Interaction) -> None:
         # Legacy deprecation check — must be first
         if not await self._check_legacy_allowed(interaction, "queue"):

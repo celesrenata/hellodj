@@ -121,7 +121,7 @@ class PlaybackRouter:
         interaction: discord.Interaction,
         query: str,
         *,
-        mode: Literal["auto", "audio", "video"] = "auto",
+        mode: Literal["auto", "audio", "video", "music_video"] = "auto",
         attachment: discord.Attachment | None = None,
     ) -> None:
         """Classify content → resolve or create session → enqueue/play.
@@ -130,10 +130,11 @@ class PlaybackRouter:
         1. Resolve user's voice channel (error if not in VC)
         2. Classify content type
         3. Check content filter
-        4. If audio: check channel exclusivity constraints
-        5. If session exists for same type: enqueue
-        6. If no session: create new session
-        7. If conflicting type: create new session (dual-session allowed)
+        4. If music_video: route to video cog's music_video handler
+        5. If audio: check channel exclusivity constraints
+        6. If session exists for same type: enqueue
+        7. If no session: create new session
+        8. If conflicting type: create new session (dual-session allowed)
         """
         # Ban check — must happen before ANY other logic
         guild_id = interaction.guild_id  # type: ignore[union-attr]
@@ -150,6 +151,11 @@ class PlaybackRouter:
             await interaction.response.send_message(
                 "Join a voice channel first.", ephemeral=True
             )
+            return
+
+        # music_video mode: bypass classifier, route directly to video cog
+        if mode == "music_video":
+            await self._handle_music_video_play(interaction, query, guild_id, channel_id)
             return
 
         # Classify the input
@@ -630,21 +636,39 @@ class PlaybackRouter:
         guild_id: int,
         channel_id: int,
     ) -> None:
-        """Create a new video session and begin playback.
-
-        Stub: delegates to activity_backend. Actual Activity launch
-        wired in integration task.
-        """
+        """Create a new video session — delegates to VideoCog.video_play."""
         log.info(
             "Starting video session: guild=%d channel=%d query=%r",
             guild_id,
             channel_id,
             query,
         )
-        # TODO(task-12): Create ChannelSession, register, launch Activity
-        await interaction.response.send_message(
-            f"🎬 Starting video: {query}", ephemeral=False
-        )
+
+        video_cog = interaction.client.get_cog("Video")  # type: ignore[union-attr]
+        if video_cog is None:
+            await interaction.response.send_message(
+                "❌ Video system is not available.", ephemeral=True
+            )
+            return
+
+        await video_cog.video_play(interaction, query)
+
+    async def _handle_music_video_play(
+        self,
+        interaction: discord.Interaction,
+        query: str,
+        guild_id: int,
+        channel_id: int,
+    ) -> None:
+        """Handle /play mode:music_video — delegates to VideoCog.video_music_video."""
+        video_cog = interaction.client.get_cog("Video")  # type: ignore[union-attr]
+        if video_cog is None:
+            await interaction.response.send_message(
+                "❌ Video system is not available.", ephemeral=True
+            )
+            return
+
+        await video_cog.video_music_video(interaction, query)
 
     async def _enqueue_audio(
         self,
@@ -724,17 +748,12 @@ class PlaybackRouter:
     async def _skip_video(
         self, interaction: discord.Interaction, session: ChannelSession
     ) -> None:
-        """Skip the current video.
-
-        Stub: acknowledges skip. Actual Activity skip wired in integration.
-        """
-        log.info(
-            "Skipping video: guild=%d channel=%d",
-            session.guild_id,
-            session.channel_id,
-        )
-        # TODO(task-12): Skip video via activity_backend
-        await interaction.response.send_message("⏭️ Skipped.", ephemeral=False)
+        """Skip the current video — delegates to VideoCog."""
+        video_cog = interaction.client.get_cog("Video")  # type: ignore[union-attr]
+        if video_cog is not None:
+            await video_cog.video_skip(interaction)
+        else:
+            await interaction.response.send_message("⏭️ Skipped.", ephemeral=False)
 
     async def _stop_audio(
         self, interaction: discord.Interaction, session: ChannelSession
@@ -768,18 +787,13 @@ class PlaybackRouter:
     async def _stop_video(
         self, interaction: discord.Interaction, session: ChannelSession
     ) -> None:
-        """Stop video playback and tear down the session.
-
-        Stub: unregisters session.
-        """
-        log.info(
-            "Stopping video: guild=%d channel=%d",
-            session.guild_id,
-            session.channel_id,
-        )
+        """Stop video playback — delegates to VideoCog."""
         self._registry.unregister(session.guild_id, session.channel_id)
-        # TODO(task-12): Stop activity_backend streamer
-        await interaction.response.send_message("⏹️ Stopped.", ephemeral=False)
+        video_cog = interaction.client.get_cog("Video")  # type: ignore[union-attr]
+        if video_cog is not None:
+            await video_cog.video_stop(interaction)
+        else:
+            await interaction.response.send_message("⏹️ Stopped.", ephemeral=False)
 
     async def _pause_audio(
         self, interaction: discord.Interaction, session: ChannelSession
@@ -808,17 +822,10 @@ class PlaybackRouter:
     async def _pause_video(
         self, interaction: discord.Interaction, session: ChannelSession
     ) -> None:
-        """Toggle pause on video playback.
-
-        Stub: acknowledges pause toggle.
-        """
-        log.info(
-            "Toggling pause (video): guild=%d channel=%d",
-            session.guild_id,
-            session.channel_id,
+        """Toggle pause on video — not yet supported, acknowledge."""
+        await interaction.response.send_message(
+            "⏸️ Video pause/resume is controlled via the Activity player.", ephemeral=True
         )
-        # TODO(task-12): Toggle video pause via activity_backend
-        await interaction.response.send_message("⏸️ Toggled pause.", ephemeral=False)
 
     async def _show_audio_queue(
         self, interaction: discord.Interaction, session: ChannelSession
