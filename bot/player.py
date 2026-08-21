@@ -813,9 +813,6 @@ async def enqueue_and_start(
 async def _play_next_from_queue(guild_id: int) -> None:
     state = get_state(guild_id)
     player = state.get("player")
-    if not player or not player.connected:
-        dbg.debug("play_next: no player or disconnected guild=%d", guild_id)
-        return
 
     dbg.event("play_next", guild_id=guild_id, queue_len=len(state["queue"]),
               repeat_mode=state["repeat_mode"],
@@ -828,13 +825,132 @@ async def _play_next_from_queue(guild_id: int) -> None:
         state["queue"].append(state["current"])
 
     # Pop next
-    if state["queue"]:
-        next_entry = state["queue"].pop(0)
-        state["current"] = next_entry
-        persist(guild_id)
-        await _resolve_and_play(player, guild_id, next_entry)
-    else:
+    if not state["queue"]:
         await _on_queue_empty(guild_id)
+        return
+
+    next_entry = state["queue"].pop(0)
+    state["current"] = next_entry
+    persist(guild_id)
+
+    # Check if this is a video entry — needs Activity pipeline, not Lavalink
+    if next_entry.get("type") == "music_video":
+        await _start_video_from_queue(guild_id, next_entry)
+        return
+
+    # Audio entry — needs a connected player
+    if not player or not player.connected:
+        dbg.debug("play_next: no player or disconnected guild=%d — reconnecting", guild_id)
+        vc = state.get("voice_channel")
+        if vc:
+            try:
+                player = await connect_player(vc)
+                state["player"] = player
+            except Exception as exc:
+                log.error("play_next: reconnect failed for guild=%d: %s", guild_id, exc)
+                await _on_queue_empty(guild_id)
+                return
+        else:
+            await _on_queue_empty(guild_id)
+            return
+
+    await _resolve_and_play(player, guild_id, next_entry)
+
+
+async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
+    """Start a video Activity for a queued music_video entry.
+
+    Disconnects the audio player and delegates to the VideoCog.
+    """
+    import importlib
+    state = get_state(guild_id)
+
+    # Disconnect audio player if connected
+    p = get_player(guild_id)
+    if p and p.connected:
+        log.info("_start_video_from_queue: disconnecting audio player guild=%d", guild_id)
+        try:
+            await p.disconnect()
+            state["player"] = None
+        except Exception as exc:
+            log.warning("Failed to disconnect audio before video: %s", exc)
+
+    # Get the bot and VideoCog
+    from bot import bot as _bot
+    video_cog = _bot.get_cog("Video")
+    if video_cog is None:
+        log.error("_start_video_from_queue: VideoCog not loaded, skipping video entry")
+        # Skip to next in queue
+        await _play_next_from_queue(guild_id)
+        return
+
+    # The entry should have pre-resolved source info
+    query = entry.get("query") or entry.get("title", "")
+    text_channel = state.get("text_channel")
+    voice_channel = state.get("voice_channel")
+
+    if voice_channel is None:
+        log.error("_start_video_from_queue: no voice_channel in state guild=%d", guild_id)
+        await _play_next_from_queue(guild_id)
+        return
+
+    # Use the video cog's internal resolver + Activity launch
+    log.info("_start_video_from_queue: launching music video for guild=%d query=%r", guild_id, query)
+    try:
+        from video.music_video_resolver import MusicVideoResolver
+        from video.activity_streamer import ActivityStreamer
+        from video.ws_hub import PlaybackState
+
+        resolver = MusicVideoResolver()
+        source = await resolver.resolve(query)
+
+        # Check for existing video session
+        streamer = video_cog._registry.get(guild_id, voice_channel.id)
+        if streamer is not None and streamer.is_active:
+            streamer.enqueue(source)
+            if text_channel:
+                await text_channel.send(f"📥 Added to video queue: **{source.title}**")
+            return
+
+        # Create new Activity session
+        streamer = ActivityStreamer(
+            guild_id=guild_id, channel_id=voice_channel.id,
+            ws_hub=video_cog._backend.ws_hub,
+        )
+        video_cog._registry.register(guild_id, voice_channel.id, streamer)
+
+        # Launch Activity
+        assert video_cog._launcher is not None
+        application_id = _bot.user.id
+        invite_data = await video_cog._launcher.launch(voice_channel.id, application_id)
+
+        # Start playback
+        await streamer.play(source)
+
+        import time as _time
+        video_cog._backend.ws_hub.set_state(
+            guild_id,
+            PlaybackState(playing=True, position=0.0, last_update=_time.monotonic()),
+        )
+
+        if text_channel:
+            invite_code = invite_data.get("code", "")
+            activity_url = f"https://discord.gg/{invite_code}" if invite_code else None
+            from cogs.video import _build_now_playing_embed, VideoControlView
+            embed = _build_now_playing_embed(source, len(streamer.queue), activity_url=activity_url, elapsed_seconds=0.0)
+            msg = await text_channel.send(embed=embed, view=VideoControlView(video_cog))
+            key = (guild_id, voice_channel.id)
+            video_cog._now_playing_messages[key] = msg
+            if activity_url:
+                video_cog._activity_urls[key] = activity_url
+            video_cog._start_seek_bar_update(key)
+
+    except Exception as exc:
+        log.error("_start_video_from_queue failed for guild=%d: %s", guild_id, exc, exc_info=True)
+        if text_channel:
+            await text_channel.send(f"❌ Failed to start music video: {exc}")
+        # Try next in queue
+        await _play_next_from_queue(guild_id)
 
 
 async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict) -> None:

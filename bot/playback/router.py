@@ -660,15 +660,48 @@ class PlaybackRouter:
         guild_id: int,
         channel_id: int,
     ) -> None:
-        """Handle /play mode:music_video — delegates to VideoCog.video_music_video."""
-        video_cog = interaction.client.get_cog("Video")  # type: ignore[union-attr]
-        if video_cog is None:
-            await interaction.response.send_message(
-                "❌ Video system is not available.", ephemeral=True
-            )
-            return
+        """Handle /play mode:music_video — adds video entry to unified queue.
 
-        await video_cog.video_music_video(interaction, query)
+        If nothing is playing, starts the video immediately.
+        If audio is playing, queues it and it starts when audio finishes.
+        """
+        import player
+
+        await interaction.response.defer()
+
+        state = player.get_state(guild_id)
+        voice_channel = interaction.client.get_channel(channel_id)
+
+        # Store voice/text channel for queue-driven playback
+        if voice_channel:
+            state["voice_channel"] = voice_channel
+        state["text_channel"] = interaction.channel
+
+        # Create the video queue entry
+        entry = {
+            "type": "music_video",
+            "query": query,
+            "title": f"🎬 {query}",
+        }
+
+        # If nothing is currently playing, start immediately
+        current = state.get("current")
+        p = player.get_player(guild_id)
+        is_playing = p and p.connected and (p.playing or p.paused)
+
+        if not is_playing and not current:
+            state["current"] = entry
+            player.persist(guild_id)
+            await player._start_video_from_queue(guild_id, entry)
+            await interaction.followup.send(f"🎬 Starting music video: **{query}**")
+        else:
+            # Queue it behind current track
+            state.setdefault("queue", []).append(entry)
+            player.persist(guild_id)
+            pos = len(state["queue"])
+            await interaction.followup.send(
+                f"🎬 Music video queued (position {pos}): **{query}**"
+            )
 
     async def _enqueue_audio(
         self,
