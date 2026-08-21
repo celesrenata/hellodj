@@ -35,6 +35,32 @@ body {
     position: relative;
     width: 100%;
     height: 100%;
+    display: flex;
+    flex-direction: column;
+}
+
+/* Whiteboard HUD — sits above the video as a flex row */
+.whiteboard-hud {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 12px;
+    background: var(--bg-overlay);
+    flex-shrink: 0;
+    z-index: 25;
+    pointer-events: auto;
+}
+
+.whiteboard-hud.visible {
+    display: flex;
+}
+
+/* Video container — takes remaining space */
+.video-container {
+    position: relative;
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
 }
 
 /* Full-viewport video */
@@ -305,25 +331,7 @@ body:hover {
     pointer-events: auto;
 }
 
-/* === Whiteboard HUD toolbar === */
-.whiteboard-hud {
-    position: absolute;
-    top: 8px;
-    left: 50%;
-    transform: translateX(-50%);
-    z-index: 25;
-    display: none;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 12px;
-    background: var(--bg-overlay);
-    border-radius: 8px;
-    pointer-events: auto;
-}
-
-.whiteboard-hud.visible {
-    display: flex;
-}
+/* === Whiteboard HUD toolbar (flex item styles) === */
 
 .hud-tools,
 .hud-colors,
@@ -554,66 +562,9 @@ body:hover {
     }
 }
 
-/* === Responsive: wide viewport — whiteboard HUD as left sidebar === */
+/* === Responsive: wide viewport — whiteboard HUD wraps nicely === */
 @media (min-width: 960px) {
-    /* Shift the app content to make room for the sidebar */
-    #app.whiteboard-sidebar-active {
-        margin-left: 56px;
-        width: calc(100% - 56px);
-    }
-
-    /* Transform HUD into a vertical left sidebar */
-    #app.whiteboard-sidebar-active .whiteboard-hud {
-        position: fixed;
-        top: 0;
-        left: 0;
-        bottom: 0;
-        width: 56px;
-        transform: none;
-        border-radius: 0;
-        flex-direction: column;
-        align-items: center;
-        justify-content: flex-start;
-        padding: 12px 6px;
-        gap: 6px;
-        overflow-y: auto;
-        overflow-x: hidden;
-        background: rgba(0, 0, 0, 0.9);
-    }
-
-    /* Stack tool groups vertically in sidebar mode */
-    #app.whiteboard-sidebar-active .hud-tools,
-    #app.whiteboard-sidebar-active .hud-colors,
-    #app.whiteboard-sidebar-active .hud-options,
-    #app.whiteboard-sidebar-active .hud-actions {
-        flex-direction: column;
-        gap: 4px;
-    }
-
-    /* Dividers become horizontal in vertical layout */
-    #app.whiteboard-sidebar-active .hud-divider {
-        width: 36px;
-        height: 1px;
-    }
-
-    /* Color swatches: 2-column grid in sidebar */
-    #app.whiteboard-sidebar-active .hud-colors {
-        display: grid;
-        grid-template-columns: repeat(2, 1fr);
-        gap: 4px;
-        justify-items: center;
-    }
-
-    /* Custom color input fits in the grid */
-    #app.whiteboard-sidebar-active .color-custom {
-        width: 20px;
-        height: 20px;
-    }
-
-    /* Sticker picker: position below sidebar or overlay the content area */
-    #app.whiteboard-sidebar-active .sticker-picker {
-        top: 8px;
-        left: 64px;
-        right: auto;
+    .whiteboard-hud {
+        justify-content: center;
     }
 }

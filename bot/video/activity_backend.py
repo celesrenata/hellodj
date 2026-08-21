@@ -208,6 +208,9 @@ class ActivityBackend:
         # Whiteboard module routes (ES modules served from activity/ directory)
         self.app.router.add_get("/activity/modules/{filename}", self.handle_module)
 
+        # Client-side debug logging endpoint
+        self.app.router.add_post("/activity/clientlog", self.handle_clientlog)
+
     # ------------------------------------------------------------------
     # Authentication helpers
     # ------------------------------------------------------------------
@@ -347,6 +350,17 @@ class ActivityBackend:
             file_path,
             headers={"Content-Type": "application/javascript"},
         )
+
+    async def handle_clientlog(self, request: web.Request) -> web.Response:
+        """POST /activity/clientlog → receive client-side debug logs."""
+        try:
+            data = await request.json()
+            messages = data.get("messages", [])
+            for msg in messages:
+                log.info("[CLIENT] %s", msg)
+        except Exception:
+            pass
+        return web.Response(status=204)
 
     async def handle_status(self, request: web.Request) -> web.Response:
         """GET /activity/status/{guild_id} → JSON session status."""

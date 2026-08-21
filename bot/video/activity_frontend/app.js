@@ -7,6 +7,27 @@
 import { DiscordSDK } from './discord-sdk.js';
 
 (async () => {
+  // --- Remote debug logger ---
+  const _logQueue = [];
+  const _rlog = (msg) => {
+    _logQueue.push(msg);
+    if (_logQueue.length >= 5 || !_rlog._timer) {
+      clearTimeout(_rlog._timer);
+      _rlog._timer = setTimeout(() => {
+        const msgs = _logQueue.splice(0);
+        if (msgs.length > 0) {
+          fetch('clientlog', { method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({messages: msgs}) }).catch(() => {});
+        }
+      }, 100);
+    }
+  };
+  _rlog._timer = null;
+  _rlog('app.js loaded');
+  _rlog('WhiteboardBundle exists: ' + (typeof window.WhiteboardBundle !== 'undefined'));
+  if (window.WhiteboardBundle) {
+    _rlog('WhiteboardBundle keys: ' + Object.keys(window.WhiteboardBundle).join(','));
+  }
+
   // DOM
   const videoEl = document.getElementById('player');
   const controlsOverlay = document.getElementById('controls-overlay');
@@ -389,6 +410,54 @@ import { DiscordSDK } from './discord-sdk.js';
     if (!_remoteAction) wsSend({ type: 'seek', position: newTime });
   });
 
+  // --- Keyboard shortcuts ---
+  document.addEventListener('keydown', (e) => {
+    // Don't handle keys when typing in an input
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+
+    switch (e.key) {
+      case ' ':
+      case 'k':
+        e.preventDefault();
+        btnPlayPause.click();
+        break;
+      case 'ArrowLeft':
+      case 'j':
+        e.preventDefault();
+        btnBack.click();
+        break;
+      case 'ArrowRight':
+      case 'l':
+        e.preventDefault();
+        btnForward.click();
+        break;
+      case 'ArrowUp':
+        e.preventDefault();
+        videoEl.volume = Math.min(1, videoEl.volume + 0.1);
+        volumeSlider.value = Math.round(videoEl.volume * 100);
+        _updateMuteIcon();
+        break;
+      case 'ArrowDown':
+        e.preventDefault();
+        videoEl.volume = Math.max(0, videoEl.volume - 0.1);
+        volumeSlider.value = Math.round(videoEl.volume * 100);
+        _updateMuteIcon();
+        break;
+      case 'm':
+        e.preventDefault();
+        btnMute.click();
+        break;
+      case 'f':
+        e.preventDefault();
+        if (document.fullscreenElement) {
+          document.exitFullscreen();
+        } else {
+          document.documentElement.requestFullscreen().catch(() => {});
+        }
+        break;
+    }
+  });
+
   // Time display update
   const updateTime = () => {
     const cur = videoEl.currentTime || 0;
@@ -551,9 +620,12 @@ import { DiscordSDK } from './discord-sdk.js';
   }, 10000);
 
   // --- Whiteboard Initialization ---
+  _rlog('Whiteboard init starting');
+  _rlog('WhiteboardBundle available: ' + !!window.WhiteboardBundle);
   const whiteboardCanvas = document.getElementById('whiteboard-canvas');
   const whiteboardHud = document.getElementById('whiteboard-hud');
   const btnWhiteboard = document.getElementById('btn-whiteboard');
+  _rlog('Whiteboard DOM: canvas=' + !!whiteboardCanvas + ' hud=' + !!whiteboardHud + ' btn=' + !!btnWhiteboard);
 
   if (whiteboardCanvas && whiteboardHud && btnWhiteboard) {
     const {
@@ -731,33 +803,18 @@ import { DiscordSDK } from './discord-sdk.js';
       showControls,
     });
 
-    // Sync whiteboard active state with controls passthrough + sidebar layout
-    const appEl = document.getElementById('app');
-    const useSidebar = () => window.innerWidth >= 960;
+    // Sync whiteboard active state with controls passthrough
     const origActivate = overlay.activate.bind(overlay);
     const origDeactivate = overlay.deactivate.bind(overlay);
 
     overlay.activate = () => {
       origActivate();
       controlsPassthrough.setWhiteboardActive(true);
-      if (useSidebar()) appEl.classList.add('whiteboard-sidebar-active');
     };
     overlay.deactivate = () => {
       origDeactivate();
       controlsPassthrough.setWhiteboardActive(false);
-      appEl.classList.remove('whiteboard-sidebar-active');
     };
-
-    // Handle viewport resize while whiteboard is active — toggle sidebar class
-    window.addEventListener('resize', () => {
-      if (overlay.mode === 'active') {
-        if (useSidebar()) {
-          appEl.classList.add('whiteboard-sidebar-active');
-        } else {
-          appEl.classList.remove('whiteboard-sidebar-active');
-        }
-      }
-    });
 
     // Update shape tool color when color changes
     swatches.forEach(s => s.addEventListener('click', () => shapeTool.setColor(colorPicker.getColor())));

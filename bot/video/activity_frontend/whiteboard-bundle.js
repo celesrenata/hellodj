@@ -1673,7 +1673,10 @@ function initCanvasResize(canvas, overlay) {
 
   observer.observe(parent);
 
-  overlay.resize();
+  // Initial resize after layout is complete
+  requestAnimationFrame(() => {
+    overlay.resize();
+  });
 
   return {
     disconnect() {
@@ -2029,5 +2032,7 @@ window.WhiteboardBundle = {
   ControlsPassthrough,
   initWhiteboardSync,
 };
+
+console.log('[HelloDJ] WhiteboardBundle loaded, keys:', Object.keys(window.WhiteboardBundle).length);
 
 })();
