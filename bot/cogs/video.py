@@ -174,6 +174,23 @@ class VideoCog(commands.Cog, name="Video"):
             return "Video streaming unavailable: Intel GPU device not detected."
         return None
 
+    async def _disconnect_audio_if_playing(self, guild_id: int) -> None:
+        """Disconnect the wavelink audio player if it's connected.
+
+        Called before launching an Activity so audio and video don't play simultaneously.
+        """
+        import player as _player
+        p = _player.get_player(guild_id)
+        if p and p.connected:
+            log.info("Disconnecting audio player before Activity launch: guild=%d", guild_id)
+            try:
+                if p.playing:
+                    await p.pause(True)
+                await p.disconnect()
+                _player.get_state(guild_id)["player"] = None
+            except Exception as exc:
+                log.warning("Failed to disconnect audio player: %s", exc)
+
     def _get_user_channel(self, interaction: discord.Interaction) -> int | None:
         """Extract the user's voice channel ID from an interaction.
 
@@ -288,6 +305,7 @@ class VideoCog(commands.Cog, name="Video"):
             return
 
         # No active session — create streamer, launch Activity, start playback
+        await self._disconnect_audio_if_playing(guild_id)
         streamer = ActivityStreamer(guild_id=guild_id, channel_id=voice_channel.id, ws_hub=self._backend.ws_hub)
         self._registry.register(guild_id, voice_channel.id, streamer)
 
@@ -390,6 +408,7 @@ class VideoCog(commands.Cog, name="Video"):
             return
 
         # No active session — create streamer, launch Activity, start playback
+        await self._disconnect_audio_if_playing(guild_id)
         streamer = ActivityStreamer(guild_id=guild_id, channel_id=voice_channel.id, ws_hub=self._backend.ws_hub)
         self._registry.register(guild_id, voice_channel.id, streamer)
 
