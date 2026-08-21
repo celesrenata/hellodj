@@ -37,7 +37,16 @@ _FRONTEND_DIR = Path(__file__).parent / "activity_frontend"
 _MODULES_DIR = Path(__file__).parent / "activity"
 
 # Allowed static filenames to prevent path traversal
-_ALLOWED_STATIC_FILES = {"app.js", "style.css", "discord-sdk.js", "hls.min.js", "countdown.mp4"}
+_ALLOWED_STATIC_FILES = {
+    "app.js", "style.css", "discord-sdk.js", "hls.min.js", "countdown.mp4",
+    # Whiteboard modules
+    "canvas_resize.js", "color_picker.js", "controls_passthrough.js",
+    "coords.js", "eraser_tool.js", "hittest.js", "line_tool.js",
+    "pen_tool.js", "renderer.js", "reset.js", "shape_tool.js",
+    "sticker_picker.js", "sticker_tool.js", "text_bg_toggle.js",
+    "text_tool.js", "tools.js", "undo_restore.js", "undo.js",
+    "whiteboard.js", "ws_whiteboard.js",
+}
 
 # Allowed whiteboard module filenames
 _ALLOWED_MODULE_FILES = {
