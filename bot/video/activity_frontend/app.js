@@ -345,15 +345,29 @@ import { DiscordSDK } from './discord-sdk.js';
     });
 
     hls.on(Hls.Events.ERROR, (_ev, data) => {
+      if (data.details === 'bufferStalledError') {
+        // Buffer stall — try to recover by nudging forward
+        _rlog('HLS buffer stalled, attempting recovery');
+        hls.recoverMediaError();
+        return;
+      }
       if (!data.fatal) return;
       if (data.type === Hls.ErrorTypes.MEDIA_ERROR) { hls.recoverMediaError(); return; }
+      if (data.type === Hls.ErrorTypes.NETWORK_ERROR) {
+        // Network error during playback — attempt recovery
+        _rlog('HLS network error, retrying: ' + data.details);
+        hls.startLoad();
+        return;
+      }
       showError(`Stream error: ${data.details}`);
     });
 
-    // Handle end of VOD — stop playback, don't loop
+    // Handle end of VOD — poll immediately for next video
     videoEl.addEventListener('ended', () => {
-      if (hls) { hls.stopLoad(); }
+      _rlog('Video ended, checking for next session');
       videoEl.pause();
+      // Immediately poll for session change instead of waiting 10s
+      _checkForNextSession();
     });
   };
 
@@ -567,17 +581,21 @@ import { DiscordSDK } from './discord-sdk.js';
   }
 
   if (status.state === 'streaming' && status.playlist_url) {
-    // Stream is ready — play countdown first, then switch to HLS
-    videoEl.src = 'static/countdown.mp4';
-    videoEl.play().catch(() => {});
+    const playlistUrl = `stream/${guildId}/playlist.m3u8?token=${encodeURIComponent(instanceId)}`;
 
-    videoEl.addEventListener('ended', () => {
-      // Countdown finished — switch to HLS stream
-      // Use absolute URL to bypass Discord's proxy for segment delivery
-      videoEl.removeAttribute('src'); videoEl.muted = false;
-      const playlistUrl = `stream/${guildId}/playlist.m3u8?token=${encodeURIComponent(instanceId)}`;
+    // Late joiner: if stream already has elapsed time, skip countdown and go directly to HLS
+    if (status.elapsed_seconds > 5) {
       initHls(playlistUrl);
-    }, { once: true });
+    } else {
+      // First viewer or stream just started — show countdown, then switch to HLS
+      videoEl.src = 'static/countdown.mp4';
+      videoEl.play().catch(() => {});
+
+      videoEl.addEventListener('ended', () => {
+        videoEl.removeAttribute('src'); videoEl.muted = false;
+        initHls(playlistUrl);
+      }, { once: true });
+    }
   } else if (status.state === 'buffering') {
     // Still transcoding — show countdown, then poll until streaming
     titleBar.textContent = `${status.video_title || 'Loading...'} — Preparing stream...`;
@@ -610,7 +628,8 @@ import { DiscordSDK } from './discord-sdk.js';
 
   // --- Poll for changes ---
   let currentSessionId = status.session_id;
-  setInterval(async () => {
+
+  const _checkForNextSession = async () => {
     const updated = await fetchStatus();
     if (!updated) return;
     const formattedTitle = formatTitle(updated.video_title, updated.uploader);
@@ -626,8 +645,13 @@ import { DiscordSDK } from './discord-sdk.js';
         const playlistUrl = `stream/${guildId}/playlist.m3u8?token=${encodeURIComponent(instanceId)}`;
         initHls(playlistUrl);
       }
+    } else if (updated.state === 'idle' || !updated.session_id) {
+      // Session ended with no next video
+      showError('Playback complete — queue is empty.');
     }
-  }, 10000);
+  };
+
+  setInterval(_checkForNextSession, 10000);
 
   // --- Whiteboard Initialization ---
   _rlog('Whiteboard init starting');
