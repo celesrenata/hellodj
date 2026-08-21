@@ -45,6 +45,7 @@ class PlaybackCog(commands.Cog, name="Playback"):
         mode="Force playback type (default: auto-detect)",
         attachment="Upload a video file to play",
     )
+    @app_commands.rename(mode="type")
     async def play(
         self,
         interaction: discord.Interaction,
