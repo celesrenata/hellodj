@@ -629,8 +629,19 @@ async def setup_hook():
         log.info("HelloDJ slash commands synced.")
     except discord.HTTPException as _sync_exc:
         if _sync_exc.code == 50240:
-            # Activity Entry Point command conflict — sync without removing it
-            log.warning("tree.sync blocked by Entry Point command (50240), skipping bulk sync")
+            # Activity Entry Point command conflict — global sync can't overwrite it.
+            # Sync per-guild instead so commands still register.
+            log.warning(
+                "tree.sync blocked by Entry Point command (50240) — "
+                "syncing per-guild instead"
+            )
+            for guild in bot.guilds:
+                try:
+                    bot.tree.copy_global_to(guild=guild)
+                    await bot.tree.sync(guild=guild)
+                except Exception as _g_exc:
+                    log.debug("Guild sync failed for %s: %s", guild.id, _g_exc)
+            log.info("Per-guild command sync complete.")
         else:
             raise
 
