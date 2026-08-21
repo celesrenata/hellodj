@@ -552,3 +552,67 @@ body:hover {
         padding: 3px 5px;
     }
 }
+
+/* === Responsive: wide viewport — whiteboard HUD as left sidebar === */
+@media (min-width: 960px) {
+    /* Shift the app content to make room for the sidebar */
+    #app.whiteboard-sidebar-active {
+        margin-left: 56px;
+        width: calc(100% - 56px);
+    }
+
+    /* Transform HUD into a vertical left sidebar */
+    #app.whiteboard-sidebar-active .whiteboard-hud {
+        position: fixed;
+        top: 0;
+        left: 0;
+        bottom: 0;
+        width: 56px;
+        transform: none;
+        border-radius: 0;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        padding: 12px 6px;
+        gap: 6px;
+        overflow-y: auto;
+        overflow-x: hidden;
+        background: rgba(0, 0, 0, 0.9);
+    }
+
+    /* Stack tool groups vertically in sidebar mode */
+    #app.whiteboard-sidebar-active .hud-tools,
+    #app.whiteboard-sidebar-active .hud-colors,
+    #app.whiteboard-sidebar-active .hud-options,
+    #app.whiteboard-sidebar-active .hud-actions {
+        flex-direction: column;
+        gap: 4px;
+    }
+
+    /* Dividers become horizontal in vertical layout */
+    #app.whiteboard-sidebar-active .hud-divider {
+        width: 36px;
+        height: 1px;
+    }
+
+    /* Color swatches: 2-column grid in sidebar */
+    #app.whiteboard-sidebar-active .hud-colors {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 4px;
+        justify-items: center;
+    }
+
+    /* Custom color input fits in the grid */
+    #app.whiteboard-sidebar-active .color-custom {
+        width: 20px;
+        height: 20px;
+    }
+
+    /* Sticker picker: position below sidebar or overlay the content area */
+    #app.whiteboard-sidebar-active .sticker-picker {
+        top: 8px;
+        left: 64px;
+        right: auto;
+    }
+}

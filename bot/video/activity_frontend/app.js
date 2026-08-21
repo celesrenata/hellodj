@@ -5,6 +5,22 @@
  * scrubber with drag-to-seek, WebSocket sync, and auto-hiding UI.
  */
 import { DiscordSDK } from './discord-sdk.js';
+import { WhiteboardOverlay } from '../modules/whiteboard.js';
+import { ToolManager } from '../modules/tools.js';
+import { PenTool } from '../modules/pen_tool.js';
+import { LineTool } from '../modules/line_tool.js';
+import { ShapeTool } from '../modules/shape_tool.js';
+import { TextTool } from '../modules/text_tool.js';
+import { EraserTool } from '../modules/eraser_tool.js';
+import { StickerTool } from '../modules/sticker_tool.js';
+import { StickerPicker } from '../modules/sticker_picker.js';
+import { ColorPicker } from '../modules/color_picker.js';
+import { initUndo } from '../modules/undo.js';
+import { initReset } from '../modules/reset.js';
+import { initTextBgToggle, getTextBg } from '../modules/text_bg_toggle.js';
+import { initCanvasResize } from '../modules/canvas_resize.js';
+import { ControlsPassthrough } from '../modules/controls_passthrough.js';
+import { initWhiteboardSync } from '../modules/ws_whiteboard.js';
 
 (async () => {
   // DOM
@@ -104,6 +120,7 @@ import { DiscordSDK } from './discord-sdk.js';
   let _remoteAction = false;  // Flag to prevent echo loops
   let _wsReconnectTimer = null;
   let _wsIntentionalClose = false;
+  let _whiteboardSync = null; // Whiteboard WebSocket sync handler
 
   const wsSend = (msg) => {
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -157,6 +174,11 @@ import { DiscordSDK } from './discord-sdk.js';
 
   const handleWsMessage = (data) => {
     const { type } = data;
+
+    // Forward whiteboard-related messages to whiteboard sync handler
+    if (_whiteboardSync && _whiteboardSync.handleMessage(data)) {
+      return;
+    }
 
     switch (type) {
       case 'play':
@@ -545,4 +567,212 @@ import { DiscordSDK } from './discord-sdk.js';
       }
     }
   }, 10000);
+
+  // --- Whiteboard Initialization ---
+  const whiteboardCanvas = document.getElementById('whiteboard-canvas');
+  const whiteboardHud = document.getElementById('whiteboard-hud');
+  const btnWhiteboard = document.getElementById('btn-whiteboard');
+
+  if (whiteboardCanvas && whiteboardHud && btnWhiteboard) {
+    // Use instanceId as a unique viewer identifier (it's per-user per-session)
+    const localAuthorId = instanceId || crypto.randomUUID();
+
+    // Create WhiteboardOverlay
+    const overlay = new WhiteboardOverlay({
+      canvas: whiteboardCanvas,
+      hud: whiteboardHud,
+      toggleButton: btnWhiteboard,
+      localAuthorId,
+    });
+
+    // Initialize WebSocket sync for whiteboard
+    _whiteboardSync = initWhiteboardSync(wsSend, overlay);
+
+    // Initialize text background toggle
+    initTextBgToggle(document.getElementById('text-bg-toggle'));
+
+    // Initialize ColorPicker
+    const swatches = document.querySelectorAll('.color-swatch');
+    const customColorInput = document.getElementById('color-custom');
+    const colorPicker = new ColorPicker({ swatches, customInput: customColorInput });
+
+    // Initialize StickerPicker
+    const stickerPickerContainer = document.getElementById('sticker-picker');
+    const stickerPicker = new StickerPicker({
+      container: stickerPickerContainer,
+      onSelect: () => {}, // Will be overridden by StickerTool
+    });
+
+    // Initialize ToolManager
+    const toolManager = new ToolManager(whiteboardCanvas);
+
+    // Config helpers for tools
+    const getCanvas = () => whiteboardCanvas;
+    const getColor = () => colorPicker.getColor();
+
+    // Register tools
+    const penTool = new PenTool({ getCanvas, getColor });
+    const lineTool = new LineTool({ getCanvas, getColor });
+    const shapeTool = new ShapeTool();
+    const textTool = new TextTool({
+      getCanvasSize: () => ({ width: whiteboardCanvas.width, height: whiteboardCanvas.height }),
+      getColor,
+      getTextBg,
+      getContainer: () => document.getElementById('app'),
+      requestRedraw: () => overlay.redraw(),
+      onStrokeFinalized: (stroke) => {
+        stroke.author = localAuthorId;
+        overlay.addStroke(stroke);
+        _whiteboardSync.sendStrokeAdd(stroke);
+        undoHandler.updateButtonState();
+      },
+    });
+    const eraserTool = new EraserTool({
+      getStrokes: () => Array.from(overlay.strokes.values()),
+      getCanvas,
+      onErase: (strokeId) => {
+        overlay.removeStroke(strokeId);
+        _whiteboardSync.sendStrokeRemove(strokeId);
+        undoHandler.updateButtonState();
+      },
+    });
+    const stickerTool = new StickerTool({
+      getCanvas,
+      getColor,
+      stickerPicker,
+    });
+
+    toolManager.registerTool(penTool);
+    toolManager.registerTool(lineTool);
+    toolManager.registerTool(shapeTool);
+    toolManager.registerTool(textTool);
+    toolManager.registerTool(eraserTool);
+    toolManager.registerTool(stickerTool);
+
+    // Default tool: pen
+    toolManager.selectTool('pen');
+
+    // Wire HUD tool buttons
+    document.querySelectorAll('.hud-tools .hud-btn[data-tool]').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        const toolName = btn.dataset.tool;
+        toolManager.selectTool(toolName);
+        // Update active state on buttons
+        document.querySelectorAll('.hud-tools .hud-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        // Update shape tool color when selected
+        if (toolName === 'shape') {
+          shapeTool.setColor(colorPicker.getColor());
+        }
+      });
+    });
+    // Set initial active state on pen button
+    document.querySelector('.hud-btn[data-tool="pen"]')?.classList.add('active');
+
+    // Wire canvas pointer events to active tool
+    whiteboardCanvas.addEventListener('pointerdown', (e) => {
+      if (overlay.mode !== 'active') return;
+      const tool = toolManager.getActiveTool();
+      if (tool) tool.onPointerDown(e);
+    });
+
+    whiteboardCanvas.addEventListener('pointermove', (e) => {
+      if (overlay.mode !== 'active') return;
+      const tool = toolManager.getActiveTool();
+      if (tool) {
+        tool.onPointerMove(e);
+        // Re-render preview on top of existing strokes
+        overlay.redraw();
+        tool.renderPreview(overlay.ctx);
+      }
+    });
+
+    whiteboardCanvas.addEventListener('pointerup', (e) => {
+      if (overlay.mode !== 'active') return;
+      const tool = toolManager.getActiveTool();
+      if (tool) {
+        const stroke = tool.onPointerUp(e);
+        if (stroke) {
+          stroke.author = localAuthorId;
+          overlay.addStroke(stroke);
+          _whiteboardSync.sendStrokeAdd(stroke);
+          undoHandler.updateButtonState();
+        }
+        overlay.redraw(); // Clear preview
+      }
+    });
+
+    whiteboardCanvas.addEventListener('pointerleave', (e) => {
+      if (overlay.mode !== 'active') return;
+      const tool = toolManager.getActiveTool();
+      // PenTool and LineTool support onPointerLeave for finalizing at canvas boundary
+      if (tool && typeof tool.onPointerLeave === 'function') {
+        const stroke = tool.onPointerLeave(e);
+        if (stroke) {
+          stroke.author = localAuthorId;
+          overlay.addStroke(stroke);
+          _whiteboardSync.sendStrokeAdd(stroke);
+          undoHandler.updateButtonState();
+        }
+        overlay.redraw();
+      }
+    });
+
+    // Initialize undo button
+    const undoHandler = initUndo(
+      document.getElementById('btn-undo'),
+      overlay,
+      (strokeId) => _whiteboardSync.sendStrokeRemove(strokeId)
+    );
+
+    // Initialize reset button
+    initReset(
+      document.getElementById('btn-reset'),
+      overlay,
+      () => _whiteboardSync.sendWhiteboardReset()
+    );
+
+    // Initialize canvas resize handling
+    initCanvasResize(whiteboardCanvas, overlay);
+
+    // Initialize controls passthrough
+    const controlsPassthrough = new ControlsPassthrough({
+      canvas: whiteboardCanvas,
+      controlsOverlay,
+      bottomControls: document.querySelector('.bottom-controls'),
+      showControls,
+    });
+
+    // Sync whiteboard active state with controls passthrough + sidebar layout
+    const appEl = document.getElementById('app');
+    const useSidebar = () => window.innerWidth >= 960;
+    const origActivate = overlay.activate.bind(overlay);
+    const origDeactivate = overlay.deactivate.bind(overlay);
+
+    overlay.activate = () => {
+      origActivate();
+      controlsPassthrough.setWhiteboardActive(true);
+      if (useSidebar()) appEl.classList.add('whiteboard-sidebar-active');
+    };
+    overlay.deactivate = () => {
+      origDeactivate();
+      controlsPassthrough.setWhiteboardActive(false);
+      appEl.classList.remove('whiteboard-sidebar-active');
+    };
+
+    // Handle viewport resize while whiteboard is active — toggle sidebar class
+    window.addEventListener('resize', () => {
+      if (overlay.mode === 'active') {
+        if (useSidebar()) {
+          appEl.classList.add('whiteboard-sidebar-active');
+        } else {
+          appEl.classList.remove('whiteboard-sidebar-active');
+        }
+      }
+    });
+
+    // Update shape tool color when color changes
+    swatches.forEach(s => s.addEventListener('click', () => shapeTool.setColor(colorPicker.getColor())));
+    if (customColorInput) customColorInput.addEventListener('input', () => shapeTool.setColor(colorPicker.getColor()));
+  }
 })();

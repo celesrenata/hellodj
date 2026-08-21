@@ -33,8 +33,21 @@ log = logging.getLogger(__name__)
 # Directory containing the static Activity frontend files
 _FRONTEND_DIR = Path(__file__).parent / "activity_frontend"
 
+# Directory containing whiteboard JS modules (ES modules served at /activity/modules/)
+_MODULES_DIR = Path(__file__).parent / "activity"
+
 # Allowed static filenames to prevent path traversal
 _ALLOWED_STATIC_FILES = {"app.js", "style.css", "discord-sdk.js", "hls.min.js", "countdown.mp4"}
+
+# Allowed whiteboard module filenames
+_ALLOWED_MODULE_FILES = {
+    "canvas_resize.js", "color_picker.js", "controls_passthrough.js",
+    "coords.js", "eraser_tool.js", "hittest.js", "line_tool.js",
+    "pen_tool.js", "renderer.js", "reset.js", "shape_tool.js",
+    "sticker_picker.js", "sticker_tool.js", "text_bg_toggle.js",
+    "text_tool.js", "tools.js", "undo_restore.js", "undo.js",
+    "whiteboard.js", "ws_whiteboard.js",
+}
 
 
 class ActivityBackend:
@@ -182,6 +195,9 @@ class ActivityBackend:
             "/activity/stickers/{category}/{filename}", handle_sticker_image
         )
 
+        # Whiteboard module routes (ES modules served from activity/ directory)
+        self.app.router.add_get("/activity/modules/{filename}", self.handle_module)
+
     # ------------------------------------------------------------------
     # Authentication helpers
     # ------------------------------------------------------------------
@@ -304,6 +320,23 @@ class ActivityBackend:
                       "video/mp4" if filename.endswith(".mp4") else \
                       "application/octet-stream"
         return web.FileResponse(file_path, headers={"Content-Type": content_type})
+
+    async def handle_module(self, request: web.Request) -> web.Response:
+        """GET /activity/modules/{filename} → serve whiteboard ES module files."""
+        filename = request.match_info["filename"]
+
+        # Restrict to allowed module filenames
+        if filename not in _ALLOWED_MODULE_FILES:
+            return self._json_error(404, "Module not found")
+
+        file_path = _MODULES_DIR / filename
+        if not file_path.is_file():
+            return self._json_error(404, "Module not found")
+
+        return web.FileResponse(
+            file_path,
+            headers={"Content-Type": "application/javascript"},
+        )
 
     async def handle_status(self, request: web.Request) -> web.Response:
         """GET /activity/status/{guild_id} → JSON session status."""
