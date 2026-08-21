@@ -57,7 +57,8 @@ class ActivityStreamer:
     """
 
     def __init__(
-        self, guild_id: int, channel_id: int, *, ws_hub: WebSocketHub | None = None
+        self, guild_id: int, channel_id: int, *, ws_hub: WebSocketHub | None = None,
+        on_session_end=None,
     ) -> None:
         self.guild_id: int = guild_id
         self.channel_id: int = channel_id
@@ -70,6 +71,7 @@ class ActivityStreamer:
         self.start_time: float = 0.0
         self.max_queue_size: int = _MAX_QUEUE_SIZE
         self._ws_hub: WebSocketHub | None = ws_hub
+        self._on_session_end = on_session_end
 
         # Background tasks
         self._advance_task: asyncio.Task[None] | None = None
@@ -641,6 +643,13 @@ class ActivityStreamer:
                 self.guild_id,
             )
             await self.stop()
+
+            # Notify the unified queue that the video session ended
+            if self._on_session_end:
+                try:
+                    await self._on_session_end(self.guild_id)
+                except Exception as exc:
+                    log.warning("on_session_end callback failed: %s", exc)
 
     async def _max_duration_timer(self) -> None:
         """Enforce the maximum session duration of 8 hours.

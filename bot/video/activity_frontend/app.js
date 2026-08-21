@@ -429,15 +429,11 @@ import { DiscordSDK } from './discord-sdk.js';
   });
 
   btnBack.addEventListener('click', () => {
-    const newTime = Math.max(0, videoEl.currentTime - 10);
-    videoEl.currentTime = newTime;
-    if (!_remoteAction) wsSend({ type: 'seek', position: newTime });
+    wsSend({ type: 'previous' });
   });
 
   btnForward.addEventListener('click', () => {
-    const newTime = Math.min(videoEl.duration || 0, videoEl.currentTime + 10);
-    videoEl.currentTime = newTime;
-    if (!_remoteAction) wsSend({ type: 'seek', position: newTime });
+    wsSend({ type: 'skip' });
   });
 
   // --- Keyboard shortcuts ---

@@ -939,6 +939,7 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
         streamer = ActivityStreamer(
             guild_id=guild_id, channel_id=voice_channel.id,
             ws_hub=video_cog._backend.ws_hub,
+            on_session_end=_on_video_session_end,
         )
         video_cog._registry.register(guild_id, voice_channel.id, streamer)
 
@@ -973,6 +974,18 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
         if text_channel:
             await text_channel.send(f"❌ Failed to start music video: {exc}")
         # Try next in queue
+        await _play_next_from_queue(guild_id)
+
+
+async def _on_video_session_end(guild_id: int) -> None:
+    """Callback fired when a video Activity session ends (queue empty).
+
+    Advances the unified player queue so audio tracks resume after video.
+    """
+    log.info("_on_video_session_end: video finished, checking unified queue guild=%d", guild_id)
+    state = get_state(guild_id)
+    state["current"] = None  # Clear the video entry from current
+    if state["queue"]:
         await _play_next_from_queue(guild_id)
 
 
