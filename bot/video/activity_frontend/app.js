@@ -183,7 +183,11 @@ import { initWhiteboardSync } from './ws_whiteboard.js';
     switch (type) {
       case 'play':
         _remoteAction = true;
-        videoEl.play().catch(() => {});
+        {
+          const wasMuted = videoEl.muted;
+          videoEl.play().catch(() => {});
+          videoEl.muted = wasMuted;
+        }
         if (data.position != null) videoEl.currentTime = data.position;
         _remoteAction = false;
         break;
@@ -202,13 +206,18 @@ import { initWhiteboardSync } from './ws_whiteboard.js';
         break;
 
       case 'state':
-        // Late-joiner sync: apply full state
+        // Late-joiner sync: apply full state (preserve muted state)
         _remoteAction = true;
-        if (data.position != null) videoEl.currentTime = data.position;
-        if (data.playing) {
-          videoEl.play().catch(() => {});
-        } else {
-          videoEl.pause();
+        {
+          const wasMuted = videoEl.muted;
+          if (data.position != null) videoEl.currentTime = data.position;
+          if (data.playing) {
+            videoEl.play().catch(() => {});
+          } else {
+            videoEl.pause();
+          }
+          // Restore muted state — don't let play() unmute
+          videoEl.muted = wasMuted;
         }
         // Apply subtitle if set for everyone
         if (data.subtitle_lang) {

@@ -113,7 +113,7 @@ export function initWhiteboardSync(wsSend, overlay) {
 
       case 'state':
         _handleState(data);
-        return true;
+        return false;  // Allow main handler to also process playback state
 
       case 'error':
         _handleError(data);
