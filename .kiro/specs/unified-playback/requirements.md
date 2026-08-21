@@ -18,6 +18,9 @@ The Unified Playback feature consolidates both systems under a single command na
 - **Bot_Instance**: A single Discord bot application with its own token and application ID, capable of joining one voice channel per guild.
 - **Guild_State**: The per-guild state dictionary tracking queue, current track, player reference, and playback metadata.
 - **Composite_Key**: A tuple of (guild_id, channel_id) used to uniquely identify a playback session within a specific channel.
+- **Content_Filter**: A rule that blocks playback of content matching specific criteria (artist name, track URL, URL domain pattern, keyword). Scoped per-guild.
+- **User_Ban**: A per-guild restriction preventing a specific Discord user from interacting with the bot's playback commands.
+- **Admin_Panel**: The `/hellodj` slash command group providing all administrative and moderation subcommands in a single tree.
 
 ## Requirements
 
@@ -157,3 +160,56 @@ The Unified Playback feature consolidates both systems under a single command na
 5. WHEN the session persistence layer loads session data and encounters entries keyed by guild_id only (legacy format without channel_id), THE session persistence layer SHALL migrate those entries to Composite_Key format using the voice_channel_id stored within the session record as the channel_id component.
 6. IF restoration of a Lavalink_Backend session fails (voice channel unavailable, bot lacks permission to join, or track resolution fails), THEN THE session persistence layer SHALL mark the session as suspended rather than discard it, and SHALL log the failure reason.
 7. IF a legacy session record lacks a stored voice_channel_id, THEN THE session persistence layer SHALL skip migration for that entry and log a warning rather than crash or discard other valid sessions.
+
+### Requirement 11: Unified Admin Command Group
+
+**User Story:** As a server moderator, I want all admin and moderation commands under a single `/hellodj` group, so that I can manage the bot without remembering scattered commands.
+
+#### Acceptance Criteria
+
+1. THE bot SHALL register a `/hellodj` command group containing subcommands for: settings, ping, block, unblock, ban, unban, instances, and status.
+2. WHEN a user invokes `/hellodj ping`, THE bot SHALL respond with latency, Lavalink connection status, and instance health summary.
+3. WHEN a user invokes `/hellodj settings`, THE bot SHALL display the current guild configuration (source provider, repeat mode, sleep timeout, legacy video enabled, content filter count) with edit options.
+4. WHEN a user invokes `/hellodj status`, THE bot SHALL display active sessions in this guild (which channels, which instances, audio/video type, queue lengths).
+5. ALL `/hellodj` subcommands except `ping` and `status` SHALL require the invoking user to have Manage Guild permission or be a registered bot admin.
+6. THE existing scattered admin commands (`/restart`, `/kill`, `/revoke`, `/restrict`, `/allow`, `/restrict_mode`, `/activate`, `/blacklist reload`) SHALL be consolidated under `/hellodj` subgroups or removed after migration.
+
+### Requirement 12: Content Filtering (Block/Unblock)
+
+**User Story:** As a server moderator, I want to block specific content (artists, tracks, domains, keywords) from being played in my guild, so that I can moderate what members listen to.
+
+#### Acceptance Criteria
+
+1. WHEN a moderator invokes `/hellodj block artist <name>`, THE Content_Filter SHALL prevent any track whose author field matches the given name (case-insensitive) from playing in this guild.
+2. WHEN a moderator invokes `/hellodj block track <url>`, THE Content_Filter SHALL prevent the specific track URL from playing in this guild.
+3. WHEN a moderator invokes `/hellodj block domain <pattern>`, THE Content_Filter SHALL prevent any content from URLs matching the domain pattern (e.g., "*.example.com") from playing in this guild.
+4. WHEN a moderator invokes `/hellodj block keyword <word>`, THE Content_Filter SHALL prevent any track whose title contains the keyword (case-insensitive) from playing in this guild.
+5. WHEN a moderator invokes `/hellodj unblock` with the same parameters, THE Content_Filter SHALL remove the matching rule.
+6. WHEN a user attempts to play content that matches a Content_Filter rule, THE Playback_Router SHALL reject the request with an ephemeral message indicating the content is blocked in this guild.
+7. THE Content_Filter SHALL store rules per-guild in the encrypted credential store or a dedicated JSON file on the data PVC.
+8. WHEN a moderator invokes `/hellodj block list`, THE bot SHALL display all active filter rules for this guild with type, pattern, and who added them.
+
+### Requirement 13: User Moderation (Ban/Unban)
+
+**User Story:** As a server moderator, I want to ban specific users from using the bot's playback features, so that I can prevent abuse without kicking them from the server.
+
+#### Acceptance Criteria
+
+1. WHEN a moderator invokes `/hellodj ban <user>`, THE bot SHALL prevent the specified user from invoking any playback command (play, skip, stop, pause, queue, clear) in this guild.
+2. WHEN a banned user attempts any playback command, THE Playback_Router SHALL respond with an ephemeral message indicating they are restricted from using the bot.
+3. WHEN a moderator invokes `/hellodj unban <user>`, THE bot SHALL restore the specified user's ability to use playback commands.
+4. WHEN a moderator invokes `/hellodj ban list`, THE bot SHALL display all currently banned users in this guild.
+5. THE User_Ban list SHALL persist across bot restarts using the existing per-guild blacklist storage (data/blacklist.json or credential store).
+
+### Requirement 14: Content Moderation Web UI
+
+**User Story:** As a server owner using the web dashboard, I want to manage content filters and user bans visually, so that I don't have to use Discord commands for bulk moderation.
+
+#### Acceptance Criteria
+
+1. THE web UI SHALL include a "Moderation" page accessible from the main navigation, showing content filters and banned users for the selected guild.
+2. THE Moderation page SHALL allow adding content filter rules (artist, track URL, domain pattern, keyword) via form inputs with a type dropdown.
+3. THE Moderation page SHALL allow removing content filter rules individually via a delete button per rule.
+4. THE Moderation page SHALL allow adding and removing user bans by Discord user ID or username.
+5. THE Moderation page SHALL display the current filter rules in a searchable/filterable table showing: type, pattern/value, added by, and date added.
+6. THE web UI API SHALL expose endpoints: `GET /api/moderation/<guild_id>/filters`, `POST /api/moderation/<guild_id>/filters`, `DELETE /api/moderation/<guild_id>/filters/<rule_id>`, `GET /api/moderation/<guild_id>/bans`, `POST /api/moderation/<guild_id>/bans`, `DELETE /api/moderation/<guild_id>/bans/<user_id>`.
