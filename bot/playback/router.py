@@ -501,47 +501,6 @@ class PlaybackRouter:
         If a video session is active, the track is queued to the unified
         queue instead of starting a new audio session.
         """
-        # If a video is playing, just queue the audio track — don't start a session.
-        # Delegate to the Music cog's search+enqueue without connecting to voice.
-        from player import _is_video_active
-        if _is_video_active(guild_id):
-            music_cog = interaction.client.get_cog("Music")  # type: ignore[union-attr]
-            if music_cog is not None:
-                # Use the music cog's flow but it will be blocked from playing
-                # by the _is_video_active guard in enqueue_and_start/add_track.
-                # We still need to resolve the track properly.
-                await interaction.response.defer()
-                try:
-                    import player
-                    from wavelink import Playable, TrackSource
-                    state = player.get_state(guild_id)
-                    sp = state.get("source_provider", "youtube")
-                    source_map = {"youtube": TrackSource.YouTube, "youtube_music": TrackSource.YouTubeMusic,
-                                  "soundcloud": TrackSource.SoundCloud, "spotify": "spsearch", "tidal": "tidal"}
-                    source = source_map.get(sp, TrackSource.YouTube)
-                    tracks = await Playable.search(query, source=source)
-                    if not tracks:
-                        tracks = await Playable.search(query, source=TrackSource.YouTube)
-                    if tracks:
-                        track = tracks[0] if isinstance(tracks, list) else tracks
-                        entry = {"title": track.title, "author": getattr(track, "author", ""),
-                                 "url": getattr(track, "uri", ""), "webpage_url": getattr(track, "uri", ""),
-                                 "duration": getattr(track, "length", 0)}
-                        state["queue"].append(entry)
-                        player.persist(guild_id)
-                        pos = len(state["queue"])
-                        await interaction.followup.send(
-                            f"🎵 Queued (position {pos}): **{track.title}** — will play after video ends."
-                        )
-                    else:
-                        await interaction.followup.send(f"❌ No results found for: {query}", ephemeral=True)
-                except Exception as exc:
-                    log.warning("Video-active audio queue failed: %s", exc)
-                    await interaction.followup.send(f"❌ Failed to queue: {exc}", ephemeral=True)
-            else:
-                await interaction.response.send_message("❌ Music system not available.", ephemeral=True)
-            return
-
         # Check for existing audio sessions in this guild
         audio_sessions = self._registry.get_audio_sessions(guild_id)
 

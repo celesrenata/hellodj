@@ -843,12 +843,26 @@ class Music(commands.Cog):
         return tracks
 
     async def _ensure_player(self, interaction: discord.Interaction) -> wavelink.Player:
-        """Ensure a wavelink player is connected for this guild."""
+        """Ensure a wavelink player is connected for this guild.
+
+        If a video session is active, skips the voice connect — the track
+        will be queued and played after the video ends.
+        """
         voice_channel = interaction.user.voice.channel
-        state = player.get_state(interaction.guild.id)
+        guild_id = interaction.guild.id
+        state = player.get_state(guild_id)
         state["voice_channel"] = voice_channel
         state["text_channel"] = interaction.channel
         state["persist_enabled"] = True
+
+        # Don't connect during video playback — just return existing (or None-safe stub)
+        if player._is_video_active(guild_id):
+            player_obj = state.get("player")
+            if player_obj:
+                return player_obj
+            # No player exists — create a minimal stub that won't actually connect
+            # The enqueue_and_start guard will prevent playback anyway
+            return None  # type: ignore[return-value]
 
         player_obj = state.get("player")
         if not player_obj or not player_obj.connected:
