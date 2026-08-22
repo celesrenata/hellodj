@@ -382,7 +382,7 @@ class MusicVideoResolver:
         self._tidal = tidal_resolver or TidalResolver()
         self._spotify = spotify_extractor or SpotifyMetadataExtractor()
 
-    async def resolve(self, query: str) -> "VideoSource":
+    async def resolve(self, query: str, *, source_provider: str | None = None) -> "VideoSource":
         """Classify, resolve, and return a VideoSource for the given query.
 
         Resolution flow:
@@ -393,6 +393,9 @@ class MusicVideoResolver:
 
         Args:
             query: A URL or plain-text search string from the user.
+            source_provider: Optional guild source preference ("tidal", "spotify",
+                etc.). When set to "tidal" and the query is a text search, Tidal
+                video search is attempted before YouTube fallback.
 
         Returns:
             A VideoSource object ready for the Video Activity pipeline.
@@ -426,6 +429,9 @@ class MusicVideoResolver:
                 user_message="An unexpected error occurred.",
             )
 
+        # Pass source_provider context for text search dispatch
+        if classification.source_type == MusicVideoSourceType.TEXT_SEARCH:
+            return await handler(classification, source_provider=source_provider)
         return await handler(classification)
 
     # ------------------------------------------------------------------
@@ -649,13 +655,15 @@ class MusicVideoResolver:
             ) from exc
 
     async def _resolve_text_search(
-        self, classification: MusicVideoClassification
+        self, classification: MusicVideoClassification, *, source_provider: str | None = None,
     ) -> "VideoSource":
-        """Resolve a plain text query via YouTube search.
+        """Resolve a plain text query via source-aware video search.
 
-        Searches YouTube for "{query} official music video".
+        When source_provider is "tidal", attempts Tidal video search first.
+        Falls back to YouTube search if Tidal has no results or errors.
         """
         from video.sources import YouTubeResolverError
+        from video.tidal_resolver import TidalResolverError
 
         search_text = classification.original_query.strip()
         if not search_text:
@@ -664,6 +672,24 @@ class MusicVideoResolver:
                 user_message="Please provide a URL or search query.",
             )
 
+        # Try Tidal video search first when source_provider is tidal
+        if source_provider == "tidal":
+            try:
+                result = await self._tidal.search(search_text)
+                log.info(
+                    "MusicVideoResolver: text_search resolved via Tidal for %r",
+                    search_text,
+                )
+                return result
+            except TidalResolverError as exc:
+                log.info(
+                    "MusicVideoResolver: Tidal video search failed for %r (%s), "
+                    "falling back to YouTube",
+                    search_text,
+                    exc,
+                )
+
+        # YouTube fallback (or primary when source is not tidal)
         search_query = f"ytsearch:{search_text} official music video"
         try:
             return await self._youtube.resolve(search_query)

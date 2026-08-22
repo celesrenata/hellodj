@@ -942,7 +942,7 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
         from video.ws_hub import PlaybackState
 
         resolver = MusicVideoResolver()
-        source = await resolver.resolve(query)
+        source = await resolver.resolve(query, source_provider=state.get("source_provider"))
 
         # Check for existing video session
         streamer = video_cog._registry.get(guild_id, voice_channel.id)

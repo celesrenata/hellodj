@@ -380,8 +380,10 @@ class VideoCog(commands.Cog, name="Video"):
 
         # Resolve via MusicVideoResolver
         try:
+            from player import get_state
+            sp = get_state(guild_id).get("source_provider")
             resolver = MusicVideoResolver()
-            source = await resolver.resolve(query)
+            source = await resolver.resolve(query, source_provider=sp)
         except MusicVideoResolverError as exc:
             await interaction.followup.send(f"❌ {exc.user_message}", ephemeral=True)
             return
