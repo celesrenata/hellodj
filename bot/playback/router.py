@@ -725,7 +725,7 @@ class PlaybackRouter:
                 interaction, video_url, guild_id, channel_id, title=title
             )
 
-        view = SearchSelectView(picker_results, interaction.user.id, on_pick)
+        view = SearchSelectView(picker_results, interaction.user.id, on_pick, guild_id=interaction.guild_id)
         msg = await interaction.followup.send("Select a music video:", view=view)
         view.message = msg
 

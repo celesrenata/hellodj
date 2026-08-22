@@ -279,14 +279,20 @@ class QueuePaginatedView(discord.ui.View):
 class SearchSelectView(discord.ui.View):
     """Dropdown of search results."""
 
-    def __init__(self, results: list[dict], invoker_id: int, on_pick):
+    def __init__(self, results: list[dict], invoker_id: int, on_pick, *, guild_id: int = 0):
         super().__init__(timeout=60)
         self.results = results
         self.invoker_id = invoker_id
         self.on_pick = on_pick
         self.message: discord.Message | None = None
 
+        from blacklist import is_track_blacklisted
+
+        # Determine the guild ID for blocklist check
+        _guild_id = guild_id
+
         options = []
+        self._blocked_indices: set[int] = set()
         for i, info in enumerate(results):
             artist = (info.get("author") or "").strip()
             song = (info.get("title") or "Unknown").strip()
@@ -299,6 +305,17 @@ class SearchSelectView(discord.ui.View):
             if artist.endswith(" - Topic"):
                 artist = artist[:-8].strip()
 
+            # Check if track is blocked (by URL or by title keyword)
+            track_url = info.get("webpage_url") or info.get("uri") or ""
+            title_key = f"title:{song.lower().strip()}"
+            is_blocked = False
+            if _guild_id:
+                from blacklist import track_blacklist
+                guild_list = track_blacklist.get(_guild_id, [])
+                is_blocked = (track_url and track_url in guild_list) or title_key in guild_list
+            if is_blocked:
+                self._blocked_indices.add(i)
+
             # Label: song title (max 100 chars)
             label = song[:100]
 
@@ -310,9 +327,12 @@ class SearchSelectView(discord.ui.View):
                 parts.append(album)
             time_str = f"{mins}:{secs:02d}"
             desc = " • ".join(parts) + f" — {time_str}" if parts else time_str
+            if is_blocked:
+                desc = "🚫 BLOCKED — " + desc
             desc = desc[:100]
 
-            options.append(discord.SelectOption(label=label, value=str(i), description=desc))
+            emoji = "🚫" if is_blocked else None
+            options.append(discord.SelectOption(label=label, value=str(i), description=desc, emoji=emoji))
 
         select = discord.ui.Select(placeholder="Choose a song…", options=options)
         select.callback = self._on_select
@@ -334,6 +354,11 @@ class SearchSelectView(discord.ui.View):
             await interaction.response.send_message("Only the person who searched can pick a song.", ephemeral=True)
             return
         idx = int(interaction.data["values"][0])
+        if idx in self._blocked_indices:
+            await interaction.response.send_message(
+                "🚫 That track is blocked in this server.", ephemeral=True
+            )
+            return
         info = self.results[idx]
         await self.on_pick(info, interaction)
         self.stop()
@@ -1181,7 +1206,7 @@ class Music(commands.Cog):
                             except Exception as exc:
                                 log.error("on_pick reconnect failed: %s", exc)
 
-                view = SearchSelectView(results, interaction.user.id, on_pick)
+                view = SearchSelectView(results, interaction.user.id, on_pick, guild_id=interaction.guild_id)
                 prompt = f"Select a {label}:"
                 msg = await interaction.followup.send(prompt, view=view)
                 view.message = msg
@@ -1895,7 +1920,7 @@ class Music(commands.Cog):
                         content=f"HelloDJ added to queue (#{len(state['queue'])}): **{title}**", view=None
                     )
 
-                view = SearchSelectView(results, interaction.user.id, on_pick)
+                view = SearchSelectView(results, interaction.user.id, on_pick, guild_id=interaction.guild_id)
                 msg = await interaction.followup.send("Select a song to add:", view=view)
                 view.message = msg
                 return

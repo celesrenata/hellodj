@@ -188,7 +188,7 @@ class Playlists(commands.Cog):
                         content=f"HelloDJ added **{info.get('title', 'Unknown')}** to **{key}**.", view=None
                     )
 
-                view = SearchSelectView(results, interaction.user.id, on_pick)
+                view = SearchSelectView(results, interaction.user.id, on_pick, guild_id=interaction.guild_id)
                 msg = await interaction.followup.send("Select a song to add:", view=view, ephemeral=True)
                 view.message = msg
                 return
