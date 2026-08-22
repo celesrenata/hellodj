@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from hypothesis import given, settings, strategies as st
 
-from bot.playback.orchestrator import (
+from playback.orchestrator import (
     BotInstance,
     InstanceOrchestrator,
     _HEALTH_CHECK_TIMEOUT_S,
@@ -385,7 +385,7 @@ class TestInitialize:
         def mock_cfg(key, default=None):
             return default
 
-        with patch("bot.config.cfg", mock_cfg):
+        with patch("config.cfg", mock_cfg):
             await orch.initialize()
         assert len(orch._instances) == 0
         assert orch._initialized is True
@@ -413,7 +413,7 @@ class TestInitialize:
         orch._instances = []
         orch._initialized = False
 
-        with patch("bot.config.cfg", mock_cfg):
+        with patch("config.cfg", mock_cfg):
             with patch("discord.Client") as mock_client_cls:
                 mock_client = _make_mock_client()
                 mock_client_cls.return_value = mock_client

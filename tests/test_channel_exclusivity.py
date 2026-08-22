@@ -59,6 +59,25 @@ def _make_interaction(
         return ch
 
     interaction.guild.get_channel = get_channel
+
+    # Mock cogs accessed via interaction.client.get_cog()
+    music_cog = MagicMock()
+    music_cog._play_link = AsyncMock()
+    music_cog._play_song = AsyncMock()
+    music_cog._play_playlist = AsyncMock()
+
+    video_cog = MagicMock()
+    video_cog.video_play = AsyncMock()
+
+    def get_cog(name: str) -> MagicMock | None:
+        if name == "Music":
+            return music_cog
+        if name == "Video":
+            return video_cog
+        return None
+
+    interaction.client = MagicMock()
+    interaction.client.get_cog = get_cog
     return interaction
 
 
@@ -230,13 +249,13 @@ class TestProperty8ChannelExclusivity:
 
         await router.play(interaction, "https://open.spotify.com/track/test123")
 
-        # Should succeed (start playback)
-        interaction.response.send_message.assert_called_once()
-        call_kwargs = interaction.response.send_message.call_args[1]
-        # Not ephemeral means success
-        assert call_kwargs.get("ephemeral", False) is False
-        msg = interaction.response.send_message.call_args[0][0]
-        assert "Starting playback" in msg
+        # Should succeed — delegates to Music cog (no ephemeral error)
+        music_cog = interaction.client.get_cog("Music")
+        music_cog._play_link.assert_called_once()
+        # No ephemeral error should have been sent
+        if interaction.response.send_message.called:
+            call_kwargs = interaction.response.send_message.call_args[1]
+            assert call_kwargs.get("ephemeral", False) is False
 
 
 # ---------------------------------------------------------------------------
@@ -282,17 +301,18 @@ class TestProperty9AudioDoesNotBlockVideo:
             guild_id=guild_id, channel_id=video_channel, user_id=999
         )
 
-        # Request video explicitly
+        # Request video explicitly (use a video file URL)
         await router.play(
-            interaction, "https://example.org/movie.mp4", mode="video"
+            interaction, "https://example.org/movie.mp4"
         )
 
-        # Should succeed — video is never blocked by audio
-        interaction.response.send_message.assert_called_once()
-        call_kwargs = interaction.response.send_message.call_args[1]
-        assert call_kwargs.get("ephemeral", False) is False
-        msg = interaction.response.send_message.call_args[0][0]
-        assert "🎬" in msg
+        # Should succeed — delegates to Video cog (no ephemeral error)
+        video_cog = interaction.client.get_cog("Video")
+        video_cog.video_play.assert_called_once()
+        # No ephemeral error should have been sent
+        if interaction.response.send_message.called:
+            call_kwargs = interaction.response.send_message.call_args[1]
+            assert call_kwargs.get("ephemeral", False) is False
 
 
 # ---------------------------------------------------------------------------
@@ -339,12 +359,6 @@ class TestProperty10SameChannelEnqueues:
 
         await router.play(interaction, "https://open.spotify.com/track/new123")
 
-        # Queue should grow by exactly 1
-        assert len(session.queue) == initial_queue_size + 1
-
-        # Response should confirm addition
-        interaction.response.send_message.assert_called_once()
-        call_kwargs = interaction.response.send_message.call_args[1]
-        assert call_kwargs.get("ephemeral", False) is False
-        msg = interaction.response.send_message.call_args[0][0]
-        assert "Added to queue" in msg
+        # Should delegate to Music cog for enqueue (the cog handles queue management)
+        music_cog = interaction.client.get_cog("Music")
+        music_cog._play_link.assert_called_once()

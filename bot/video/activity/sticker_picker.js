@@ -2,7 +2,7 @@
  * StickerPicker — UI panel for browsing and selecting sticker images.
  *
  * Responsibilities:
- * - Fetch sticker catalog from /activity/stickers/catalog (cached after first fetch)
+ * - Fetch sticker catalog from stickers/catalog (cached after first fetch)
  * - Render category tabs with clickable navigation
  * - Render thumbnail grid for the selected category (max 64×64px, aspect ratio preserved)
  * - Notify StickerTool via onSelect callback when a sticker is clicked
@@ -48,7 +48,7 @@ export class StickerPicker {
   async show() {
     if (!this.catalog) {
       try {
-        const resp = await fetch('/activity/stickers/catalog');
+        const resp = await fetch('stickers/catalog');
         if (!resp.ok) {
           throw new Error(`HTTP ${resp.status}`);
         }
@@ -118,7 +118,7 @@ export class StickerPicker {
   /**
    * Render thumbnail grid for a category.
    * Each thumbnail is max 64×64 CSS pixels, preserving aspect ratio.
-   * Image src: /activity/stickers/{category_slug}/{filename}
+   * Image src: stickers/{category_slug}/{filename}
    * On click: set selectedSticker and call onSelect callback.
    *
    * @param {string} categorySlug
@@ -129,7 +129,7 @@ export class StickerPicker {
 
     for (const filename of images) {
       const img = document.createElement('img');
-      img.src = `/activity/stickers/${categorySlug}/${filename}`;
+      img.src = `stickers/${categorySlug}/${filename}`;
       img.alt = filename;
       img.className = 'sticker-thumbnail';
       img.style.maxWidth = '64px';

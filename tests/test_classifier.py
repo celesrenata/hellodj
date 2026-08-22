@@ -12,7 +12,7 @@ from __future__ import annotations
 from hypothesis import given, settings, assume
 from hypothesis import strategies as st
 
-from bot.playback.classifier import ContentType, classify
+from playback.classifier import ContentType, classify
 
 
 # ---------------------------------------------------------------------------

@@ -13,7 +13,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from bot.playback.session_registry import ChannelSession, CompositeKey, SessionRegistry
+from playback.session_registry import ChannelSession, CompositeKey, SessionRegistry
 
 
 # ---------------------------------------------------------------------------

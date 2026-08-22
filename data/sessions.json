@@ -1,24 +1,17 @@
 {
-  "424242": {
+  "100": {
     "voice_channel_id": null,
     "text_channel_id": null,
     "current": null,
-    "queue": [
-      {
-        "webpage_url": null,
-        "title": "t1"
-      }
-    ],
+    "queue": [],
     "auto_resume": true,
-    "updated_at": "2026-08-18T13:48:39.597978+00:00",
+    "updated_at": "2026-08-22T01:15:27.387571+00:00",
     "autoplay_enabled": false,
     "autoplay_genres": [],
     "source_provider": "youtube",
     "repeat_mode": "off",
-    "filters": {
-      "karaoke": true
-    },
-    "crossfade_seconds": 1.5,
-    "tune_enabled": true
+    "filters": {},
+    "crossfade_seconds": 0.0,
+    "tune_enabled": false
   }
 }

@@ -275,7 +275,7 @@ export class StrokeRenderer {
   }
 
   /**
-   * Sticker: load image from /activity/stickers/{category}/{filename},
+   * Sticker: load image from stickers/{category}/{filename},
    * draw with letterbox fit in bounding box preserving aspect ratio.
    * Uses image cache. On image load, triggers full redraw.
    * @param {object} stroke
@@ -293,7 +293,7 @@ export class StrokeRenderer {
     const boxX = Math.min(x1, x2);
     const boxY = Math.min(y1, y2);
 
-    const url = `/activity/stickers/${stroke.sticker_category}/${stroke.sticker_filename}`;
+    const url = `stickers/${stroke.sticker_category}/${stroke.sticker_filename}`;
     const img = this._getOrLoadImage(url);
 
     if (img && img.complete && img.naturalWidth > 0) {

@@ -1034,9 +1034,10 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
         if text_channel:
             invite_code = invite_data.get("code", "")
             activity_url = f"https://discord.gg/{invite_code}" if invite_code else None
-            from cogs.video import _build_now_playing_embed, VideoControlView
+            from cogs.video import _build_now_playing_embed
+            from views.unified_remote import UnifiedControlView
             embed = _build_now_playing_embed(source, len(streamer.queue), activity_url=activity_url, elapsed_seconds=0.0)
-            msg = await text_channel.send(embed=embed, view=VideoControlView(video_cog))
+            msg = await text_channel.send(embed=embed, view=UnifiedControlView())
             key = (guild_id, voice_channel.id)
             video_cog._now_playing_messages[key] = msg
             if activity_url:
@@ -1521,7 +1522,8 @@ async def _send_now_playing(guild_id: int, player: wavelink.Player, track: wavel
         embed = build_now_playing_embed_from_entry(current_entry)
     else:
         embed = _build_now_playing_embed(track, current_entry)
-    view = NowPlayingView(guild_id)
+    from views.unified_remote import UnifiedControlView
+    view = UnifiedControlView()
 
     msg = state.get("now_playing_msg")
     if msg:

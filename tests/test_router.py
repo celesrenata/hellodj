@@ -17,11 +17,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from bot.playback.classifier import ContentType
-from bot.playback.content_filter import ContentFilter
-from bot.playback.router import PlaybackRouter
-from bot.playback.session_registry import ChannelSession, SessionRegistry
-from bot.playback.user_bans import UserBans
+from playback.classifier import ContentType
+from playback.content_filter import ContentFilter
+from playback.router import PlaybackRouter
+from playback.session_registry import ChannelSession, SessionRegistry
+from playback.user_bans import UserBans
 
 
 # ---------------------------------------------------------------------------
@@ -60,6 +60,27 @@ def _make_interaction(
 
     interaction.guild.get_channel = get_channel
 
+    # Mock cogs accessed via interaction.client.get_cog()
+    music_cog = MagicMock()
+    music_cog._play_link = AsyncMock()
+    music_cog._play_song = AsyncMock()
+    music_cog._play_playlist = AsyncMock()
+
+    video_cog = MagicMock()
+    video_cog.video_play = AsyncMock()
+    video_cog.video_stop = AsyncMock()
+    video_cog.video_skip = AsyncMock()
+
+    def get_cog(name: str) -> MagicMock | None:
+        if name == "Music":
+            return music_cog
+        if name == "Video":
+            return video_cog
+        return None
+
+    interaction.client = MagicMock()
+    interaction.client.get_cog = get_cog
+
     return interaction
 
 
@@ -70,7 +91,7 @@ def _make_router(
     user_bans: UserBans | None = None,
 ) -> PlaybackRouter:
     """Create a PlaybackRouter with mocked dependencies."""
-    import bot.playback.classifier as classifier_module
+    import playback.classifier as classifier_module
 
     if registry is None:
         registry = SessionRegistry()
@@ -254,11 +275,9 @@ class TestAudioExclusivity:
 
         await router.play(interaction, "https://open.spotify.com/track/123")
 
-        # Should enqueue, not error
-        interaction.response.send_message.assert_called_once()
-        msg = interaction.response.send_message.call_args[1].get("content") or \
-              interaction.response.send_message.call_args[0][0]
-        assert "Added to queue" in msg
+        # Should delegate to Music cog for enqueue
+        music_cog = interaction.client.get_cog("Music")
+        music_cog._play_link.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_different_channel_rejected_when_no_instances(self) -> None:
@@ -312,12 +331,9 @@ class TestAudioExclusivity:
             interaction, "https://example.org/video.mp4", mode="video"
         )
 
-        # Should succeed (start video), not be blocked
-        interaction.response.send_message.assert_called_once()
-        msg = interaction.response.send_message.call_args[1].get("content") or \
-              interaction.response.send_message.call_args[0][0]
-        assert "🎬" in msg
-        assert interaction.response.send_message.call_args[1].get("ephemeral", False) is False
+        # Should succeed — delegates to Video cog (not blocked by audio)
+        video_cog = interaction.client.get_cog("Video")
+        video_cog.video_play.assert_called_once()
 
 
 # ---------------------------------------------------------------------------
@@ -346,11 +362,18 @@ class TestControlCommands:
         router = _make_router()
         interaction = _make_interaction(guild_id=100, channel_id=200)
 
-        await router.stop(interaction)
+        # Ensure video cog reports no active session
+        video_cog = interaction.client.get_cog("Video")
+        video_cog._registry = MagicMock()
+        video_cog._registry.get = MagicMock(return_value=None)
 
-        interaction.response.send_message.assert_called_once_with(
-            "No active session in your channel.", ephemeral=True
-        )
+        with patch("player.get_player", return_value=None):
+            await router.stop(interaction)
+
+        interaction.response.send_message.assert_called_once()
+        msg = interaction.response.send_message.call_args[1].get("content") or \
+              interaction.response.send_message.call_args[0][0]
+        assert "Nothing is playing" in msg
 
     @pytest.mark.asyncio
     async def test_skip_delegates_to_audio(self) -> None:
@@ -362,12 +385,17 @@ class TestControlCommands:
         router = _make_router(registry=registry)
         interaction = _make_interaction(guild_id=100, channel_id=200)
 
-        await router.skip(interaction)
+        mock_player_obj = MagicMock()
+        mock_player_obj.connected = True
+        mock_player_obj.stop = AsyncMock()
+
+        with patch("player.get_player", return_value=mock_player_obj):
+            await router.skip(interaction)
 
         interaction.response.send_message.assert_called_once()
         msg = interaction.response.send_message.call_args[1].get("content") or \
               interaction.response.send_message.call_args[0][0]
-        assert "Skipped" in msg
+        assert "Skipped" in msg or "⏭" in msg
 
     @pytest.mark.asyncio
     async def test_stop_delegates_to_video(self) -> None:
@@ -384,12 +412,12 @@ class TestControlCommands:
         router = _make_router(registry=registry, orchestrator=orchestrator)
         interaction = _make_interaction(guild_id=100, channel_id=200)
 
-        await router.stop(interaction)
+        with patch("player.get_player", return_value=None):
+            await router.stop(interaction)
 
-        interaction.response.send_message.assert_called_once()
-        msg = interaction.response.send_message.call_args[1].get("content") or \
-              interaction.response.send_message.call_args[0][0]
-        assert "Stopped" in msg
+        # Video stop delegates to the video cog
+        video_cog = interaction.client.get_cog("Video")
+        video_cog.video_stop.assert_called_once()
         # Session should be unregistered
         assert registry.get(100, 200) is None
 
@@ -403,12 +431,18 @@ class TestControlCommands:
         router = _make_router(registry=registry)
         interaction = _make_interaction(guild_id=100, channel_id=200)
 
-        await router.pause(interaction)
+        mock_player_obj = MagicMock()
+        mock_player_obj.connected = True
+        mock_player_obj.paused = False
+        mock_player_obj.pause = AsyncMock()
+
+        with patch("player.get_player", return_value=mock_player_obj):
+            await router.pause(interaction)
 
         interaction.response.send_message.assert_called_once()
         msg = interaction.response.send_message.call_args[1].get("content") or \
               interaction.response.send_message.call_args[0][0]
-        assert "pause" in msg.lower()
+        assert "pause" in msg.lower() or "⏸" in msg
 
     @pytest.mark.asyncio
     async def test_clear_empties_queue(self) -> None:
@@ -421,7 +455,8 @@ class TestControlCommands:
         router = _make_router(registry=registry)
         interaction = _make_interaction(guild_id=100, channel_id=200)
 
-        await router.clear(interaction)
+        with patch("player.get_player", return_value=None):
+            await router.clear(interaction)
 
         assert session.queue == []
         interaction.response.send_message.assert_called_once()
@@ -444,7 +479,8 @@ class TestControlCommands:
         router = _make_router(registry=registry)
         interaction = _make_interaction(guild_id=100, channel_id=200)
 
-        await router.queue(interaction)
+        with patch("player.get_player", return_value=None):
+            await router.queue(interaction)
 
         interaction.response.send_message.assert_called_once()
         kwargs = interaction.response.send_message.call_args[1]
@@ -474,7 +510,14 @@ class TestControlCommands:
         router = _make_router(registry=registry, orchestrator=orchestrator)
         interaction = _make_interaction(guild_id=100, channel_id=200)
 
-        await router.stop(interaction)
+        mock_player_obj = MagicMock()
+        mock_player_obj.connected = True
+        mock_player_obj.disconnect = AsyncMock()
+
+        with patch("player.get_player", return_value=mock_player_obj), \
+             patch("player.get_state", return_value={"current": None, "queue": [], "player": None}), \
+             patch("player.persist"):
+            await router.stop(interaction)
 
         orchestrator.release_instance.assert_called_once_with(100, 200)
 

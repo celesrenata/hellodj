@@ -85,6 +85,7 @@ COPY cogs/ ./cogs/
 COPY voice/ ./voice/
 COPY video/ ./video/
 COPY playback/ ./playback/
+COPY views/ ./views/
 
 # Copy sticker zip archives for whiteboard sticker catalog
 COPY stickers/ ./stickers/

@@ -470,7 +470,7 @@ class StrokeRenderer {
     const boxX = Math.min(x1, x2);
     const boxY = Math.min(y1, y2);
 
-    const url = `/activity/stickers/${stroke.sticker_category}/${stroke.sticker_filename}`;
+    const url = `stickers/${stroke.sticker_category}/${stroke.sticker_filename}`;
     const img = this._getOrLoadImage(url);
 
     if (img && img.complete && img.naturalWidth > 0) {
@@ -1202,7 +1202,7 @@ class StickerPicker {
   async show() {
     if (!this.catalog) {
       try {
-        const resp = await fetch('/activity/stickers/catalog');
+        const resp = await fetch('stickers/catalog');
         if (!resp.ok) {
           throw new Error(`HTTP ${resp.status}`);
         }
@@ -1263,7 +1263,7 @@ class StickerPicker {
 
     for (const filename of images) {
       const img = document.createElement('img');
-      img.src = `/activity/stickers/${categorySlug}/${filename}`;
+      img.src = `stickers/${categorySlug}/${filename}`;
       img.alt = filename;
       img.className = 'sticker-thumbnail';
       img.style.maxWidth = '64px';
@@ -1503,7 +1503,7 @@ class StickerTool {
   }
 
   _getImage(category, filename) {
-    const url = `/activity/stickers/${category}/${filename}`;
+    const url = `stickers/${category}/${filename}`;
     if (this._imageCache.has(url)) {
       return this._imageCache.get(url);
     }

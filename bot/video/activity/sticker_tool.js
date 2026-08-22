@@ -287,7 +287,7 @@ export class StickerTool {
    * @returns {HTMLImageElement|null}
    */
   _getImage(category, filename) {
-    const url = `/activity/stickers/${category}/${filename}`;
+    const url = `stickers/${category}/${filename}`;
     if (this._imageCache.has(url)) {
       return this._imageCache.get(url);
     }

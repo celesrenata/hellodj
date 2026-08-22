@@ -594,14 +594,13 @@ async def setup_hook():
     try:
         await bot.load_extension("cogs.video")
         dbg.info("setup_hook: video cog loaded")
-        # Register VideoControlView as persistent IMMEDIATELY after cog loads
-        # (must happen during setup_hook, before READY)
-        from cogs.video import VideoControlView
-        video_cog = bot.get_cog("Video")
-        bot.add_view(VideoControlView(video_cog))
-        dbg.info("setup_hook: VideoControlView registered as persistent view")
     except Exception as _video_exc:
         log.warning("setup_hook: could not load video cog (non-fatal): %s", _video_exc)
+
+    # Register the unified remote control view as persistent (survives restarts)
+    from views.unified_remote import UnifiedControlView
+    bot.add_view(UnifiedControlView())
+    dbg.info("setup_hook: UnifiedControlView registered as persistent view")
 
     # Wire video cog's activity_backend into the unified router
     if _UNIFIED_PLAYBACK_AVAILABLE and _playback_router is not None:

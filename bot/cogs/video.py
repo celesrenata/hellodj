@@ -43,6 +43,7 @@ from video.sources import (
 from video.tidal_resolver import TidalResolver, TidalResolverError
 from video.upload_handler import UploadHandler, UploadHandlerError
 from video.music_video_resolver import MusicVideoResolver, MusicVideoResolverError
+from views.unified_remote import UnifiedControlView
 
 log = logging.getLogger(__name__)
 
@@ -82,6 +83,8 @@ class VideoCog(commands.Cog, name="Video"):
         self._launcher = ActivityLauncher(self._http_session, bot_token)
 
         # Register the persistent VideoControlView so buttons survive bot restarts
+        # NOTE: The UnifiedControlView is now registered in setup_hook instead.
+        # Keep VideoControlView registered too for any old messages still in channels.
         self.bot.add_view(VideoControlView(self))
 
         log.info("VideoCog loaded: Activity backend started, launcher ready")
@@ -351,7 +354,7 @@ class VideoCog(commands.Cog, name="Video"):
 
         # Send "Now Playing" embed with control buttons
         embed = _build_now_playing_embed(source, len(streamer.queue), activity_url=activity_url, elapsed_seconds=0.0)
-        msg = await interaction.followup.send(embed=embed, view=VideoControlView(self), wait=True)
+        msg = await interaction.followup.send(embed=embed, view=UnifiedControlView(), wait=True)
         key = (guild_id, voice_channel.id)
         self._now_playing_messages[key] = msg
         if activity_url:
@@ -469,7 +472,7 @@ class VideoCog(commands.Cog, name="Video"):
 
         # Send "Now Playing" embed with control buttons
         embed = _build_now_playing_embed(source, len(streamer.queue), activity_url=activity_url, elapsed_seconds=0.0)
-        msg = await interaction.followup.send(embed=embed, view=VideoControlView(self), wait=True)
+        msg = await interaction.followup.send(embed=embed, view=UnifiedControlView(), wait=True)
         key = (guild_id, voice_channel.id)
         self._now_playing_messages[key] = msg
         if activity_url:
@@ -603,7 +606,7 @@ class VideoCog(commands.Cog, name="Video"):
                 "audio_lang": None,
             })
             embed = _build_now_playing_embed(streamer.source, len(streamer.queue), elapsed_seconds=0.0)
-            msg = await interaction.followup.send("⏭️ Skipped!", embed=embed, view=VideoControlView(self), wait=True)
+            msg = await interaction.followup.send("⏭️ Skipped!", embed=embed, view=UnifiedControlView(), wait=True)
             self._now_playing_messages[key] = msg
             self._start_seek_bar_update(key)
             # Send deprecation notice
@@ -703,7 +706,7 @@ class VideoCog(commands.Cog, name="Video"):
                 "audio_lang": None,
             })
             embed = _build_now_playing_embed(streamer.source, len(streamer.queue), elapsed_seconds=0.0)
-            msg = await interaction.followup.send("⏮️ Playing previous video!", embed=embed, view=VideoControlView(self), wait=True)
+            msg = await interaction.followup.send("⏮️ Playing previous video!", embed=embed, view=UnifiedControlView(), wait=True)
             self._now_playing_messages[key] = msg
             self._start_seek_bar_update(key)
             # Send deprecation notice
@@ -1050,7 +1053,7 @@ class BlockConfirmView(discord.ui.View):
                 embed = _build_now_playing_embed(streamer.source, len(streamer.queue), elapsed_seconds=0.0)
                 channel = interaction.channel
                 if channel:
-                    msg = await channel.send(embed=embed, view=VideoControlView(self._cog))
+                    msg = await channel.send(embed=embed, view=UnifiedControlView())
                     self._cog._now_playing_messages[key] = msg
                     self._cog._start_seek_bar_update(key)
             else:
@@ -1120,7 +1123,7 @@ class VideoControlView(discord.ui.View):
             if recovery_ok:
                 if streamer.is_active and streamer.source:
                     embed = _build_now_playing_embed(streamer.source, len(streamer.queue))
-                    await interaction.followup.send("⏮ Recovered!", embed=embed, view=VideoControlView(self._cog))
+                    await interaction.followup.send("⏮ Recovered!", embed=embed, view=UnifiedControlView())
                 else:
                     await interaction.followup.send("❌ Playback failed — session stopped.", ephemeral=True)
                     self._disable_all()
@@ -1151,7 +1154,7 @@ class VideoControlView(discord.ui.View):
                 "audio_lang": None,
             })
             embed = _build_now_playing_embed(streamer.source, len(streamer.queue), elapsed_seconds=0.0)
-            msg = await interaction.followup.send("⏮ Playing previous video!", embed=embed, view=VideoControlView(self._cog), wait=True)
+            msg = await interaction.followup.send("⏮ Playing previous video!", embed=embed, view=UnifiedControlView(), wait=True)
             self._cog._now_playing_messages[key] = msg
             self._cog._start_seek_bar_update(key)
         else:
@@ -1269,7 +1272,7 @@ class VideoControlView(discord.ui.View):
             if recovery_ok:
                 if streamer.is_active and streamer.source:
                     embed = _build_now_playing_embed(streamer.source, len(streamer.queue))
-                    await interaction.followup.send("⏭ Skipped (recovered)!", embed=embed, view=VideoControlView(self._cog))
+                    await interaction.followup.send("⏭ Skipped (recovered)!", embed=embed, view=UnifiedControlView())
                 else:
                     await interaction.followup.send("❌ Playback failed — session stopped.", ephemeral=True)
                     self._disable_all()
@@ -1295,7 +1298,7 @@ class VideoControlView(discord.ui.View):
                 "audio_lang": None,
             })
             embed = _build_now_playing_embed(streamer.source, len(streamer.queue), elapsed_seconds=0.0)
-            msg = await interaction.followup.send("⏭ Skipped!", embed=embed, view=VideoControlView(self._cog), wait=True)
+            msg = await interaction.followup.send("⏭ Skipped!", embed=embed, view=UnifiedControlView(), wait=True)
             self._cog._now_playing_messages[key] = msg
             self._cog._start_seek_bar_update(key)
         else:

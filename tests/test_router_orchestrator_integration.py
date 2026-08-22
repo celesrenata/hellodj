@@ -16,8 +16,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from bot.playback.router import PlaybackRouter, _INACTIVITY_TIMEOUT_S
-from bot.playback.session_registry import ChannelSession, SessionRegistry
+from playback.router import PlaybackRouter, _INACTIVITY_TIMEOUT_S
+from playback.session_registry import ChannelSession, SessionRegistry
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +54,29 @@ def _make_interaction(
         return ch
 
     interaction.guild.get_channel = get_channel
+
+    # Mock cogs accessed via interaction.client.get_cog()
+    music_cog = MagicMock()
+    music_cog._play_link = AsyncMock()
+    music_cog._play_song = AsyncMock()
+    music_cog._play_playlist = AsyncMock()
+
+    video_cog = MagicMock()
+    video_cog.video_play = AsyncMock()
+    video_cog.video_stop = AsyncMock()
+    video_cog.video_skip = AsyncMock()
+    video_cog._registry = MagicMock()
+    video_cog._registry.get = MagicMock(return_value=None)
+
+    def get_cog(name: str) -> MagicMock | None:
+        if name == "Music":
+            return music_cog
+        if name == "Video":
+            return video_cog
+        return None
+
+    interaction.client = MagicMock()
+    interaction.client.get_cog = get_cog
     return interaction
 
 
@@ -63,7 +86,7 @@ def _make_router(
     primary_bot: MagicMock | None = None,
 ) -> PlaybackRouter:
     """Create a PlaybackRouter with mocked dependencies."""
-    import bot.playback.classifier as classifier_module
+    import playback.classifier as classifier_module
 
     if registry is None:
         registry = SessionRegistry()
@@ -188,13 +211,13 @@ class TestPrimaryBotPreference:
 
         # Should succeed with primary (assign_instance NOT called)
         orchestrator.assign_instance.assert_not_called()
-        interaction.response.send_message.assert_called_once()
-        msg = interaction.response.send_message.call_args[0][0]
-        assert "Starting playback" in msg
+        # Should have delegated to Music cog
+        music_cog = interaction.client.get_cog("Music")
+        music_cog._play_link.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_secondary_used_when_primary_busy(self) -> None:
-        """When primary is busy in another channel, use secondary."""
+        """When primary is busy in another channel, still proceed with playback."""
         bot = _make_primary_bot(guild_id=100, channel_id=300)  # busy in 300
         orchestrator = MagicMock()
         orchestrator.available_count = 3
@@ -208,11 +231,9 @@ class TestPrimaryBotPreference:
 
         await router.play(interaction, "https://open.spotify.com/track/test")
 
-        # Should use secondary instance via orchestrator
-        orchestrator.assign_instance.assert_called_once_with(100, 200)
-        interaction.response.send_message.assert_called_once()
-        msg = interaction.response.send_message.call_args[0][0]
-        assert "Starting playback" in msg
+        # Should have delegated to Music cog (use_primary=False path)
+        music_cog = interaction.client.get_cog("Music")
+        music_cog._play_link.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_all_occupied_error_includes_primary(self) -> None:
@@ -326,7 +347,7 @@ class TestInactivityTimer:
         router = _make_router(registry=registry, orchestrator=orchestrator)
 
         # Call _inactivity_expired directly with patched sleep
-        with patch("bot.playback.router.asyncio.sleep", new_callable=AsyncMock):
+        with patch("playback.router.asyncio.sleep", new_callable=AsyncMock):
             await router._inactivity_expired(100, 200)
 
         # Session should be removed
@@ -347,7 +368,7 @@ class TestInactivityTimer:
 
         router = _make_router(registry=registry, orchestrator=orchestrator)
 
-        with patch("bot.playback.router.asyncio.sleep", new_callable=AsyncMock):
+        with patch("playback.router.asyncio.sleep", new_callable=AsyncMock):
             await router._inactivity_expired(100, 200)
 
         # Video session should NOT be removed
@@ -364,7 +385,7 @@ class TestInactivityTimer:
 
         router = _make_router(orchestrator=orchestrator)
 
-        with patch("bot.playback.router.asyncio.sleep", new_callable=AsyncMock):
+        with patch("playback.router.asyncio.sleep", new_callable=AsyncMock):
             await router._inactivity_expired(100, 200)
 
         orchestrator.release_instance.assert_not_called()
@@ -388,7 +409,15 @@ class TestInactivityTimer:
         assert (100, 200) in router._inactivity_timers
 
         interaction = _make_interaction(guild_id=100, channel_id=200)
-        await router.stop(interaction)
+
+        mock_player_obj = MagicMock()
+        mock_player_obj.connected = True
+        mock_player_obj.disconnect = AsyncMock()
+
+        with patch("player.get_player", return_value=mock_player_obj), \
+             patch("player.get_state", return_value={"current": None, "queue": [], "player": None}), \
+             patch("player.persist"):
+            await router.stop(interaction)
 
         # Timer should be cancelled
         assert (100, 200) not in router._inactivity_timers

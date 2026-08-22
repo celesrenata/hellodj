@@ -20,7 +20,7 @@ import pytest
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from bot.playback.queue_display import (
+from playback.queue_display import (
     ITEMS_PER_PAGE,
     MAX_TITLE_LENGTH,
     QueuePaginationView,
@@ -29,7 +29,7 @@ from bot.playback.queue_display import (
     format_duration,
     format_queue_item,
 )
-from bot.playback.session_registry import ChannelSession
+from playback.session_registry import ChannelSession
 
 
 # ---------------------------------------------------------------------------
