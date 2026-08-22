@@ -70,6 +70,7 @@ async def save_guild(
     text_channel_id: int | None,
     current: dict | None,
     queue: list[dict],
+    history: list[dict] | None = None,
     auto_resume: bool = True,
     autoplay_enabled: bool = False,
     autoplay_genres: list[str] | None = None,
@@ -89,6 +90,7 @@ async def save_guild(
             "text_channel_id": text_channel_id,
             "current": current,
             "queue": queue,
+            "history": history or [],
             "auto_resume": auto_resume,
             "updated_at": datetime.now(timezone.utc).isoformat(),
             # Extended fields

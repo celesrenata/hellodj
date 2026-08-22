@@ -545,9 +545,14 @@ class HLSTranscodePipeline:
         #   so a 6-hour video doesn't download all at once.
         # - HLS/live streams (single-input, e.g. Tidal): same approach with
         #   initial burst for snappy start, then 1.5x to stay ahead.
+        # NOTE: initial_burst must be ≤ hls_time (4s) to prevent the HLS muxer
+        # from creating a single massive first segment. With QSV hardware encode,
+        # frames are processed near-instantly so all burst data lands in seg0.
+        # A readrate of 3.0 (3x real-time) ensures fast startup while keeping
+        # segment boundaries clean.
         args.extend([
-            "-readrate", "1.5",
-            "-readrate_initial_burst", "30",
+            "-readrate", "3",
+            "-readrate_initial_burst", "4",
         ])
 
         # HTTP reconnect options — only for HLS/live streams (single-input mode).

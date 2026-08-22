@@ -122,46 +122,157 @@ class SaveQueueView(discord.ui.View):
 
 
 class QueuePaginatedView(discord.ui.View):
-    def __init__(self, guild_id: int, page_size: int = 10):
-        super().__init__(timeout=120)
+    """Enhanced queue view: shows last 3 played, now playing, and upcoming tracks.
+
+    Includes a Select menu to jump to any displayed track (history or queue).
+    """
+
+    HISTORY_SHOW = 3  # number of history items to display
+    QUEUE_PAGE_SIZE = 10  # upcoming tracks per page
+
+    def __init__(self, guild_id: int, page: int = 0):
+        super().__init__(timeout=180)
         self.guild_id = guild_id
-        self.page_size = page_size
-        self.page = 0
+        self.page = page
+        self._rebuild_select()
+
+    def _rebuild_select(self) -> None:
+        """Rebuild the track select dropdown based on current state."""
+        # Remove existing select if any
+        for item in list(self.children):
+            if isinstance(item, discord.ui.Select) and getattr(item, "custom_id", "") == "q_jump":
+                self.remove_item(item)
+
+        state = player.get_state(self.guild_id)
+        history = state.get("history", [])[:self.HISTORY_SHOW]
+        queue = state["queue"]
+        current = state.get("current")
+
+        options: list[discord.SelectOption] = []
+
+        # History items (jump back)
+        for i, track in enumerate(history):
+            title = (track.get("title", "Unknown") or "Unknown")[:95]
+            options.append(discord.SelectOption(
+                label=title,
+                value=f"h:{i}",
+                description="Previously played",
+                emoji="⏪",
+            ))
+
+        # Upcoming queue items (this page)
+        start = self.page * self.QUEUE_PAGE_SIZE
+        end = start + self.QUEUE_PAGE_SIZE
+        page_items = queue[start:end]
+        for i, track in enumerate(page_items):
+            title = (track.get("title", "Unknown") or "Unknown")[:95]
+            queue_pos = start + i
+            options.append(discord.SelectOption(
+                label=title,
+                value=f"q:{queue_pos}",
+                description=f"Queue position {queue_pos + 1}",
+                emoji="▶️",
+            ))
+
+        if options:
+            select = discord.ui.Select(
+                placeholder="Jump to a track…",
+                options=options[:25],  # Discord max 25 options
+                custom_id="q_jump",
+                row=0,
+            )
+            select.callback = self._on_jump
+            self.add_item(select)
 
     def _embed(self) -> discord.Embed:
         state = player.get_state(self.guild_id)
         current = state.get("current")
-        items = player.get_queue_page(state, self.page, self.page_size)
-        total_pages = max(1, (len(state["queue"]) + self.page_size - 1) // self.page_size)
+        history = state.get("history", [])[:self.HISTORY_SHOW]
+        queue = state["queue"]
+        total_pages = max(1, (len(queue) + self.QUEUE_PAGE_SIZE - 1) // self.QUEUE_PAGE_SIZE)
 
         embed = discord.Embed(title="🎶 HelloDJ Queue", colour=discord.Colour.blurple())
+
+        # Recently played section
+        if history:
+            lines = []
+            for i, track in enumerate(reversed(history)):
+                title = track.get("title", "Unknown") or "Unknown"
+                lines.append(f"` ⏪ ` ~~{title}~~")
+            embed.add_field(name="Recently Played", value="\n".join(lines), inline=False)
+
+        # Now playing
         if current:
-            embed.add_field(name="Now Playing", value=f"**{current.get('title', 'Unknown')}**", inline=False)
-
-        if items:
-            start = self.page * self.page_size
-            lines = [f"{start + i + 1}. **{item.get('title', 'Unknown')}**" for i, item in enumerate(items)]
-            embed.add_field(name=f"Up Next  (Page {self.page + 1}/{total_pages})", value="\n".join(lines), inline=False)
+            title = current.get("title", "Unknown") or "Unknown"
+            author = current.get("author", "")
+            np_text = f"**{title}**"
+            if author:
+                np_text += f"\n*{author}*"
+            embed.add_field(name="▶️ Now Playing", value=np_text, inline=False)
         else:
-            embed.add_field(name="Up Next", value="Empty", inline=False)
+            embed.add_field(name="▶️ Now Playing", value="Nothing playing", inline=False)
 
-        embed.set_footer(text=f"{len(state['queue'])} track(s) total — HelloDJ")
+        # Upcoming queue
+        if queue:
+            start = self.page * self.QUEUE_PAGE_SIZE
+            end = start + self.QUEUE_PAGE_SIZE
+            page_items = queue[start:end]
+            lines = []
+            for i, item in enumerate(page_items):
+                pos = start + i + 1
+                title = item.get("title", "Unknown") or "Unknown"
+                lines.append(f"`{pos}.` {title}")
+            embed.add_field(
+                name=f"Up Next (Page {self.page + 1}/{total_pages})",
+                value="\n".join(lines),
+                inline=False,
+            )
+        else:
+            embed.add_field(name="Up Next", value="Queue is empty", inline=False)
+
+        embed.set_footer(text=f"{len(queue)} queued • {len(state.get('history', []))} played — HelloDJ")
         return embed
 
-    @discord.ui.button(label="◀ Prev", style=discord.ButtonStyle.secondary, custom_id="q_prev")
+    async def _on_jump(self, interaction: discord.Interaction) -> None:
+        """Handle track selection — jump to the chosen track."""
+        value = interaction.data["values"][0]  # type: ignore[index]
+        kind, idx_str = value.split(":", 1)
+        idx = int(idx_str)
+
+        if kind == "h":
+            ok = await player.jump_to(self.guild_id, history_index=idx)
+        else:
+            ok = await player.jump_to(self.guild_id, queue_index=idx)
+
+        if ok:
+            state = player.get_state(self.guild_id)
+            title = state.get("current", {}).get("title", "Unknown")
+            self._rebuild_select()
+            await interaction.response.edit_message(
+                content=f"⏭️ Jumped to **{title}**",
+                embed=self._embed(),
+                view=self,
+            )
+        else:
+            await interaction.response.send_message(
+                "Could not jump to that track (it may no longer exist in the queue).",
+                ephemeral=True,
+            )
+
+    @discord.ui.button(label="◀ Prev", style=discord.ButtonStyle.secondary, custom_id="q_prev", row=1)
     async def prev_page(self, interaction: discord.Interaction, _button: discord.ui.Button):
-        state = player.get_state(self.guild_id)
-        total_pages = max(1, (len(state["queue"]) + self.page_size - 1) // self.page_size)
         if self.page > 0:
             self.page -= 1
+            self._rebuild_select()
         await interaction.response.edit_message(embed=self._embed(), view=self)
 
-    @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary, custom_id="q_next")
+    @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary, custom_id="q_next", row=1)
     async def next_page(self, interaction: discord.Interaction, _button: discord.ui.Button):
         state = player.get_state(self.guild_id)
-        total_pages = max(1, (len(state["queue"]) + self.page_size - 1) // self.page_size)
+        total_pages = max(1, (len(state["queue"]) + self.QUEUE_PAGE_SIZE - 1) // self.QUEUE_PAGE_SIZE)
         if self.page < total_pages - 1:
             self.page += 1
+            self._rebuild_select()
         await interaction.response.edit_message(embed=self._embed(), view=self)
 
 

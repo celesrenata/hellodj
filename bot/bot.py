@@ -764,6 +764,7 @@ async def _resume_sessions():
             state["source_provider"] = saved_sp
             state["repeat_mode"] = saved.get("repeat_mode", "off")
             state["crossfade_seconds"] = saved.get("crossfade_seconds", 0.0)
+            state["history"] = saved.get("history", [])
 
             # DIAGNOSIS: log what source_provider was actually loaded from disk
             log.info(

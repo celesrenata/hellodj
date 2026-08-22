@@ -169,6 +169,7 @@ def _snapshot(state: dict) -> dict:
         "text_channel_id": text_channel.id if text_channel else None,
         "current": _to_entry(current) if current else None,
         "queue": [_to_entry(item) for item in state["queue"]],
+        "history": [_to_entry(item) for item in state.get("history", [])[:10]],
         # Extended guild settings — must be persisted or they reset to
         # save_guild() defaults (source_provider="youtube", repeat_mode="off")
         # on every persist() call, wiping the user's /source choice on restart.
@@ -190,6 +191,7 @@ def get_state(guild_id: int) -> dict:
     if guild_id not in guild_state:
         guild_state[guild_id] = {
             "queue": [],
+            "history": [],                # last N played tracks (most recent first)
             "voice_channel": None,
             "text_channel": None,
             "current": None,
@@ -215,6 +217,9 @@ def get_state(guild_id: int) -> dict:
             "video_streamer": None,        # VideoStreamer instance or None
             "video_queue": [],             # list[VideoSource] pending video playback
         }
+    # Ensure history exists for states created before this field was added
+    if "history" not in guild_state[guild_id]:
+        guild_state[guild_id]["history"] = []
     return guild_state[guild_id]
 
 
@@ -694,6 +699,57 @@ def get_queue_page(state: dict, page: int = 0, page_size: int = 10) -> list[dict
     return state["queue"][start:end]
 
 
+async def jump_to(guild_id: int, *, history_index: int | None = None, queue_index: int | None = None) -> bool:
+    """Jump to a track from history or queue and start playing it immediately.
+
+    Parameters
+    ----------
+    guild_id:
+        The guild to operate on.
+    history_index:
+        0-based index into state["history"] (most recent first). If provided,
+        the track is removed from history and inserted at the front of the queue,
+        then playback advances.
+    queue_index:
+        0-based index into state["queue"]. If provided, moves that track to
+        the front of the queue, then playback advances.
+
+    Returns True if playback was triggered, False on invalid index.
+    """
+    state = get_state(guild_id)
+
+    if history_index is not None:
+        history = state.setdefault("history", [])
+        if history_index < 0 or history_index >= len(history):
+            return False
+        track = history.pop(history_index)
+        state["queue"].insert(0, track)
+    elif queue_index is not None:
+        if queue_index < 0 or queue_index >= len(state["queue"]):
+            return False
+        # Move the selected track to position 0
+        track = state["queue"].pop(queue_index)
+        state["queue"].insert(0, track)
+    else:
+        return False
+
+    # Stop current playback — this triggers _play_next_from_queue via on_track_end
+    p = get_player(guild_id)
+    if p and p.connected and p.playing:
+        # on_track_end fires asynchronously via event dispatch, so we can't
+        # rely on it running before we return. Instead, stop the player and
+        # manually advance the queue ourselves. Set a flag to suppress the
+        # duplicate advance from on_track_end.
+        state["_jump_transition"] = True
+        await p.stop()
+        state.pop("_jump_transition", None)
+        await _play_next_from_queue(guild_id)
+    else:
+        # No player playing — manually advance
+        await _play_next_from_queue(guild_id)
+    return True
+
+
 def set_repeat(state: dict, mode: str) -> None:
     assert mode in ("off", "single", "queue")
     state["repeat_mode"] = mode
@@ -790,7 +846,12 @@ def reset_crossfade(guild_id: int) -> None:
 
 
 def _is_video_active(guild_id: int) -> bool:
-    """Check if a video Activity session is currently active for this guild."""
+    """Check if a video Activity session is currently active for this guild.
+
+    Only returns True if there's an actual live video streamer session registered
+    and active. A stale 'current' entry with type=music_video does NOT mean
+    a video is actively streaming.
+    """
     try:
         bot_ref = _bot_ref
         if bot_ref is None:
@@ -803,13 +864,6 @@ def _is_video_active(guild_id: int) -> bool:
             if gid == guild_id and streamer.is_active:
                 log.debug("_is_video_active: guild=%d has active video session", guild_id)
                 return True
-        # Also check if current entry is a video (streamer may have been unregistered
-        # but video is still the "current" item)
-        state = get_state(guild_id)
-        current = state.get("current")
-        if current and current.get("type") == "music_video":
-            log.debug("_is_video_active: guild=%d current is a music_video entry", guild_id)
-            return True
     except Exception as exc:
         log.debug("_is_video_active check failed: %s", exc)
     return False
@@ -889,6 +943,12 @@ async def _play_next_from_queue(guild_id: int) -> None:
         state["queue"].insert(0, state["current"])
     elif state["repeat_mode"] == "queue" and state.get("current"):
         state["queue"].append(state["current"])
+
+    # Push outgoing track to history (most recent first, capped at 50)
+    if state.get("current"):
+        history = state.setdefault("history", [])
+        history.insert(0, state["current"])
+        del history[50:]  # keep a reasonable cap
 
     # Pop next
     if not state["queue"]:
@@ -1438,6 +1498,11 @@ async def on_track_end(guild_id: int, player: wavelink.Player, track: wavelink.P
     # (the disconnect that triggers this event is intentional, not a track finishing)
     if state.get("_video_transition"):
         dbg.debug("on_track_end: suppressed during video transition guild=%d", guild_id)
+        return
+
+    # If jump_to is handling the advancement, suppress duplicate advance
+    if state.get("_jump_transition"):
+        dbg.debug("on_track_end: suppressed during jump transition guild=%d", guild_id)
         return
 
     np_task = state.get("now_playing_task")

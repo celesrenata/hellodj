@@ -159,10 +159,22 @@ class UnifiedControlView(discord.ui.View):
     # ── Audio handlers ───────────────────────────────────────
 
     async def _audio_previous(self, interaction: discord.Interaction, guild_id: int) -> None:
-        """Seek to start of current audio track."""
+        """Go to previous audio track from history, or seek to start if no history."""
         import player
+        state = player.get_state(guild_id)
+        history = state.get("history", [])
+        if history:
+            # Jump to most recent history track
+            ok = await player.jump_to(guild_id, history_index=0)
+            if ok:
+                title = state.get("current", {}).get("title", "Unknown")
+                await interaction.response.send_message(
+                    f"⏮ Playing **{title}**", ephemeral=True
+                )
+                return
+        # No history — seek to start of current track
         p = player.get_player(guild_id)
-        if p:
+        if p and p.playing:
             try:
                 await p.seek(0)
             except Exception:
