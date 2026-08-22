@@ -525,11 +525,12 @@ class HLSTranscodePipeline:
         """Build ffmpeg args for streaming URL input → HLS output.
 
         Uses -re to read at native rate (throttled) and -reconnect flags
-        for resilient HTTP streaming.
+        for resilient HTTP streaming (HLS sources only — not DASH).
 
         When audio_url is provided (DASH sources like YouTube), adds a second
         input for the separate audio stream and maps video from input 0 and
-        audio from input 1.
+        audio from input 1. Reconnect flags are skipped for DASH (finite
+        content-length downloads that don't benefit from reconnection).
         """
         resolution = self._cap_resolution(resolution)
         bitrate = _bitrate_for_resolution(resolution)
@@ -540,12 +541,15 @@ class HLSTranscodePipeline:
         # Throttle input to native playback rate — friendly to providers
         args.append("-re")
 
-        # HTTP reconnect options for resilient streaming
-        args.extend([
-            "-reconnect", "1",
-            "-reconnect_streamed", "1",
-            "-reconnect_delay_max", "5",
-        ])
+        # HTTP reconnect options — only for HLS/live streams (single-input mode).
+        # DASH sources (dual-input with audio_url) are finite downloads where
+        # -reconnect causes ffmpeg to retry after normal EOF.
+        if not audio_url:
+            args.extend([
+                "-reconnect", "1",
+                "-reconnect_streamed", "1",
+                "-reconnect_delay_max", "5",
+            ])
 
         # Decode stage: prefer QSV hardware decode
         if self._use_hwaccel_decode:

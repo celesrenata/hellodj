@@ -285,10 +285,15 @@ class YouTubeResolver:
             YouTubeResolverError: If yt-dlp fails.
         """
         # Cap at 720p for streaming — we're transcoding anyway and higher
-        # resolutions waste bandwidth on the download side
+        # resolutions waste bandwidth on the download side.
+        # Exclude AV1 (av01) — QSV hardware decoder doesn't support it.
+        # Prefer H.264 (avc1) which QSV handles natively; fall back to VP9.
         height = min(quality.height if quality is not None else 720, 720)
         format_sel = (
-            f"bestvideo[height<={height}]+bestaudio/best[height<={height}]"
+            f"bestvideo[height<={height}][vcodec^=avc1]+bestaudio/"
+            f"bestvideo[height<={height}][vcodec^=vp9]+bestaudio/"
+            f"bestvideo[height<={height}][vcodec!^=av01]+bestaudio/"
+            f"best[height<={height}]"
         )
 
         # Build yt-dlp command — simulate only, dump JSON with URLs
