@@ -1147,41 +1147,34 @@ import { DiscordSDK } from './discord-sdk.js';
       setMode('VIDEO_PLAYING');
       initHls(playlistUrl, false);
     } else {
-      // First viewer or stream just started — show countdown, then switch to HLS
-      setMode('VIDEO_PLAYING');
-      videoEl.src = 'static/countdown.mp4';
-      videoEl.play().catch(() => {});
-
-      videoEl.addEventListener('ended', () => {
-        videoEl.removeAttribute('src'); videoEl.muted = false;
-        initHls(playlistUrl);
-      }, { once: true });
+      // First viewer or stream just started — show CSS countdown, then switch to HLS
+      setMode('COUNTDOWN');
+      countdownOverlayCtrl.start(3, status.video_title || '');
+      // Override onComplete to init HLS after countdown
+      countdownOverlayCtrl._onComplete = () => {
+        wsSend({ type: 'ready' });
+        setMode('VIDEO_PLAYING');
+        initHls(playlistUrl, true);
+      };
     }
   } else if (status.state === 'buffering') {
-    // Still transcoding — show countdown, then poll until streaming
-    setMode('VIDEO_PLAYING');
-    titleBar.textContent = `${status.video_title || 'Loading...'} — Preparing stream...`;
-    videoEl.src = 'static/countdown.mp4';
-    videoEl.play().catch(() => {});
+    // Still transcoding — show countdown overlay as "preparing" state, poll until streaming
+    setMode('COUNTDOWN');
+    countdownTitle.textContent = status.video_title || 'Loading...';
+    countdownNumber.textContent = '⏳';
 
-    // Poll until stream is ready
+    // Poll until stream is ready, then run 3..2..1 countdown
     const waitForStream = setInterval(async () => {
-      const s = await fetchStatus();
+      const s = await fetchStatus(true);
       if (s && s.state === 'streaming' && s.playlist_url) {
         clearInterval(waitForStream);
-        titleBar.textContent = formatTitle(s.video_title, s.uploader);
-        // Wait for countdown to finish if still playing
-        if (!videoEl.ended && videoEl.currentTime < videoEl.duration) {
-          videoEl.addEventListener('ended', () => {
-            videoEl.removeAttribute('src'); videoEl.muted = false;
-            const playlistUrl = `stream/${guildId}/playlist.m3u8?token=${encodeURIComponent(instanceId)}`;
-            initHls(playlistUrl);
-          }, { once: true });
-        } else {
-          videoEl.removeAttribute('src'); videoEl.muted = false;
-          const playlistUrl = `stream/${guildId}/playlist.m3u8?token=${encodeURIComponent(instanceId)}`;
-          initHls(playlistUrl);
-        }
+        const playlistUrl = `stream/${guildId}/playlist.m3u8?token=${encodeURIComponent(instanceId)}`;
+        countdownOverlayCtrl.start(3, s.video_title || '');
+        countdownOverlayCtrl._onComplete = () => {
+          wsSend({ type: 'ready' });
+          setMode('VIDEO_PLAYING');
+          initHls(playlistUrl, true);
+        };
       }
     }, 2000);
   } else {
