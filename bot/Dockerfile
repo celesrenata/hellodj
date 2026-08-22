@@ -87,7 +87,7 @@ COPY video/ ./video/
 COPY playback/ ./playback/
 COPY views/ ./views/
 
-# Copy sticker zip archives for whiteboard sticker catalog
+# Copy curated sticker pack (manifest + assets) for whiteboard sticker catalog
 COPY stickers/ ./stickers/
 
 # Copy wake word model (optional — the artifact is a training output and may be

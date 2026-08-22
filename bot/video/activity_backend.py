@@ -22,6 +22,8 @@ from video.sticker_catalog import (
     StickerCatalog,
     handle_sticker_catalog,
     handle_sticker_image,
+    handle_sticker_page,
+    handle_sticker_search,
 )
 from video.ws_hub import WebSocketHub
 
@@ -209,6 +211,10 @@ class ActivityBackend:
 
         # Sticker catalog routes
         self.app.router.add_get("/activity/stickers/catalog", handle_sticker_catalog)
+        self.app.router.add_get("/activity/stickers/search", handle_sticker_search)
+        self.app.router.add_get(
+            "/activity/stickers/category/{slug}", handle_sticker_page
+        )
         self.app.router.add_get(
             "/activity/stickers/{category}/{filename}", handle_sticker_image
         )

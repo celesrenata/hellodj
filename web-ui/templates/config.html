@@ -578,12 +578,19 @@ async function loadProviderStatus() {
         const configured = p.configured
             ? '<span class="badge bg-success">Configured</span>'
             : '<span class="badge bg-danger">Not configured</span>';
-        const tokenPresent = p.token_present
-            ? '<span class="badge bg-success">Token present</span>'
-            : '<span class="badge bg-secondary">No token</span>';
-        const tokenExpired = p.token_present && p.token_expired
-            ? '<span class="badge bg-danger">Token expired</span>'
-            : '<span class="badge bg-success">Token valid</span>';
+        // For Tidal in client_credentials mode, show that LavasRC self-manages
+        let tokenPresent, tokenExpired;
+        if (p.mode === 'client_credentials') {
+            tokenPresent = '<span class="badge bg-success">Client credentials</span>';
+            tokenExpired = '<span class="badge bg-success">Self-managed</span>';
+        } else {
+            tokenPresent = p.token_present
+                ? '<span class="badge bg-success">Token present</span>'
+                : '<span class="badge bg-secondary">No token</span>';
+            tokenExpired = p.token_present && p.token_expired
+                ? '<span class="badge bg-danger">Token expired</span>'
+                : '<span class="badge bg-success">Token valid</span>';
+        }
         const updated = p.updated_at
             ? `<small class="text-muted">Updated ${new Date(p.updated_at).toLocaleString()}</small>`
             : '<small class="text-muted">Never authenticated</small>';

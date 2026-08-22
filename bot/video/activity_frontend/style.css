@@ -478,8 +478,8 @@ body:hover {
     position: absolute;
     top: 56px;
     right: 8px;
-    width: 240px;
-    max-height: 320px;
+    width: 280px;
+    max-height: 400px;
     background: var(--bg-overlay);
     border-radius: 8px;
     z-index: 40;
@@ -503,6 +503,13 @@ body:hover {
     border-bottom: 1px solid rgba(255, 255, 255, 0.15);
 }
 
+.sticker-picker-count {
+    font-size: 0.65rem;
+    color: var(--text-muted);
+    margin-left: auto;
+    margin-right: 8px;
+}
+
 .sticker-picker-close {
     background: none;
     border: none;
@@ -517,12 +524,38 @@ body:hover {
     color: #fff;
 }
 
+.sticker-picker-search-row {
+    padding: 6px 8px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sticker-picker-search {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.15);
+    border-radius: 4px;
+    color: #fff;
+    font-size: 0.75rem;
+    padding: 5px 8px;
+    outline: none;
+    box-sizing: border-box;
+}
+
+.sticker-picker-search::placeholder {
+    color: var(--text-muted);
+}
+
+.sticker-picker-search:focus {
+    border-color: var(--accent);
+}
+
 .sticker-picker-categories {
     display: flex;
     gap: 4px;
     padding: 6px 8px;
     overflow-x: auto;
     border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    flex-shrink: 0;
 }
 
 .sticker-picker-grid {
@@ -532,6 +565,43 @@ body:hover {
     padding: 8px;
     overflow-y: auto;
     flex: 1;
+}
+
+.sticker-thumb-wrapper {
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 56px;
+    height: 56px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.sticker-thumb-wrapper:hover {
+    background: rgba(255, 255, 255, 0.1);
+}
+
+.sticker-thumb-wrapper.selected {
+    background: rgba(var(--accent-rgb, 88, 101, 242), 0.3);
+    outline: 2px solid var(--accent);
+    border-radius: 4px;
+}
+
+.sticker-thumbnail {
+    max-width: 48px;
+    max-height: 48px;
+    object-fit: contain;
+}
+
+.sticker-animated-badge {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    font-size: 6px;
+    color: #43b581;
+    line-height: 1;
 }
 
 /* === Whiteboard toggle button active state === */

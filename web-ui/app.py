@@ -1078,22 +1078,38 @@ def api_providers_status():
         error = None
 
         # For Tidal: check the credential store (source of truth for tokens)
+        # LavasRC uses client_credentials when clientId+clientSecret are configured,
+        # managing its own token lifecycle. The PKCE user token (tidal.access_token)
+        # is only used by the tidal-stream direct streaming sidecar.
         if name == "tidal":
             try:
                 from credentials import creds as _creds
+                tidal_client_id = _creds.get("tidal.client_id", "")
+                tidal_client_secret = _creds.get("tidal.client_secret", "")
                 tidal_token = _creds.get("tidal.access_token", "")
                 tidal_expires = _creds.get("tidal.expires_at", "")
                 tidal_updated = _creds.get("tidal.updated_at", "")
-                tidal_client_id = _creds.get("tidal.client_id", "")
-                token_present = bool(tidal_token)
-                expires_at = float(tidal_expires) if tidal_expires else None
-                expired = (expires_at is not None and now > expires_at) if token_present else False
+
+                # LavasRC self-manages tokens when both client credentials are present
+                has_client_creds = bool(tidal_client_id and tidal_client_secret)
+
+                # PKCE user token status (for direct streaming sidecar)
+                pkce_token_present = bool(tidal_token)
+                pkce_expires_at = float(tidal_expires) if tidal_expires else None
+                pkce_expired = (pkce_expires_at is not None and now > pkce_expires_at) if pkce_token_present else False
+
+                # Overall status: Tidal works if LavasRC has client creds OR a valid PKCE token
+                configured = has_client_creds or pkce_token_present
+                token_present = has_client_creds or pkce_token_present
+                expired = False if has_client_creds else pkce_expired
                 error = None
-                configured = bool(tidal_client_id)
             except Exception as e:
                 log.warning("Failed to read Tidal status from credential store: %s", e)
+                has_client_creds = False
+                pkce_token_present = False
+                pkce_expires_at = None
+                pkce_expired = False
                 token_present = False
-                expires_at = None
                 expired = True
                 error = str(e)
                 configured = False
@@ -1103,9 +1119,10 @@ def api_providers_status():
                 "label": prov["label"],
                 "token_present": token_present,
                 "token_expired": expired,
-                "expires_at": expires_at,
+                "expires_at": pkce_expires_at if not has_client_creds else None,
                 "updated_at": tidal_updated,
                 "refresh_error": error,
+                "mode": "client_credentials" if has_client_creds else "pkce",
             }
             continue
 
