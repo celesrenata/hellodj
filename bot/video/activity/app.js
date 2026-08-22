@@ -626,6 +626,9 @@ import { DiscordSDK } from './discord-sdk.js';
 
   const handleWsMessage = (data) => {
     const { type } = data;
+    if (type !== 'state' && type !== 'pong') {
+      _rlog('[WS msg] type=' + type);
+    }
 
     // Forward whiteboard-related messages to whiteboard sync handler
     if (_whiteboardSync && _whiteboardSync.handleMessage(data)) {
@@ -748,6 +751,7 @@ import { DiscordSDK } from './discord-sdk.js';
 
       case 'session_end':
         // Session ended — clean up and go idle
+        _rlog('[session_end] received — going IDLE, currentSessionId=' + currentSessionId);
         setMode('IDLE');
         if (hls) { hls.destroy(); hls = null; }
         videoEl.pause();
@@ -806,6 +810,7 @@ import { DiscordSDK } from './discord-sdk.js';
 
       case 'session_change':
         // Server notifies that skip/previous happened — immediately check for new session
+        _rlog('[session_change] received via WS, calling _checkForNextSession');
         _checkForNextSession();
         break;
     }
@@ -1235,26 +1240,33 @@ import { DiscordSDK } from './discord-sdk.js';
 
   const _checkForNextSession = async () => {
     const updated = await fetchStatus(true); // suppress errors — 404 is expected during transitions
-    if (!updated) return; // Server unavailable or no session yet — retry next interval
+    if (!updated) {
+      _rlog('[_checkForNextSession] fetchStatus returned null (404/error)');
+      return;
+    }
+    _rlog('[_checkForNextSession] status: state=' + updated.state + ' session_id=' + (updated.session_id || 'null') + ' currentSessionId=' + currentSessionId + ' playlist_url=' + (updated.playlist_url ? 'yes' : 'no') + ' title=' + (updated.video_title || ''));
     const formattedTitle = formatTitle(updated.video_title, updated.uploader);
     if (updated.video_title && formattedTitle !== titleBar.textContent) {
       titleBar.textContent = formattedTitle;
     }
     if (updated.session_id && updated.session_id !== currentSessionId) {
-      currentSessionId = updated.session_id;
-      // New session — reconnect WebSocket and reinit HLS
-      disconnectWebSocket();
-      if (updated.playlist_url) {
+      if (updated.playlist_url && updated.state === 'streaming') {
+        _rlog('[_checkForNextSession] NEW SESSION ready: ' + updated.session_id + ' (was ' + currentSessionId + ')');
+        currentSessionId = updated.session_id;
         errorOverlay.classList.remove('visible');
         setMode('VIDEO_PLAYING');
         const playlistUrl = `stream/${guildId}/playlist.m3u8?token=${encodeURIComponent(instanceId)}`;
         initHls(playlistUrl);
+      } else {
+        _rlog('[_checkForNextSession] new session ' + updated.session_id + ' not ready yet (state=' + updated.state + ', playlist=' + (updated.playlist_url ? 'yes' : 'no') + ') — will retry');
+        // Don't update currentSessionId — wait until it's streaming with playlist
       }
     } else if (updated.state === 'streaming' && updated.session_id === currentSessionId) {
       // Still streaming same session — clear any stale error overlay
       errorOverlay.classList.remove('visible');
     } else if (updated.state === 'idle' || !updated.session_id) {
       // Session ended with no next video — show message but keep polling
+      _rlog('[_checkForNextSession] idle/no session — showing queue empty');
       showError('Playback complete — queue is empty.');
     }
   };
