@@ -122,7 +122,6 @@ class PlaybackRouter:
         query: str,
         *,
         mode: Literal["auto", "audio", "video", "music_video", "album"] = "auto",
-        attachment: discord.Attachment | None = None,
     ) -> None:
         """Classify content → resolve or create session → enqueue/play.
 
@@ -165,8 +164,7 @@ class PlaybackRouter:
             return
 
         # Classify the input
-        attachment_ct = attachment.content_type if attachment else None
-        result = classify(query, mode=mode, attachment_content_type=attachment_ct)
+        result = classify(query, mode=mode)
 
         if result is None:
             await interaction.response.send_message(
