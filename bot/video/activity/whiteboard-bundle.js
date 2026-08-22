@@ -1964,6 +1964,7 @@ class WhiteboardOverlay {
     this.currentWidth = 3;
     this.currentOpacity = 1.0;
     this.undoStack = [];
+    this._animFrameId = null;
 
     this.renderer = new StrokeRenderer(
       this.ctx,
@@ -2007,6 +2008,7 @@ class WhiteboardOverlay {
       this.undoStack.push(stroke.id);
     }
     this.redraw();
+    this._startAnimationLoop();
   }
 
   removeStroke(strokeId) {
@@ -2016,18 +2018,48 @@ class WhiteboardOverlay {
       this.undoStack.splice(undoIdx, 1);
     }
     this.redraw();
+    // Stop animation loop if no animated stickers remain
+    if (!this._hasAnimatedStickers()) {
+      this._stopAnimationLoop();
+    }
   }
 
   clearAll() {
     this.strokes.clear();
     this.undoStack.length = 0;
     this.redraw();
+    this._stopAnimationLoop();
   }
 
   redraw() {
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     for (const stroke of this.strokes.values()) {
       this.renderer.renderStroke(stroke);
+    }
+  }
+
+  _hasAnimatedStickers() {
+    for (const stroke of this.strokes.values()) {
+      if (stroke.type === 'sticker') return true;
+    }
+    return false;
+  }
+
+  _startAnimationLoop() {
+    if (this._animFrameId) return;
+    if (!this._hasAnimatedStickers()) return;
+
+    const tick = () => {
+      this.redraw();
+      this._animFrameId = requestAnimationFrame(tick);
+    };
+    this._animFrameId = requestAnimationFrame(tick);
+  }
+
+  _stopAnimationLoop() {
+    if (this._animFrameId) {
+      cancelAnimationFrame(this._animFrameId);
+      this._animFrameId = null;
     }
   }
 

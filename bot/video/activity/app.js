@@ -1393,6 +1393,13 @@ import { DiscordSDK } from './discord-sdk.js';
     // Prevent popup clicks from closing themselves
     penPopup?.addEventListener('click', (e) => e.stopPropagation());
     eraserPopup?.addEventListener('click', (e) => e.stopPropagation());
+    // Prevent pointer events on popups from reaching the canvas
+    penPopup?.addEventListener('pointerdown', (e) => e.stopPropagation());
+    eraserPopup?.addEventListener('pointerdown', (e) => e.stopPropagation());
+    penPopup?.addEventListener('pointermove', (e) => e.stopPropagation());
+    eraserPopup?.addEventListener('pointermove', (e) => e.stopPropagation());
+    penPopup?.addEventListener('pointerup', (e) => e.stopPropagation());
+    eraserPopup?.addEventListener('pointerup', (e) => e.stopPropagation());
 
     // Set initial active state on pen button
     document.querySelector('.hud-btn[data-tool="pen"]')?.classList.add('active');

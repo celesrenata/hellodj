@@ -55,6 +55,7 @@ body {
     background: var(--bg-overlay);
     flex-shrink: 0;
     pointer-events: auto;
+    position: relative;
     z-index: 50;
 }
 
