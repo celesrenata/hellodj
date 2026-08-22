@@ -1079,13 +1079,24 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
                 await streamer.play(source)
 
                 import time as _time
+                # Set state as playing immediately — no countdown for reused sessions
+                # since viewers are already connected
                 video_cog._backend.ws_hub.set_state(
                     guild_id,
-                    PlaybackState(playing=False, position=0.0, last_update=_time.monotonic()),
+                    PlaybackState(playing=True, position=0.0, last_update=_time.monotonic()),
                 )
-                # Notify connected clients there's a new session
+                # Mark playback as started (skip countdown protocol)
+                streamer.waiting_for_viewer = False
+                streamer.countdown_active = False
+                streamer.playback_started = True
+                streamer.start_time = _time.monotonic()
+
+                # Broadcast start + session_change so clients reinit HLS and play
                 await video_cog._backend.ws_hub.broadcast_from_bot(guild_id, {
                     "type": "session_change",
+                })
+                await video_cog._backend.ws_hub.broadcast_from_bot(guild_id, {
+                    "type": "start",
                 })
 
                 if text_channel:
