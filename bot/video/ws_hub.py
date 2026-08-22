@@ -232,7 +232,16 @@ class WebSocketHub:
                     countdown_sent = True
 
         if not countdown_sent and (state is not None or strokes):
-            # Standard late-joiner sync: send computed position
+            # Standard late-joiner sync: send computed position.
+            # Skip position sync during the first 15s after playback_started
+            # to avoid jitter while the client is still buffering/stabilizing.
+            streamer_obj = self._streamers.get(guild_id)
+            grace_period_active = False
+            if streamer_obj and streamer_obj.playback_started and streamer_obj.start_time > 0:
+                time_since_start = time.monotonic() - streamer_obj.start_time
+                if time_since_start < 15.0:
+                    grace_period_active = True
+
             if state and state.playing:
                 elapsed = time.monotonic() - state.last_update
                 current_position = state.position + elapsed
@@ -242,7 +251,8 @@ class WebSocketHub:
             state_msg = {
                 "type": "state",
                 "playing": state.playing if state else False,
-                "position": current_position,
+                # During grace period, send position 0 to avoid seeking
+                "position": 0.0 if grace_period_active else current_position,
                 "timestamp": time.time(),
                 "subtitle_lang": state.subtitle_lang if state else None,
                 "audio_lang": state.audio_lang if state else None,

@@ -663,10 +663,12 @@ import { DiscordSDK } from './discord-sdk.js';
         if (mode !== 'VIDEO_PLAYING') setMode('VIDEO_PLAYING');
         {
           const wasMuted = videoEl.muted;
-          // Only seek if position differs by more than 5s to avoid keyframe corruption
+          // Only seek if position differs by more than 10s — avoids jitter
+          // from server position computation lag during early playback.
+          // Manual seeks use the 'seek' message type which always applies.
           if (data.position != null) {
             const drift = Math.abs(videoEl.currentTime - data.position);
-            if (drift > 5) videoEl.currentTime = data.position;
+            if (drift > 10) videoEl.currentTime = data.position;
           }
           if (data.playing) {
             videoEl.play().catch(() => {});
