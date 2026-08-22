@@ -81,8 +81,12 @@ def _build_eq_display(gains: list[float], selected_band: int) -> str:
     for i in range(BAND_COUNT):
         if i == selected_band:
             ind_chars.append("▲")
-            # ▲ is wider — reduce spacing after it by 1
-            adj_spacings.append(ind_spacings[i][:-1] if ind_spacings[i] else "")
+            # ▲ is wider — reduce spacing after it by 1, but only if there's room
+            sp = ind_spacings[i]
+            if len(sp) >= 3:
+                adj_spacings.append(sp[:-1])
+            else:
+                adj_spacings.append(sp)
         else:
             ind_chars.append("·")
             adj_spacings.append(ind_spacings[i])
