@@ -22,11 +22,10 @@ DISCORD API LIMITATION (read this before extending)
 Discord does **NOT** support a bot "screensharing" video into a voice channel.
 The Discord API offers no endpoint for a bot to broadcast video into voice —
 streaming/GoLive is a user-guild feature, and bots can only set
-self_mute/self_deafen voice state. The realistic way to "stream music videos to
-the channel" is therefore to embed the video in a **text channel** (Discord
-auto-embeds video links/attachments posted as messages), which is what the
-``cogs/stream.py`` command does. This module only fetches the Tidal video URL;
-the actual delivery-to-Discord is handled by the cog.
+self_mute/self_deafen voice state. Video delivery uses Discord Activities
+(embedded iframes) via the unified ``/play`` command with ``type:music_video``.
+This module only fetches the Tidal video URL; the actual delivery-to-Discord is
+handled by the PlaybackRouter and VideoCog.
 """
 
 from __future__ import annotations

@@ -1,8 +1,8 @@
-"""HelloDJ — Video cog: Discord Activity-based video streaming slash commands.
+"""HelloDJ — Video cog: Activity-based video streaming backend.
 
-Provides the ``/video`` command group for streaming video into a voice channel
-via a Discord Activity (embedded iframe). Supports YouTube, direct URLs,
-queue management, and synchronized playback via HLS.
+Provides the video streaming backend for the unified ``/play`` command
+(modes: video, music_video). Supports YouTube, direct URLs, queue
+management, and synchronized playback via HLS through Discord Activities.
 
 Commands
 --------
