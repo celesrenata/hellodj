@@ -57,17 +57,18 @@ def _gain_to_block(gain: float) -> str:
 def _build_eq_display(gains: list[float], selected_band: int) -> str:
     """Build the text visualization of the EQ.
 
-    Uses simple space-separated layout tuned for Discord's code block font.
+    The block chars (▁▂▃▄▅▆▇█) render wider than ASCII in Discord's code
+    block font. To compensate, we pad each block char with fewer spaces than
+    the ASCII indicator/label rows. The result looks aligned on Discord.
     """
-    # Bars: single block char per band, separated by single space
-    bars = " ".join(_gain_to_block(g) for g in gains)
+    # Bars: block chars render wider than ASCII in Discord, pad with 2 spaces
+    bars = " " + "  ".join(_gain_to_block(g) for g in gains)
 
-    # Indicator: ▲ for selected, · for others
-    indicator = " ".join("▲" if i == selected_band else "·" for i in range(BAND_COUNT))
+    # Indicator: 3-char wide slots to match visual width of bars
+    indicator = " " + "".join(f"{'▲' if i == selected_band else '·':<3}" for i in range(BAND_COUNT))
 
-    # Labels: pad each to 3 chars, space-separated
-    # 2-char labels get a trailing space, 3-char labels don't
-    labels = " ".join(lbl.ljust(3) for lbl in BAND_LABELS)
+    # Labels: space-joined, compact but readable
+    labels = " ".join(BAND_LABELS)
 
     return f"{bars}\n{indicator}\n{labels}"
 
