@@ -1237,6 +1237,7 @@ class StickerPicker {
     this._renderCategories();
     this._loadCategory(this.selectedCategory);
     this.container.style.display = 'flex';
+    if (this._searchInput) requestAnimationFrame(() => this._searchInput.focus());
   }
 
   hide() {
