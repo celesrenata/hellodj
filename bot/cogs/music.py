@@ -1332,7 +1332,14 @@ class Music(commands.Cog):
                     return tidal_albums
             except Exception as exc:
                 log.debug("Tidal direct album search failed: %s", exc)
-            # Fall back to track-based grouping
+            # Fall back to Spotify (better fuzzy matching) then track-based grouping
+            import spotify as _spotify_mod_td
+            try:
+                spotify_albums = await _spotify_mod_td.search_albums(query, limit=10)
+                if spotify_albums:
+                    return spotify_albums
+            except Exception as exc:
+                log.debug("Spotify album search fallback failed for tidal provider: %s", exc)
             search_queries.append(("tidal", f"tdsearch:{query}", "tidal"))
         elif provider in ("youtube_music", "youtube"):
             # For YouTube/YouTube Music, try Spotify album search first (best catalog)
