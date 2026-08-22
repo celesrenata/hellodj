@@ -1040,49 +1040,55 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
         # fall through to the old LavaSrc/YouTube path.
         if sp in ("spotify", "tidal") and url:
             from stream_resolver import resolve_direct_stream
-            direct_url = await resolve_direct_stream(sp, url)
-            if direct_url:
-                tracks = await Playable.search(direct_url)
-                if tracks:
-                    track = tracks[0] if isinstance(tracks, list) else tracks
-                    # Inject real metadata — Lavalink's HTTP source doesn't know
-                    # the track title/artist. Use object.__setattr__ to bypass
-                    # wavelink's read-only property descriptors.
-                    try:
-                        object.__setattr__(track, "_title", title)
-                    except Exception:
-                        pass
-                    try:
-                        object.__setattr__(track, "_author", entry.get("author", "") or "")
-                    except Exception:
-                        pass
-                    try:
-                        object.__setattr__(track, "_uri", url)
-                    except Exception:
-                        pass
-                    try:
-                        object.__setattr__(track, "_source", sp)
-                    except Exception:
-                        pass
-                    duration = entry.get("duration", 0)
-                    if duration and duration > 0:
+            try:
+                direct_url = await resolve_direct_stream(sp, url)
+                if direct_url:
+                    tracks = await Playable.search(direct_url)
+                    if tracks:
+                        track = tracks[0] if isinstance(tracks, list) else tracks
+                        # Inject real metadata — Lavalink's HTTP source doesn't know
+                        # the track title/artist. Use object.__setattr__ to bypass
+                        # wavelink's read-only property descriptors.
                         try:
-                            object.__setattr__(track, "_length", duration)
+                            object.__setattr__(track, "_title", title)
                         except Exception:
                             pass
-                    dbg.event("resolve_success", guild_id=guild_id, title=title,
-                              resolved_uri=url,
-                              resolved_title=title,
-                              resolved_author=track.author,
-                              resolved_length=track.length,
-                              source_provider=f"{sp}_direct",
-                              elapsed_ms=(time.monotonic() - resolve_start) * 1000)
-                    # Mark the current entry with the real source for embeds
-                    if state.get("current"):
-                        state["current"]["source"] = sp
-                    await player.play(track)
-                    return
-                log.info("Direct stream URL returned but Lavalink couldn't load it — falling back")
+                        try:
+                            object.__setattr__(track, "_author", entry.get("author", "") or "")
+                        except Exception:
+                            pass
+                        try:
+                            object.__setattr__(track, "_uri", url)
+                        except Exception:
+                            pass
+                        try:
+                            object.__setattr__(track, "_source", sp)
+                        except Exception:
+                            pass
+                        duration = entry.get("duration", 0)
+                        if duration and duration > 0:
+                            try:
+                                object.__setattr__(track, "_length", duration)
+                            except Exception:
+                                pass
+                        dbg.event("resolve_success", guild_id=guild_id, title=title,
+                                  resolved_uri=url,
+                                  resolved_title=title,
+                                  resolved_author=track.author,
+                                  resolved_length=track.length,
+                                  source_provider=f"{sp}_direct",
+                                  elapsed_ms=(time.monotonic() - resolve_start) * 1000)
+                        # Mark the current entry with the real source for embeds
+                        if state.get("current"):
+                            state["current"]["source"] = sp
+                        await player.play(track)
+                        return
+                    log.info("Direct stream URL returned but Lavalink couldn't load it — falling back")
+            except Exception as direct_exc:
+                log.warning(
+                    "Direct stream resolution failed for %s (provider=%s), "
+                    "falling back to LavasRC: %s", title, sp, direct_exc,
+                )
 
         # Search using Playable.search with the configured source
         source_map = {

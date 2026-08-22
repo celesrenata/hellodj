@@ -120,9 +120,12 @@ async def resolve_tidal_stream(track_url_or_id: str) -> str | None:
 async def resolve_spotify_stream(track_url_or_id: str) -> str | None:
     """Resolve a Spotify track to a streaming proxy URL via the spotify-stream service.
 
-    Fires a preload request (non-blocking with short timeout) to warm the cache,
-    then returns the proxy URL. If preload doesn't complete in time, Lavalink will
-    trigger on-demand loading (which may timeout on first attempt but succeeds on retry).
+    Awaits the preload request to ensure the track is cached before returning the
+    proxy URL. This prevents a race condition where Lavalink requests the stream
+    before the sidecar has fetched and decoded the audio from Spotify.
+
+    Returns the proxy URL on success (track is cached and ready), or None on
+    failure (caller should fall back to the LavasRC/YouTube path).
     """
     track_id = extract_spotify_id(track_url_or_id)
     if not track_id:
@@ -147,23 +150,33 @@ async def resolve_spotify_stream(track_url_or_id: str) -> str | None:
         log.warning("stream_resolver: spotify-stream health check failed: %s", exc)
         return None
 
-    # Fire preload in background (don't wait — just warm the cache)
-    # This gives the sidecar a head start before Lavalink requests the stream
+    # Preload the track into the sidecar cache BEFORE returning the URL to
+    # Lavalink. Without awaiting this, there's a race condition: Lavalink
+    # requests the stream before the sidecar has the audio cached, causing a
+    # timeout/failure in Lavalink's HTTP source manager.
     import asyncio
     preload_url = f"{SPOTIFY_STREAM_URL}/preload/{track_id}"
 
-    async def _bg_preload():
-        try:
-            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=30)) as s:
-                async with s.get(preload_url) as r:
-                    if r.status == 200:
-                        log.debug("stream_resolver: bg preload complete for %s", track_id)
-        except Exception:
-            pass
+    try:
+        async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=15)) as s:
+            async with s.get(preload_url) as r:
+                if r.status == 200:
+                    log.debug("stream_resolver: preload complete for %s", track_id)
+                else:
+                    body = await r.text()
+                    log.warning(
+                        "stream_resolver: preload returned %d for %s: %s",
+                        r.status, track_id, body[:200],
+                    )
+                    return None
+    except asyncio.TimeoutError:
+        log.warning("stream_resolver: preload timed out for %s (15s)", track_id)
+        return None
+    except Exception as exc:
+        log.warning("stream_resolver: preload failed for %s: %s", track_id, exc)
+        return None
 
-    asyncio.create_task(_bg_preload())
-
-    # Return the streaming proxy URL immediately
+    # Track is now cached — return the stream URL for Lavalink to fetch
     stream_url = f"{SPOTIFY_STREAM_URL}/stream/{track_id}"
     log.info(
         "stream_resolver: resolved Spotify track %s → proxy URL (elapsed=%.0fms)",
