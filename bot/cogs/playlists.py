@@ -355,6 +355,11 @@ class Playlists(commands.Cog):
         pl_name = name or playlist_name_from_source or "Imported Playlist"
         pl_name = pl_name.strip()[:50]  # Cap at 50 chars
 
+        # If the name looks like a UUID (Tidal returns these), use a friendlier default
+        import re
+        if re.fullmatch(r"[0-9a-f\-]{20,}", pl_name, re.IGNORECASE):
+            pl_name = name or "Imported Playlist"
+
         # Check if playlist already exists
         gid = interaction.guild.id
         existing = storage.get(gid, pl_name)
