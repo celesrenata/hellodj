@@ -857,12 +857,12 @@ import { DiscordSDK } from './discord-sdk.js';
   // --- HLS Setup ---
   let hls = null;
 
-  const initHls = (playlistUrl, seekToStart = true, isLive = false) => {
+  const initHls = (playlistUrl, seekToStart = true, isLive = false, preloadOnly = false) => {
     if (hls) { hls.destroy(); hls = null; }
 
     if (!Hls.isSupported()) {
       videoEl.src = playlistUrl;
-      videoEl.play().catch(() => {});
+      if (!preloadOnly) videoEl.play().catch(() => {});
       connectWebSocket();
       return;
     }
@@ -887,8 +887,14 @@ import { DiscordSDK } from './discord-sdk.js';
     hls = new Hls(hlsConfig);
     hls._seekToStart = seekToStart;
     hls._isLive = isLive;
+    hls._preloadOnly = preloadOnly;
     hls.loadSource(playlistUrl);
-    hls.attachMedia(videoEl);
+
+    // Only attach to video element if not preloading — attaching triggers buffering
+    // into the MediaSource which can auto-play. For preload, we attach later.
+    if (!preloadOnly) {
+      hls.attachMedia(videoEl);
+    }
 
     hls.on(Hls.Events.MANIFEST_PARSED, () => {
       if (hls._seekToStart) {
@@ -1162,18 +1168,22 @@ import { DiscordSDK } from './discord-sdk.js';
     } else {
       // First viewer or stream just started — preload HLS during countdown
       setMode('COUNTDOWN');
-      // Start HLS loading in the background (paused) so segments buffer during countdown
-      initHls(playlistUrl, true);
-      videoEl.pause();
-      videoEl.style.display = 'none';  // keep video hidden during countdown
+      // Start HLS loading in preload mode (no media attach — just fetch manifest+segments)
+      initHls(playlistUrl, true, false, true);
       countdownOverlayCtrl.start(3, status.video_title || '');
       countdownOverlayCtrl._onComplete = () => {
         wsSend({ type: 'ready' });
         setMode('VIDEO_PLAYING');
-        videoEl.style.display = '';
-        videoEl.currentTime = 0;
-        videoEl.muted = false;
-        videoEl.play().catch((err) => { _rlog('play() after countdown: ' + err.message); });
+        // Now attach to video element and play
+        if (hls) {
+          hls.attachMedia(videoEl);
+          hls.once(Hls.Events.FRAG_BUFFERED, () => {
+            videoEl.currentTime = 0;
+            videoEl.muted = false;
+            videoEl.play().catch((err) => { _rlog('play() after countdown: ' + err.message); });
+          });
+        }
+        connectWebSocket();
       };
     }
   } else if (status.state === 'buffering') {
@@ -1188,18 +1198,21 @@ import { DiscordSDK } from './discord-sdk.js';
       if (s && s.state === 'streaming' && s.playlist_url) {
         clearInterval(waitForStream);
         const playlistUrl = `stream/${guildId}/playlist.m3u8?token=${encodeURIComponent(instanceId)}`;
-        // Start HLS loading in background during countdown
-        initHls(playlistUrl, true);
-        videoEl.pause();
-        videoEl.style.display = 'none';
+        // Start HLS loading in preload mode during countdown
+        initHls(playlistUrl, true, false, true);
         countdownOverlayCtrl.start(3, s.video_title || '');
         countdownOverlayCtrl._onComplete = () => {
           wsSend({ type: 'ready' });
           setMode('VIDEO_PLAYING');
-          videoEl.style.display = '';
-          videoEl.currentTime = 0;
-          videoEl.muted = false;
-          videoEl.play().catch((err) => { _rlog('play() after countdown: ' + err.message); });
+          if (hls) {
+            hls.attachMedia(videoEl);
+            hls.once(Hls.Events.FRAG_BUFFERED, () => {
+              videoEl.currentTime = 0;
+              videoEl.muted = false;
+              videoEl.play().catch((err) => { _rlog('play() after countdown: ' + err.message); });
+            });
+          }
+          connectWebSocket();
         };
       }
     }, 2000);
