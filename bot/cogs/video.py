@@ -81,6 +81,9 @@ class VideoCog(commands.Cog, name="Video"):
         bot_token = self.bot.http.token
         self._launcher = ActivityLauncher(self._http_session, bot_token)
 
+        # Register the persistent VideoControlView so buttons survive bot restarts
+        self.bot.add_view(VideoControlView(self))
+
         log.info("VideoCog loaded: Activity backend started, launcher ready")
 
     async def cog_unload(self) -> None:
@@ -1073,10 +1076,12 @@ class VideoControlView(discord.ui.View):
     The ⏯ button broadcasts play/pause via the WebSocketHub to all Activity
     clients. The ⏪/⏩ buttons compute a new position from the hub state and
     broadcast a seek event.
+
+    Uses timeout=None and fixed custom_ids to survive bot restarts (persistent view).
     """
 
-    def __init__(self, cog: VideoCog) -> None:
-        super().__init__(timeout=300)
+    def __init__(self, cog: "VideoCog | None" = None) -> None:
+        super().__init__(timeout=None)
         self._cog = cog
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
