@@ -343,9 +343,15 @@ class ActivityStreamer:
     def get_elapsed_seconds(self) -> float:
         """Return elapsed playback time clamped to [0, duration].
 
-        Returns 0.0 if not currently streaming.
+        Returns 0.0 if not currently streaming, or if playback hasn't
+        started yet (waiting for first viewer / countdown in progress).
         """
         if self.state != StreamState.STREAMING or self.start_time == 0.0:
+            return 0.0
+
+        # If we're waiting for the first viewer or countdown hasn't completed,
+        # the video hasn't actually started playing — report 0.
+        if not self.playback_started:
             return 0.0
 
         elapsed = time.monotonic() - self.start_time

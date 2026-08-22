@@ -968,10 +968,14 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
         # Start playback
         await streamer.play(source)
 
+        # Set initial state as NOT playing — playback position doesn't advance
+        # until the first viewer connects and the countdown completes.
+        # The ws_hub's _handle_ready resets position=0 and playing=True
+        # after the countdown finishes.
         import time as _time
         video_cog._backend.ws_hub.set_state(
             guild_id,
-            PlaybackState(playing=True, position=0.0, last_update=_time.monotonic()),
+            PlaybackState(playing=False, position=0.0, last_update=_time.monotonic()),
         )
 
         if text_channel:
