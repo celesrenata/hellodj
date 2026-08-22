@@ -341,6 +341,20 @@ class WebSocketHub:
             await self._handle_whiteboard_reset(guild_id, sender, data)
             return
 
+        # Skip / Previous — trigger queue navigation via the streamer
+        if msg_type == "skip":
+            log.info("WS skip requested for guild %d", guild_id)
+            streamer = self._streamers.get(guild_id)
+            if streamer and hasattr(streamer, "skip"):
+                await streamer.skip()
+            return
+        if msg_type == "previous":
+            log.info("WS previous requested for guild %d", guild_id)
+            streamer = self._streamers.get(guild_id)
+            if streamer and hasattr(streamer, "previous"):
+                await streamer.previous()
+            return
+
         if msg_type not in ("play", "pause", "seek", "subtitle_change", "audio_change"):
             return
 
