@@ -57,24 +57,19 @@ def _gain_to_block(gain: float) -> str:
 def _build_eq_display(gains: list[float], selected_band: int) -> str:
     """Build the text visualization of the EQ.
 
-    Uses fixed 4-char columns so bars, indicators, and labels align
-    consistently in Discord's code block font.
+    Uses simple space-separated layout tuned for Discord's code block font.
     """
-    COL = 3  # characters per column
+    # Bars: single block char per band, separated by single space
+    bars = " ".join(_gain_to_block(g) for g in gains)
 
-    # Bars row: left-align each block char in a fixed-width column
-    bar_parts = [_gain_to_block(g).ljust(COL) for g in gains]
-    bars = "".join(bar_parts).rstrip()
+    # Indicator: ▲ for selected, · for others
+    indicator = " ".join("▲" if i == selected_band else "·" for i in range(BAND_COUNT))
 
-    # Indicator row: ▲ for selected, · for others
-    ind_parts = [("▲" if i == selected_band else "·").ljust(COL) for i in range(BAND_COUNT)]
-    indicator = "".join(ind_parts).rstrip()
+    # Labels: pad each to 3 chars, space-separated
+    # 2-char labels get a trailing space, 3-char labels don't
+    labels = " ".join(lbl.ljust(3) for lbl in BAND_LABELS)
 
-    # Label row: left-align each label in the same column width
-    lbl_parts = [lbl.ljust(COL) for lbl in BAND_LABELS]
-    labels = "".join(lbl_parts).rstrip()
-
-    return f"```\n{bars}\n{indicator}\n{labels}\n```"
+    return f"{bars}\n{indicator}\n{labels}"
 
 
 def _build_eq_embed(gains: list[float], selected_band: int) -> discord.Embed:
