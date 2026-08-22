@@ -995,6 +995,9 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
         log.error("_start_video_from_queue failed for guild=%d: %s", guild_id, exc, exc_info=True)
         if text_channel:
             await text_channel.send(f"❌ Failed to start music video: {exc}")
+        # Clear current — the video failed, nothing is playing
+        state["current"] = None
+        persist(guild_id)
         # Try next in queue
         await _play_next_from_queue(guild_id)
 
