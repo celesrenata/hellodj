@@ -1334,11 +1334,16 @@ class Music(commands.Cog):
                 log.debug("Tidal direct album search failed: %s", exc)
             # Fall back to track-based grouping
             search_queries.append(("tidal", f"tdsearch:{query}", "tidal"))
-        elif provider == "youtube_music":
-            search_queries.append(("ytmsearch", f"ytmsearch:{query} album", "youtube_music"))
-        elif provider == "youtube":
-            # Use YouTube Music for album search even when provider is "youtube" —
-            # regular ytsearch returns video playlists, not proper album results.
+        elif provider in ("youtube_music", "youtube"):
+            # For YouTube/YouTube Music, try Spotify album search first (best catalog)
+            # then fall back to ytmsearch if Spotify fails/not configured.
+            import spotify as _spotify_mod
+            try:
+                spotify_albums = await _spotify_mod.search_albums(query, limit=10)
+                if spotify_albums:
+                    return spotify_albums
+            except Exception as exc:
+                log.debug("Spotify album search fallback failed for youtube provider: %s", exc)
             search_queries.append(("ytmsearch", f"ytmsearch:{query} album", "youtube_music"))
         elif provider == "soundcloud":
             search_queries.append(("scsearch", f"scsearch:{query}", "soundcloud"))
