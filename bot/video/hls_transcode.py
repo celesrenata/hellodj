@@ -25,8 +25,8 @@ log = logging.getLogger(__name__)
 # Maximum output resolution for HLS Activity streams
 _MAX_HLS_HEIGHT = 720
 
-# HLS segment duration in seconds
-_HLS_SEGMENT_DURATION = 4
+# HLS segment duration in seconds (shorter = faster first-segment startup)
+_HLS_SEGMENT_DURATION = 2
 
 # Watchdog timeout: kill if no new segments appear within this window
 _WATCHDOG_TIMEOUT_SECONDS = 60.0
@@ -187,8 +187,8 @@ class HLSTranscodePipeline:
             "-b:v", str(bitrate),
             "-maxrate", str(maxrate),
             "-bufsize", str(bitrate * 2),
-            "-g", "96",
-            "-force_key_frames", "expr:gte(t,n_forced*4)",
+            "-g", "48",
+            "-force_key_frames", f"expr:gte(t,n_forced*{_HLS_SEGMENT_DURATION})",
         ])
 
         # Audio encode: AAC at 128 kbps
@@ -540,19 +540,14 @@ class HLSTranscodePipeline:
 
         # Rate throttling:
         # - DASH/finite sources (dual-input, e.g. YouTube): use -readrate with
-        #   initial burst. Reads the first 30s at full speed (fills segment
-        #   buffer so clients don't stall), then throttles to ~1.5x real-time
-        #   so a 6-hour video doesn't download all at once.
-        # - HLS/live streams (single-input, e.g. Tidal): same approach with
-        #   initial burst for snappy start, then 1.5x to stay ahead.
-        # NOTE: initial_burst must be ≤ hls_time (4s) to prevent the HLS muxer
-        # from creating a single massive first segment. With QSV hardware encode,
-        # frames are processed near-instantly so all burst data lands in seg0.
-        # A readrate of 3.0 (3x real-time) ensures fast startup while keeping
-        # segment boundaries clean.
+        #   initial burst. Burst the first 8s at full network speed so the first
+        #   few HLS segments write almost instantly, then throttle to 3x real-time.
+        # - HLS/live streams (single-input, e.g. Tidal): same approach.
+        # force_key_frames ensures segment boundaries at every _HLS_SEGMENT_DURATION
+        # regardless of burst speed, so segments stay correctly sized.
         args.extend([
             "-readrate", "3",
-            "-readrate_initial_burst", "4",
+            "-readrate_initial_burst", "8",
         ])
 
         # HTTP reconnect options — only for HLS/live streams (single-input mode).
@@ -601,8 +596,8 @@ class HLSTranscodePipeline:
             "-b:v", str(bitrate),
             "-maxrate", str(maxrate),
             "-bufsize", str(bitrate * 2),
-            "-g", "96",
-            "-force_key_frames", "expr:gte(t,n_forced*4)",
+            "-g", "48",
+            "-force_key_frames", f"expr:gte(t,n_forced*{_HLS_SEGMENT_DURATION})",
         ])
 
         # Audio encode: AAC at 128 kbps
@@ -766,7 +761,7 @@ class HLSTranscodePipeline:
         try:
             first_seen = False
             while self._running:
-                await asyncio.sleep(0.5)
+                await asyncio.sleep(0.25)
                 if not self._running:
                     break
 
