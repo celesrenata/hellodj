@@ -57,31 +57,24 @@ def _gain_to_block(gain: float) -> str:
 def _build_eq_display(gains: list[float], selected_band: int) -> str:
     """Build the text visualization of the EQ.
 
-    Discord code blocks on embeds fit ~32 monospace chars before wrapping.
-    Labels need 3 chars each + 1 space separator = 39 chars for 10 bands.
-    We use tight spacing: no separator, just right-pad to 3 chars.
-    Block chars (▁▂▃) render ~1.5x wide in Discord mono, so bars get 2-char slots.
+    The block chars (▁▂▃▄▅▆▇█) render wider than ASCII in Discord's code
+    block font. To compensate, we pad each block char with fewer spaces than
+    the ASCII indicator/label rows. The result looks aligned on Discord.
     """
-    # Variable spacing using en-spaces (U+2002) which Discord won't collapse
-    viz_labels = ["25", "63", "160", "400", "630", "1k6", "2k5", "4k", "10k", "16k"]
+    # Bars: block chars render wider than ASCII in Discord, pad with 2 spaces
+    # Extra space after band 3 (index 3+) to align with 3-char labels
+    # Reduce 1 space before band 9 (10k) since band 8 (4k) is only 2 chars
+    bar_parts = [_gain_to_block(g) for g in gains]
+    bars = " " + "  ".join(bar_parts[:3]) + "   " + "   ".join(bar_parts[3:8]) + "  " + "   ".join(bar_parts[8:])
 
-    # Use en-space (U+2002) for spacing — Discord preserves these unlike regular spaces
-    S = "\u2002"  # en space
+    # Indicator: match the same spacing pattern
+    ind_parts = ["▲" if i == selected_band else "·" for i in range(BAND_COUNT)]
+    indicator = " " + "  ".join(ind_parts[:3]) + "   " + "   ".join(ind_parts[3:8]) + "  " + "   ".join(ind_parts[8:])
 
-    # Spacings tuned to align bars over their labels in Discord's proportional font
-    # Labels are -# small text, much more compact than the bars/indicators above
-    bar_spacings = [S, S*2, S*2, S*2, S*2, S*2, S*2, S*1, S*1, ""]
-    # Indicators: ▴ (small triangle) is closer in width to · than ▲
-    ind_spacings = [S*2, S*3, S*3, S*3, S*4, S*3, S*3, S*2, S*3, ""]
+    # Labels: space-joined, compact but readable
+    labels = " ".join(BAND_LABELS)
 
-    bar_chars = [_gain_to_block(g) for g in gains]
-    ind_chars = ["▲" if i == selected_band else "·" for i in range(BAND_COUNT)]
-
-    bars = "".join(b + s for b, s in zip(bar_chars, bar_spacings))
-    indicator = "".join(i + s for i, s in zip(ind_chars, ind_spacings))
-    labels = " ".join(viz_labels)
-
-    return f"{bars}\n{indicator}\n-# {labels}"
+    return f"```\n{bars}\n{indicator}\n{labels}\n```"
 
 
 def _build_eq_embed(gains: list[float], selected_band: int) -> discord.Embed:

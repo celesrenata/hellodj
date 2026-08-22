@@ -88,13 +88,19 @@ class PlaybackCog(commands.Cog, name="Playback"):
                     "No active playlist to skip.", ephemeral=True
                 )
                 return
-            # Clear the queue and stop the current track
-            player.clear_queue(state)
+            # Remove only tracks tagged with this playlist from the queue
+            queue = state["queue"]
+            remaining = [t for t in queue if t.get("_from_playlist", "").casefold() != active_pl.casefold()]
+            removed_count = len(queue) - len(remaining)
+            state["queue"] = remaining
+            state["active_playlist"] = None
+            # Skip the current track (which is from this playlist)
             player_obj = player.get_player(interaction.guild_id)
             if player_obj and player_obj.connected and player_obj.playing:
                 await player_obj.stop()
+            player.persist(interaction.guild_id)
             await interaction.response.send_message(
-                f"⏭ Skipped playlist **{active_pl}** — queue cleared."
+                f"⏭ Skipped playlist **{active_pl}** — removed {removed_count} track(s) from queue."
             )
             return
         await self.router.skip(interaction)

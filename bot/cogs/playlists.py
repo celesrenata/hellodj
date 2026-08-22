@@ -429,6 +429,9 @@ class Playlists(commands.Cog):
         state["voice_channel"] = voice_channel
 
         entries = [_to_queue_entry(t) for t in pl["tracks"]]
+        # Tag each entry with the playlist it came from (for /skip mode:playlist)
+        for entry in entries:
+            entry["_from_playlist"] = name
         count = await player.enqueue_and_start(
             interaction.guild,
             interaction.channel,
