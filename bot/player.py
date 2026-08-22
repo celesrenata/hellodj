@@ -942,6 +942,10 @@ async def _play_next_from_queue(guild_id: int) -> None:
     state = get_state(guild_id)
     player = state.get("player")
 
+    # Reentrance guard: prevent on_track_end from double-advancing
+    import time as _time
+    state["_advancing_queue_at"] = _time.monotonic()
+
     dbg.event("play_next", guild_id=guild_id, queue_len=len(state["queue"]),
               repeat_mode=state["repeat_mode"],
               current_title=state.get("current", {}).get("title") if state.get("current") else None)
@@ -1562,6 +1566,15 @@ async def on_track_end(guild_id: int, player: wavelink.Player, track: wavelink.P
     # If a video is active, don't advance the audio queue
     if _is_video_active(guild_id):
         dbg.debug("on_track_end: suppressed — video is active guild=%d", guild_id)
+        return
+
+    # Reentrance guard: if _play_next_from_queue ran recently (within 5s),
+    # this on_track_end is from the track being replaced — don't double-advance
+    import time as _time
+    last_advance = state.get("_advancing_queue_at", 0)
+    if (_time.monotonic() - last_advance) < 5.0:
+        dbg.debug("on_track_end: suppressed — queue advanced %.1fs ago guild=%d",
+                  _time.monotonic() - last_advance, guild_id)
         return
 
     np_task = state.get("now_playing_task")
