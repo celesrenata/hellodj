@@ -83,6 +83,9 @@ COPY voice/ ./voice/
 COPY video/ ./video/
 COPY playback/ ./playback/
 
+# Copy sticker zip archives for whiteboard sticker catalog
+COPY stickers/ ./stickers/
+
 # Copy wake word model (optional — the artifact is a training output and may be
 # absent from the build context; it can be mounted at runtime instead).
 # If Hello_DJ.onnx is present in the build context, bake it into the image.

@@ -13,10 +13,12 @@ import wavelink
 from wavelink import Playable
 
 import player
+import storage
 import blacklist as _blacklist
 
 from .audio_pipeline import AudioPipeline
 from .intent import classify_intent, intent_to_string
+from .llm_intent import LLMIntentExtractor, ADMIN_ACTIONS
 from .stt import STTEngine
 from .tts import TTSEngine, TTSPLayer
 from .query_handler import QueryHandler
@@ -113,8 +115,13 @@ class VoiceCommandOrchestrator:
         self.stt = STTEngine()
         self.tts = TTSEngine()
         self.query = QueryHandler()
+        self.llm_intent = LLMIntentExtractor()
         self._sessions: dict[str, VoiceCommandSession] = {}  # key: "{guild_id}:{user_id}"
         self._pending_confirm: dict[str, asyncio.Task] = {}
+
+    async def close(self) -> None:
+        """Clean up resources (aiohttp sessions, etc.)."""
+        await self.llm_intent.close()
 
     def _session_key(self, guild_id: int, user_id: int) -> str:
         return f"{guild_id}:{user_id}"
@@ -228,14 +235,31 @@ class VoiceCommandOrchestrator:
         session.transcript = transcript
         log.info("STT transcript (%s): %s", session.guild_id, transcript[:120])
 
-        # Classify intent
-        intent = classify_intent(transcript)
-        session.intent = intent
-        log.info("Intent: %s", intent_to_string(intent))
+        # Resolve guild and member for command processing
+        guild = self.bot.get_guild(session.guild_id)
+        if guild is None:
+            log.warning("Guild %s not found", session.guild_id)
+            session.state = VoiceCommandSession.IDLE
+            return
 
-        # Execute
+        member = guild.get_member(session.user_id)
+        if member is None:
+            log.warning("Member %s not found in guild %s", session.user_id, session.guild_id)
+            session.state = VoiceCommandSession.IDLE
+            return
+
+        session.member = member
+
+        # Extract commands via LLM (falls back to keyword classifier on failure)
+        commands = await self.llm_intent.extract(transcript)
+        if not commands:
+            await self._speak(session, guild, "I didn't understand that.")
+            session.state = VoiceCommandSession.IDLE
+            return
+
+        # Execute command array sequentially
         session.state = VoiceCommandSession.PROCESSING
-        await self._execute_intent(session)
+        await self._process_commands(session, guild, member, commands)
 
     async def _execute_intent(self, session: VoiceCommandSession) -> None:
         """Execute the classified intent."""
@@ -271,6 +295,394 @@ class VoiceCommandOrchestrator:
         wake_ssrc = session.wake_ssrc or 0
         self.pipeline.reset_ssrc(wake_ssrc)
         session.state = VoiceCommandSession.IDLE
+
+    # ── compound command processing (LLM pipeline) ────────────────────────
+
+    async def _process_commands(
+        self,
+        session: VoiceCommandSession,
+        guild: discord.Guild,
+        member: discord.Member,
+        commands: list[dict],
+    ) -> None:
+        """Process a Command_Object array sequentially.
+
+        Routes admin commands through CONFIRM state, executes non-admin
+        commands immediately. Halts on failure (Requirement 5.3).
+        Produces a single summary TTS for compound utterances (Requirement 8.2).
+        """
+        results: list[dict] = []
+
+        for cmd in commands:
+            action = cmd.get("action", "")
+
+            if action in ADMIN_ACTIONS:
+                # Permission check before entering CONFIRM
+                if (
+                    not member.guild_permissions.administrator
+                    and not member.guild_permissions.moderate_members
+                ):
+                    results.append({
+                        "action": action,
+                        "success": False,
+                        "message": "You need administrator permission for that.",
+                    })
+                    break  # Halt on failure
+
+                result = await self._execute_admin_from_command(
+                    session, guild, member, cmd
+                )
+                result["_admin_handled"] = True  # Already spoke its own TTS
+            else:
+                result = await self._execute_command(session, guild, member, cmd)
+
+            results.append(result)
+
+            if not result.get("success", False):
+                # Halt on failure (Requirement 5.3)
+                break
+
+        # Build and speak summary TTS (Requirement 8.2)
+        summary = self._build_summary(results)
+        if summary:
+            await self._speak(session, guild, summary)
+
+        # Reset session after execution
+        wake_ssrc = session.wake_ssrc or 0
+        self.pipeline.reset_ssrc(wake_ssrc)
+        session.state = VoiceCommandSession.IDLE
+
+    async def _execute_command(
+        self,
+        session: VoiceCommandSession,
+        guild: discord.Guild,
+        member: discord.Member,
+        cmd: dict,
+    ) -> dict:
+        """Execute a single non-admin Command_Object.
+
+        Uses cmd["source"] for source override without mutating guild state.
+        Returns a result dict with action, success, and message fields.
+        """
+        action = cmd.get("action", "")
+        query = cmd.get("query")
+        arguments = cmd.get("arguments", {})
+        state = player.get_state(guild.id)
+        player_obj = player.get_player(guild.id)
+
+        # Per-command source override (Reqs 4.3, 4.4) — NEVER mutate guild state
+        source = cmd.get("source") or state.get("source_provider", "youtube")
+
+        try:
+            if action == "play":
+                if not query:
+                    return {"action": action, "success": False, "message": "No song specified."}
+                msg = await self._resolve_and_play_with_source(guild, query, member, source)
+                return {"action": action, "success": True, "message": msg}
+
+            elif action == "skip":
+                if player_obj and (player_obj.playing or player_obj.paused):
+                    await player_obj.stop()
+                    return {"action": action, "success": True, "message": "Skipped."}
+                return {"action": action, "success": False, "message": "Nothing to skip."}
+
+            elif action == "pause":
+                if player_obj and player_obj.playing:
+                    await player_obj.pause(True)
+                    return {"action": action, "success": True, "message": "Paused."}
+                return {"action": action, "success": False, "message": "Nothing playing."}
+
+            elif action == "resume":
+                if player_obj and player_obj.paused:
+                    await player_obj.pause(False)
+                    return {"action": action, "success": True, "message": "Resumed."}
+                return {"action": action, "success": False, "message": "Nothing paused."}
+
+            elif action == "stop":
+                state["persist_enabled"] = False
+                player.clear_queue(state)
+                if player_obj and (player_obj.playing or player_obj.paused):
+                    await player_obj.stop()
+                state["current"] = None
+                return {"action": action, "success": True, "message": "Stopped and cleared."}
+
+            elif action == "shuffle":
+                player.shuffle_queue(state)
+                player.persist(guild.id)
+                return {"action": action, "success": True, "message": "Queue shuffled."}
+
+            elif action == "remove":
+                index = arguments.get("index")
+                if index is None:
+                    return {"action": action, "success": False, "message": "No track number specified."}
+                removed = player.remove_from_queue(state, int(index) - 1)
+                if removed is None:
+                    return {"action": action, "success": False, "message": "Invalid track number."}
+                player.persist(guild.id)
+                return {"action": action, "success": True, "message": "Removed from queue."}
+
+            elif action == "repeat":
+                mode = arguments.get("mode", "off")
+                if mode in ("on", "single", "one"):
+                    player.set_repeat(state, "single")
+                    return {"action": action, "success": True, "message": "Repeat single track."}
+                elif mode in ("all", "queue"):
+                    player.set_repeat(state, "queue")
+                    return {"action": action, "success": True, "message": "Repeat entire queue."}
+                else:
+                    player.set_repeat(state, "off")
+                    return {"action": action, "success": True, "message": "Repeat off."}
+
+            elif action == "queue":
+                q_len = len(state["queue"])
+                if q_len == 0:
+                    return {"action": action, "success": True, "message": "Queue is empty."}
+                return {"action": action, "success": True, "message": f"Queue has {q_len} tracks."}
+
+            elif action == "join":
+                if member.voice:
+                    p = await player.connect_player(member.voice.channel)
+                    state["player"] = p
+                    state["voice_channel"] = member.voice.channel
+                    return {
+                        "action": action, "success": True,
+                        "message": f"Joined {member.voice.channel.name}.",
+                    }
+                return {"action": action, "success": False, "message": "You're not in a voice channel."}
+
+            elif action == "leave":
+                if player_obj and player_obj.connected:
+                    player.clear_queue(state)
+                    state["current"] = None
+                    await player_obj.disconnect()
+                    return {"action": action, "success": True, "message": "Left the voice channel."}
+                return {"action": action, "success": False, "message": "Not in a voice channel."}
+
+            elif action == "load_playlist":
+                name = arguments.get("name", query or "")
+                if not name:
+                    return {"action": action, "success": False, "message": "No playlist name specified."}
+                playlist_data = storage.get(guild.id, name)
+                if playlist_data is None:
+                    # Req 7.3: list up to 5 available names as suggestions
+                    available = storage.names(guild.id)[:5]
+                    suggestions = ", ".join(available) if available else "none"
+                    return {"action": action, "success": False, "message": f"Playlist not found. Try: {suggestions}"}
+                tracks = playlist_data.get("tracks", [])
+                if not tracks:
+                    return {"action": action, "success": False, "message": f"Playlist '{name}' is empty."}
+                was_empty = len(state["queue"]) == 0
+                for t in tracks:
+                    state["queue"].append(t)
+                player.persist(guild.id)
+                # Begin playback if queue was previously empty (Req 7.1)
+                if was_empty:
+                    p = player.get_player(guild.id)
+                    if p and p.connected and not p.playing and not p.paused:
+                        await player._play_next_from_queue(guild.id)
+                return {"action": action, "success": True, "message": f"Loaded {len(tracks)} tracks from '{name}'."}
+
+            elif action == "save_playlist":
+                name = arguments.get("name", query or "")
+                if not name:
+                    return {"action": action, "success": False, "message": "No playlist name specified."}
+                # Req 7.2: validate name length (1-64 chars)
+                if len(name) > 64:
+                    return {"action": action, "success": False, "message": "Playlist name must be 1-64 characters."}
+                # Req 7.4: empty queue check
+                if not state["queue"]:
+                    return {"action": action, "success": False, "message": "Nothing in the queue to save."}
+                # Req 7.5: name collision check (case-insensitive)
+                if storage._find(guild.id, name):
+                    return {"action": action, "success": False, "message": f"'{name}' already exists. Pick another name."}
+                # Create and populate the playlist
+                await storage.create(guild.id, name, member.id)
+                for t in state["queue"]:
+                    track = {
+                        "url": t.get("webpage_url") or t.get("url", ""),
+                        "title": t.get("title", "Unknown"),
+                        "duration": t.get("duration", 0),
+                    }
+                    await storage.add_track(guild.id, name, track)
+                count = len(state["queue"])
+                return {"action": action, "success": True, "message": f"Saved {count} tracks as '{name}'."}
+
+            else:
+                return {"action": action, "success": False, "message": f"Unknown command: {action}"}
+
+        except Exception as exc:
+            log.error("Command execution failed (%s): %s", action, exc)
+            return {"action": action, "success": False, "message": f"Failed: {action}"}
+
+    async def _execute_admin_from_command(
+        self,
+        session: VoiceCommandSession,
+        guild: discord.Guild,
+        member: discord.Member,
+        cmd: dict,
+    ) -> dict:
+        """Route an admin Command_Object through the CONFIRM state.
+
+        Uses the existing _confirm_and_execute flow which handles its own
+        TTS (confirmation prompt, confirmed/cancelled/failed messages).
+        Returns a result dict so _process_commands knows whether to halt.
+
+        Note: Since _confirm_and_execute speaks its own TTS, the summary
+        builder should account for admin commands having already spoken.
+        """
+        action = cmd.get("action", "")
+        query = cmd.get("query")
+        arguments = cmd.get("arguments", {})
+
+        # Parse target user from query field
+        target = None
+        if query:
+            target = guild.get_member_named(query)
+            if target is None:
+                # Try partial match on display names
+                for m in guild.members:
+                    if query.lower() in m.display_name.lower():
+                        target = m
+                        break
+
+        if action == "mute":
+            if target is None:
+                return {"action": action, "success": False, "message": "User not found."}
+            duration = arguments.get("duration")
+            dur_text = f" for {duration} minutes" if duration else ""
+            await self._confirm_and_execute(
+                session, guild, member,
+                f"mute {target.display_name}{dur_text}",
+                lambda: self._do_mute(target, duration),
+            )
+            return {"action": action, "success": True, "message": f"Muted {target.display_name}."}
+
+        elif action == "kick":
+            if target is None:
+                return {"action": action, "success": False, "message": "User not found."}
+            await self._confirm_and_execute(
+                session, guild, member,
+                f"kick {target.display_name}",
+                lambda: self._do_kick(target),
+            )
+            return {"action": action, "success": True, "message": f"Kicked {target.display_name}."}
+
+        elif action == "ban":
+            if target is None:
+                return {"action": action, "success": False, "message": "User not found."}
+            await self._confirm_and_execute(
+                session, guild, member,
+                f"ban {target.display_name}",
+                lambda: self._do_ban(target),
+            )
+            return {"action": action, "success": True, "message": f"Banned {target.display_name}."}
+
+        elif action == "timeout":
+            if target is None:
+                return {"action": action, "success": False, "message": "User not found."}
+            duration = arguments.get("duration", 10)
+            await self._confirm_and_execute(
+                session, guild, member,
+                f"timeout {target.display_name} for {duration} minutes",
+                lambda: self._do_timeout(target, duration),
+            )
+            return {"action": action, "success": True, "message": f"Timed out {target.display_name}."}
+
+        elif action == "revoke":
+            if target is None:
+                return {"action": action, "success": False, "message": "User not found."}
+            await self._confirm_and_execute(
+                session, guild, member,
+                f"revoke {target.display_name}",
+                lambda: self._do_revoke(target, guild),
+            )
+            return {"action": action, "success": True, "message": f"Revoked {target.display_name}."}
+
+        elif action in ("restart", "shutdown"):
+            label = "restart the bot" if action == "restart" else "shut down the bot"
+            await self._confirm_and_execute(
+                session, guild, member,
+                label,
+                lambda: self._do_shutdown(action),
+            )
+            return {"action": action, "success": True, "message": f"{action.capitalize()} initiated."}
+
+        return {"action": action, "success": False, "message": f"Unknown admin command: {action}"}
+
+    async def _resolve_and_play_with_source(
+        self,
+        guild: discord.Guild,
+        song: str,
+        member: discord.Member,
+        source: str,
+    ) -> str:
+        """Search for a song using a specific source and enqueue it.
+
+        Like _resolve_and_play but accepts an explicit source parameter
+        so that per-command source overrides work without mutating guild state.
+        """
+        state = player.get_state(guild.id)
+        voice_channel = member.voice.channel if member.voice else None
+        if voice_channel is None:
+            return "You need to be in a voice channel."
+
+        player_obj = state.get("player")
+        if not player_obj or not player_obj.connected:
+            player_obj = await player.connect_player(voice_channel)
+            state["player"] = player_obj
+
+        tracks = await Playable.search(song, source=_source_for(source))
+        if not tracks:
+            return "I couldn't find that song."
+
+        info = player._track_entry(tracks[0], source)
+        was_playing = player_obj.playing or player_obj.paused
+        await player.add_track(state, guild.id, info)
+        p = player.get_player(guild.id)
+        started = False
+        if p and p.connected and not p.playing and not p.paused:
+            await player._play_next_from_queue(guild.id)
+            started = await self._wait_until_playing(p)
+        if started and not was_playing:
+            artist = info.get("author") or "Unknown Artist"
+            return f"Now Playing: {info['title']} by {artist}"
+        return f"Added {info['title']} to the queue."
+
+    def _build_summary(self, results: list[dict]) -> str:
+        """Build a ≤150 char TTS summary for compound utterances.
+
+        For single commands, returns the command's message directly.
+        For multiple commands, produces a compact summary.
+        Admin commands that already spoke their own TTS are excluded.
+        (Requirement 8.1, 8.2)
+        """
+        if not results:
+            return "Done."
+
+        # Filter out admin commands that already spoke via _confirm_and_execute
+        speakable = [r for r in results if not r.get("_admin_handled")]
+
+        if not speakable:
+            # All commands were admin (already spoke their own TTS)
+            return ""
+
+        if len(speakable) == 1:
+            msg = speakable[0].get("message", "Done.")
+            return msg[:150]
+
+        succeeded = sum(1 for r in speakable if r.get("success"))
+        failed = len(speakable) - succeeded
+
+        if failed == 0:
+            summary = f"{succeeded} commands completed successfully."
+        else:
+            # Include the failed action name for context
+            failed_actions = [r["action"] for r in speakable if not r.get("success")]
+            fail_text = ", ".join(failed_actions[:3])
+            summary = f"{succeeded} done, {failed} failed ({fail_text})."
+
+        # Enforce ≤150 char limit
+        return summary[:150]
 
     # ── music commands ───────────────────────────────────────────────────
 
@@ -524,10 +936,10 @@ class VoiceCommandOrchestrator:
     ) -> None:
         """Ask for verbal confirmation, then execute.
 
-        Waits up to 30 seconds for the user's spoken confirmation. Uses
-        silence-based capture (via ``detect_silence``) rather than a
-        hard-coded frame slice, and resets session state on both the confirm
-        and cancel branches.
+        Waits up to 15 seconds for the user's spoken confirmation
+        (Requirement 10.3). Uses silence-based capture (via
+        ``detect_silence``) rather than a hard-coded frame slice, and
+        resets session state on both the confirm and cancel branches.
         """
         session.member = member
         await self._speak(
@@ -539,11 +951,11 @@ class VoiceCommandOrchestrator:
         session.state = VoiceCommandSession.CONFIRM
         session.confirm_action = {"action_text": action_text, "action": action}
 
-        # Real 30-second deadline for the confirmation utterance.
+        # 15-second deadline for the confirmation utterance (Requirement 10.3).
         try:
             confirmed, outcome = await asyncio.wait_for(
                 self._wait_for_confirmation(session, guild, action),
-                timeout=30.0,
+                timeout=15.0,
             )
         except asyncio.TimeoutError:
             await self._speak(session, guild, "Action cancelled due to timeout.")
