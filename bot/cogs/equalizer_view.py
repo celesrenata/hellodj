@@ -62,17 +62,17 @@ def _build_eq_display(gains: list[float], selected_band: int) -> str:
     """
     COL = 4  # characters per column
 
-    # Bars row: center each block char in a fixed-width column
-    bar_parts = [_gain_to_block(g).center(COL) for g in gains]
-    bars = "".join(bar_parts)
+    # Bars row: left-align each block char in a fixed-width column
+    bar_parts = [_gain_to_block(g).ljust(COL) for g in gains]
+    bars = "".join(bar_parts).rstrip()
 
     # Indicator row: ▲ for selected, · for others
-    ind_parts = [("▲" if i == selected_band else "·").center(COL) for i in range(BAND_COUNT)]
-    indicator = "".join(ind_parts)
+    ind_parts = [("▲" if i == selected_band else "·").ljust(COL) for i in range(BAND_COUNT)]
+    indicator = "".join(ind_parts).rstrip()
 
-    # Label row: center each label in the same column width
-    lbl_parts = [lbl.center(COL) for lbl in BAND_LABELS]
-    labels = "".join(lbl_parts)
+    # Label row: left-align each label in the same column width
+    lbl_parts = [lbl.ljust(COL) for lbl in BAND_LABELS]
+    labels = "".join(lbl_parts).rstrip()
 
     return f"```\n{bars}\n{indicator}\n{labels}\n```"
 
