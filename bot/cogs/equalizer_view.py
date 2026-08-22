@@ -55,16 +55,21 @@ def _gain_to_block(gain: float) -> str:
 
 
 def _build_eq_display(gains: list[float], selected_band: int) -> str:
-    """Build the text visualization of the EQ."""
-    # All rows use 4-char columns to align with the labels row
-    # Bar chart: each block char centered in 4-char slot
-    bars = "".join(f"{_gain_to_block(g):^4}" for g in gains)
+    """Build the text visualization of the EQ.
 
-    # Selection indicator: ▲/· centered in 4-char slot
-    indicator = "".join(f"{'▲' if i == selected_band else '·':^4}" for i in range(BAND_COUNT))
+    Discord code blocks on embeds fit ~32 monospace chars before wrapping.
+    Labels need 3 chars each + 1 space separator = 39 chars for 10 bands.
+    We use tight spacing: no separator, just right-pad to 3 chars.
+    Block chars (▁▂▃) render ~1.5x wide in Discord mono, so bars get 2-char slots.
+    """
+    # Bars: 2 spaces between each (block chars are visually wider)
+    bars = "  ".join(_gain_to_block(g) for g in gains)
 
-    # Band labels: right-aligned in 4-char slot
-    labels = "".join(f"{lbl:>4}" for lbl in BAND_LABELS)
+    # Indicator: ▲/· with 2 spaces between
+    indicator = "  ".join("▲" if i == selected_band else "·" for i in range(BAND_COUNT))
+
+    # Labels: right-aligned 3-char slots, space-separated
+    labels = " ".join(f"{lbl:>3}" for lbl in BAND_LABELS)
 
     return f"```{bars}\n{indicator}\n{labels}```"
 
