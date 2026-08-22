@@ -72,7 +72,7 @@ def _build_eq_display(gains: list[float], selected_band: int) -> str:
     # Labels are -# small text, much more compact than the bars/indicators above
     bar_spacings = [S, S*2, S*2, S*2, S*2, S*3, S*2, S, S*3, ""]
     # Indicators are narrower glyphs, need slightly more space to match
-    ind_spacings = [S, S*3, S*3, S*3, S*4, S*4, S*2, S*2, S*4, ""]
+    ind_spacings = [S, S*3, S*3, S*3, S*3, S*3, S*2, S*2, S*4, ""]
 
     bar_chars = [_gain_to_block(g) for g in gains]
     ind_chars = ["▲" if i == selected_band else "·" for i in range(BAND_COUNT)]
