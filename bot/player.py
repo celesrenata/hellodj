@@ -216,6 +216,8 @@ def get_state(guild_id: int) -> dict:
             # Video streaming state (Go Live screenshare)
             "video_streamer": None,        # VideoStreamer instance or None
             "video_queue": [],             # list[VideoSource] pending video playback
+            # Active playlist tracking — syncs queue with playlist on add/remove
+            "active_playlist": None,       # playlist name (str) or None
         }
     # Ensure history exists for states created before this field was added
     if "history" not in guild_state[guild_id]:
@@ -672,6 +674,7 @@ async def discard(guild_id: int) -> None:
 
 def clear_queue(state: dict) -> None:
     state["queue"].clear()
+    state["active_playlist"] = None
 
 
 def shuffle_queue(state: dict) -> None:

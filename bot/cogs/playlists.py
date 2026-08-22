@@ -11,6 +11,30 @@ import storage
 from cogs.music import SearchSelectView
 
 
+def _sync_add_to_queue(guild_id: int, playlist_name: str, track: dict) -> None:
+    """If this playlist is the active one, append the track to the running queue."""
+    state = player.get_state(guild_id)
+    if state.get("active_playlist") and state["active_playlist"].casefold() == playlist_name.casefold():
+        entry = _to_queue_entry(track)
+        state["queue"].append(entry)
+        player.persist(guild_id)
+
+
+def _sync_remove_from_queue(guild_id: int, playlist_name: str, removed_track: dict) -> None:
+    """If this playlist is the active one, remove the first matching track from the running queue."""
+    state = player.get_state(guild_id)
+    if state.get("active_playlist") and state["active_playlist"].casefold() == playlist_name.casefold():
+        url = removed_track.get("url", "")
+        title = removed_track.get("title", "")
+        for i, entry in enumerate(state["queue"]):
+            entry_url = entry.get("webpage_url") or entry.get("url") or ""
+            entry_title = entry.get("title") or ""
+            if (url and entry_url == url) or (title and entry_title == title):
+                state["queue"].pop(i)
+                player.persist(guild_id)
+                return
+
+
 def _fmt_duration(ms) -> str:
     """Format a duration in milliseconds to M:SS or H:MM:SS."""
     total_ms = int(ms or 0)
@@ -158,6 +182,8 @@ class Playlists(commands.Cog):
 
                 async def on_pick(info: dict, picker: discord.Interaction):
                     key = await storage.add_track(gid, name, _track_from_info(info))
+                    # Sync to active queue if this playlist is currently playing
+                    _sync_add_to_queue(gid, name, _track_from_info(info))
                     await picker.response.edit_message(
                         content=f"HelloDJ added **{info.get('title', 'Unknown')}** to **{key}**.", view=None
                     )
@@ -171,6 +197,8 @@ class Playlists(commands.Cog):
             info = player._track_entry(track, "playlist")
             info = {"url": info["webpage_url"], "title": info["title"], "duration": info["duration"]}
             key = await storage.add_track(gid, name, info)
+            # Sync to active queue if this playlist is currently playing
+            _sync_add_to_queue(gid, name, info)
             await interaction.followup.send(
                 f"HelloDJ added **{info['title']}** to **{key}**.", ephemeral=True
             )
@@ -185,7 +213,10 @@ class Playlists(commands.Cog):
         if not current:
             await interaction.response.send_message("Nothing is playing right now.", ephemeral=True)
             return
-        key = await storage.add_track(interaction.guild.id, name, _track_from_info(current))
+        track_info = _track_from_info(current)
+        key = await storage.add_track(interaction.guild.id, name, track_info)
+        # Sync to active queue if this playlist is currently playing
+        _sync_add_to_queue(interaction.guild.id, name, track_info)
         await interaction.response.send_message(
             f"HelloDJ added **{current.get('title', 'Unknown')}** to **{key}**.", ephemeral=True
         )
@@ -204,6 +235,8 @@ class Playlists(commands.Cog):
         except storage.PlaylistError as exc:
             await interaction.response.send_message(str(exc), ephemeral=True)
             return
+        # Sync removal to active queue if this playlist is currently playing
+        _sync_remove_from_queue(interaction.guild.id, name, removed)
         await interaction.response.send_message(
             f"HelloDJ removed **{removed.get('title', 'Unknown')}** from **{name}**.", ephemeral=True
         )
@@ -330,6 +363,10 @@ class Playlists(commands.Cog):
             replace=(mode == "replace"),
             shuffle=shuffle,
         )
+
+        # Track which playlist is active so add/remove syncs to the queue
+        state["active_playlist"] = name
+
         verb = "HelloDJ replaced queue with" if mode == "replace" else "HelloDJ queued"
         extra = " (shuffled)" if shuffle else ""
         await interaction.followup.send(f"{verb} **{count}** track(s) from **{name}**{extra}.")
