@@ -351,8 +351,9 @@ class VideoCog(commands.Cog, name="Video"):
             PlaybackState(playing=True, anchor_position=0.0, anchor_time=time.time()),
         )
 
-        # Send "Now Playing" embed with control buttons
-        embed = _build_now_playing_embed(source, len(streamer.queue), activity_url=activity_url, elapsed_seconds=0.0)
+        # Send embed — uploads show "Added to Queue", others show "Now Playing"
+        is_upload = source.source_type == "upload"
+        embed = _build_now_playing_embed(source, len(streamer.queue), activity_url=activity_url, elapsed_seconds=0.0, is_queued=is_upload)
         msg = await interaction.followup.send(embed=embed, view=UnifiedControlView(), wait=True)
         key = (guild_id, voice_channel.id)
         self._now_playing_messages[key] = msg
@@ -925,8 +926,8 @@ def _build_seek_bar(elapsed_seconds: float, duration_seconds: float) -> str:
     return f"{bar} {elapsed_str} / {duration_str}"
 
 
-def _build_now_playing_embed(source: VideoSource, queue_length: int, *, activity_url: str | None = None, elapsed_seconds: float = 0.0) -> discord.Embed:
-    """Build a 'Now Playing' embed for the current video."""
+def _build_now_playing_embed(source: VideoSource, queue_length: int, *, activity_url: str | None = None, elapsed_seconds: float = 0.0, is_queued: bool = False) -> discord.Embed:
+    """Build a 'Now Playing' or 'Queued' embed for the current video."""
     seek_bar = _build_seek_bar(elapsed_seconds, source.duration_seconds)
 
     # Source-type-aware title formatting
@@ -934,8 +935,13 @@ def _build_now_playing_embed(source: VideoSource, queue_length: int, *, activity
     # The match is left explicit for clarity and future source types.
     title_text = source.title
 
+    if is_queued:
+        embed_title = "📥 Added to Queue"
+    else:
+        embed_title = "🎬 Now Playing"
+
     embed = discord.Embed(
-        title="🎬 Now Playing",
+        title=embed_title,
         description=f"{title_text}\n{seek_bar}",
         color=discord.Color.purple(),
     )

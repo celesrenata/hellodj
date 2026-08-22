@@ -1,13 +1,14 @@
 """HelloDJ — Unified Playback cog: single command surface for audio and video.
 
-Registers the unified slash commands (/play, /skip, /stop, /pause, /queue,
-/clear) and delegates all logic to the PlaybackRouter. The router handles
-content classification, session resolution, backend dispatch, and error
-responses.
+Registers the unified slash commands (/play, /upload, /skip, /stop, /pause,
+/queue, /clear) and delegates all logic to the PlaybackRouter. The router
+handles content classification, session resolution, backend dispatch, and
+error responses.
 
 Commands
 --------
-- ``/play <query> [mode] [attachment]`` — Play audio or video (auto-detected).
+- ``/play <query> [type]``  — Play audio or video (auto-detected or forced).
+- ``/upload <attachment>``  — Upload a file to play as video.
 - ``/skip``   — Skip the current track/video in the user's channel session.
 - ``/stop``   — Stop playback and tear down the session.
 - ``/pause``  — Toggle pause on the active session.
@@ -42,36 +43,33 @@ class PlaybackCog(commands.Cog, name="Playback"):
     @app_commands.command(name="play", description="Play a song or video")
     @app_commands.describe(
         query="Song name, URL, or video link",
-        attachment="Upload a file to play (audio or video)",
         mode="Force playback type (default: auto-detect)",
     )
     @app_commands.rename(mode="type")
     async def play(
         self,
         interaction: discord.Interaction,
-        query: str | None = None,
-        attachment: discord.Attachment | None = None,
+        query: str,
         mode: Literal["auto", "audio", "video", "music_video", "album"] = "auto",
     ) -> None:
         """Play audio or video content — auto-detected or forced via mode."""
-        # If attachment provided, route to video cog's upload handler
-        if attachment is not None:
-            video_cog = self.bot.get_cog("Video")
-            if video_cog is not None:
-                await video_cog.video_play(interaction, query=query, attachment=attachment)
-            else:
-                await interaction.response.send_message(
-                    "❌ Video system not available for file uploads.", ephemeral=True
-                )
-            return
-
-        if not query:
-            await interaction.response.send_message(
-                "Provide a song name, URL, or attach a file to play.", ephemeral=True
-            )
-            return
-
         await self.router.play(interaction, query, mode=mode)
+
+    @app_commands.command(name="upload", description="Upload a video or audio file to play")
+    @app_commands.describe(attachment="File to play (audio or video)")
+    async def upload(
+        self,
+        interaction: discord.Interaction,
+        attachment: discord.Attachment,
+    ) -> None:
+        """Upload and play a file via the video Activity."""
+        video_cog = self.bot.get_cog("Video")
+        if video_cog is not None:
+            await video_cog.video_play(interaction, query=None, attachment=attachment)
+        else:
+            await interaction.response.send_message(
+                "❌ Video system not available for file uploads.", ephemeral=True
+            )
 
     @app_commands.command(name="skip", description="Skip the current track")
     async def skip(self, interaction: discord.Interaction) -> None:
