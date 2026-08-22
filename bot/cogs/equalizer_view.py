@@ -68,12 +68,11 @@ def _build_eq_display(gains: list[float], selected_band: int) -> str:
     # Indicator: ▲/· with 1 space between
     indicator = " ".join("▲" if i == selected_band else "·" for i in range(BAND_COUNT))
 
-    # Labels: Unicode subscript for compact display outside code block
-    _SUB = str.maketrans("0123456789k", "₀₁₂₃₄₅₆₇₈₉ₖ")
+    # Labels: use Discord's -# small text for the frequency labels
     viz_labels = ["25", "63", "160", "400", "630", "1k6", "2k5", "4k", "10k", "16k"]
-    labels = " ".join(lbl.translate(_SUB) for lbl in viz_labels)
+    labels = " ".join(viz_labels)
 
-    return f"{bars}\n{indicator}\n{labels}"
+    return f"{bars}\n{indicator}\n-# {labels}"
 
 
 def _build_eq_embed(gains: list[float], selected_band: int) -> discord.Embed:
