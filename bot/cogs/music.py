@@ -1224,6 +1224,11 @@ class Music(commands.Cog):
         ``player._play_next_from_queue``) so a freshly-connected, idle player
         actually starts playing instead of leaving the track queued forever.
         """
+        # Don't start audio if a video session is active — tracks are queued
+        # for later and will play when the video session ends.
+        if player._is_video_active(guild_id):
+            return
+
         p = player.get_player(guild_id)
         if p and p.connected and not p.playing:
             # Unpause if the player was left in paused state after a stop/track-end

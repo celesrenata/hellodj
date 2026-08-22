@@ -42,16 +42,16 @@ class PlaybackCog(commands.Cog, name="Playback"):
     @app_commands.command(name="play", description="Play a song or video")
     @app_commands.describe(
         query="Song name, URL, or video link",
-        mode="Force playback type (default: auto-detect)",
         attachment="Upload a file to play (audio or video)",
+        mode="Force playback type (default: auto-detect)",
     )
     @app_commands.rename(mode="type")
     async def play(
         self,
         interaction: discord.Interaction,
         query: str | None = None,
-        mode: Literal["auto", "audio", "video", "music_video", "album"] = "auto",
         attachment: discord.Attachment | None = None,
+        mode: Literal["auto", "audio", "video", "music_video", "album"] = "auto",
     ) -> None:
         """Play audio or video content — auto-detected or forced via mode."""
         # If attachment provided, route to video cog's upload handler
