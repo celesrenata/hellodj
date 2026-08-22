@@ -71,9 +71,32 @@ class PlaybackCog(commands.Cog, name="Playback"):
                 "❌ Video system not available for file uploads.", ephemeral=True
             )
 
-    @app_commands.command(name="skip", description="Skip the current track")
-    async def skip(self, interaction: discord.Interaction) -> None:
-        """Skip the current track or video in the active session."""
+    @app_commands.command(name="skip", description="Skip the current track or entire playlist")
+    @app_commands.describe(mode="What to skip (default: current song)")
+    @app_commands.choices(mode=[
+        app_commands.Choice(name="Song", value="song"),
+        app_commands.Choice(name="Playlist (clear remaining)", value="playlist"),
+    ])
+    async def skip(self, interaction: discord.Interaction, mode: str = "song") -> None:
+        """Skip the current track, or skip the entire active playlist."""
+        if mode == "playlist":
+            import player
+            state = player.get_state(interaction.guild_id)
+            active_pl = state.get("active_playlist")
+            if not active_pl:
+                await interaction.response.send_message(
+                    "No active playlist to skip.", ephemeral=True
+                )
+                return
+            # Clear the queue and stop the current track
+            player.clear_queue(state)
+            player_obj = player.get_player(interaction.guild_id)
+            if player_obj and player_obj.connected and player_obj.playing:
+                await player_obj.stop()
+            await interaction.response.send_message(
+                f"⏭ Skipped playlist **{active_pl}** — queue cleared."
+            )
+            return
         await self.router.skip(interaction)
 
     @app_commands.command(name="stop", description="Stop playback")
