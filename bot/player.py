@@ -1572,11 +1572,6 @@ async def on_track_end(guild_id: int, player: wavelink.Player, track: wavelink.P
         dbg.debug("on_track_end: suppressed during jump transition guild=%d", guild_id)
         return
 
-    # If a video is active, don't advance the audio queue
-    if _is_video_active(guild_id):
-        dbg.debug("on_track_end: suppressed — video is active guild=%d", guild_id)
-        return
-
     # Reentrance guard: if _play_next_from_queue ran recently (within 5s),
     # this on_track_end is from the track being replaced — don't double-advance
     import time as _time
