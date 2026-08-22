@@ -22,11 +22,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libx265-dev \
     libopus-dev \
     libdav1d-dev \
+    libssl-dev \
     wget \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# Build ffmpeg 9 from release tarball with QSV + common codecs
+# Build ffmpeg 9 from release tarball with QSV + common codecs + TLS (HTTPS)
 RUN wget -q https://ffmpeg.org/releases/ffmpeg-9.0.tar.xz \
     && tar xf ffmpeg-9.0.tar.xz \
     && cd ffmpeg-9.0 \
@@ -39,6 +40,8 @@ RUN wget -q https://ffmpeg.org/releases/ffmpeg-9.0.tar.xz \
         --enable-libx265 \
         --enable-libopus \
         --enable-libdav1d \
+        --enable-openssl \
+        --enable-nonfree \
         --disable-doc \
         --disable-debug \
     && make -j$(nproc) \
