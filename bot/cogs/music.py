@@ -271,7 +271,7 @@ class AlbumSelectView(discord.ui.View):
                 parts.append(artist[:40])
             if year:
                 parts.append(str(year))
-            if track_count:
+            if track_count and not info.get("track_count_approximate"):
                 parts.append(f"{track_count} tracks")
             parts.append(time_str)
             desc = " • ".join(parts)
@@ -1302,6 +1302,15 @@ class Music(commands.Cog):
         # Provider-specific album search prefixes
         search_queries = []
         if provider == "spotify":
+            # Use direct Spotify Web API album search (1 API call, accurate total_tracks)
+            import spotify as _spotify_mod
+            try:
+                spotify_albums = await _spotify_mod.search_albums(query, limit=10)
+                if spotify_albums:
+                    return spotify_albums
+            except Exception as exc:
+                log.debug("Spotify direct album search failed: %s", exc)
+            # Fall back to track-based grouping via LavasRC
             search_queries.append(("spsearch", f"spsearch:{query}", "spotify"))
         elif provider == "tidal":
             # Use the direct Tidal v2 album search for accurate results
@@ -1403,6 +1412,10 @@ class Music(commands.Cog):
 
                     for key, album_info in album_map.items():
                         seen_names.add(key)
+                        # track_count from search grouping is a SAMPLE — not the real
+                        # album track count (search returns only top hits per album).
+                        # Mark it approximate so the display can handle it properly.
+                        album_info["track_count_approximate"] = True
                         results.append(album_info)
 
             except Exception as exc:
