@@ -575,7 +575,11 @@ class ActivityStreamer:
         )
 
         try:
-            await self.pipeline.start(source.file_path, Resolution.RES_720P)
+            if source.stream_url:
+                # Stream directly from URL — throttled, no pre-download
+                await self.pipeline.start_streaming(source.stream_url, Resolution.RES_720P)
+            else:
+                await self.pipeline.start(source.file_path, Resolution.RES_720P)
         except Exception as exc:
             log.error(
                 "Failed to start HLS pipeline for guild=%d: %s",

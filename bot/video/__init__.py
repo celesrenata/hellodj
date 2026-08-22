@@ -97,6 +97,7 @@ class VideoSource:
     metadata: dict = field(default_factory=dict)
     audio_url: str | None = None
     cleanup_on_finish: bool = False
+    stream_url: str | None = None  # Direct URL for streaming transcode (bypass download)
 
 
 @dataclass

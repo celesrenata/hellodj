@@ -98,14 +98,11 @@ class TidalResolver:
         # Fetch metadata
         metadata = await self._fetch_video_metadata(video_id, access_token)
 
-        # Fetch stream URL
+        # Fetch stream URL (HLS manifest from Tidal)
         stream_url = await self._fetch_stream_url(video_id, access_token)
 
-        # Download the video
-        title = metadata.get("title", f"Tidal Video {video_id}")
-        file_path = await self._download_video(stream_url, title)
-
         # Build artist string from metadata
+        title = metadata.get("title", f"Tidal Video {video_id}")
         artist = metadata.get("artist", "")
         track_title = metadata.get("title", "")
 
@@ -114,7 +111,7 @@ class TidalResolver:
 
         return VideoSource(
             source_type="tidal",
-            file_path=file_path,
+            file_path="",  # No local file — streaming directly from URL
             title=display_title,
             duration_seconds=float(metadata.get("duration", 0)),
             metadata={
@@ -124,7 +121,8 @@ class TidalResolver:
                 "tidal_url": url,
             },
             audio_url=None,
-            cleanup_on_finish=True,
+            cleanup_on_finish=False,
+            stream_url=stream_url,
         )
 
     async def search(self, query: str) -> VideoSource:
@@ -167,11 +165,8 @@ class TidalResolver:
                 raise TidalResolverError("This video is unavailable")
             raise
 
-        # Download the video
-        title = metadata.get("title", f"Tidal Video {video_id}")
-        file_path = await self._download_video(stream_url, title)
-
         # Build artist string from metadata
+        title = metadata.get("title", f"Tidal Video {video_id}")
         artist = metadata.get("artist", "")
         track_title = metadata.get("title", "")
 
@@ -180,7 +175,7 @@ class TidalResolver:
 
         return VideoSource(
             source_type="tidal",
-            file_path=file_path,
+            file_path="",  # No local file — streaming directly from URL
             title=display_title,
             duration_seconds=float(metadata.get("duration", 0)),
             metadata={
@@ -190,7 +185,8 @@ class TidalResolver:
                 "tidal_url": f"https://tidal.com/browse/video/{video_id}",
             },
             audio_url=None,
-            cleanup_on_finish=True,
+            cleanup_on_finish=False,
+            stream_url=stream_url,
         )
 
     def extract_video_id(self, url: str) -> int | None:

@@ -466,6 +466,131 @@ class HLSTranscodePipeline:
             else:
                 log.info("Extracted subtitle track: %s → %s", lang, output_path)
 
+    async def start_streaming(self, source_url: str, resolution: Resolution) -> None:
+        """Launch ffmpeg HLS transcode pipeline reading directly from a URL.
+
+        Unlike start() which reads from a local file, this reads from an HTTP/
+        HTTPS URL (e.g., an HLS manifest or direct video URL) and transcodes
+        on-the-fly. Uses -re to throttle input to native playback rate, reducing
+        bandwidth pressure on media providers.
+
+        Args:
+            source_url: HTTP(S) URL to the source video/HLS manifest.
+            resolution: Target output resolution (capped at 720p).
+
+        Raises:
+            HLSTranscodePipelineError: If the process fails to start.
+        """
+        self._input_path = source_url
+        self._running = True
+        self.ready.clear()
+        self._complete_event.clear()
+
+        # Ensure output directory exists
+        self.output_dir.mkdir(parents=True, exist_ok=True)
+
+        # No subtitle/audio probing for streaming URLs (not seekable)
+        self.subtitle_tracks = []
+        self.audio_tracks = [{"lang": "und", "label": ""}]
+
+        args = self._build_streaming_ffmpeg_args(source_url, resolution)
+        log.info("HLS streaming transcode starting: %s", " ".join(args))
+
+        try:
+            self.process = await asyncio.create_subprocess_exec(
+                *args,
+                stdout=asyncio.subprocess.DEVNULL,
+                stderr=asyncio.subprocess.PIPE,
+            )
+        except (FileNotFoundError, OSError) as exc:
+            self._running = False
+            raise HLSTranscodePipelineError(f"Failed to start ffmpeg: {exc}") from exc
+
+        # Start stderr monitoring for QSV errors
+        self._stderr_buffer = []
+        self._stderr_task = asyncio.ensure_future(self._monitor_stderr())
+
+        # Start segment watcher (sets ready event on first .ts file)
+        self._segment_watcher_task = asyncio.ensure_future(self._watch_segments())
+
+        # Start watchdog (longer timeout for streaming — source may buffer)
+        self._last_segment_time = asyncio.get_event_loop().time()
+        self._timeout_task = asyncio.ensure_future(self._watchdog())
+
+    def _build_streaming_ffmpeg_args(
+        self, source_url: str, resolution: Resolution
+    ) -> list[str]:
+        """Build ffmpeg args for streaming URL input → HLS output.
+
+        Uses -re to read at native rate (throttled) and -reconnect flags
+        for resilient HTTP streaming.
+        """
+        resolution = self._cap_resolution(resolution)
+        bitrate = _bitrate_for_resolution(resolution)
+        maxrate = int(bitrate * 1.5)
+
+        args: list[str] = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
+
+        # Throttle input to native playback rate — friendly to providers
+        args.append("-re")
+
+        # HTTP reconnect options for resilient streaming
+        args.extend([
+            "-reconnect", "1",
+            "-reconnect_streamed", "1",
+            "-reconnect_delay_max", "5",
+        ])
+
+        # Decode stage: prefer QSV hardware decode
+        if self._use_hwaccel_decode:
+            args.extend([
+                "-hwaccel", "qsv",
+                "-hwaccel_output_format", "qsv",
+            ])
+
+        # Input: URL directly
+        args.extend(["-i", source_url])
+
+        # Video filter: VPP scale to target resolution
+        if self._use_hwaccel_decode:
+            args.extend(["-vf", f"scale_qsv=w=-1:h={resolution.height}"])
+        else:
+            args.extend([
+                "-vf", f"hwupload=extra_hw_frames=64,scale_qsv=w=-1:h={resolution.height}",
+                "-init_hw_device", "qsv=qsv:hw",
+                "-filter_hw_device", "qsv",
+            ])
+
+        # Video encode: h264_qsv
+        args.extend([
+            "-c:v", "h264_qsv",
+            "-profile:v", "main",
+            "-preset", "fast",
+            "-b:v", str(bitrate),
+            "-maxrate", str(maxrate),
+            "-bufsize", str(bitrate * 2),
+            "-g", "96",
+            "-force_key_frames", "expr:gte(t,n_forced*4)",
+        ])
+
+        # Audio encode: AAC at 128 kbps
+        args.extend(["-c:a", "aac", "-b:a", "128k"])
+
+        # HLS output (event type — segments accumulate for VOD-like seeking)
+        segment_pattern = str(self.output_dir / "seg%05d.ts")
+        args.extend([
+            "-max_interleave_delta", "0",
+            "-f", "hls",
+            "-hls_time", str(_HLS_SEGMENT_DURATION),
+            "-hls_list_size", "0",
+            "-hls_playlist_type", "event",
+            "-hls_flags", "independent_segments",
+            "-hls_segment_filename", segment_pattern,
+            str(self.playlist_path),
+        ])
+
+        return args
+
     async def start(self, input_path: str, resolution: Resolution) -> None:
         """Launch ffmpeg HLS transcode pipeline.
 
