@@ -673,31 +673,139 @@ class PlaybackRouter:
         guild_id: int,
         channel_id: int,
     ) -> None:
-        """Handle /play mode:music_video — adds video entry to unified queue.
+        """Handle /play type:music_video — search for videos and show a picker.
 
-        If nothing is playing, starts the video immediately.
-        If audio is playing, queues it and it starts when audio finishes.
+        For URLs, starts immediately. For text queries, searches YouTube for
+        video results and shows a selection dropdown (like songs/albums).
         """
         import player
 
         await interaction.response.defer()
 
+        is_url = query.startswith("http://") or query.startswith("https://")
+
+        if is_url:
+            # Direct URL — skip picker, start/queue immediately
+            await self._music_video_enqueue_or_start(interaction, query, guild_id, channel_id)
+            return
+
+        # Text search — get video results via yt-dlp flat search
+        await interaction.followup.send("🔄 Searching for music videos…", ephemeral=True)
+
+        results = await self._search_music_videos(query)
+        if not results:
+            await interaction.followup.send("No music videos found for that query.")
+            return
+
+        # Show picker
+        import discord as _discord
+        from cogs.music import SearchSelectView
+
+        # Convert yt-dlp results to the format SearchSelectView expects
+        picker_results = []
+        for r in results[:10]:
+            picker_results.append({
+                "title": r.get("title", "Unknown"),
+                "author": r.get("uploader") or r.get("channel") or "",
+                "duration": (r.get("duration") or 0) * 1000,  # seconds → ms
+                "url": r.get("url") or r.get("webpage_url") or "",
+                "webpage_url": r.get("url") or r.get("webpage_url") or "",
+            })
+
+        async def on_pick(info: dict, picker: _discord.Interaction):
+            video_url = info.get("webpage_url") or info.get("url", "")
+            title = info.get("title", query)
+            await picker.response.edit_message(
+                content=f"🎬 Starting: **{title}**…", view=None
+            )
+            await self._music_video_enqueue_or_start(
+                interaction, video_url, guild_id, channel_id, title=title
+            )
+
+        view = SearchSelectView(picker_results, interaction.user.id, on_pick)
+        msg = await interaction.followup.send("Select a music video:", view=view)
+        view.message = msg
+
+    async def _search_music_videos(self, query: str) -> list[dict]:
+        """Search YouTube for music video results (metadata only, no download).
+
+        Uses yt-dlp with --flat-playlist to get search result info without
+        downloading any video. Returns up to 5 results.
+        """
+        import asyncio as _asyncio
+        import json
+
+        search_query = f"ytsearch5:{query} official music video"
+        args = [
+            "yt-dlp",
+            "--flat-playlist",
+            "--dump-json",
+            "--no-download",
+            search_query,
+        ]
+
+        try:
+            process = await _asyncio.create_subprocess_exec(
+                *args,
+                stdout=_asyncio.subprocess.PIPE,
+                stderr=_asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await _asyncio.wait_for(
+                process.communicate(), timeout=15
+            )
+        except _asyncio.TimeoutError:
+            try:
+                process.kill()
+                await process.wait()
+            except (ProcessLookupError, OSError):
+                pass
+            log.warning("Music video search timed out for %r", query)
+            return []
+        except (FileNotFoundError, OSError) as exc:
+            log.warning("Music video search failed (yt-dlp not found?): %s", exc)
+            return []
+
+        if process.returncode != 0:
+            log.debug("Music video search returned non-zero for %r", query)
+            return []
+
+        results = []
+        for line in stdout.decode(errors="replace").strip().splitlines():
+            if not line.strip():
+                continue
+            try:
+                entry = json.loads(line)
+                results.append(entry)
+            except json.JSONDecodeError:
+                continue
+
+        return results
+
+    async def _music_video_enqueue_or_start(
+        self,
+        interaction: discord.Interaction,
+        video_url: str,
+        guild_id: int,
+        channel_id: int,
+        *,
+        title: str | None = None,
+    ) -> None:
+        """Enqueue or start a music video by URL (after user has picked)."""
+        import player
+
         state = player.get_state(guild_id)
         voice_channel = interaction.client.get_channel(channel_id)
 
-        # Store voice/text channel for queue-driven playback
         if voice_channel:
             state["voice_channel"] = voice_channel
         state["text_channel"] = interaction.channel
 
-        # Create the video queue entry
         entry = {
             "type": "music_video",
-            "query": query,
-            "title": f"🎬 {query}",
+            "query": video_url,
+            "title": f"🎬 {title or video_url}",
         }
 
-        # If nothing is currently playing, start immediately
         current = state.get("current")
         p = player.get_player(guild_id)
         is_playing = p and p.connected and (p.playing or p.paused)
@@ -706,14 +814,13 @@ class PlaybackRouter:
             state["current"] = entry
             player.persist(guild_id)
             await player._start_video_from_queue(guild_id, entry)
-            await interaction.followup.send(f"🎬 Starting music video: **{query}**")
+            await interaction.followup.send(f"🎬 Starting music video: **{title or video_url}**")
         else:
-            # Queue it behind current track
             state.setdefault("queue", []).append(entry)
             player.persist(guild_id)
             pos = len(state["queue"])
             await interaction.followup.send(
-                f"🎬 Music video queued (position {pos}): **{query}**"
+                f"🎬 Music video queued (position {pos}): **{title or video_url}**"
             )
 
     async def _handle_album_play(
