@@ -498,8 +498,27 @@ class PlaybackRouter:
         3. Orchestrator assign_instance() → use secondary
         4. All occupied → error with channel list
 
-        Enforces audio channel exclusivity per-instance.
+        If a video session is active, the track is queued to the unified
+        queue instead of starting a new audio session.
         """
+        # If a video is playing, just queue the audio track — don't start a session
+        from player import _is_video_active, get_state, add_track, persist
+        if _is_video_active(guild_id):
+            state = get_state(guild_id)
+            entry = {
+                "title": query,
+                "query": query,
+                "url": query if query.startswith("http") else None,
+                "source": "search",
+            }
+            state.setdefault("queue", []).append(entry)
+            persist(guild_id)
+            pos = len(state["queue"])
+            await interaction.response.send_message(
+                f"🎵 Queued (position {pos}): **{query}** — will play after video ends."
+            )
+            return
+
         # Check for existing audio sessions in this guild
         audio_sessions = self._registry.get_audio_sessions(guild_id)
 
