@@ -539,15 +539,24 @@ class HLSTranscodePipeline:
         args: list[str] = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
 
         # Rate throttling:
-        # - DASH/finite sources (dual-input, e.g. YouTube): use -readrate with
-        #   initial burst. Burst the first 8s at full network speed so the first
-        #   few HLS segments write almost instantly, then throttle to 3x real-time.
-        # - HLS/live streams (single-input, e.g. Tidal): same approach.
-        # force_key_frames ensures segment boundaries at every _HLS_SEGMENT_DURATION
-        # regardless of burst speed, so segments stay correctly sized.
+        # - DASH/finite sources (dual-input, e.g. YouTube): no readrate throttle.
+        #   These are bounded downloads (known content-length). Let ffmpeg pull
+        #   data as fast as the CDN allows for rapid startup. Total download size
+        #   is naturally limited by video duration × bitrate.
+        # - HLS/live streams (single-input, e.g. Tidal): use readrate to avoid
+        #   buffering the entire live stream.
+        if not audio_url:
+            # Single-input (HLS/live) — throttle after initial burst
+            args.extend([
+                "-readrate", "3",
+                "-readrate_initial_burst", "8",
+            ])
+
+        # Minimal probing — we know the formats from yt-dlp metadata.
+        # Reduces startup latency by skipping lengthy format detection.
         args.extend([
-            "-readrate", "3",
-            "-readrate_initial_burst", "8",
+            "-probesize", "32768",
+            "-analyzeduration", "500000",
         ])
 
         # HTTP reconnect options — only for HLS/live streams (single-input mode).
