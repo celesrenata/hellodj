@@ -303,19 +303,26 @@ class Playlists(commands.Cog):
             await interaction.response.send_message(f"**{name}** is empty.")
             return
 
-        limit = 25
-        lines = [
-            f"{i + 1}. **{t.get('title', 'Unknown')}** ({_fmt_duration(t.get('duration'))})"
-            for i, t in enumerate(tracks[:limit])
-        ]
-        if len(tracks) > limit:
-            lines.append(f"…and {len(tracks) - limit} more")
-        embed = discord.Embed(
-            title=f"HelloDJ — {name} — {len(tracks)} track(s)",
-            description="\n".join(lines),
-            colour=discord.Colour.blurple(),
-        )
-        await interaction.response.send_message(embed=embed)
+        per_page = 15
+        pages = []
+        for start in range(0, len(tracks), per_page):
+            page_tracks = tracks[start:start + per_page]
+            lines = [
+                f"{start + i + 1}. **{t.get('title', 'Unknown')}** ({_fmt_duration(t.get('duration'))})"
+                for i, t in enumerate(page_tracks)
+            ]
+            pages.append("\n".join(lines))
+
+        if len(pages) == 1:
+            embed = discord.Embed(
+                title=f"HelloDJ — {name} — {len(tracks)} track(s)",
+                description=pages[0],
+                colour=discord.Colour.blurple(),
+            )
+            await interaction.response.send_message(embed=embed)
+        else:
+            view = _PlaylistShowView(name, pages, len(tracks))
+            await interaction.response.send_message(embed=view.build_embed(), view=view)
 
     @group.command(name="import", description="Import a playlist from Spotify, Tidal, or YouTube Music URL")
     @app_commands.describe(
@@ -446,6 +453,38 @@ class Playlists(commands.Cog):
         verb = "HelloDJ replaced queue with" if mode == "replace" else "HelloDJ queued"
         extra = " (shuffled)" if shuffle else ""
         await interaction.followup.send(f"{verb} **{count}** track(s) from **{name}**{extra}.")
+
+
+class _PlaylistShowView(discord.ui.View):
+    """Paginated view for /playlist show."""
+
+    def __init__(self, name: str, pages: list[str], total: int):
+        super().__init__(timeout=120)
+        self.name = name
+        self.pages = pages
+        self.total = total
+        self.page = 0
+
+    def build_embed(self) -> discord.Embed:
+        embed = discord.Embed(
+            title=f"HelloDJ — {self.name} — {self.total} track(s)",
+            description=self.pages[self.page],
+            colour=discord.Colour.blurple(),
+        )
+        embed.set_footer(text=f"Page {self.page + 1}/{len(self.pages)}")
+        return embed
+
+    @discord.ui.button(label="◀ Prev", style=discord.ButtonStyle.secondary)
+    async def prev_page(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        if self.page > 0:
+            self.page -= 1
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+    @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary)
+    async def next_page(self, interaction: discord.Interaction, _button: discord.ui.Button):
+        if self.page < len(self.pages) - 1:
+            self.page += 1
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
 
 
 async def setup(bot: commands.Bot):

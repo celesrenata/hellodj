@@ -71,8 +71,9 @@ def _build_eq_display(gains: list[float], selected_band: int) -> str:
     ind_parts = ["▲" if i == selected_band else "·" for i in range(BAND_COUNT)]
     indicator = " " + "  ".join(ind_parts[:3]) + "   " + "   ".join(ind_parts[3:8]) + "  " + "   ".join(ind_parts[8:])
 
-    # Labels: space-joined, compact but readable
-    labels = " ".join(BAND_LABELS)
+    # Labels: space-joined, shortened to fit code block width
+    viz_labels = ["25", "63", "160", "400", "630", "1k", "2k", "4k", "10k", "16k"]
+    labels = " ".join(viz_labels)
 
     return f"```\n{bars}\n{indicator}\n{labels}\n```"
 
