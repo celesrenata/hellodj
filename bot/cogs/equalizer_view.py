@@ -72,13 +72,23 @@ def _build_eq_display(gains: list[float], selected_band: int) -> str:
     # Labels are -# small text, much more compact than the bars/indicators above
     bar_spacings = [S, S*2, S*2, S*2, S*2, S*2, S*2, S*1, S*1, ""]
     # Indicators are narrower glyphs, need more space to align under bars
-    ind_spacings = [S*3, S*4, S*4, S*4, S*5, S*4, S*4, S*3, S*4, ""]
+    # ▲ is wider than · so it gets 1 fewer en-space after it
+    ind_spacings = [S*2, S*3, S*3, S*3, S*4, S*3, S*3, S*2, S*3, ""]
 
     bar_chars = [_gain_to_block(g) for g in gains]
-    ind_chars = ["▲" if i == selected_band else "·" for i in range(BAND_COUNT)]
+    ind_chars = []
+    adj_spacings = []
+    for i in range(BAND_COUNT):
+        if i == selected_band:
+            ind_chars.append("▲")
+            # ▲ is wider — reduce spacing after it by 1
+            adj_spacings.append(ind_spacings[i][:-1] if ind_spacings[i] else "")
+        else:
+            ind_chars.append("·")
+            adj_spacings.append(ind_spacings[i])
 
     bars = "".join(b + s for b, s in zip(bar_chars, bar_spacings))
-    indicator = "".join(i + s for i, s in zip(ind_chars, ind_spacings))
+    indicator = "".join(i + s for i, s in zip(ind_chars, adj_spacings))
     labels = " ".join(viz_labels)
 
     return f"{bars}\n{indicator}\n-# {labels}"
