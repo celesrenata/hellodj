@@ -1163,20 +1163,19 @@ import { DiscordSDK } from './discord-sdk.js';
   if (status.state === 'streaming' && status.playlist_url) {
     const playlistUrl = `stream/${guildId}/playlist.m3u8?token=${encodeURIComponent(instanceId)}`;
 
-    // Late joiner: if stream already has elapsed time, skip countdown and go directly to HLS
-    if (status.elapsed_seconds > 5) {
+    if (status.playback_started) {
+      // Late joiner: playback already started by a previous viewer.
+      // Jump directly to HLS at current position (no countdown).
       setMode('VIDEO_PLAYING');
       initHls(playlistUrl, false);
     } else {
-      // First viewer or stream just started — preload HLS during countdown
+      // First viewer: show countdown, preload HLS in background, then play from 0.
       setMode('COUNTDOWN');
-      // Start HLS loading in preload mode (no media attach — just fetch manifest+segments)
       initHls(playlistUrl, true, false, true);
       countdownOverlayCtrl.start(3, status.video_title || '');
       countdownOverlayCtrl._onComplete = () => {
         wsSend({ type: 'ready' });
         setMode('VIDEO_PLAYING');
-        // Now attach to video element and play
         if (hls) {
           hls.attachMedia(videoEl);
           hls.once(Hls.Events.FRAG_BUFFERED, () => {

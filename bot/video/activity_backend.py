@@ -509,6 +509,7 @@ class ActivityBackend:
                 if streamer.source and streamer.source.source_type == "upload"
                 else None
             ),
+            playback_started=streamer.playback_started,
         )
 
         return web.json_response(dataclasses.asdict(status))

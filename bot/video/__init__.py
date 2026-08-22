@@ -115,3 +115,4 @@ class SessionStatus:
     subtitles: list[dict] = field(default_factory=list)
     playing: bool = True
     uploader: str | None = None
+    playback_started: bool = False  # True after first viewer's countdown completed
