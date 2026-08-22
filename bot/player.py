@@ -1847,7 +1847,8 @@ async def _now_playing_updater(guild_id: int, player: wavelink.Player, track: wa
                 embed = _build_now_playing_embed(current, current_entry)
             embed.description = f"`{bar}`  {pos_m}:{pos_s:02d} / {dur_m}:{dur_s:02d}"
             try:
-                await msg.edit(embed=embed)
+                from views.unified_remote import UnifiedControlView
+                await msg.edit(embed=embed, view=UnifiedControlView())
             except discord.HTTPException:
                 pass
     except asyncio.CancelledError:
