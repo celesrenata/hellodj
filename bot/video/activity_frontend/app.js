@@ -896,14 +896,10 @@ import { DiscordSDK } from './discord-sdk.js';
       }
       // Ensure the video element is visible and playing
       videoEl.style.display = '';
-      const playPromise = videoEl.play();
-      if (playPromise) {
-        playPromise.catch((err) => {
-          _rlog('play() rejected: ' + err.message + ' — trying muted');
-          videoEl.muted = true;
-          videoEl.play().catch(() => {});
-        });
-      }
+      videoEl.muted = false;
+      videoEl.play().catch((err) => {
+        _rlog('play() rejected: ' + err.message);
+      });
       // Hide visualizer loading overlay once manifest is parsed and playback starts
       if (hls._isLive && mode === 'VISUALIZER_HLS') {
         visualizerLoading.style.display = 'none';
