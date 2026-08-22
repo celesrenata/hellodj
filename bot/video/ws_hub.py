@@ -382,13 +382,14 @@ class WebSocketHub:
             # Playback already started or countdown not active — ignore
             return
 
-        # Broadcast `start` to all connected clients
+        # Broadcast `start` to all connected clients EXCEPT the sender
+        # (the sender already started HLS from its own countdown onComplete)
         start_msg = {
             "type": "start",
             "position": 0.0,
             "timestamp": time.time(),
         }
-        await self.broadcast(guild_id, start_msg)
+        await self.broadcast(guild_id, start_msg, exclude=sender)
 
         # Update the PlaybackState to reflect position 0 playing
         state = self._playback_state.setdefault(guild_id, PlaybackState())
