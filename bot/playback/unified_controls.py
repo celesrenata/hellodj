@@ -131,8 +131,6 @@ async def _skip_video(guild_id: int) -> str:
             await player._play_next_from_queue(guild_id)
             return "skipped_to_next"
         return "queue_empty"
-            return "skipped_to_next"
-        return "queue_empty"
 
     # Stop the video session
     log.info("unified_skip: stopping video for guild=%d", guild_id)
