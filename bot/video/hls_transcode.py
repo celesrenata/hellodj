@@ -466,7 +466,7 @@ class HLSTranscodePipeline:
             else:
                 log.info("Extracted subtitle track: %s → %s", lang, output_path)
 
-    async def start_streaming(self, source_url: str, resolution: Resolution) -> None:
+    async def start_streaming(self, source_url: str, resolution: Resolution, *, audio_url: str | None = None) -> None:
         """Launch ffmpeg HLS transcode pipeline reading directly from a URL.
 
         Unlike start() which reads from a local file, this reads from an HTTP/
@@ -477,6 +477,8 @@ class HLSTranscodePipeline:
         Args:
             source_url: HTTP(S) URL to the source video/HLS manifest.
             resolution: Target output resolution (capped at 720p).
+            audio_url: Optional separate audio stream URL (for DASH sources
+                       like YouTube where video and audio are separate).
 
         Raises:
             HLSTranscodePipelineError: If the process fails to start.
@@ -493,7 +495,7 @@ class HLSTranscodePipeline:
         self.subtitle_tracks = []
         self.audio_tracks = [{"lang": "und", "label": ""}]
 
-        args = self._build_streaming_ffmpeg_args(source_url, resolution)
+        args = self._build_streaming_ffmpeg_args(source_url, resolution, audio_url=audio_url)
         log.info("HLS streaming transcode starting: %s", " ".join(args))
 
         try:
@@ -518,12 +520,16 @@ class HLSTranscodePipeline:
         self._timeout_task = asyncio.ensure_future(self._watchdog())
 
     def _build_streaming_ffmpeg_args(
-        self, source_url: str, resolution: Resolution
+        self, source_url: str, resolution: Resolution, *, audio_url: str | None = None
     ) -> list[str]:
         """Build ffmpeg args for streaming URL input → HLS output.
 
         Uses -re to read at native rate (throttled) and -reconnect flags
         for resilient HTTP streaming.
+
+        When audio_url is provided (DASH sources like YouTube), adds a second
+        input for the separate audio stream and maps video from input 0 and
+        audio from input 1.
         """
         resolution = self._cap_resolution(resolution)
         bitrate = _bitrate_for_resolution(resolution)
@@ -548,8 +554,12 @@ class HLSTranscodePipeline:
                 "-hwaccel_output_format", "qsv",
             ])
 
-        # Input: URL directly
+        # Input 0: video URL (or combined video+audio)
         args.extend(["-i", source_url])
+
+        # Input 1: separate audio URL (DASH sources like YouTube)
+        if audio_url:
+            args.extend(["-i", audio_url])
 
         # Video filter: VPP scale to target resolution
         if self._use_hwaccel_decode:
@@ -560,6 +570,10 @@ class HLSTranscodePipeline:
                 "-init_hw_device", "qsv=qsv:hw",
                 "-filter_hw_device", "qsv",
             ])
+
+        # Stream mapping for dual-input (DASH) mode
+        if audio_url:
+            args.extend(["-map", "0:v:0", "-map", "1:a:0"])
 
         # Video encode: h264_qsv
         args.extend([

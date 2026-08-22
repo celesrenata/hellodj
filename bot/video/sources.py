@@ -259,7 +259,7 @@ class YouTubeResolverError(Exception):
 
 
 class YouTubeResolver:
-    """Resolve YouTube URLs/queries to downloadable video sources via yt-dlp."""
+    """Resolve YouTube URLs/queries to streamable video sources via yt-dlp."""
 
     def __init__(self, download_dir: Path | None = None) -> None:
         self.download_dir = download_dir or _DOWNLOAD_DIR
@@ -268,38 +268,39 @@ class YouTubeResolver:
     async def resolve(
         self, query: str, quality: SourceQuality | None = None
     ) -> VideoSource:
-        """Download video via yt-dlp and return a VideoSource.
+        """Extract video stream URLs via yt-dlp (no download) and return a VideoSource.
+
+        Uses yt-dlp in simulate mode to get the direct stream URLs for
+        video and audio, which are then passed to ffmpeg for streaming
+        transcode. No full file download is performed.
 
         Args:
             query: YouTube URL or search query.
-            quality: Desired source quality. Defaults to best up to 1080p.
+            quality: Desired source quality. Defaults to best up to 720p.
 
         Returns:
-            A VideoSource with source_type="youtube".
+            A VideoSource with stream_url set for streaming transcode.
 
         Raises:
             YouTubeResolverError: If yt-dlp fails.
         """
-        # Build format selection string
-        height = quality.height if quality is not None else 1080
+        # Cap at 720p for streaming — we're transcoding anyway and higher
+        # resolutions waste bandwidth on the download side
+        height = min(quality.height if quality is not None else 720, 720)
         format_sel = (
             f"bestvideo[height<={height}]+bestaudio/best[height<={height}]"
         )
 
-        # Build yt-dlp command
-        output_template = str(self.download_dir / "%(id)s.%(ext)s")
+        # Build yt-dlp command — simulate only, dump JSON with URLs
         args = [
             "yt-dlp",
             "--no-playlist",
             "-f", format_sel,
-            "--merge-output-format", "mp4",
-            "-o", output_template,
-            "--print-json",
-            "--no-simulate",
+            "--dump-json",
             query,
         ]
 
-        log.info("YouTubeResolver: running yt-dlp for query=%r quality=%s", query, quality)
+        log.info("YouTubeResolver: extracting stream URLs for query=%r quality=%s", query, quality)
 
         try:
             process = await asyncio.create_subprocess_exec(
@@ -310,17 +311,16 @@ class YouTubeResolver:
 
             stdout, stderr = await asyncio.wait_for(
                 process.communicate(),
-                timeout=_YTDLP_DOWNLOAD_TIMEOUT_SECONDS,
+                timeout=60.0,  # URL extraction is fast — 60s is generous
             )
         except asyncio.TimeoutError:
-            # Kill the process on timeout
             try:
                 process.kill()
                 await process.wait()
             except (ProcessLookupError, OSError):
                 pass
             raise YouTubeResolverError(
-                "Download timed out — try a lower quality or different video",
+                "URL extraction timed out",
                 category="network",
             )
         except (FileNotFoundError, OSError) as exc:
@@ -340,7 +340,6 @@ class YouTubeResolver:
         import json
 
         json_output = stdout.decode(errors="replace").strip()
-        # yt-dlp may output multiple JSON lines; take the last one
         json_lines = [line for line in json_output.splitlines() if line.strip().startswith("{")]
         if not json_lines:
             raise YouTubeResolverError(
@@ -356,34 +355,44 @@ class YouTubeResolver:
                 category="unknown",
             ) from exc
 
-        # Determine the output file path
-        file_path = info.get("_filename") or info.get("filename", "")
-        if not file_path or not os.path.isfile(file_path):
-            # Try to construct it from the template
-            video_id = info.get("id", "unknown")
-            ext = info.get("ext", "mp4")
-            file_path = str(self.download_dir / f"{video_id}.{ext}")
+        # Extract video and audio stream URLs from requested_formats
+        video_url: str | None = None
+        audio_url: str | None = None
+        requested_formats = info.get("requested_formats", [])
 
-        if not os.path.isfile(file_path):
+        for fmt in requested_formats:
+            has_video = fmt.get("vcodec", "none") != "none"
+            has_audio = fmt.get("acodec", "none") != "none"
+            url = fmt.get("url")
+
+            if has_video and not video_url:
+                video_url = url
+            if has_audio and not has_video and not audio_url:
+                audio_url = url
+            # Combined format (has both video and audio)
+            if has_video and has_audio and not video_url:
+                video_url = url
+
+        # Fallback: main URL (combined format)
+        if not video_url:
+            video_url = info.get("url")
+
+        if not video_url:
             raise YouTubeResolverError(
-                "yt-dlp completed but output file not found",
+                "yt-dlp returned no playable stream URL",
                 category="unknown",
             )
 
-        # Extract audio URL for separate Lavalink playback
-        audio_url: str | None = None
-        requested_formats = info.get("requested_formats", [])
-        for fmt in requested_formats:
-            if fmt.get("acodec", "none") != "none" and fmt.get("vcodec", "none") == "none":
-                audio_url = fmt.get("url")
-                break
-        # Fallback: use the main URL if no separate audio
-        if audio_url is None:
-            audio_url = info.get("url")
+        log.info(
+            "YouTubeResolver: extracted stream URLs (video=%s, audio=%s) for '%s'",
+            "yes" if video_url else "no",
+            "yes" if audio_url else "no",
+            info.get("title", "Unknown"),
+        )
 
         return VideoSource(
             source_type="youtube",
-            file_path=file_path,
+            file_path="",  # No local file — streaming directly from URL
             title=info.get("title", "Unknown"),
             duration_seconds=float(info.get("duration", 0)),
             metadata={
@@ -395,7 +404,8 @@ class YouTubeResolver:
                 "width": info.get("width", 0),
             },
             audio_url=audio_url,
-            cleanup_on_finish=True,
+            stream_url=video_url,
+            cleanup_on_finish=False,  # Nothing to clean up — no file downloaded
         )
 
     async def query_formats(self, url: str) -> list[FormatInfo]:

@@ -577,7 +577,10 @@ class ActivityStreamer:
         try:
             if source.stream_url:
                 # Stream directly from URL — throttled, no pre-download
-                await self.pipeline.start_streaming(source.stream_url, Resolution.RES_720P)
+                await self.pipeline.start_streaming(
+                    source.stream_url, Resolution.RES_720P,
+                    audio_url=source.audio_url,
+                )
             else:
                 await self.pipeline.start(source.file_path, Resolution.RES_720P)
         except Exception as exc:
