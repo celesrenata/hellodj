@@ -346,13 +346,19 @@ class WebSocketHub:
             log.info("WS skip requested for guild %d", guild_id)
             streamer = self._streamers.get(guild_id)
             if streamer and hasattr(streamer, "skip"):
-                await streamer.skip()
+                try:
+                    await streamer.skip()
+                except Exception as exc:
+                    log.debug("WS skip ignored for guild %d: %s", guild_id, exc)
             return
         if msg_type == "previous":
             log.info("WS previous requested for guild %d", guild_id)
             streamer = self._streamers.get(guild_id)
             if streamer and hasattr(streamer, "previous"):
-                await streamer.previous()
+                try:
+                    await streamer.previous()
+                except Exception as exc:
+                    log.debug("WS previous ignored for guild %d: %s", guild_id, exc)
             return
 
         if msg_type not in ("play", "pause", "seek", "subtitle_change", "audio_change"):

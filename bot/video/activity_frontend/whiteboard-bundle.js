@@ -460,38 +460,8 @@ class StrokeRenderer {
   }
 
   _renderSticker(stroke, w, h) {
-    if (!stroke.sticker_category || !stroke.sticker_filename) return;
-    if (!stroke.points || stroke.points.length < 2) return;
-
-    const [x1, y1] = denormalize(stroke.points[0][0], stroke.points[0][1], w, h);
-    const [x2, y2] = denormalize(stroke.points[1][0], stroke.points[1][1], w, h);
-    const boxW = Math.abs(x2 - x1);
-    const boxH = Math.abs(y2 - y1);
-    const boxX = Math.min(x1, x2);
-    const boxY = Math.min(y1, y2);
-
-    const url = `stickers/${stroke.sticker_category}/${stroke.sticker_filename}`;
-    const img = this._getOrLoadImage(url);
-
-    if (img && img.complete && img.naturalWidth > 0) {
-      const imgAspect = img.naturalWidth / img.naturalHeight;
-      const boxAspect = boxW / boxH;
-      let drawW, drawH, drawX, drawY;
-
-      if (imgAspect > boxAspect) {
-        drawW = boxW;
-        drawH = boxW / imgAspect;
-        drawX = boxX;
-        drawY = boxY + (boxH - drawH) / 2;
-      } else {
-        drawH = boxH;
-        drawW = boxH * imgAspect;
-        drawX = boxX + (boxW - drawW) / 2;
-        drawY = boxY;
-      }
-
-      this.ctx.drawImage(img, drawX, drawY, drawW, drawH);
-    }
+    // Stickers are rendered as DOM <img> overlays — skip canvas rendering.
+    // See WhiteboardOverlay._syncStickerOverlays() for the DOM-based approach.
   }
 
   _getOrLoadImage(url) {
@@ -1964,7 +1934,6 @@ class WhiteboardOverlay {
     this.currentWidth = 3;
     this.currentOpacity = 1.0;
     this.undoStack = [];
-    this._animFrameId = null;
 
     this.renderer = new StrokeRenderer(
       this.ctx,
@@ -1976,6 +1945,13 @@ class WhiteboardOverlay {
     this.hud.style.display = 'none';
     this.canvas.style.pointerEvents = 'none';
     this.toggleButton.dataset.active = 'false';
+
+    // Create sticker overlay container (sibling of canvas, same positioning)
+    this._stickerLayer = document.createElement('div');
+    this._stickerLayer.className = 'sticker-overlay-layer';
+    this._stickerLayer.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:36;overflow:hidden;';
+    this.canvas.parentElement.appendChild(this._stickerLayer);
+    this._stickerElements = new Map(); // stroke.id → <img> element
 
     this.toggleButton.addEventListener('click', () => {
       if (this.mode === 'inactive') {
@@ -2007,26 +1983,29 @@ class WhiteboardOverlay {
     if (stroke.author === this.localAuthorId) {
       this.undoStack.push(stroke.id);
     }
+    if (stroke.type === 'sticker') {
+      this._addStickerElement(stroke);
+    }
     this.redraw();
-    this._startAnimationLoop();
   }
 
   removeStroke(strokeId) {
+    const stroke = this.strokes.get(strokeId);
     this.strokes.delete(strokeId);
     const undoIdx = this.undoStack.indexOf(strokeId);
     if (undoIdx !== -1) {
       this.undoStack.splice(undoIdx, 1);
     }
-    this.redraw();
-    // Stop animation loop if no animated stickers remain
-    if (!this._hasAnimatedStickers()) {
-      this._stopAnimationLoop();
+    if (stroke && stroke.type === 'sticker') {
+      this._removeStickerElement(strokeId);
     }
+    this.redraw();
   }
 
   clearAll() {
     this.strokes.clear();
     this.undoStack.length = 0;
+    this._clearStickerElements();
     this.redraw();
     this._stopAnimationLoop();
   }
@@ -2038,28 +2017,57 @@ class WhiteboardOverlay {
     }
   }
 
-  _hasAnimatedStickers() {
-    for (const stroke of this.strokes.values()) {
-      if (stroke.type === 'sticker') return true;
+  _addStickerElement(stroke) {
+    if (!stroke.sticker_category || !stroke.sticker_filename) return;
+    if (!stroke.points || stroke.points.length < 2) return;
+
+    const img = document.createElement('img');
+    img.src = `stickers/${stroke.sticker_category}/${stroke.sticker_filename}`;
+    img.style.cssText = 'position:absolute;pointer-events:none;object-fit:contain;';
+    img.dataset.strokeId = stroke.id;
+    this._stickerLayer.appendChild(img);
+    this._stickerElements.set(stroke.id, img);
+    this._positionStickerElement(stroke, img);
+  }
+
+  _removeStickerElement(strokeId) {
+    const img = this._stickerElements.get(strokeId);
+    if (img) {
+      img.remove();
+      this._stickerElements.delete(strokeId);
     }
-    return false;
   }
 
-  _startAnimationLoop() {
-    if (this._animFrameId) return;
-    if (!this._hasAnimatedStickers()) return;
-
-    const tick = () => {
-      this.redraw();
-      this._animFrameId = requestAnimationFrame(tick);
-    };
-    this._animFrameId = requestAnimationFrame(tick);
+  _clearStickerElements() {
+    this._stickerLayer.innerHTML = '';
+    this._stickerElements.clear();
   }
 
-  _stopAnimationLoop() {
-    if (this._animFrameId) {
-      cancelAnimationFrame(this._animFrameId);
-      this._animFrameId = null;
+  _positionStickerElement(stroke, img) {
+    const container = this.canvas.parentElement;
+    const w = container.clientWidth;
+    const h = container.clientHeight;
+    if (w === 0 || h === 0) return;
+
+    const [x1, y1] = [stroke.points[0][0] * w, stroke.points[0][1] * h];
+    const [x2, y2] = [stroke.points[1][0] * w, stroke.points[1][1] * h];
+    const left = Math.min(x1, x2);
+    const top = Math.min(y1, y2);
+    const boxW = Math.abs(x2 - x1);
+    const boxH = Math.abs(y2 - y1);
+
+    img.style.left = `${left}px`;
+    img.style.top = `${top}px`;
+    img.style.width = `${boxW}px`;
+    img.style.height = `${boxH}px`;
+  }
+
+  _repositionAllStickers() {
+    for (const [strokeId, img] of this._stickerElements) {
+      const stroke = this.strokes.get(strokeId);
+      if (stroke) {
+        this._positionStickerElement(stroke, img);
+      }
     }
   }
 
@@ -2074,6 +2082,7 @@ class WhiteboardOverlay {
     this.canvas.height = height;
     this.renderer.resize(width, height);
     this.redraw();
+    this._repositionAllStickers();
   }
 }
 
