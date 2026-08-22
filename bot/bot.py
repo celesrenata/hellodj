@@ -647,19 +647,10 @@ async def setup_hook():
     # HELLODJ_VOICE_DEBUG=1 (default); set to 0 to disable.
     voice_debug.install_raw_listeners(bot)
 
-    # Sync commands globally. If Entry Point conflict (50240) happens,
-    # fall back to per-guild sync in on_ready.
-    try:
-        await bot.tree.sync()
-        log.info("Global slash command sync complete.")
-        bot._global_sync_ok = True
-    except discord.HTTPException as _sync_exc:
-        if _sync_exc.code == 50240:
-            log.warning("Global sync blocked by Entry Point (50240) — will sync per-guild in on_ready")
-            bot._global_sync_ok = False
-        else:
-            log.error("Global sync failed: %s", _sync_exc)
-            bot._global_sync_ok = False
+    # Skip global command sync — this bot uses per-guild sync only.
+    # Global commands conflict with the Entry Point command (error 50240)
+    # and cause stale command definitions to linger on Discord's side.
+    bot._global_sync_ok = False
 
     # Per-guild sync happens in on_ready (guild cache is empty here in setup_hook)
 
