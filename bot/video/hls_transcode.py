@@ -538,8 +538,15 @@ class HLSTranscodePipeline:
 
         args: list[str] = ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y"]
 
-        # Throttle input to native playback rate — friendly to providers
-        args.append("-re")
+        # Rate throttling:
+        # - HLS/live streams (single-input, e.g. Tidal): use -re to read at
+        #   native rate, reducing bandwidth pressure on the provider.
+        # - DASH/finite sources (dual-input, e.g. YouTube): do NOT use -re.
+        #   ffmpeg needs to transcode ahead so HLS segments are ready when
+        #   the client requests them. The bandwidth savings come from not
+        #   downloading to disk (streaming directly from CDN to ffmpeg).
+        if not audio_url:
+            args.append("-re")
 
         # HTTP reconnect options — only for HLS/live streams (single-input mode).
         # DASH sources (dual-input with audio_url) are finite downloads where
