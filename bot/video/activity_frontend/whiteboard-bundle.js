@@ -510,7 +510,10 @@ class ToolManager {
     const tool = this.tools.get(name);
     if (!tool) return;
 
-    if (this.activeTool && this.activeTool !== tool) {
+    // If re-selecting the same tool, don't re-activate (let caller handle toggle)
+    if (this.activeTool === tool) return;
+
+    if (this.activeTool) {
       this.activeTool.onCancel();
     }
 

@@ -1361,6 +1361,8 @@ import { DiscordSDK } from './discord-sdk.js';
     document.querySelectorAll('.hud-tools .hud-btn[data-tool]').forEach((btn) => {
       btn.addEventListener('click', (e) => {
         const toolName = btn.dataset.tool;
+        const wasAlreadyActive = toolManager.getActiveTool()?.name === toolName;
+
         toolManager.selectTool(toolName);
         // Update active state on buttons
         document.querySelectorAll('.hud-tools .hud-btn').forEach(b => b.classList.remove('active'));
@@ -1376,6 +1378,17 @@ import { DiscordSDK } from './discord-sdk.js';
         } else if (toolName === 'eraser') {
           penPopup?.classList.remove('open');
           eraserPopup?.classList.toggle('open');
+        } else if (toolName === 'sticker') {
+          closeAllPopups();
+          // Toggle sticker picker if already active
+          if (wasAlreadyActive) {
+            const isVisible = stickerPickerContainer.style.display !== 'none';
+            if (isVisible) {
+              stickerPicker.hide();
+            } else {
+              stickerPicker.show();
+            }
+          }
         } else {
           closeAllPopups();
         }
