@@ -62,17 +62,16 @@ def _build_eq_display(gains: list[float], selected_band: int) -> str:
     We use tight spacing: no separator, just right-pad to 3 chars.
     Block chars (▁▂▃) render ~1.5x wide in Discord mono, so bars get 2-char slots.
     """
-    # Bars: 1 space between (block chars are visually wide)
-    bars = " ".join(_gain_to_block(g) for g in gains)
+    # Bars and indicator in a code block (box), labels as small text below
+    # Use 2-space gaps — fits in the code block without wrapping
+    bars = "  ".join(_gain_to_block(g) for g in gains)
+    indicator = "  ".join("▲" if i == selected_band else "·" for i in range(BAND_COUNT))
 
-    # Indicator: ▲/· with 1 space between
-    indicator = " ".join("▲" if i == selected_band else "·" for i in range(BAND_COUNT))
-
-    # Labels: use Discord's -# small text for the frequency labels
+    # Labels: -# small text below the code block
     viz_labels = ["25", "63", "160", "400", "630", "1k6", "2k5", "4k", "10k", "16k"]
-    labels = " ".join(viz_labels)
+    labels = "  ".join(viz_labels)
 
-    return f"{bars}\n{indicator}\n-# {labels}"
+    return f"```{bars}\n{indicator}```\n-# {labels}"
 
 
 def _build_eq_embed(gains: list[float], selected_band: int) -> discord.Embed:
