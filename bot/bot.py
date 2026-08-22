@@ -594,6 +594,12 @@ async def setup_hook():
     try:
         await bot.load_extension("cogs.video")
         dbg.info("setup_hook: video cog loaded")
+        # Register VideoControlView as persistent IMMEDIATELY after cog loads
+        # (must happen during setup_hook, before READY)
+        from cogs.video import VideoControlView
+        video_cog = bot.get_cog("Video")
+        bot.add_view(VideoControlView(video_cog))
+        dbg.info("setup_hook: VideoControlView registered as persistent view")
     except Exception as _video_exc:
         log.warning("setup_hook: could not load video cog (non-fatal): %s", _video_exc)
 
