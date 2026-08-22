@@ -369,6 +369,32 @@ class ActivityStreamer:
 
         return elapsed
 
+    def on_seek(self, position: float) -> None:
+        """Adjust the server timer to match a client seek.
+
+        Resets start_time so that get_elapsed_seconds() returns the new
+        position. Called by ws_hub when a client sends a seek message.
+        """
+        if not self.playback_started or self.start_time == 0.0:
+            return
+
+        # Clamp position to [0, duration]
+        if position < 0.0:
+            position = 0.0
+        if (
+            self.source is not None
+            and self.source.duration_seconds > 0
+            and position > self.source.duration_seconds
+        ):
+            position = self.source.duration_seconds
+
+        self.start_time = time.monotonic() - position
+        log.debug(
+            "Seek received for guild=%d — timer adjusted to %.1fs",
+            self.guild_id,
+            position,
+        )
+
     # ------------------------------------------------------------------
     # Countdown protocol
     # ------------------------------------------------------------------

@@ -368,6 +368,10 @@ class WebSocketHub:
         elif msg_type == "seek":
             state.position = data.get("position", state.position)
             state.last_update = time.monotonic()
+            # Forward seek to the ActivityStreamer so its elapsed timer stays in sync
+            streamer = self._streamers.get(guild_id)
+            if streamer is not None:
+                streamer.on_seek(state.position)
         elif msg_type == "subtitle_change":
             if data.get("for_everyone"):
                 state.subtitle_lang = data.get("lang")
