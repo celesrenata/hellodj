@@ -35,4 +35,6 @@ Thumbs.db
 
 # Large build artifacts
 kube/lavalink/Lavalink.jar
-stickers/
+stickers/*
+!stickers/*.sh
+!stickers/*.py
