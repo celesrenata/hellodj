@@ -806,11 +806,17 @@ class Music(commands.Cog):
 
     # ── Play group ──────────────────────────────────────────
 
-    async def _resolve_tracks(self, query: str, provider: str) -> list:
+    async def _resolve_tracks(self, query: str, provider: str, *, for_picker: bool = True) -> list:
         """Resolve a query to a list of tracks using the configured provider.
 
         Tidal→YouTube fallback: when the provider is Tidal and no tracks are
         found (or no video is available), fall back to YouTube search.
+
+        When ``for_picker=True`` (default) and the provider-specific search
+        returns ≤1 result for a text query, supplements with a YouTube search
+        so the user gets multiple options in the selection dropdown. Spotify and
+        Tidal search prefixes (spsearch:/tdsearch:) typically return only the
+        single best match — not enough for a proper picker experience.
         """
         source_map = {
             "youtube": TrackSource.YouTube,
@@ -820,12 +826,13 @@ class Music(commands.Cog):
             "tidal": "tidal",
         }
         source = source_map.get(provider, TrackSource.YouTube)
+        is_url = query.startswith("http://") or query.startswith("https://")
 
         if provider == "tidal":
             # Tidal: use tdsearch: prefix for metadata lookup via LavasRC.
             # Pass source=None so wavelink doesn't prepend ytsearch:/ytmsearch:.
             # If no Tidal results, fall back to YouTube.
-            tidal_query = f"tdsearch:{query}" if not query.startswith("http") else query
+            tidal_query = f"tdsearch:{query}" if not is_url else query
             try:
                 tracks = await Playable.search(tidal_query, source=None)
             except Exception as exc:
@@ -834,12 +841,26 @@ class Music(commands.Cog):
             if not tracks:
                 log.info("Tidal returned no results for %r — falling back to YouTube", query)
                 tracks = await Playable.search(query, source=TrackSource.YouTube)
+            elif for_picker and not is_url and len(tracks) <= 1:
+                # tdsearch: returned only 1 match — supplement with YouTube
+                # results so the user gets a proper picker dropdown.
+                log.debug("Tidal returned 1 result for %r — supplementing with YouTube for picker", query)
+                yt_tracks = await Playable.search(query, source=TrackSource.YouTube)
+                if yt_tracks:
+                    tracks = list(tracks) + [t for t in yt_tracks if t not in tracks]
             return tracks
 
         tracks = await Playable.search(query, source=source)
         if not tracks:
             log.info("Provider %r returned no results for %r — falling back to YouTube", provider, query)
             tracks = await Playable.search(query, source=TrackSource.YouTube)
+        elif for_picker and not is_url and len(tracks) <= 1 and provider in ("spotify",):
+            # spsearch: returned only 1 match — supplement with YouTube
+            # results so the user gets a proper picker dropdown.
+            log.debug("Spotify returned 1 result for %r — supplementing with YouTube for picker", query)
+            yt_tracks = await Playable.search(query, source=TrackSource.YouTube)
+            if yt_tracks:
+                tracks = list(tracks) + [t for t in yt_tracks if t not in tracks]
         return tracks
 
     async def _ensure_player(self, interaction: discord.Interaction) -> wavelink.Player:
@@ -1100,7 +1121,6 @@ class Music(commands.Cog):
                     await p.pause(False)
                 except Exception:
                     pass
-            await player._play_next_from_queue(guild_id)
             await player._play_next_from_queue(guild_id)
         elif p and not p.connected:
             # Player exists but lost connection — re-evaluate state. Log for
@@ -1894,14 +1914,12 @@ class Music(commands.Cog):
         description="Show or refresh the unified now-playing control panel",
     )
     async def remote(self, interaction: discord.Interaction):
-        player_obj = player.get_player(interaction.guild.id)
-        if not player_obj or not player_obj.connected:
-            await interaction.response.send_message("HelloDJ is not connected to voice.", ephemeral=True)
-            return
+        from views.unified_remote import UnifiedControlView
+
         state = player.get_state(interaction.guild.id)
         current = state.get("current")
         old_msg = state.get("now_playing_msg")
-        view = player.NowPlayingView(interaction.guild.id)
+        view = UnifiedControlView()
         embed = player.build_now_playing_embed_from_entry(current) if current else discord.Embed(
             title="🎵 HelloDJ — Now Playing",
             description="Nothing is playing yet. Use /play to start a song — the buttons below will control it.",

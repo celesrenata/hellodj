@@ -690,9 +690,13 @@ import { DiscordSDK } from './discord-sdk.js';
         break;
 
       case 'countdown':
-        // Received countdown signal — transition to COUNTDOWN mode
-        setMode('COUNTDOWN');
-        startCountdown(data.seconds || 3, data.video_title || '');
+        // Received countdown signal — transition to COUNTDOWN mode.
+        // Guard: if the countdown is already active (started by status-check
+        // path), don't restart it — that causes "3...3...2...1" instead of "3...2...1".
+        if (!countdownOverlayCtrl._active) {
+          setMode('COUNTDOWN');
+          startCountdown(data.seconds || 3, data.video_title || '');
+        }
         break;
 
       case 'start':
