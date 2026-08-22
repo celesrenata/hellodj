@@ -68,8 +68,8 @@ def _build_eq_display(gains: list[float], selected_band: int) -> str:
     # Indicator: ▲/· with 2 spaces between
     indicator = "  ".join("▲" if i == selected_band else "·" for i in range(BAND_COUNT))
 
-    # Labels: right-aligned 3-char slots, space-separated
-    labels = " ".join(f"{lbl:>3}" for lbl in BAND_LABELS)
+    # Labels: plain space-joined (36 chars total, fits in embed width)
+    labels = " ".join(BAND_LABELS)
 
     return f"```{bars}\n{indicator}\n{labels}```"
 
