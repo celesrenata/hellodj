@@ -963,6 +963,24 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
     text_channel = state.get("text_channel")
     voice_channel = state.get("voice_channel")
 
+    # Fallback: if text_channel is None, try the voice channel's associated text channel
+    if text_channel is None and voice_channel is not None and _bot_ref is not None:
+        guild = _bot_ref.get_guild(guild_id)
+        if guild:
+            # Use the voice channel itself if it's a text-in-voice channel,
+            # or find the guild's system/first text channel
+            if hasattr(voice_channel, 'send'):
+                text_channel = voice_channel
+            elif guild.system_channel:
+                text_channel = guild.system_channel
+            else:
+                for ch in guild.text_channels:
+                    if ch.permissions_for(guild.me).send_messages:
+                        text_channel = ch
+                        break
+            if text_channel:
+                state["text_channel"] = text_channel
+
     if voice_channel is None:
         log.error("_start_video_from_queue: no voice_channel in state guild=%d", guild_id)
         await _play_next_from_queue(guild_id)
