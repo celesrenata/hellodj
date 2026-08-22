@@ -744,9 +744,17 @@ class ActivityStreamer:
                 # Transcode finished but viewer may still be watching.
                 # Wait for the remaining playback duration before stopping,
                 # so HLS files stay available for the viewer to finish.
+                # NOTE: Don't calculate remaining from wall time — clients can
+                # seek backward, making wall_elapsed > actual viewer position.
+                # Instead, keep the session alive for the full video duration
+                # from when the transcode finishes. The client sends a status
+                # check when video ends (DOM 'ended' event) which triggers
+                # session transition naturally.
                 remaining = 0.0
                 if self.source and self.source.duration_seconds > 0:
-                    remaining = self.source.duration_seconds - self.get_elapsed_seconds()
+                    # Give the viewer the full video duration from transcode
+                    # completion — they may have seeked back at any point.
+                    remaining = self.source.duration_seconds
 
                 # Release lock during sleep so other operations can proceed
                 # (we re-acquire after sleep to check state)
@@ -755,17 +763,10 @@ class ActivityStreamer:
         if not self.queue and self.state == StreamState.STREAMING:
             remaining = 0.0
             if self.source and self.source.duration_seconds > 0:
-                # Use wall-clock time since pipeline ready (not get_elapsed_seconds
-                # which returns 0 before playback_started). This ensures we wait
-                # long enough for the viewer to finish watching from their actual
-                # start point (after countdown).
-                if self.playback_started and self.start_time > 0:
-                    wall_elapsed = time.monotonic() - self.start_time
-                    remaining = self.source.duration_seconds - wall_elapsed
-                else:
-                    # No viewer started yet — wait full duration for someone to
-                    # connect and watch, then they'll have the full video available.
-                    remaining = self.source.duration_seconds
+                # Keep session alive for the full video duration after transcode
+                # completes. Clients can seek freely; the session only ends when
+                # the client reports video ended OR this timer expires.
+                remaining = self.source.duration_seconds
             if remaining > 0:
                 log.info(
                     "Transcode done for guild=%d — keeping session alive %.0fs "
