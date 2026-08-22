@@ -694,9 +694,11 @@ import { DiscordSDK } from './discord-sdk.js';
         break;
 
       case 'start':
-        // Countdown complete on server side — begin HLS playback at position 0
-        setMode('VIDEO_PLAYING');
-        {
+        // Countdown complete on server side — begin HLS playback at position 0.
+        // Skip if HLS is already initialized (this client triggered the ready
+        // and already called initHls from its own countdown onComplete).
+        if (!hls) {
+          setMode('VIDEO_PLAYING');
           const playlistUrl = `stream/${guildId}/playlist.m3u8?token=${encodeURIComponent(instanceId)}`;
           initHls(playlistUrl, true);
         }
