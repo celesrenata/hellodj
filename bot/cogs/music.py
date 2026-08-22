@@ -273,7 +273,8 @@ class AlbumSelectView(discord.ui.View):
                 parts.append(str(year))
             if track_count and not info.get("track_count_approximate"):
                 parts.append(f"{track_count} tracks")
-            parts.append(time_str)
+            if total_secs > 0:
+                parts.append(time_str)
             desc = " • ".join(parts)
             desc = desc[:100]
 
