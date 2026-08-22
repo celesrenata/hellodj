@@ -83,9 +83,13 @@ def _build_eq_embed(gains: list[float], selected_band: int) -> discord.Embed:
     gain_val = gains[selected_band]
     sign = "+" if gain_val >= 0 else ""
 
+    # Force embed to render at full width by padding the band info line
+    # with em-spaces (U+2003) — Discord renders the embed as wide as its widest text
+    pad = "\u2003" * 20  # 20 em-spaces = forces ~full embed width
+
     embed = discord.Embed(
         title="🎛️ HelloDJ — Equalizer",
-        description=f"**Band {selected_band + 1}: {band_label} Hz** `[{sign}{gain_val:.2f}]`\n"
+        description=f"**Band {selected_band + 1}: {band_label} Hz** `[{sign}{gain_val:.2f}]`{pad}\n"
                     + _build_eq_display(gains, selected_band),
         colour=discord.Colour.orange(),
     )
