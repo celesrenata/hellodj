@@ -25,19 +25,8 @@ inclusion: manual
 
 ## What still needs work
 
-### 1. Unified Remote Control (HIGH PRIORITY)
-The unified queue exists (`state["queue"]`) but there's no unified remote. Currently:
-- `VideoControlView` (cogs/video.py) — only skips/controls video streamer
-- `RemoteControlView` (cogs/music.py) — only skips/controls audio player
-- Neither handles cross-media transitions (audio→video, video→audio)
-
-**Need:** A single `UnifiedControlView` that:
-- Detects whether audio or video is currently playing
-- Skip: stops current (audio or video) and calls `_play_next_from_queue`
-- Previous: goes back in unified history (audio or video)
-- Pause/Resume: delegates to the correct backend (wavelink or video streamer)
-- Is sent on EVERY playback start (audio or video)
-- Persistent (timeout=None, registered in setup_hook)
+### 1. Unified Remote Control — DONE ✓
+Implemented in `views/unified_remote.py` as `UnifiedControlView`. Registered as persistent view in setup_hook (timeout=None). Handles both audio (wavelink) and video (activity streamer), with Previous/Pause/Next/Playlist/Block buttons.
 
 ### 2. Search Picker for Music Videos
 `_handle_music_video_play` in the router auto-selects the first result without showing a picker. For text searches, it should show options like the audio search does.
@@ -55,4 +44,4 @@ Clients reconnect every ~30 seconds. Each reconnect sends a state message. The 1
 - **Video streamer lifecycle**: created in `_start_video_from_queue`, registered in `video_cog._registry` AND `ws_hub.register_streamer()`
 - **Persistent views**: must have `timeout=None`, fixed `custom_id` on all items, registered via `bot.add_view()` in `setup_hook`
 - **Cache buster**: `index.html` → `app.js?v=42` (current)
-- **Image tag**: `registry.celestium.life/hellodj/bot:textchan-fix-2026-08-22`
+- **Image tag**: `registry.celestium.life/hellodj/bot:rm-video-cmd-2026-08-22` (kustomize override: `feature-freeze-2026-08-21`)
