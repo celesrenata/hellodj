@@ -584,53 +584,68 @@ class TidalResolver:
     async def _download_video(self, stream_url: str, title: str) -> str:
         """Download the video from the stream URL to a temporary file.
 
+        Tidal returns HLS manifest URLs (m3u8). We use ffmpeg to download and
+        remux the HLS stream into an MP4 container.
+
         Args:
-            stream_url: Direct download URL from Tidal
+            stream_url: HLS manifest URL (or direct URL) from Tidal
             title: Video title (used for filename sanitization)
 
         Returns:
-            Path to the downloaded file.
+            Path to the downloaded MP4 file.
 
         Raises:
-            TidalResolverError: On download timeout (10 min) or network error.
+            TidalResolverError: On download timeout (10 min) or ffmpeg error.
         """
         # Sanitize title for filename
         safe_title = re.sub(r'[^\w\s\-.]', '', title)[:80].strip() or "tidal_video"
         unique_name = f"{uuid.uuid4().hex[:8]}_{safe_title}.mp4"
         output_path = self.download_dir / unique_name
 
-        async def _do_download() -> None:
-            timeout = aiohttp.ClientTimeout(total=None, connect=15.0)
-            try:
-                async with aiohttp.ClientSession(timeout=timeout) as session:
-                    async with session.get(stream_url) as resp:
-                        if resp.status >= 400:
-                            raise TidalResolverError(
-                                "Tidal API request failed — try again later",
-                                recoverable=True,
-                            )
-                        with open(output_path, "wb") as f:
-                            async for chunk in resp.content.iter_chunked(65536):
-                                f.write(chunk)
-            except aiohttp.ClientError as exc:
-                # Clean up partial file
-                output_path.unlink(missing_ok=True)
-                raise TidalResolverError(
-                    "Tidal API request failed — try again later",
-                    recoverable=True,
-                ) from exc
+        # Use ffmpeg to download and remux HLS → MP4
+        cmd = [
+            "ffmpeg", "-hide_banner", "-loglevel", "error",
+            "-y",  # overwrite
+            "-i", stream_url,
+            "-c", "copy",  # just remux, no re-encode
+            str(output_path),
+        ]
 
         try:
-            await asyncio.wait_for(_do_download(), timeout=_DOWNLOAD_TIMEOUT)
+            proc = await asyncio.wait_for(
+                asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                ),
+                timeout=30,  # timeout for starting the process
+            )
+            stdout, stderr = await asyncio.wait_for(
+                proc.communicate(),
+                timeout=_DOWNLOAD_TIMEOUT,
+            )
         except asyncio.TimeoutError:
-            # Delete partial file
             output_path.unlink(missing_ok=True)
             raise TidalResolverError("Video download timed out", recoverable=True)
+        except Exception as exc:
+            output_path.unlink(missing_ok=True)
+            raise TidalResolverError(
+                f"Video download failed: {exc}", recoverable=True
+            ) from exc
+
+        if proc.returncode != 0:
+            err_msg = stderr.decode(errors="replace")[:500] if stderr else "unknown error"
+            output_path.unlink(missing_ok=True)
+            log.warning("TidalResolver: ffmpeg download failed (rc=%d): %s", proc.returncode, err_msg)
+            raise TidalResolverError(
+                "Video download failed — stream may be unavailable",
+                recoverable=True,
+            )
 
         if not output_path.exists() or output_path.stat().st_size == 0:
             output_path.unlink(missing_ok=True)
             raise TidalResolverError(
-                "Tidal API request failed — try again later",
+                "Video download produced empty file",
                 recoverable=True,
             )
 
