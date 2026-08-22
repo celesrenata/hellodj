@@ -75,7 +75,7 @@ def _build_eq_display(gains: list[float], selected_band: int) -> str:
     ind_spacings = [S*2, S*3, S*3, S*3, S*4, S*3, S*3, S*2, S*3, ""]
 
     bar_chars = [_gain_to_block(g) for g in gains]
-    ind_chars = ["▴" if i == selected_band else "·" for i in range(BAND_COUNT)]
+    ind_chars = ["▲" if i == selected_band else "·" for i in range(BAND_COUNT)]
 
     bars = "".join(b + s for b, s in zip(bar_chars, bar_spacings))
     indicator = "".join(i + s for i, s in zip(ind_chars, ind_spacings))
