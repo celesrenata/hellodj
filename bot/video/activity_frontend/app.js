@@ -894,12 +894,14 @@ import { DiscordSDK } from './discord-sdk.js';
       if (hls._seekToStart) {
         videoEl.currentTime = 0;
       }
-      // Ensure the video element is visible and playing
-      videoEl.style.display = '';
-      videoEl.muted = false;
-      videoEl.play().catch((err) => {
-        _rlog('play() rejected: ' + err.message);
-      });
+      // Only auto-play if not in countdown (preloading keeps video paused)
+      if (mode !== 'COUNTDOWN') {
+        videoEl.style.display = '';
+        videoEl.muted = false;
+        videoEl.play().catch((err) => {
+          _rlog('play() rejected: ' + err.message);
+        });
+      }
       // Hide visualizer loading overlay once manifest is parsed and playback starts
       if (hls._isLive && mode === 'VISUALIZER_HLS') {
         visualizerLoading.style.display = 'none';
@@ -1158,14 +1160,20 @@ import { DiscordSDK } from './discord-sdk.js';
       setMode('VIDEO_PLAYING');
       initHls(playlistUrl, false);
     } else {
-      // First viewer or stream just started — show CSS countdown, then switch to HLS
+      // First viewer or stream just started — preload HLS during countdown
       setMode('COUNTDOWN');
+      // Start HLS loading in the background (paused) so segments buffer during countdown
+      initHls(playlistUrl, true);
+      videoEl.pause();
+      videoEl.style.display = 'none';  // keep video hidden during countdown
       countdownOverlayCtrl.start(3, status.video_title || '');
-      // Override onComplete to init HLS after countdown
       countdownOverlayCtrl._onComplete = () => {
         wsSend({ type: 'ready' });
         setMode('VIDEO_PLAYING');
-        initHls(playlistUrl, true);
+        videoEl.style.display = '';
+        videoEl.currentTime = 0;
+        videoEl.muted = false;
+        videoEl.play().catch((err) => { _rlog('play() after countdown: ' + err.message); });
       };
     }
   } else if (status.state === 'buffering') {
@@ -1174,17 +1182,24 @@ import { DiscordSDK } from './discord-sdk.js';
     countdownTitle.textContent = status.video_title || 'Loading...';
     countdownNumber.textContent = '⏳';
 
-    // Poll until stream is ready, then run 3..2..1 countdown
+    // Poll until stream is ready, then preload HLS during countdown
     const waitForStream = setInterval(async () => {
       const s = await fetchStatus(true);
       if (s && s.state === 'streaming' && s.playlist_url) {
         clearInterval(waitForStream);
         const playlistUrl = `stream/${guildId}/playlist.m3u8?token=${encodeURIComponent(instanceId)}`;
+        // Start HLS loading in background during countdown
+        initHls(playlistUrl, true);
+        videoEl.pause();
+        videoEl.style.display = 'none';
         countdownOverlayCtrl.start(3, s.video_title || '');
         countdownOverlayCtrl._onComplete = () => {
           wsSend({ type: 'ready' });
           setMode('VIDEO_PLAYING');
-          initHls(playlistUrl, true);
+          videoEl.style.display = '';
+          videoEl.currentTime = 0;
+          videoEl.muted = false;
+          videoEl.play().catch((err) => { _rlog('play() after countdown: ' + err.message); });
         };
       }
     }, 2000);
