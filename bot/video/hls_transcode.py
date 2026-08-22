@@ -554,7 +554,9 @@ class HLSTranscodePipeline:
 
         # Minimal probing — we know the formats from yt-dlp metadata.
         # Reduces startup latency by skipping lengthy format detection.
+        # -fflags +nobuffer: don't buffer input, process frames immediately.
         args.extend([
+            "-fflags", "+nobuffer",
             "-probesize", "32768",
             "-analyzeduration", "500000",
         ])
@@ -577,11 +579,12 @@ class HLSTranscodePipeline:
             ])
 
         # Input 0: video URL (or combined video+audio)
-        args.extend(["-i", source_url])
+        # -thread_queue_size: large input buffer so one slow CDN doesn't block the other
+        args.extend(["-thread_queue_size", "4096", "-i", source_url])
 
         # Input 1: separate audio URL (DASH sources like YouTube)
         if audio_url:
-            args.extend(["-i", audio_url])
+            args.extend(["-thread_queue_size", "4096", "-i", audio_url])
 
         # Video filter: VPP scale to target resolution
         if self._use_hwaccel_decode:
