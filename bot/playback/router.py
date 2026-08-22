@@ -121,7 +121,7 @@ class PlaybackRouter:
         interaction: discord.Interaction,
         query: str,
         *,
-        mode: Literal["auto", "audio", "video", "music_video"] = "auto",
+        mode: Literal["auto", "audio", "video", "music_video", "album"] = "auto",
         attachment: discord.Attachment | None = None,
     ) -> None:
         """Classify content → resolve or create session → enqueue/play.
@@ -131,10 +131,11 @@ class PlaybackRouter:
         2. Classify content type
         3. Check content filter
         4. If music_video: route to video cog's music_video handler
-        5. If audio: check channel exclusivity constraints
-        6. If session exists for same type: enqueue
-        7. If no session: create new session
-        8. If conflicting type: create new session (dual-session allowed)
+        5. If album: route to music cog's album flow
+        6. If audio: check channel exclusivity constraints
+        7. If session exists for same type: enqueue
+        8. If no session: create new session
+        9. If conflicting type: create new session (dual-session allowed)
         """
         # Ban check — must happen before ANY other logic
         guild_id = interaction.guild_id  # type: ignore[union-attr]
@@ -156,6 +157,11 @@ class PlaybackRouter:
         # music_video mode: bypass classifier, route directly to video cog
         if mode == "music_video":
             await self._handle_music_video_play(interaction, query, guild_id, channel_id)
+            return
+
+        # album mode: bypass classifier, route to music cog's album flow
+        if mode == "album":
+            await self._handle_album_play(interaction, query, guild_id, channel_id)
             return
 
         # Classify the input
@@ -709,6 +715,22 @@ class PlaybackRouter:
             await interaction.followup.send(
                 f"🎬 Music video queued (position {pos}): **{query}**"
             )
+
+    async def _handle_album_play(
+        self,
+        interaction: discord.Interaction,
+        query: str,
+        guild_id: int,
+        channel_id: int,
+    ) -> None:
+        """Handle /play type:album — delegates to Music cog's album flow."""
+        music_cog = interaction.client.get_cog("Music")  # type: ignore[union-attr]
+        if music_cog is None:
+            await interaction.response.send_message(
+                "❌ Music system is not available.", ephemeral=True
+            )
+            return
+        await music_cog._play_album(interaction, query)
 
     async def _enqueue_audio(
         self,

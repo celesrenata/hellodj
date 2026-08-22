@@ -50,7 +50,7 @@ class PlaybackCog(commands.Cog, name="Playback"):
         self,
         interaction: discord.Interaction,
         query: str,
-        mode: Literal["auto", "audio", "video", "music_video"] = "auto",
+        mode: Literal["auto", "audio", "video", "music_video", "album"] = "auto",
         attachment: discord.Attachment | None = None,
     ) -> None:
         """Play audio or video content — auto-detected or forced via mode."""
