@@ -361,13 +361,18 @@ async def search_albums(query: str, limit: int = 10) -> list[dict]:
     """
     from credentials import creds
     from urllib.parse import quote
+    import re as _re
 
     token = creds.get("tidal.access_token", "")
     if not token:
         log.debug("tidal: search_albums — no access token, skipping")
         return []
 
-    encoded_query = quote(query)
+    # Normalize query for Tidal's literal search:
+    # "volume X" → "vol. X" (Tidal catalogs use abbreviation)
+    normalized = _re.sub(r'\bvolume\s+(\d+)', r'vol. \1', query, flags=_re.IGNORECASE)
+
+    encoded_query = quote(normalized)
     url = (
         f"{V2_BASE}/searchResults"
         f"?filter%5Bquery%5D={encoded_query}"
