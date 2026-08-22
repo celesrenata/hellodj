@@ -1549,7 +1549,8 @@ async def on_track_end(guild_id: int, player: wavelink.Player, track: wavelink.P
         return
 
     # If unified_skip is handling the advancement, suppress duplicate advance
-    if state.pop("_skip_transition", False):
+    if state.get("_skip_transition"):
+        state.pop("_skip_transition", None)
         dbg.debug("on_track_end: suppressed during skip transition guild=%d", guild_id)
         return
 

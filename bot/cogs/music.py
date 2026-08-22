@@ -445,6 +445,12 @@ class RemoteControlView(discord.ui.View):
         self.message: discord.Message | None = None
 
         # ── Transport buttons ─────────────────────────────
+        prev_btn = discord.ui.Button(
+            label="⏮️ Prev", style=discord.ButtonStyle.secondary, custom_id="rc_prev"
+        )
+        prev_btn.callback = self._on_prev
+        self.add_item(prev_btn)
+
         pause_btn = discord.ui.Button(
             label="⏸️ Pause", style=discord.ButtonStyle.primary, custom_id="rc_pause"
         )
@@ -544,25 +550,13 @@ class RemoteControlView(discord.ui.View):
         await self._defer(interaction)
 
     async def _on_skip(self, interaction: discord.Interaction) -> None:
-        # Check if a video session is active — skip the video instead
-        video_cog = self.bot.get_cog("Video")
-        if video_cog is not None:
-            voice = interaction.user.voice  # type: ignore[union-attr]
-            channel_id = voice.channel.id if voice and voice.channel else None
-            if channel_id:
-                streamer = video_cog._registry.get(self.guild_id, channel_id)
-                if streamer is not None and streamer.is_active:
-                    try:
-                        await streamer.skip()
-                        await self._defer(interaction)
-                    except Exception:
-                        await self._defer(interaction)
-                    return
+        from playback.unified_controls import unified_skip
+        await unified_skip(self.guild_id)
+        await self._defer(interaction)
 
-        # Fall back to audio skip
-        p = player.get_player(self.guild_id)
-        if p:
-            await p.stop()
+    async def _on_prev(self, interaction: discord.Interaction) -> None:
+        from playback.unified_controls import unified_previous
+        await unified_previous(self.guild_id)
         await self._defer(interaction)
 
     async def _on_lyrics(self, interaction: discord.Interaction) -> None:

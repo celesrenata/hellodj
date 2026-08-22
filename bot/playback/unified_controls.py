@@ -41,9 +41,10 @@ async def unified_skip(guild_id: int) -> str:
         state = player.get_state(guild_id)
         state["_skip_transition"] = True
         await p.stop()
-        # Don't clear the flag — on_track_end will consume it via pop()
         # Directly advance the queue (don't rely on on_track_end)
         await player._play_next_from_queue(guild_id)
+        # Clear the flag after we've advanced (on_track_end may have already fired)
+        state.pop("_skip_transition", None)
         return "skipped_audio"
 
     # Nothing active — try advancing queue directly
