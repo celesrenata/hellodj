@@ -1514,6 +1514,11 @@ async def on_track_end(guild_id: int, player: wavelink.Player, track: wavelink.P
         dbg.debug("on_track_end: suppressed during video transition guild=%d", guild_id)
         return
 
+    # If unified_skip is handling the advancement, suppress duplicate advance
+    if state.pop("_skip_transition", False):
+        dbg.debug("on_track_end: suppressed during skip transition guild=%d", guild_id)
+        return
+
     # If jump_to is handling the advancement, suppress duplicate advance
     if state.get("_jump_transition"):
         dbg.debug("on_track_end: suppressed during jump transition guild=%d", guild_id)

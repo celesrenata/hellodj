@@ -37,7 +37,13 @@ async def unified_skip(guild_id: int) -> str:
     # Check if audio is playing
     p = player.get_player(guild_id)
     if p and (p.playing or p.paused):
-        await p.stop()  # triggers on_track_end → _play_next_from_queue
+        # Set transition flag to suppress on_track_end from also advancing
+        state = player.get_state(guild_id)
+        state["_skip_transition"] = True
+        await p.stop()
+        state.pop("_skip_transition", None)
+        # Directly advance the queue (don't rely on on_track_end)
+        await player._play_next_from_queue(guild_id)
         return "skipped_audio"
 
     # Nothing active — try advancing queue directly
