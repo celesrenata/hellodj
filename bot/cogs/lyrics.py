@@ -55,6 +55,40 @@ class Lyrics(commands.Cog):
         self.api_key = cfg("genius.api_key", "")
         self._genius = GeniusProvider(self.access_token or self.api_key)
 
+    async def _ensure_activity(self, interaction: discord.Interaction) -> str | None:
+        """Ensure a Discord Activity is running for the user's voice channel.
+
+        Returns the Activity invite URL, or None if launch failed.
+        If an Activity is already active, returns the existing URL.
+        """
+        guild_id = interaction.guild_id
+        voice_channel = interaction.user.voice.channel
+
+        video_cog = self.bot.get_cog("Video")
+        if video_cog is None:
+            return None
+
+        # Check if Activity already exists for this guild
+        for key, url in video_cog._activity_urls.items():
+            if key[0] == guild_id:
+                return url
+
+        # No Activity running — launch one
+        if video_cog._launcher is None:
+            return None
+
+        try:
+            application_id = self.bot.user.id
+            invite_data = await video_cog._launcher.launch(voice_channel.id, application_id)
+            invite_code = invite_data.get("code", "")
+            activity_url = f"https://discord.gg/{invite_code}" if invite_code else None
+            if activity_url:
+                video_cog._activity_urls[(guild_id, voice_channel.id)] = activity_url
+            return activity_url
+        except Exception as exc:
+            log.warning("Failed to launch Activity for lyrics overlay: %s", exc)
+            return None
+
     @app_commands.command(name="lyrics", description="Fetch lyrics for the current song")
     @app_commands.describe(overlay="Toggle lyrics overlay for all Activity viewers")
     async def lyrics(
@@ -74,6 +108,17 @@ class Lyrics(commands.Cog):
                     )
                     return
 
+                if not interaction.user.voice:
+                    await interaction.response.send_message(
+                        "You must join a voice channel first.", ephemeral=True
+                    )
+                    return
+
+                await interaction.response.defer(ephemeral=True)
+
+                # Ensure an Activity is running
+                activity_url = await self._ensure_activity(interaction)
+
                 # Enable overlay + trigger lyrics fetch
                 lyrics_svc = get_lyrics_service(interaction.guild.id)
                 lyrics_svc.enabled = True
@@ -89,9 +134,14 @@ class Lyrics(commands.Cog):
                 await lyrics_svc._ws_hub.broadcast_from_bot(
                     interaction.guild.id, {"type": "lyrics_overlay_enable"}
                 )
-                await interaction.response.send_message(
-                    "🎤 Lyrics overlay enabled for all viewers.", ephemeral=True
-                )
+
+                # Build response with Activity link
+                msg = "🎤 Lyrics overlay enabled for all viewers."
+                if activity_url:
+                    install_url = "https://discord.com/oauth2/authorize?client_id=1534778518137995325"
+                    msg += f"\n[Join Activity]({activity_url}) • [Install Activity]({install_url})"
+                await interaction.followup.send(msg, ephemeral=True)
+
             else:  # overlay == "off"
                 lyrics_svc = get_lyrics_service(interaction.guild.id)
                 lyrics_svc.enabled = False

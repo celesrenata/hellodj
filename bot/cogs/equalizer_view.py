@@ -71,25 +71,14 @@ def _build_eq_display(gains: list[float], selected_band: int) -> str:
     # Spacings tuned to align bars over their labels in Discord's proportional font
     # Labels are -# small text, much more compact than the bars/indicators above
     bar_spacings = [S, S*2, S*2, S*2, S*2, S*2, S*2, S*1, S*1, ""]
-    # Indicators are narrower glyphs, need more space to align under bars
-    # ▲ is wider than · — reduce its spacing by 1 en-space to compensate
+    # Indicators: ▴ (small triangle) is closer in width to · than ▲
     ind_spacings = [S*2, S*3, S*3, S*3, S*4, S*3, S*3, S*2, S*3, ""]
 
     bar_chars = [_gain_to_block(g) for g in gains]
-    ind_chars = []
-    adj_spacings = []
-    for i in range(BAND_COUNT):
-        sp = ind_spacings[i]
-        if i == selected_band:
-            ind_chars.append("▲")
-            # Always subtract 1 en-space for the wider ▲ glyph
-            adj_spacings.append(sp[1:] if sp else "")
-        else:
-            ind_chars.append("·")
-            adj_spacings.append(sp)
+    ind_chars = ["▴" if i == selected_band else "·" for i in range(BAND_COUNT)]
 
     bars = "".join(b + s for b, s in zip(bar_chars, bar_spacings))
-    indicator = "".join(i + s for i, s in zip(ind_chars, adj_spacings))
+    indicator = "".join(i + s for i, s in zip(ind_chars, ind_spacings))
     labels = " ".join(viz_labels)
 
     return f"{bars}\n{indicator}\n-# {labels}"
