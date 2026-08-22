@@ -508,6 +508,12 @@ class ActivityStreamer:
 
         await self.cleanup()
 
+        # Notify clients that session has ended
+        if self._ws_hub is not None:
+            await self._ws_hub.broadcast_from_bot(self.guild_id, {
+                "type": "session_end",
+            })
+
         # Clear whiteboard state and notify remaining clients
         if self._ws_hub is not None:
             self._ws_hub.clear_stroke_registry(self.guild_id)

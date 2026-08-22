@@ -803,6 +803,11 @@ import { DiscordSDK } from './discord-sdk.js';
       case 'lyrics_overlay_disable':
         if (lyricsOverlay) lyricsOverlay.forceDisable();
         break;
+
+      case 'session_change':
+        // Server notifies that skip/previous happened — immediately check for new session
+        _checkForNextSession();
+        break;
     }
   };
 

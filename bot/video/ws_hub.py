@@ -348,8 +348,12 @@ class WebSocketHub:
             if streamer and hasattr(streamer, "skip"):
                 try:
                     await streamer.skip()
+                    # Notify all clients to check for new session
+                    await self.broadcast(guild_id, {"type": "session_change"}, exclude=None)
                 except Exception as exc:
                     log.debug("WS skip ignored for guild %d: %s", guild_id, exc)
+                    # Still notify clients so they can update UI (e.g. show "idle")
+                    await self.broadcast(guild_id, {"type": "session_change"}, exclude=None)
             return
         if msg_type == "previous":
             log.info("WS previous requested for guild %d", guild_id)
@@ -357,8 +361,10 @@ class WebSocketHub:
             if streamer and hasattr(streamer, "previous"):
                 try:
                     await streamer.previous()
+                    await self.broadcast(guild_id, {"type": "session_change"}, exclude=None)
                 except Exception as exc:
                     log.debug("WS previous ignored for guild %d: %s", guild_id, exc)
+                    await self.broadcast(guild_id, {"type": "session_change"}, exclude=None)
             return
 
         if msg_type not in ("play", "pause", "seek", "subtitle_change", "audio_change"):
