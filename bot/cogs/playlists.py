@@ -317,6 +317,74 @@ class Playlists(commands.Cog):
         )
         await interaction.response.send_message(embed=embed)
 
+    @group.command(name="import", description="Import a playlist from Spotify, Tidal, or YouTube Music URL")
+    @app_commands.describe(
+        url="Playlist or album URL (Spotify, Tidal, YouTube Music, SoundCloud)",
+        name="Name for the imported playlist (auto-generated if omitted)",
+    )
+    async def import_cmd(self, interaction: discord.Interaction, url: str, name: str | None = None):
+        if not (url.startswith("http://") or url.startswith("https://")):
+            await interaction.response.send_message("Please provide a valid playlist URL.", ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            result = await Playable.search(url)
+        except Exception as exc:
+            await interaction.followup.send(f"❌ Could not load that URL: {exc}", ephemeral=True)
+            return
+
+        # Extract tracks from the result
+        tracks = []
+        playlist_name_from_source = None
+        if isinstance(result, wavelink.Playlist):
+            tracks = result.tracks
+            playlist_name_from_source = result.name
+        elif isinstance(result, list):
+            tracks = result
+        else:
+            await interaction.followup.send("❌ That URL didn't return a playlist.", ephemeral=True)
+            return
+
+        if not tracks:
+            await interaction.followup.send("❌ That playlist has no tracks.", ephemeral=True)
+            return
+
+        # Determine the playlist name
+        pl_name = name or playlist_name_from_source or "Imported Playlist"
+        pl_name = pl_name.strip()[:50]  # Cap at 50 chars
+
+        # Check if playlist already exists
+        gid = interaction.guild.id
+        existing = storage.get(gid, pl_name)
+        if existing:
+            await interaction.followup.send(
+                f"❌ A playlist named **{pl_name}** already exists. Pick a different name.",
+                ephemeral=True,
+            )
+            return
+
+        # Create the playlist and add all tracks
+        await storage.create(gid, pl_name, interaction.user.id)
+        added = 0
+        for track in tracks:
+            uri = getattr(track, "uri", None)
+            title = getattr(track, "title", None) or "Unknown"
+            length = getattr(track, "length", None) or 0
+            if uri:
+                await storage.add_track(gid, pl_name, {
+                    "url": str(uri),
+                    "title": title,
+                    "duration": length,
+                })
+                added += 1
+
+        await interaction.followup.send(
+            f"✅ Imported **{added}** tracks into playlist **{pl_name}**.",
+            ephemeral=True,
+        )
+
     @group.command(name="play", description="Play a playlist")
     @app_commands.describe(
         name="Playlist to play",
