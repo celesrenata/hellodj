@@ -137,7 +137,7 @@ async def _skip_video(guild_id: int) -> str:
     except Exception as exc:
         log.warning("unified_skip: error stopping streamer: %s", exc)
 
-    _cleanup_idle_streamer(video_cog, guild_id, streamer)
+    await _cleanup_idle_streamer(video_cog, guild_id, streamer)
 
     # Advance unified queue
     state = player.get_state(guild_id)
@@ -181,7 +181,12 @@ async def _previous_from_video(guild_id: int) -> str:
             await streamer.stop()
         except Exception as exc:
             log.warning("unified_previous: error stopping streamer: %s", exc)
-        _cleanup_idle_streamer(video_cog, guild_id, streamer)
+        await _cleanup_idle_streamer(video_cog, guild_id, streamer)
+
+    # Push the current (video) entry back to front of queue so "next" replays it
+    current = state.get("current")
+    if current:
+        state["queue"].insert(0, current)
 
     # Play previous from unified history
     prev_entry = history.pop(0)
