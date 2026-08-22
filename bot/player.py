@@ -848,10 +848,20 @@ def reset_crossfade(guild_id: int) -> None:
 def _is_video_active(guild_id: int) -> bool:
     """Check if a video Activity session is currently active for this guild.
 
-    Only returns True if there's an actual live video streamer session registered
-    and active. A stale 'current' entry with type=music_video does NOT mean
-    a video is actively streaming.
+    Returns True if:
+    - There's a registered and active video streamer session, OR
+    - The current track in state is a music_video (setup in progress)
+
+    This prevents audio from auto-starting during video setup/transition.
     """
+    # Quick check: is the current state entry a video?
+    state = guild_state.get(guild_id)
+    if state:
+        current = state.get("current")
+        if current and current.get("type") == "music_video":
+            return True
+
+    # Full check: is there an active streamer?
     try:
         bot_ref = _bot_ref
         if bot_ref is None:
@@ -859,10 +869,8 @@ def _is_video_active(guild_id: int) -> bool:
         video_cog = bot_ref.get_cog("Video")
         if video_cog is None:
             return False
-        # Check all registered sessions for this guild
         for (gid, _cid), streamer in video_cog._registry._sessions.items():
             if gid == guild_id and streamer.is_active:
-                log.debug("_is_video_active: guild=%d has active video session", guild_id)
                 return True
     except Exception as exc:
         log.debug("_is_video_active check failed: %s", exc)
@@ -1004,8 +1012,8 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
         except Exception as exc:
             log.warning("Failed to stop audio before video: %s", exc)
 
-    # Clear the transition flag — stop is done
-    state.pop("_video_transition", None)
+    # Note: _video_transition flag is consumed by on_track_end (pop)
+    # so we don't need to clear it here.
 
     # Get the bot and VideoCog
     if _bot_ref is None:
@@ -1495,14 +1503,19 @@ async def on_track_end(guild_id: int, player: wavelink.Player, track: wavelink.P
     state = get_state(guild_id)
 
     # If we're transitioning to a video entry, suppress queue advancement
-    # (the disconnect that triggers this event is intentional, not a track finishing)
-    if state.get("_video_transition"):
+    # (the stop that triggers this event is intentional, not a track finishing)
+    if state.pop("_video_transition", False):
         dbg.debug("on_track_end: suppressed during video transition guild=%d", guild_id)
         return
 
     # If jump_to is handling the advancement, suppress duplicate advance
     if state.get("_jump_transition"):
         dbg.debug("on_track_end: suppressed during jump transition guild=%d", guild_id)
+        return
+
+    # If a video is active, don't advance the audio queue
+    if _is_video_active(guild_id):
+        dbg.debug("on_track_end: suppressed — video is active guild=%d", guild_id)
         return
 
     np_task = state.get("now_playing_task")
