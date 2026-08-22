@@ -317,6 +317,203 @@ import { DiscordSDK } from './discord-sdk.js';
     countdownOverlayCtrl.start(seconds, videoTitle);
   };
 
+  // --- Lyrics Overlay (Task 1.12) ---
+  /**
+   * LyricsOverlay — Client-side synchronized lyrics renderer.
+   *
+   * Renders a 3-line display (previous, current, next) with smooth transitions.
+   * Uses binary search to efficiently find the active line on each timeupdate.
+   * Handles enable/disable from local toggle and broadcast override.
+   */
+  class LyricsOverlay {
+    constructor(container) {
+      this.container = container;
+      this.el = null;           // .lyrics-overlay DOM element
+      this.lines = [];          // [{time_ms, text, words}]
+      this.syncType = null;     // 'lrc_synced' | 'lrc_word' | 'beat_estimated'
+      this.currentIndex = -1;
+      this.enabled = false;
+      this.forcedState = null;  // null | true | false (broadcast override)
+      this._unavailableTimer = null;
+      this._build();
+      // Restore saved preference from localStorage
+      const savedPref = localStorage.getItem('hellodj_lyrics_enabled');
+      if (savedPref === 'true') this.enabled = true;
+    }
+
+    _build() {
+      this.el = document.createElement('div');
+      this.el.className = 'lyrics-overlay';
+      this.el.innerHTML = `
+        <div class="lyrics-line prev"></div>
+        <div class="lyrics-line current"></div>
+        <div class="lyrics-line next"></div>
+      `;
+      this.container.appendChild(this.el);
+      this.el.style.display = 'none';
+    }
+
+    enable() {
+      this.enabled = true;
+      if (this.lines.length > 0) {
+        this.el.style.display = '';
+      }
+      localStorage.setItem('hellodj_lyrics_enabled', 'true');
+    }
+
+    disable() {
+      this.enabled = false;
+      this.el.style.display = 'none';
+      localStorage.setItem('hellodj_lyrics_enabled', 'false');
+    }
+
+    forceEnable() {
+      this.forcedState = true;
+      this.el.style.display = this.lines.length > 0 ? '' : 'none';
+    }
+
+    forceDisable() {
+      this.forcedState = false;
+      this.el.style.display = 'none';
+    }
+
+    clearForce() {
+      this.forcedState = null;
+      // Revert to local preference
+      if (this.enabled && this.lines.length > 0) {
+        this.el.style.display = '';
+      } else {
+        this.el.style.display = 'none';
+      }
+    }
+
+    get isVisible() {
+      if (this.forcedState !== null) return this.forcedState;
+      return this.enabled;
+    }
+
+    setLyricsData(payload) {
+      this.lines = payload.lines || [];
+      this.syncType = payload.sync_type;
+      this.currentIndex = -1;
+      if (this.isVisible && this.lines.length > 0) {
+        this.el.style.display = '';
+      }
+    }
+
+    clearLyrics() {
+      this.lines = [];
+      this.syncType = null;
+      this.currentIndex = -1;
+      this._clearDisplay();
+    }
+
+    updatePosition(currentTimeMs) {
+      if (!this.isVisible || this.lines.length === 0) return;
+
+      // Binary search for current line
+      const idx = this._findLineIndex(currentTimeMs);
+      if (idx === this.currentIndex) return;
+
+      this.currentIndex = idx;
+      this._renderLines(idx);
+
+      // Word-level karaoke
+      if (this.syncType === 'lrc_word' && this.lines[idx]?.words) {
+        this._renderKaraoke(this.lines[idx].words, currentTimeMs);
+      }
+    }
+
+    /**
+     * Binary search returning the largest index where lines[i].time_ms <= timeMs.
+     * Returns -1 if no line is at or before timeMs.
+     */
+    _findLineIndex(timeMs) {
+      let lo = 0, hi = this.lines.length - 1, result = -1;
+      while (lo <= hi) {
+        const mid = (lo + hi) >> 1;
+        if (this.lines[mid].time_ms <= timeMs) {
+          result = mid;
+          lo = mid + 1;
+        } else {
+          hi = mid - 1;
+        }
+      }
+      return result;
+    }
+
+    _renderLines(idx) {
+      const prev = this.el.querySelector('.lyrics-line.prev');
+      const curr = this.el.querySelector('.lyrics-line.current');
+      const next = this.el.querySelector('.lyrics-line.next');
+
+      prev.textContent = idx > 0 ? this.lines[idx - 1].text : '';
+      curr.textContent = idx >= 0 ? this.lines[idx].text : '';
+      next.textContent = idx < this.lines.length - 1 ? this.lines[idx + 1].text : '';
+
+      // Trigger transition animation via requestAnimationFrame
+      curr.classList.add('animate');
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => curr.classList.remove('animate'));
+      });
+    }
+
+    _renderKaraoke(words, currentTimeMs) {
+      const curr = this.el.querySelector('.lyrics-line.current');
+      curr.innerHTML = words.map(w => {
+        const active = currentTimeMs >= w.time_ms;
+        return `<span class="lyrics-word ${active ? 'active' : ''}">${w.text}</span>`;
+      }).join(' ');
+    }
+
+    _clearDisplay() {
+      this.el.querySelectorAll('.lyrics-line').forEach(el => {
+        el.textContent = '';
+        el.innerHTML = '';
+      });
+      this.el.style.display = 'none';
+    }
+
+    showUnavailable() {
+      if (!this.isVisible) return;
+      const curr = this.el.querySelector('.lyrics-line.current');
+      curr.textContent = 'No lyrics available';
+      this.el.style.display = '';
+      // Clear any existing dismissal timer
+      if (this._unavailableTimer) {
+        clearTimeout(this._unavailableTimer);
+      }
+      this._unavailableTimer = setTimeout(() => {
+        if (this.lines.length === 0) {
+          this.el.style.display = 'none';
+          curr.textContent = '';
+        }
+        this._unavailableTimer = null;
+      }, 3000);
+    }
+  }
+
+  // Instantiate LyricsOverlay — use the video element's parent as container
+  const lyricsOverlay = new LyricsOverlay(videoEl.parentElement);
+
+  // --- Lyrics toggle button ---
+  const btnLyrics = document.getElementById('btn-lyrics');
+  if (btnLyrics) {
+    // Restore active state from localStorage on load
+    if (localStorage.getItem('hellodj_lyrics_enabled') === 'true') {
+      btnLyrics.dataset.active = 'true';
+    }
+    btnLyrics.addEventListener('click', () => {
+      if (lyricsOverlay.enabled) {
+        lyricsOverlay.disable();
+        btnLyrics.dataset.active = 'false';
+      } else {
+        lyricsOverlay.enable();
+        btnLyrics.dataset.active = 'true';
+      }
+    });
+  }
+
   // --- Controls visibility (auto-hide after 4s, show on hover/tap) ---
   let hideTimer = null;
   const showControls = () => {
@@ -582,6 +779,22 @@ import { DiscordSDK } from './discord-sdk.js';
         }
         _remoteAction = false;
         break;
+
+      case 'lyrics_data':
+        if (lyricsOverlay) lyricsOverlay.setLyricsData(data);
+        break;
+
+      case 'lyrics_unavailable':
+        if (lyricsOverlay) lyricsOverlay.showUnavailable();
+        break;
+
+      case 'lyrics_overlay_enable':
+        if (lyricsOverlay) lyricsOverlay.forceEnable();
+        break;
+
+      case 'lyrics_overlay_disable':
+        if (lyricsOverlay) lyricsOverlay.forceDisable();
+        break;
     }
   };
 
@@ -835,6 +1048,9 @@ import { DiscordSDK } from './discord-sdk.js';
       const bufPct = dur > 0 ? (bufferedEnd / dur) * 100 : 0;
       scrubberBuffered.style.width = `${bufPct}%`;
     }
+
+    // Update lyrics overlay position
+    if (lyricsOverlay) lyricsOverlay.updatePosition(cur * 1000);
   };
   videoEl.addEventListener('timeupdate', updateTime);
   videoEl.addEventListener('progress', updateTime);

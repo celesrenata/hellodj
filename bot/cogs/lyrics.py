@@ -1,18 +1,17 @@
 """HelloDJ — Lyrics cog: fetch and display song lyrics from Genius API."""
 
 import logging
-import os
+from typing import Literal
 
-import aiohttp
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 import player
+from video.genius_provider import GeniusProvider
+from video.lyrics_service import get_lyrics_service
 
 log = logging.getLogger(__name__)
-
-GENIUS_API_URL = "https://api.genius.com"
 
 
 class LyricsPaginatedView(discord.ui.View):
@@ -54,11 +53,59 @@ class Lyrics(commands.Cog):
         self.client_secret = cfg("genius.client_secret", "")
         self.access_token = cfg("genius.access_token", "")
         self.api_key = cfg("genius.api_key", "")
+        self._genius = GeniusProvider(self.access_token or self.api_key)
 
     @app_commands.command(name="lyrics", description="Fetch lyrics for the current song")
-    async def lyrics(self, interaction: discord.Interaction):
+    @app_commands.describe(overlay="Toggle lyrics overlay for all Activity viewers")
+    async def lyrics(
+        self,
+        interaction: discord.Interaction,
+        overlay: Literal["on", "off"] | None = None,
+    ):
         state = player.get_state(interaction.guild.id)
         current = state.get("current")
+
+        if overlay is not None:
+            # Broadcast overlay control
+            if overlay == "on":
+                if not current:
+                    await interaction.response.send_message(
+                        "Nothing is playing right now.", ephemeral=True
+                    )
+                    return
+
+                # Enable overlay + trigger lyrics fetch
+                lyrics_svc = get_lyrics_service(interaction.guild.id)
+                lyrics_svc.enabled = True
+
+                # Pull metadata from current track entry
+                artist = current.get("author", "")
+                title = current.get("title", "")
+                duration_ms = current.get("duration", 0)
+
+                await lyrics_svc.fetch_and_broadcast(artist, title, duration_ms)
+
+                # Broadcast enable to all Activity viewers
+                await lyrics_svc._ws_hub.broadcast_from_bot(
+                    interaction.guild.id, {"type": "lyrics_overlay_enable"}
+                )
+                await interaction.response.send_message(
+                    "🎤 Lyrics overlay enabled for all viewers.", ephemeral=True
+                )
+            else:  # overlay == "off"
+                lyrics_svc = get_lyrics_service(interaction.guild.id)
+                lyrics_svc.enabled = False
+
+                # Broadcast disable to all Activity viewers
+                await lyrics_svc._ws_hub.broadcast_from_bot(
+                    interaction.guild.id, {"type": "lyrics_overlay_disable"}
+                )
+                await interaction.response.send_message(
+                    "Lyrics overlay disabled.", ephemeral=True
+                )
+            return
+
+        # Default behavior: embed lyrics in chat (unchanged)
         if not current:
             await interaction.response.send_message("Nothing is playing right now.")
             return
@@ -77,7 +124,7 @@ class Lyrics(commands.Cog):
         await interaction.response.defer()
 
         try:
-            lyrics_text = await self._fetch_lyrics(song_title, artist)
+            lyrics_text = await self._genius.fetch(song_title, artist)
             if not lyrics_text:
                 await interaction.followup.send(
                     f"No lyrics found for **{song_title}** by {artist}."
@@ -105,77 +152,6 @@ class Lyrics(commands.Cog):
         except Exception as exc:
             log.error("HelloDJ lyrics fetch failed: %s", exc)
             await interaction.followup.send("Could not fetch lyrics.")
-
-    async def _fetch_lyrics(self, title: str, artist: str) -> str | None:
-        """Search Genius API for a song and return its lyrics text."""
-        # The access token is used as the Bearer token for API calls. Fall back to the
-        # legacy GENIUS_API_KEY if GENIUS_ACCESS_TOKEN is empty, for backward compatibility.
-        bearer_token = self.access_token or self.api_key
-        headers = {"Authorization": f"Bearer {bearer_token}"}
-        params = {"q": f"{title} {artist}"}
-
-        async with aiohttp.ClientSession() as session:
-            # Search for the song
-            async with session.get(
-                f"{GENIUS_API_URL}/search",
-                headers=headers,
-                params=params,
-            ) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.json()
-
-            hits = data.get("response", {}).get("hits", [])
-            if not hits:
-                return None
-
-            # Take the first hit
-            song = hits[0]["result"]
-            song_url = song.get("url")
-            if not song_url:
-                return None
-
-            # Fetch the lyrics page and extract lyrics
-            async with session.get(song_url) as page_resp:
-                if page_resp.status != 200:
-                    return None
-                html = await page_resp.text()
-
-            # Simple extraction: look for lyrics in HTML
-            # Genius doesn't provide a plain-text API, so we scrape
-            import re
-            # Find content between the lyrics container tags
-            match = re.search(
-                r'<div class="lyrics">(.*?)</div>',
-                html,
-                re.DOTALL,
-            )
-            if not match:
-                # Alternative: look for the lyrics in the page's metadata
-                return self._extract_from_html(html)
-
-            # Clean HTML tags
-            text = re.sub(r"<[^>]+>", "", match.group(1))
-            text = text.replace("\\n", "\n").replace("<br>", "\n").strip()
-            # Decode HTML entities
-            text = text.replace("&", "&").replace("<", "<").replace(">", ">")
-            return text
-
-    def _extract_from_html(self, html: str) -> str | None:
-        """Fallback extraction from raw HTML."""
-        import re
-        # Look for the lyrics in script tags or raw content
-        # This is a best-effort fallback
-        match = re.search(
-            r'data-lyrics="(.*?)"',
-            html,
-            re.DOTALL,
-        )
-        if match:
-            text = match.group(1)
-            text = text.replace("\\n", "\n").replace("<br>", "\n").strip()
-            return text
-        return None
 
 
 async def setup(bot: commands.Bot):

@@ -603,6 +603,24 @@ async def setup_hook():
         if video_cog and hasattr(video_cog, "_backend"):
             _playback_router._activity_backend = video_cog._backend
 
+    # ── Lyrics overlay: chain LyricsService into track-start callback ──
+    # Must run AFTER the video cog loads (VisualizerManager may register its
+    # callback first). LyricsService captures the existing callback and chains
+    # itself so both run on track start. Failures never propagate (Req 9.5).
+    try:
+        from video.lyrics_service import init_lyrics_services, register_track_start_callback
+
+        video_cog = bot.get_cog("Video")
+        if video_cog and hasattr(video_cog, "_backend"):
+            ws_hub = video_cog._backend.ws_hub
+            init_lyrics_services(ws_hub)
+            register_track_start_callback()
+            dbg.info("setup_hook: lyrics service initialized and track-start callback chained")
+        else:
+            dbg.debug("setup_hook: video cog not available, lyrics service not initialized")
+    except Exception as _lyrics_exc:
+        log.warning("setup_hook: could not initialize lyrics service (non-fatal): %s", _lyrics_exc)
+
     # Unified playback cog (optional — requires unified playback modules)
     if _UNIFIED_PLAYBACK_AVAILABLE:
         try:

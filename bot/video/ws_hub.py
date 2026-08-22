@@ -60,6 +60,7 @@ class WebSocketHub:
         self._stroke_registries: dict[int, StrokeRegistry] = {}  # guild_id → registry
         self._viewer_count_callback: Callable[[int, int, int], Awaitable[None]] | None = None
         self._streamers: dict[int, ActivityStreamer] = {}  # guild_id → streamer
+        self._lyrics_state_getter: Callable[[int], object | None] | None = None
 
     def set_viewer_count_callback(
         self, callback: Callable[[int, int, int], Awaitable[None]]
@@ -73,6 +74,27 @@ class WebSocketHub:
             callback: Async callable(guild_id, old_count, new_count).
         """
         self._viewer_count_callback = callback
+
+    def set_lyrics_state_getter(
+        self, getter: Callable[[int], object | None]
+    ) -> None:
+        """Register a getter for per-guild lyrics state.
+
+        Used for late-joiner sync: when a new client connects, the hub
+        checks whether lyrics are enabled and sends the current lyrics
+        payload if available.
+
+        The getter accepts a guild_id and returns an object with `enabled`
+        (bool) and `current_lyrics` (with `to_ws_message()` method) attributes,
+        or None if no lyrics service exists for the guild.
+
+        Uses a callback pattern to avoid circular imports between ws_hub
+        and LyricsService.
+
+        Args:
+            getter: Callable(guild_id) -> LyricsState | None.
+        """
+        self._lyrics_state_getter = getter
 
     def viewer_count(self, guild_id: int) -> int:
         """Return the number of connected viewers for a guild."""
@@ -231,6 +253,27 @@ class WebSocketHub:
             except (ConnectionResetError, RuntimeError):
                 self._connections[guild_id].discard(ws)
                 return ws
+
+        # Late-joiner lyrics sync: send current lyrics if overlay is enabled
+        if self._lyrics_state_getter is not None:
+            try:
+                lyrics_state = self._lyrics_state_getter(guild_id)
+                if (
+                    lyrics_state is not None
+                    and lyrics_state.enabled
+                    and lyrics_state.current_lyrics is not None
+                ):
+                    await ws.send_json(lyrics_state.current_lyrics.to_ws_message())
+            except (ConnectionResetError, RuntimeError):
+                self._connections[guild_id].discard(ws)
+                return ws
+            except Exception:
+                # Lyrics sync failure must never disrupt client connection
+                log.debug(
+                    "Failed to send lyrics state to late-joiner for guild %d",
+                    guild_id,
+                    exc_info=True,
+                )
 
         # Message loop
         try:

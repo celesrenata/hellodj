@@ -540,6 +540,12 @@ body:hover {
     opacity: 1;
 }
 
+/* === Lyrics toggle button active state === */
+#btn-lyrics[data-active="true"] {
+    color: var(--accent);
+    opacity: 1;
+}
+
 /* Error overlay — top banner */
 .error-overlay {
     position: absolute;
@@ -769,4 +775,74 @@ body:hover {
     border-radius: 4px;
     background: rgba(255, 68, 68, 0.15);
     align-self: center;
+}
+
+/* === Lyrics Overlay === */
+
+.lyrics-overlay {
+    position: absolute;
+    bottom: 80px;
+    left: 0;
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    pointer-events: none;
+    z-index: 5;  /* video(auto) < lyrics(5) < controls(30) < whiteboard(35) */
+    padding: 0 20px;
+    font-family: 'Inter', sans-serif;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.8);
+}
+
+.lyrics-line {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 90%;
+    text-align: center;
+    transition: opacity 0.3s ease, transform 0.3s ease;
+    line-height: 1.4;
+}
+
+.lyrics-line.prev,
+.lyrics-line.next {
+    opacity: 0.4;
+    font-size: 0.9em;
+    color: #ccc;
+}
+
+.lyrics-line.current {
+    opacity: 1.0;
+    font-size: 1.3em;
+    color: #fff;
+    font-weight: 500;
+}
+
+.lyrics-line.current.animate {
+    animation: lyrics-slide-up 0.3s ease-out;
+}
+
+@keyframes lyrics-slide-up {
+    from { transform: translateY(8px); opacity: 0.7; }
+    to   { transform: translateY(0); opacity: 1; }
+}
+
+.lyrics-word {
+    transition: color 0.15s ease;
+    color: rgba(255, 255, 255, 0.5);
+}
+
+.lyrics-word.active {
+    color: #fff;
+}
+
+/* Responsive: single-line mode for narrow viewports */
+@media (max-width: 400px) {
+    .lyrics-overlay .lyrics-line.prev,
+    .lyrics-overlay .lyrics-line.next {
+        display: none;
+    }
+    .lyrics-overlay .lyrics-line.current {
+        font-size: 1.0em;
+    }
 }
