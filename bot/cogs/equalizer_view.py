@@ -56,19 +56,15 @@ def _gain_to_block(gain: float) -> str:
 
 def _build_eq_display(gains: list[float], selected_band: int) -> str:
     """Build the text visualization of the EQ."""
-    # Bar chart
-    bars = " ".join(_gain_to_block(g) for g in gains)
+    # All rows use 4-char columns to align with the labels row
+    # Bar chart: each block char centered in 4-char slot
+    bars = "".join(f"{_gain_to_block(g):^4}" for g in gains)
 
-    # Band labels
-    labels = " ".join(f"{lbl:>3}" for lbl in BAND_LABELS)
+    # Selection indicator: ▲/· centered in 4-char slot
+    indicator = "".join(f"{'▲' if i == selected_band else '·':^4}" for i in range(BAND_COUNT))
 
-    # Selection indicator
-    indicator = ""
-    for i in range(BAND_COUNT):
-        if i == selected_band:
-            indicator += " ▲ "
-        else:
-            indicator += " · "
+    # Band labels: right-aligned in 4-char slot
+    labels = "".join(f"{lbl:>4}" for lbl in BAND_LABELS)
 
     return f"```{bars}\n{indicator}\n{labels}```"
 
