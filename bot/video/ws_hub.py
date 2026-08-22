@@ -341,20 +341,14 @@ class WebSocketHub:
             await self._handle_whiteboard_reset(guild_id, sender, data)
             return
 
-        # Skip / Previous — delegate to unified controls
+        # Skip / Previous — delegate to unified controls (non-blocking)
         if msg_type == "skip":
             log.info("WS skip requested for guild %d", guild_id)
-            from playback.unified_controls import unified_skip
-            result = await unified_skip(guild_id)
-            log.info("WS skip result for guild %d: %s", guild_id, result)
-            await self.broadcast(guild_id, {"type": "session_change"}, exclude=None)
+            asyncio.ensure_future(self._handle_unified_skip(guild_id))
             return
         if msg_type == "previous":
             log.info("WS previous requested for guild %d", guild_id)
-            from playback.unified_controls import unified_previous
-            result = await unified_previous(guild_id)
-            log.info("WS previous result for guild %d: %s", guild_id, result)
-            await self.broadcast(guild_id, {"type": "session_change"}, exclude=None)
+            asyncio.ensure_future(self._handle_unified_previous(guild_id))
             return
 
         if msg_type not in ("play", "pause", "seek", "subtitle_change", "audio_change"):
@@ -552,6 +546,26 @@ class WebSocketHub:
             message: The JSON-serializable message dict.
         """
         await self.broadcast(guild_id, message)
+
+    async def _handle_unified_skip(self, guild_id: int) -> None:
+        """Background task: run unified skip and broadcast result."""
+        try:
+            from playback.unified_controls import unified_skip
+            result = await unified_skip(guild_id)
+            log.info("WS skip result for guild %d: %s", guild_id, result)
+        except Exception as exc:
+            log.error("WS skip failed for guild %d: %s", guild_id, exc)
+        await self.broadcast(guild_id, {"type": "session_change"}, exclude=None)
+
+    async def _handle_unified_previous(self, guild_id: int) -> None:
+        """Background task: run unified previous and broadcast result."""
+        try:
+            from playback.unified_controls import unified_previous
+            result = await unified_previous(guild_id)
+            log.info("WS previous result for guild %d: %s", guild_id, result)
+        except Exception as exc:
+            log.error("WS previous failed for guild %d: %s", guild_id, exc)
+        await self.broadcast(guild_id, {"type": "session_change"}, exclude=None)
 
     def get_state(self, guild_id: int) -> PlaybackState | None:
         """Get the current playback state for a guild."""
