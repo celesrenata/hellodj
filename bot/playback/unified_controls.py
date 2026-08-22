@@ -98,9 +98,12 @@ async def unified_previous(guild_id: int) -> str:
     # Nothing is playing — check history and restart something
     if history:
         prev_entry = history.pop(0)
+        # Push current (if any) to front of queue so "next" returns to it
+        if state.get("current"):
+            state["queue"].insert(0, state["current"])
         state["queue"].insert(0, prev_entry)
         state["current"] = None
-        await player._play_next_from_queue(guild_id)
+        await player._play_next_from_queue(guild_id, skip_history_push=True)
         return "prev_audio"
 
     return "nothing_playing"
@@ -194,7 +197,7 @@ async def _previous_from_video(guild_id: int) -> str:
             log.warning("unified_previous: error stopping streamer: %s", exc)
         await _cleanup_idle_streamer(video_cog, guild_id, streamer)
 
-    # Push the current (video) entry back to front of queue so "next" replays it
+    # Push the current (video) entry to front of queue so "next" replays it
     current = state.get("current")
     if current:
         state["queue"].insert(0, current)
@@ -203,7 +206,7 @@ async def _previous_from_video(guild_id: int) -> str:
     prev_entry = history.pop(0)
     state["queue"].insert(0, prev_entry)
     state["current"] = None
-    await player._play_next_from_queue(guild_id)
+    await player._play_next_from_queue(guild_id, skip_history_push=True)
     return "prev_audio"
 
 

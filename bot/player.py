@@ -717,13 +717,20 @@ async def jump_to(guild_id: int, *, history_index: int | None = None, queue_inde
     Returns True if playback was triggered, False on invalid index.
     """
     state = get_state(guild_id)
+    from_history = False
 
     if history_index is not None:
         history = state.setdefault("history", [])
         if history_index < 0 or history_index >= len(history):
             return False
         track = history.pop(history_index)
+        # When going "previous" (from history), push the current track to
+        # queue[0] first, then insert the history track before it.
+        # This way "next" returns to the track we just left.
+        if state.get("current"):
+            state["queue"].insert(0, state["current"])
         state["queue"].insert(0, track)
+        from_history = True
     elif queue_index is not None:
         if queue_index < 0 or queue_index >= len(state["queue"]):
             return False
@@ -743,10 +750,10 @@ async def jump_to(guild_id: int, *, history_index: int | None = None, queue_inde
         state["_jump_transition"] = True
         await p.stop()
         state.pop("_jump_transition", None)
-        await _play_next_from_queue(guild_id)
+        await _play_next_from_queue(guild_id, skip_history_push=from_history)
     else:
         # No player playing — manually advance
-        await _play_next_from_queue(guild_id)
+        await _play_next_from_queue(guild_id, skip_history_push=from_history)
     return True
 
 
@@ -938,7 +945,7 @@ async def enqueue_and_start(
 
 # ── event-driven playback ─────────────────────────────────
 
-async def _play_next_from_queue(guild_id: int) -> None:
+async def _play_next_from_queue(guild_id: int, *, skip_history_push: bool = False) -> None:
     state = get_state(guild_id)
     player = state.get("player")
 
@@ -957,7 +964,9 @@ async def _play_next_from_queue(guild_id: int) -> None:
         state["queue"].append(state["current"])
 
     # Push outgoing track to history (most recent first, capped at 50)
-    if state.get("current"):
+    # skip_history_push=True when doing "previous" — we already placed the
+    # outgoing track at the front of the queue so "next" returns to it.
+    if state.get("current") and not skip_history_push:
         history = state.setdefault("history", [])
         history.insert(0, state["current"])
         del history[50:]  # keep a reasonable cap
