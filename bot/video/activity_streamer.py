@@ -748,7 +748,17 @@ class ActivityStreamer:
         if not self.queue and self.state == StreamState.STREAMING:
             remaining = 0.0
             if self.source and self.source.duration_seconds > 0:
-                remaining = self.source.duration_seconds - self.get_elapsed_seconds()
+                # Use wall-clock time since pipeline ready (not get_elapsed_seconds
+                # which returns 0 before playback_started). This ensures we wait
+                # long enough for the viewer to finish watching from their actual
+                # start point (after countdown).
+                if self.playback_started and self.start_time > 0:
+                    wall_elapsed = time.monotonic() - self.start_time
+                    remaining = self.source.duration_seconds - wall_elapsed
+                else:
+                    # No viewer started yet — wait full duration for someone to
+                    # connect and watch, then they'll have the full video available.
+                    remaining = self.source.duration_seconds
             if remaining > 0:
                 log.info(
                     "Transcode done for guild=%d — keeping session alive %.0fs "

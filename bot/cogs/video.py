@@ -308,6 +308,7 @@ class VideoCog(commands.Cog, name="Video"):
         await self._disconnect_audio_if_playing(guild_id)
         streamer = ActivityStreamer(guild_id=guild_id, channel_id=voice_channel.id, ws_hub=self._backend.ws_hub)
         self._registry.register(guild_id, voice_channel.id, streamer)
+        self._backend.ws_hub.register_streamer(guild_id, streamer)
 
         # Launch Discord Activity
         assert self._launcher is not None
@@ -413,6 +414,7 @@ class VideoCog(commands.Cog, name="Video"):
         await self._disconnect_audio_if_playing(guild_id)
         streamer = ActivityStreamer(guild_id=guild_id, channel_id=voice_channel.id, ws_hub=self._backend.ws_hub)
         self._registry.register(guild_id, voice_channel.id, streamer)
+        self._backend.ws_hub.register_streamer(guild_id, streamer)
 
         # Launch Discord Activity
         assert self._launcher is not None

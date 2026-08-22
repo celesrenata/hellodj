@@ -959,6 +959,7 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
             on_session_end=_on_video_session_end,
         )
         video_cog._registry.register(guild_id, voice_channel.id, streamer)
+        video_cog._backend.ws_hub.register_streamer(guild_id, streamer)
 
         # Launch Activity
         assert video_cog._launcher is not None
