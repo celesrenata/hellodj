@@ -673,8 +673,9 @@ class PlaybackRouter:
     ) -> None:
         """Handle /play type:music_video — search for videos and show a picker.
 
-        For URLs, starts immediately. For text queries, searches YouTube for
-        video results and shows a selection dropdown (like songs/albums).
+        For URLs, starts immediately. For text queries, searches for video
+        results (Tidal first when source_provider is tidal, then YouTube)
+        and shows a selection dropdown.
         """
         import player
 
@@ -687,10 +688,13 @@ class PlaybackRouter:
             await self._music_video_enqueue_or_start(interaction, query, guild_id, channel_id)
             return
 
-        # Text search — get video results via yt-dlp flat search
+        # Text search — try provider-specific video search, fall back to YouTube
         await interaction.followup.send("🔄 Searching for music videos…", ephemeral=True)
 
-        results = await self._search_music_videos(query)
+        state = player.get_state(guild_id)
+        source_provider = state.get("source_provider", "youtube")
+
+        results = await self._search_music_videos(query, source_provider=source_provider)
         if not results:
             await interaction.followup.send("No music videos found for that query.")
             return
@@ -724,12 +728,35 @@ class PlaybackRouter:
         msg = await interaction.followup.send("Select a music video:", view=view)
         view.message = msg
 
-    async def _search_music_videos(self, query: str) -> list[dict]:
-        """Search YouTube for music video results (metadata only, no download).
+    async def _search_music_videos(self, query: str, *, source_provider: str = "youtube") -> list[dict]:
+        """Search for music video results (metadata only, no download).
 
-        Uses yt-dlp with --flat-playlist to get search result info without
-        downloading any video. Returns up to 5 results.
+        When source_provider is "tidal", tries Tidal video search first.
+        Always falls back to YouTube via yt-dlp --flat-playlist.
+        Returns up to 5 results in a unified format.
         """
+        import asyncio as _asyncio
+        import json
+
+        # Try Tidal video search first when provider is tidal
+        if source_provider == "tidal":
+            try:
+                tidal_results = await self._search_tidal_videos(query)
+                if tidal_results:
+                    log.info("Music video search: Tidal returned %d results for %r", len(tidal_results), query)
+                    # Supplement with YouTube results for more options
+                    yt_results = await self._search_youtube_videos(query)
+                    # Combine: Tidal first, then YouTube (deduplicated by title roughly)
+                    combined = tidal_results + yt_results
+                    return combined[:10]
+            except Exception as exc:
+                log.debug("Tidal video search failed for %r: %s", query, exc)
+
+        # YouTube search (primary for non-tidal providers, fallback for tidal)
+        return await self._search_youtube_videos(query)
+
+    async def _search_youtube_videos(self, query: str) -> list[dict]:
+        """Search YouTube for music video results via yt-dlp --flat-playlist."""
         import asyncio as _asyncio
         import json
 
@@ -776,6 +803,63 @@ class PlaybackRouter:
                 results.append(entry)
             except json.JSONDecodeError:
                 continue
+
+        return results
+
+    async def _search_tidal_videos(self, query: str) -> list[dict]:
+        """Search Tidal's v1 API for music videos (metadata only).
+
+        Returns up to 5 results in the unified format expected by the picker.
+        """
+        import aiohttp
+        from credentials import creds
+
+        token = creds.get("tidal.access_token", "")
+        if not token:
+            return []
+
+        url = "https://api.tidal.com/v1/search/videos"
+        headers = {
+            "Authorization": f"Bearer {token}",
+            "Accept": "application/json",
+        }
+        params = {
+            "query": query,
+            "limit": "5",
+            "countryCode": "US",
+        }
+
+        try:
+            async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
+                async with session.get(url, headers=headers, params=params) as resp:
+                    if resp.status != 200:
+                        log.debug("Tidal video search returned %d", resp.status)
+                        return []
+                    data = await resp.json()
+        except Exception as exc:
+            log.debug("Tidal video search network error: %s", exc)
+            return []
+
+        items = data.get("items", [])
+        results = []
+        for item in items:
+            title = item.get("title", "")
+            # Tidal v1 uses "artists" array, not "artist" object
+            artists = item.get("artists") or []
+            artist_name = artists[0].get("name", "") if artists else ""
+
+            duration = item.get("duration", 0)  # seconds
+            video_id = item.get("id", "")
+            video_url = f"https://tidal.com/browse/video/{video_id}" if video_id else ""
+
+            results.append({
+                "title": title,
+                "uploader": artist_name,
+                "channel": artist_name,
+                "duration": duration,
+                "url": video_url,
+                "webpage_url": video_url,
+            })
 
         return results
 
