@@ -693,6 +693,7 @@ class PlaybackRouter:
 
         state = player.get_state(guild_id)
         source_provider = state.get("source_provider", "youtube")
+        log.info("Music video search: guild=%d source_provider=%r query=%r", guild_id, source_provider, query)
 
         results = await self._search_music_videos(query, source_provider=source_provider)
         if not results:
@@ -740,6 +741,7 @@ class PlaybackRouter:
 
         # Try Tidal video search first when provider is tidal
         if source_provider == "tidal":
+            log.info("Music video search: trying Tidal v2 video search for %r", query)
             try:
                 tidal_results = await self._search_tidal_videos(query)
                 if tidal_results:
