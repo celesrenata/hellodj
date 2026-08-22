@@ -1091,12 +1091,9 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
                 streamer.playback_started = True
                 streamer.start_time = _time.monotonic()
 
-                # Broadcast start + session_change so clients reinit HLS and play
+                # Broadcast session_change so clients reinit HLS and auto-play
                 await video_cog._backend.ws_hub.broadcast_from_bot(guild_id, {
                     "type": "session_change",
-                })
-                await video_cog._backend.ws_hub.broadcast_from_bot(guild_id, {
-                    "type": "start",
                 })
 
                 if text_channel:
