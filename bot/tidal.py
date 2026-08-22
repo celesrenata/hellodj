@@ -371,7 +371,6 @@ async def search_albums(query: str, limit: int = 10) -> list[dict]:
     url = (
         f"{V2_BASE}/searchResults"
         f"?filter%5Bquery%5D={encoded_query}"
-        f"&filter%5Btype%5D=ALBUMS"
         f"&countryCode=US"
         f"&include=albums,albums.artists"
     )
