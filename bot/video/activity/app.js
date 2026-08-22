@@ -1067,9 +1067,15 @@ import { DiscordSDK } from './discord-sdk.js';
   });
 
   // Time display update
+  // knownDuration: authoritative video duration from server metadata.
+  // videoEl.duration grows as HLS transcode progresses — use server value when available.
+  let knownDuration = 0;
+
+  const getDuration = () => knownDuration > 0 ? knownDuration : (videoEl.duration || 0);
+
   const updateTime = () => {
     const cur = videoEl.currentTime || 0;
-    const dur = videoEl.duration || 0;
+    const dur = getDuration();
     timeDisplay.textContent = `${fmt(cur)} / ${fmt(dur)}`;
 
     // Update played position
@@ -1111,7 +1117,7 @@ import { DiscordSDK } from './discord-sdk.js';
   };
 
   const updateTooltip = (pct, e) => {
-    const dur = videoEl.duration || 0;
+    const dur = getDuration();
     scrubberTooltip.textContent = fmt(pct * dur);
     const rect = scrubber.getBoundingClientRect();
     const x = (e.touches ? e.touches[0].clientX : e.clientX) - rect.left;
@@ -1155,7 +1161,7 @@ import { DiscordSDK } from './discord-sdk.js';
 
   const seekTo = (e) => {
     const pct = getPercent(e);
-    const dur = videoEl.duration || 0;
+    const dur = getDuration();
     videoEl.currentTime = pct * dur;
     scrubberFill.style.width = `${pct * 100}%`;
     scrubberThumb.style.left = `${pct * 100}%`;
@@ -1166,6 +1172,11 @@ import { DiscordSDK } from './discord-sdk.js';
   // --- Init ---
   const status = await fetchStatus();
   if (!status) return;
+
+  // Set the authoritative duration from server metadata (seconds)
+  if (status.video_duration && status.video_duration > 0) {
+    knownDuration = status.video_duration;
+  }
 
   if (status.video_title) titleBar.textContent = formatTitle(status.video_title, status.uploader);
 
@@ -1253,6 +1264,10 @@ import { DiscordSDK } from './discord-sdk.js';
       if (updated.playlist_url && updated.state === 'streaming') {
         _rlog('[_checkForNextSession] NEW SESSION ready: ' + updated.session_id + ' (was ' + currentSessionId + ')');
         currentSessionId = updated.session_id;
+        // Update known duration for the new video
+        if (updated.video_duration && updated.video_duration > 0) {
+          knownDuration = updated.video_duration;
+        }
         errorOverlay.classList.remove('visible');
         setMode('VIDEO_PLAYING');
         const playlistUrl = `stream/${guildId}/playlist.m3u8?token=${encodeURIComponent(instanceId)}`;
