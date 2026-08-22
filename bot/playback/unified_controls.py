@@ -50,29 +50,33 @@ async def unified_skip(guild_id: int) -> str:
 
 
 async def unified_previous(guild_id: int) -> str:
-    """Go to the previous track (audio or video) from unified history.
+    """Go to the previous track from unified history.
+
+    Behavior:
+    - If video is active: STOP the video, play previous track from history
+    - If audio is active: jump to previous audio track from history (or restart)
+    - If nothing is active: pop from history and play
 
     Returns a status string:
-    - "prev_video" — went back within video streamer history
     - "prev_audio" — jumped to previous audio track from history
+    - "prev_video" — went back within video streamer history (plays previous video)
     - "restarted" — restarted the current track from the beginning
     - "no_history" — no previous track available
     - "nothing_playing" — nothing active and no history
     """
     import player
 
-    # Check if video is active
-    if player._is_video_active(guild_id):
-        return await _previous_video(guild_id)
-
-    # Check if audio is playing — try audio history
     state = player.get_state(guild_id)
     history = state.get("history", [])
 
+    # If video is active: stop it and go to previous from unified history
+    if player._is_video_active(guild_id):
+        return await _previous_from_video(guild_id)
+
+    # Audio active — try audio history
     p = player.get_player(guild_id)
     if p and (p.playing or p.paused):
         if history:
-            # Jump to previous track
             ok = await player.jump_to(guild_id, history_index=0)
             if ok:
                 return "prev_audio"
@@ -86,7 +90,6 @@ async def unified_previous(guild_id: int) -> str:
 
     # Nothing is playing — check history and restart something
     if history:
-        # Push history[0] to front of queue and play
         prev_entry = history.pop(0)
         state["queue"].insert(0, prev_entry)
         state["current"] = None
@@ -97,7 +100,7 @@ async def unified_previous(guild_id: int) -> str:
 
 
 async def _skip_video(guild_id: int) -> str:
-    """Handle skip when video is active."""
+    """Handle skip when video is active — stops video, advances unified queue."""
     import player
 
     bot_ref = player._bot_ref
@@ -116,15 +119,7 @@ async def _skip_video(guild_id: int) -> str:
             break
 
     if streamer is None:
-        return "nothing_playing"
-
-    # Try to skip within the video streamer
-    had_queue = len(streamer.queue) > 0
-    try:
-        await streamer.skip()
-    except Exception as exc:
-        log.debug("unified_skip: video skip failed guild=%d: %s", guild_id, exc)
-        # Streamer not in a skippable state — try unified queue
+        # Video flag set but no active streamer — advance unified queue
         state = player.get_state(guild_id)
         if state["queue"]:
             state["current"] = None
@@ -132,27 +127,30 @@ async def _skip_video(guild_id: int) -> str:
             return "skipped_to_next"
         return "queue_empty"
 
-    # Skip succeeded — check what happened
-    if streamer.is_active and streamer.source:
-        # Still playing (advanced within video queue)
-        return "skipped_video"
+    # Stop the video session
+    log.info("unified_skip: stopping video for guild=%d", guild_id)
+    try:
+        # Push current video to history before stopping
+        if streamer.source is not None:
+            streamer._push_history(streamer.source)
+        await streamer.stop()
+    except Exception as exc:
+        log.warning("unified_skip: error stopping streamer: %s", exc)
 
-    # Video streamer went idle — advance unified queue
+    _cleanup_idle_streamer(video_cog, guild_id, streamer)
+
+    # Advance unified queue
     state = player.get_state(guild_id)
     if state["queue"]:
-        # Clean up the video session
-        _cleanup_idle_streamer(video_cog, guild_id, streamer)
         state["current"] = None
         await player._play_next_from_queue(guild_id)
         return "skipped_to_next"
 
-    # Truly empty
-    _cleanup_idle_streamer(video_cog, guild_id, streamer)
     return "queue_empty"
 
 
-async def _previous_video(guild_id: int) -> str:
-    """Handle previous when video is active."""
+async def _previous_from_video(guild_id: int) -> str:
+    """Handle previous when video is active — stops video, plays previous from history."""
     import player
 
     bot_ref = player._bot_ref
@@ -170,44 +168,35 @@ async def _previous_video(guild_id: int) -> str:
             streamer = session
             break
 
-    if streamer is None:
-        # Video was active per flag but no streamer — fall back to audio history
-        state = player.get_state(guild_id)
-        history = state.get("history", [])
-        if history:
-            prev_entry = history.pop(0)
-            state["queue"].insert(0, prev_entry)
-            state["current"] = None
-            await player._play_next_from_queue(guild_id)
-            return "prev_audio"
-        return "no_history"
-
-    # Try video streamer's internal previous
-    try:
-        result = await streamer.previous()
-        if result:
-            return "prev_video"
-    except Exception as exc:
-        log.debug("unified_previous: video previous failed guild=%d: %s", guild_id, exc)
-
-    # Video previous failed or returned False (no video history)
-    # Fall back to unified audio history
     state = player.get_state(guild_id)
     history = state.get("history", [])
-    if history:
-        # Stop video, go back to audio
+
+    if not history:
+        return "no_history"
+
+    # Stop the video session
+    if streamer is not None:
+        log.info("unified_previous: stopping video for guild=%d to play previous audio", guild_id)
+        try:
+            await streamer.stop()
+        except Exception as exc:
+            log.warning("unified_previous: error stopping streamer: %s", exc)
         _cleanup_idle_streamer(video_cog, guild_id, streamer)
-        prev_entry = history.pop(0)
-        state["queue"].insert(0, prev_entry)
-        state["current"] = None
-        await player._play_next_from_queue(guild_id)
-        return "prev_audio"
 
-    return "no_history"
+    # Play previous from unified history
+    prev_entry = history.pop(0)
+    state["queue"].insert(0, prev_entry)
+    state["current"] = None
+    await player._play_next_from_queue(guild_id)
+    return "prev_audio"
 
 
-def _cleanup_idle_streamer(video_cog, guild_id: int, streamer) -> None:
-    """Clean up an idle video streamer — unregister from hub and registry."""
+async def _cleanup_idle_streamer(video_cog, guild_id: int, streamer) -> None:
+    """Clean up an idle video streamer — unregister from hub and registry, notify clients."""
+    try:
+        await video_cog._backend.ws_hub.broadcast_from_bot(guild_id, {"type": "session_end"})
+    except Exception:
+        pass
     try:
         video_cog._backend.ws_hub.unregister_streamer(guild_id)
     except Exception:

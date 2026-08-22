@@ -986,25 +986,25 @@ async def _play_next_from_queue(guild_id: int) -> None:
 async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
     """Start a video Activity for a queued music_video entry.
 
-    Disconnects the audio player and delegates to the VideoCog.
+    Stops audio playback but keeps the bot connected to voice.
+    The bot should NOT leave and rejoin — it stays in the channel.
     """
     state = get_state(guild_id)
 
     # Set flag to prevent on_track_end from re-advancing the queue
-    # when we disconnect the audio player intentionally
+    # when we stop the audio player intentionally
     state["_video_transition"] = True
 
-    # Disconnect audio player if connected
+    # Stop audio playback but keep connected (don't disconnect!)
     p = get_player(guild_id)
-    if p and p.connected:
-        log.info("_start_video_from_queue: disconnecting audio player guild=%d", guild_id)
+    if p and p.connected and p.playing:
+        log.info("_start_video_from_queue: stopping audio (staying connected) guild=%d", guild_id)
         try:
-            await p.disconnect()
-            state["player"] = None
+            await p.stop()
         except Exception as exc:
-            log.warning("Failed to disconnect audio before video: %s", exc)
+            log.warning("Failed to stop audio before video: %s", exc)
 
-    # Clear the transition flag — disconnect is done
+    # Clear the transition flag — stop is done
     state.pop("_video_transition", None)
 
     # Get the bot and VideoCog
