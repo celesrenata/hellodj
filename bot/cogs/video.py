@@ -1304,8 +1304,14 @@ class VideoControlView(discord.ui.View):
             from player import get_state as _get_state, _play_next_from_queue
             state = _get_state(guild_id)
             if state["queue"]:
-                # There's more in the unified queue — advance to it
+                # There's more in the unified queue — stop current session cleanly
+                # and advance to the next item
                 self._cog._stop_seek_bar_update(key)
+                # Broadcast session_end so clients clear their HLS state
+                await self._cog._backend.ws_hub.broadcast_from_bot(guild_id, {
+                    "type": "session_end",
+                })
+                await streamer.stop()
                 self._cog._backend.ws_hub.unregister_streamer(guild_id)
                 self._cog._registry.unregister(guild_id, channel_id)
                 state["current"] = None

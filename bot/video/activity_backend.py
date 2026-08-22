@@ -538,7 +538,10 @@ class ActivityBackend:
 
         return web.FileResponse(
             playlist_path,
-            headers={"Content-Type": "application/vnd.apple.mpegurl"},
+            headers={
+                "Content-Type": "application/vnd.apple.mpegurl",
+                "Cache-Control": "no-store, no-cache, must-revalidate",
+            },
         )
 
     async def handle_variant_playlist(self, request: web.Request) -> web.Response:
