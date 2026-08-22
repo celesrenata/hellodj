@@ -326,8 +326,8 @@ class AlbumSelectView(discord.ui.View):
 # allows the invoking user or any guild member).
 
 class RemoteControlView(discord.ui.View):
-    def __init__(self, guild_id: int, bot: commands.Bot):
-        super().__init__(timeout=600)
+    def __init__(self, guild_id: int = 0, bot: commands.Bot | None = None):
+        super().__init__(timeout=None)
         self.guild_id = guild_id
         self.bot = bot
         self.message: discord.Message | None = None
@@ -432,6 +432,22 @@ class RemoteControlView(discord.ui.View):
         await self._defer(interaction)
 
     async def _on_skip(self, interaction: discord.Interaction) -> None:
+        # Check if a video session is active — skip the video instead
+        video_cog = self.bot.get_cog("Video")
+        if video_cog is not None:
+            voice = interaction.user.voice  # type: ignore[union-attr]
+            channel_id = voice.channel.id if voice and voice.channel else None
+            if channel_id:
+                streamer = video_cog._registry.get(self.guild_id, channel_id)
+                if streamer is not None and streamer.is_active:
+                    try:
+                        await streamer.skip()
+                        await self._defer(interaction)
+                    except Exception:
+                        await self._defer(interaction)
+                    return
+
+        # Fall back to audio skip
         p = player.get_player(self.guild_id)
         if p:
             await p.stop()

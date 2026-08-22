@@ -1299,18 +1299,33 @@ class VideoControlView(discord.ui.View):
             self._cog._now_playing_messages[key] = msg
             self._cog._start_seek_bar_update(key)
         else:
-            self._cog._stop_seek_bar_update(key)
-            await self._cog._backend.ws_hub.disconnect_all(guild_id)
-            if self._cog._launcher is not None:
-                try:
-                    await self._cog._launcher.close(streamer.channel_id)
-                except Exception:
-                    pass
-            self._cog._registry.unregister(guild_id, channel_id)
-            await interaction.followup.send("⏭ Queue empty — stopped.")
-            self._disable_all()
-            if interaction.message:
-                await interaction.message.edit(view=self)
+            # Streamer's internal video queue is empty — check the unified
+            # player queue for the next item (could be another video or audio)
+            from player import get_state as _get_state, _play_next_from_queue
+            state = _get_state(guild_id)
+            if state["queue"]:
+                # There's more in the unified queue — advance to it
+                self._cog._stop_seek_bar_update(key)
+                self._cog._backend.ws_hub.unregister_streamer(guild_id)
+                self._cog._registry.unregister(guild_id, channel_id)
+                state["current"] = None
+                await interaction.followup.send("⏭ Skipping to next in queue...")
+                await _play_next_from_queue(guild_id)
+            else:
+                # Truly empty — stop everything
+                self._cog._stop_seek_bar_update(key)
+                await self._cog._backend.ws_hub.disconnect_all(guild_id)
+                self._cog._backend.ws_hub.unregister_streamer(guild_id)
+                if self._cog._launcher is not None:
+                    try:
+                        await self._cog._launcher.close(streamer.channel_id)
+                    except Exception:
+                        pass
+                self._cog._registry.unregister(guild_id, channel_id)
+                await interaction.followup.send("⏭ Queue empty — stopped.")
+                self._disable_all()
+                if interaction.message:
+                    await interaction.message.edit(view=self)
 
     @discord.ui.button(label="⊘", style=discord.ButtonStyle.secondary, custom_id="video_block", row=1)
     async def stop_video(self, interaction: discord.Interaction, _button: discord.ui.Button) -> None:
