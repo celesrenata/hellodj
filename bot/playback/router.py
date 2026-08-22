@@ -719,7 +719,7 @@ class PlaybackRouter:
             video_url = info.get("webpage_url") or info.get("url", "")
             title = info.get("title", query)
             await picker.response.edit_message(
-                content=f"🎬 Starting: **{title}**…", view=None
+                content=f"🎬 Loading: **{title}**…", view=None
             )
             await self._music_video_enqueue_or_start(
                 interaction, video_url, guild_id, channel_id, title=title
