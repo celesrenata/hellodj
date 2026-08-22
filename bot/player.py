@@ -1064,13 +1064,39 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
         resolver = MusicVideoResolver()
         source = await resolver.resolve(query, source_provider=state.get("source_provider"))
 
-        # Check for existing video session
+        # Check for existing video session (active or idle but with connected clients)
         streamer = video_cog._registry.get(guild_id, voice_channel.id)
-        if streamer is not None and streamer.is_active:
-            streamer.enqueue(source)
-            if text_channel:
-                await text_channel.send(f"📥 Added to video queue: **{source.title}**")
-            return
+        if streamer is not None:
+            if streamer.is_active:
+                # Currently streaming — enqueue
+                streamer.enqueue(source)
+                if text_channel:
+                    await text_channel.send(f"📥 Added to video queue: **{source.title}**")
+                return
+            else:
+                # Idle streamer — reuse it (clients still connected via WS)
+                log.info("_start_video_from_queue: reusing idle streamer for guild=%d", guild_id)
+                await streamer.play(source)
+
+                import time as _time
+                video_cog._backend.ws_hub.set_state(
+                    guild_id,
+                    PlaybackState(playing=False, position=0.0, last_update=_time.monotonic()),
+                )
+                # Notify connected clients there's a new session
+                await video_cog._backend.ws_hub.broadcast_from_bot(guild_id, {
+                    "type": "session_change",
+                })
+
+                if text_channel:
+                    from cogs.video import _build_now_playing_embed
+                    from views.unified_remote import UnifiedControlView
+                    embed = _build_now_playing_embed(source, len(streamer.queue), elapsed_seconds=0.0)
+                    msg = await text_channel.send(embed=embed, view=UnifiedControlView())
+                    key = (guild_id, voice_channel.id)
+                    video_cog._now_playing_messages[key] = msg
+                    video_cog._start_seek_bar_update(key)
+                return
 
         # Create new Activity session
         streamer = ActivityStreamer(

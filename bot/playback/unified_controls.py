@@ -203,16 +203,12 @@ async def _previous_from_video(guild_id: int) -> str:
 
 
 async def _cleanup_idle_streamer(video_cog, guild_id: int, streamer) -> None:
-    """Clean up an idle video streamer — unregister from hub and registry, notify clients."""
+    """Notify Activity clients that the current session ended.
+
+    Does NOT unregister the streamer — keeps it registered so the next video
+    can reuse it (same Activity iframe, same WS connections).
+    """
     try:
         await video_cog._backend.ws_hub.broadcast_from_bot(guild_id, {"type": "session_end"})
-    except Exception:
-        pass
-    try:
-        video_cog._backend.ws_hub.unregister_streamer(guild_id)
-    except Exception:
-        pass
-    try:
-        video_cog._registry.unregister(guild_id, streamer.channel_id)
     except Exception:
         pass
