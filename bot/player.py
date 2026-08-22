@@ -1005,7 +1005,7 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
 
     # Stop audio playback but keep connected (don't disconnect!)
     p = get_player(guild_id)
-    if p and p.connected and p.playing:
+    if p and p.connected and (p.playing or p.paused):
         log.info("_start_video_from_queue: stopping audio (staying connected) guild=%d", guild_id)
         try:
             await p.stop()
@@ -1211,6 +1211,9 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
                         if state.get("current"):
                             state["current"]["source"] = sp
                         await player.play(track)
+                        # Ensure not paused (may have been paused before video transition)
+                        if player.paused:
+                            await player.pause(False)
                         return
                     log.info("Direct stream URL returned but Lavalink couldn't load it — falling back")
             except Exception as direct_exc:
@@ -1276,6 +1279,9 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
                   source_provider=sp,
                   elapsed_ms=(time.monotonic() - resolve_start) * 1000)
         await player.play(track)
+        # Ensure playback is not paused (player may have been paused before video transition)
+        if player.paused:
+            await player.pause(False)
 
     except Exception as exc:
         dbg.error("resolve_failed guild=%d title=%r provider=%r error=%s",
