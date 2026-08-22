@@ -789,10 +789,31 @@ def reset_crossfade(guild_id: int) -> None:
         asyncio.ensure_future(_safe_set_volume(p, 1.0))
 
 
+def _is_video_active(guild_id: int) -> bool:
+    """Check if a video Activity session is currently active for this guild."""
+    try:
+        bot_ref = _bot_ref
+        if bot_ref is None:
+            return False
+        video_cog = bot_ref.get_cog("Video")
+        if video_cog is None:
+            return False
+        # Check all registered sessions for this guild
+        for (gid, _cid), streamer in video_cog._registry._sessions.items():
+            if gid == guild_id and streamer.is_active:
+                return True
+    except Exception:
+        pass
+    return False
+
+
 async def add_track(state: dict, guild_id: int, entry: dict) -> None:
     state["queue"].append(entry)
     persist(guild_id)
     # Auto-start playback if the player is idle (connected but not playing)
+    # AND no video session is currently active
+    if _is_video_active(guild_id):
+        return
     p = get_player(guild_id)
     if p and p.connected and not p.playing and not p.paused:
         await _play_next_from_queue(guild_id)
@@ -834,7 +855,8 @@ async def enqueue_and_start(
                 p = None
 
     if p and p.connected and not p.playing and not p.paused:
-        await _play_next_from_queue(guild.id)
+        if not _is_video_active(guild.id):
+            await _play_next_from_queue(guild.id)
 
     persist(guild.id)
     return len(tracks)
