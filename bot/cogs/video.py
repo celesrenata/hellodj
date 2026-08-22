@@ -181,21 +181,20 @@ class VideoCog(commands.Cog, name="Video"):
         return None
 
     async def _disconnect_audio_if_playing(self, guild_id: int) -> None:
-        """Disconnect the wavelink audio player if it's connected.
+        """Stop audio playback if playing, but keep the bot in voice.
 
-        Called before launching an Activity so audio and video don't play simultaneously.
+        The bot stays connected to voice so the unified remote and voice
+        activation continue to work during video playback. Only the audio
+        stream is stopped — not the voice connection itself.
         """
         import player as _player
         p = _player.get_player(guild_id)
-        if p and p.connected:
-            log.info("Disconnecting audio player before Activity launch: guild=%d", guild_id)
+        if p and p.connected and p.playing:
+            log.info("Stopping audio playback for Activity launch (staying in voice): guild=%d", guild_id)
             try:
-                if p.playing:
-                    await p.pause(True)
-                await p.disconnect()
-                _player.get_state(guild_id)["player"] = None
+                await p.stop()
             except Exception as exc:
-                log.warning("Failed to disconnect audio player: %s", exc)
+                log.warning("Failed to stop audio player: %s", exc)
 
     def _get_user_channel(self, interaction: discord.Interaction) -> int | None:
         """Extract the user's voice channel ID from an interaction.
