@@ -724,6 +724,10 @@ _resumed = False
 
 async def _resume_sessions():
     for gid_str, saved in session.all().items():
+        # Skip composite keys ("guild_id:channel_id") — those are managed by
+        # the unified playback persistence system (playback/persistence.py).
+        if ":" in gid_str:
+            continue
         if not saved.get("auto_resume"):
             continue
         try:
