@@ -62,14 +62,23 @@ def _build_eq_display(gains: list[float], selected_band: int) -> str:
     We use tight spacing: no separator, just right-pad to 3 chars.
     Block chars (▁▂▃) render ~1.5x wide in Discord mono, so bars get 2-char slots.
     """
-    # All plain text (no code block), -# small text for labels
-    # Bars and indicators use 2-space gaps for even spread
-    bars = "  ".join(_gain_to_block(g) for g in gains)
-    indicator = "  ".join("▲" if i == selected_band else "·" for i in range(BAND_COUNT))
-
-    # Labels as small text, spaced to visually align under bars
+    # All plain text, bars/indicators spaced to align with proportional labels
+    # Each label has different visual width in Discord's proportional font.
+    # We pad bars/indicators to roughly match the label width + separator.
+    # Label widths (approximate chars): 25=narrow, 63=narrow, 160=wide, 400=wide...
+    # Use variable spacing: narrow labels get less padding after, wide labels get more
     viz_labels = ["25", "63", "160", "400", "630", "1k6", "2k5", "4k", "10k", "16k"]
-    labels = "  ".join(viz_labels)
+
+    # Spacing after each bar to align with the label below
+    # Tuned for Discord's proportional embed font
+    spacings = [" ", "  ", "   ", "   ", "   ", "   ", "  ", " ", "   ", ""]
+
+    bar_chars = [_gain_to_block(g) for g in gains]
+    ind_chars = ["▲" if i == selected_band else "·" for i in range(BAND_COUNT)]
+
+    bars = "".join(b + s for b, s in zip(bar_chars, spacings))
+    indicator = "".join(i + s for i, s in zip(ind_chars, spacings))
+    labels = " ".join(viz_labels)
 
     return f"{bars}\n{indicator}\n-# {labels}"
 
