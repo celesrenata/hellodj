@@ -65,11 +65,11 @@ def _build_eq_display(gains: list[float], selected_band: int) -> str:
     # Extra space after band 3 (index 3+) to align with 3-char labels
     # Reduce 1 space before band 9 (10k) since band 8 (4k) is only 2 chars
     bar_parts = [_gain_to_block(g) for g in gains]
-    bars = " " + "  ".join(bar_parts[:3]) + "   " + "   ".join(bar_parts[3:5]) + "  " + "  ".join(bar_parts[5:8]) + "   " + "  ".join(bar_parts[8:])
+    bars = " " + "  ".join(bar_parts[:3]) + "   " + "   ".join(bar_parts[3:5]) + "  " + "  ".join(bar_parts[5:7]) + "   " + bar_parts[7] + "   " + bar_parts[8] + "  " + "   ".join(bar_parts[9:])
 
     # Indicator: match the same spacing pattern
     ind_parts = ["▲" if i == selected_band else "·" for i in range(BAND_COUNT)]
-    indicator = " " + "  ".join(ind_parts[:3]) + "   " + "   ".join(ind_parts[3:5]) + "  " + "  ".join(ind_parts[5:8]) + "   " + "  ".join(ind_parts[8:])
+    indicator = " " + "  ".join(ind_parts[:3]) + "   " + "   ".join(ind_parts[3:5]) + "  " + "  ".join(ind_parts[5:7]) + "   " + ind_parts[7] + "   " + ind_parts[8] + "  " + "   ".join(ind_parts[9:])
 
     # Labels: space-joined, shortened to fit code block width
     viz_labels = ["25", "63", "160", "400", "630", "1k", "2k", "4k", "10k", "16k"]
