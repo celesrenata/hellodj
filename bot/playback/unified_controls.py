@@ -128,8 +128,9 @@ async def _skip_video(guild_id: int) -> str:
         # Video flag set but no active streamer — advance unified queue
         state = player.get_state(guild_id)
         if state["queue"]:
-            state["current"] = None
             await player._play_next_from_queue(guild_id)
+            return "skipped_to_next"
+        return "queue_empty"
             return "skipped_to_next"
         return "queue_empty"
 
@@ -145,13 +146,18 @@ async def _skip_video(guild_id: int) -> str:
 
     await _cleanup_idle_streamer(video_cog, guild_id, streamer)
 
-    # Advance unified queue
+    # Advance unified queue — let _play_next_from_queue handle history push
     state = player.get_state(guild_id)
     if state["queue"]:
-        state["current"] = None
         await player._play_next_from_queue(guild_id)
         return "skipped_to_next"
 
+    # Queue empty — manually push current to history since _play_next won't run
+    if state.get("current"):
+        history = state.setdefault("history", [])
+        history.insert(0, state["current"])
+        del history[50:]
+        state["current"] = None
     return "queue_empty"
 
 
