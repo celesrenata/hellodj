@@ -458,8 +458,24 @@ async def search_albums(query: str, limit: int = 10) -> list[dict]:
             "source": "tidal",
         })
 
-        if len(results) >= limit:
-            break
+    # Sort by relevance: score based on how many query words appear in the title
+    # Use both original query and normalized form for matching
+    query_words = set(query.lower().split()) | set(normalized.lower().split())
+    # Remove very short/common words that cause false matches
+    query_words = {w for w in query_words if len(w) > 1}
+
+    def _relevance(album: dict) -> float:
+        title_lower = album["name"].lower()
+        title_words = set(title_lower.split())
+        # Count matching words (check both directions)
+        matches = sum(1 for w in query_words if w in title_lower)
+        # Bonus for exact substring match of the full query
+        if query.lower() in title_lower or normalized.lower() in title_lower:
+            matches += len(query_words) * 2
+        return -matches  # negative for descending sort
+
+    results.sort(key=_relevance)
+    results = results[:limit]
 
     log.info("tidal: album search %r returned %d album(s)", query, len(results))
     return results
