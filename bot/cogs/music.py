@@ -984,7 +984,12 @@ class Music(commands.Cog):
 
     async def _play_search_flow(self, interaction: discord.Interaction, query: str, label: str = "song") -> None:
         """Search for a track and either queue a single result or show a dropdown."""
-        await interaction.response.defer()
+        if not interaction.response.is_done():
+            try:
+                await interaction.response.defer()
+            except (discord.NotFound, discord.HTTPException):
+                log.warning("_play_search_flow: interaction expired before defer")
+                return
         await interaction.followup.send("🔄 Searching…", ephemeral=True)
         try:
             await self._ensure_player(interaction)
@@ -1203,7 +1208,12 @@ class Music(commands.Cog):
 
     async def _play_album_flow(self, interaction: discord.Interaction, query: str) -> None:
         """Resolve an album (URL or search) and show a selection dropdown or queue directly."""
-        await interaction.response.defer()
+        if not interaction.response.is_done():
+            try:
+                await interaction.response.defer()
+            except (discord.NotFound, discord.HTTPException):
+                log.warning("_play_album_flow: interaction expired before defer")
+                return
         await interaction.followup.send("🔄 Searching for albums…", ephemeral=True)
         try:
             await self._ensure_player(interaction)
