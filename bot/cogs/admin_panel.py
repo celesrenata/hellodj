@@ -389,7 +389,7 @@ class AdminPanel(commands.Cog, name="AdminPanel"):
                 value = value[:47] + "..."
             lines.append(
                 f"{emoji} **{rule['type']}**: {value}\n"
-                f"   ID: `{rule['id'][:8]}…` | By: <@{rule['added_by']}>"
+                f"   ID: `{rule['id']}` | By: <@{rule['added_by']}>"
             )
 
         embed.description = "\n".join(lines)
