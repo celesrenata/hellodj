@@ -874,6 +874,10 @@ import { DiscordSDK } from './discord-sdk.js';
       maxMaxBufferLength: isLive ? 20 : 60,
       startLevel: 0,
       startPosition: isLive ? -1 : 0,
+      // Start rendering immediately — don't wait for large buffer before first frame
+      maxBufferHole: 0.5,
+      nudgeMaxRetry: 5,
+      startFragPrefetch: true,
     };
     if (isLive) {
       hlsConfig.liveDurationInfinity = true;
@@ -890,7 +894,16 @@ import { DiscordSDK } from './discord-sdk.js';
       if (hls._seekToStart) {
         videoEl.currentTime = 0;
       }
-      videoEl.play().catch(() => {});
+      // Ensure the video element is visible and playing
+      videoEl.style.display = '';
+      const playPromise = videoEl.play();
+      if (playPromise) {
+        playPromise.catch((err) => {
+          _rlog('play() rejected: ' + err.message + ' — trying muted');
+          videoEl.muted = true;
+          videoEl.play().catch(() => {});
+        });
+      }
       // Hide visualizer loading overlay once manifest is parsed and playback starts
       if (hls._isLive && mode === 'VISUALIZER_HLS') {
         visualizerLoading.style.display = 'none';
