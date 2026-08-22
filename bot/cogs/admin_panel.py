@@ -606,22 +606,22 @@ class AdminPanel(commands.Cog, name="AdminPanel"):
 
 async def setup(bot: commands.Bot) -> None:
     """Load the AdminPanel cog with content filter and user bans."""
-    # Initialize content filter
-    content_filter: ContentFilter | None = None
-    try:
-        from playback.content_filter import ContentFilter
+    # Use the shared content filter instance from the bot (same one the router uses)
+    content_filter: ContentFilter | None = getattr(bot, "content_filter", None)
+    if content_filter is None:
+        try:
+            from playback.content_filter import ContentFilter
+            content_filter = ContentFilter()
+        except Exception as exc:
+            log.warning("AdminPanel: could not initialize ContentFilter (%s)", exc)
 
-        content_filter = ContentFilter()
-    except Exception as exc:
-        log.warning("AdminPanel: could not initialize ContentFilter (%s)", exc)
-
-    # Initialize user bans
-    user_bans: UserBans | None = None
-    try:
-        from playback.user_bans import UserBans
-
-        user_bans = UserBans()
-    except Exception as exc:
-        log.warning("AdminPanel: could not initialize UserBans (%s)", exc)
+    # Use the shared user bans instance from the bot
+    user_bans: UserBans | None = getattr(bot, "user_bans", None)
+    if user_bans is None:
+        try:
+            from playback.user_bans import UserBans
+            user_bans = UserBans()
+        except Exception as exc:
+            log.warning("AdminPanel: could not initialize UserBans (%s)", exc)
 
     await bot.add_cog(AdminPanel(bot, content_filter=content_filter, user_bans=user_bans))
