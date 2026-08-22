@@ -1746,6 +1746,13 @@ def build_now_playing_embed_from_entry(entry: dict) -> discord.Embed:
     embed.add_field(name="Artist", value=artist, inline=True)
     embed.add_field(name="Duration", value=_fmt_duration_ms(duration), inline=True)
     embed.add_field(name="Source", value=str(source).capitalize(), inline=True)
+
+    # Progress bar at position 0 (will be updated by _now_playing_updater)
+    if duration > 0:
+        bar = _progress_bar(0, duration)
+        dur_m, dur_s = divmod(duration // 1000, 60)
+        embed.description = f"`{bar}`  0:00 / {dur_m}:{dur_s:02d}"
+
     url = entry.get("webpage_url") or entry.get("url") or entry.get("uri")
     if url:
         embed.add_field(name="Link", value=url, inline=False)
