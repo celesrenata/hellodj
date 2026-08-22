@@ -32,13 +32,49 @@ _VALID_STROKE_TYPES = {"freehand", "line", "rect", "ellipse", "arrow", "text", "
 
 @dataclasses.dataclass
 class PlaybackState:
-    """Server-authoritative playback state for a guild."""
+    """Server-authoritative playback state for a guild.
+
+    Uses an anchor-based model for jitter-free global sync:
+    - anchor_position: the video position (seconds) at anchor_time
+    - anchor_time: wall-clock time (time.time()) when anchor_position was set
+    - playing: whether the video is advancing from the anchor
+
+    Clients compute current position as:
+        if playing: anchor_position + (local_now - anchor_time)
+        else: anchor_position
+
+    The anchor only changes on seek, play, or pause — NOT on periodic ticks.
+    This eliminates network-latency-induced jitter for global viewers.
+    """
 
     playing: bool = True
-    position: float = 0.0  # seconds
-    last_update: float = dataclasses.field(default_factory=time.monotonic)
+    anchor_position: float = 0.0  # video position in seconds at anchor_time
+    anchor_time: float = dataclasses.field(default_factory=time.time)  # wall clock
     subtitle_lang: str | None = None  # "for everyone" subtitle
     audio_lang: str | None = None  # "for everyone" audio track
+
+    @property
+    def position(self) -> float:
+        """Compute current position from anchor (for backward compat)."""
+        if self.playing:
+            return self.anchor_position + (time.time() - self.anchor_time)
+        return self.anchor_position
+
+    def seek_to(self, position: float) -> None:
+        """Update anchor for a seek operation."""
+        self.anchor_position = position
+        self.anchor_time = time.time()
+
+    def set_playing(self, playing: bool) -> None:
+        """Toggle play/pause, freezing or resuming the anchor."""
+        if playing and not self.playing:
+            # Resuming: anchor stays at current position, time resets to now
+            self.anchor_time = time.time()
+        elif not playing and self.playing:
+            # Pausing: freeze position at current computed value
+            self.anchor_position = self.position
+            self.anchor_time = time.time()
+        self.playing = playing
 
 
 class WebSocketHub:
@@ -232,27 +268,15 @@ class WebSocketHub:
                     countdown_sent = True
 
         if not countdown_sent and (state is not None or strokes):
-            # Standard late-joiner sync: send computed position.
-            # Skip position sync during the first 15s after playback_started
-            # to avoid jitter while the client is still buffering/stabilizing.
-            streamer_obj = self._streamers.get(guild_id)
-            grace_period_active = False
-            if streamer_obj and streamer_obj.playback_started and streamer_obj.start_time > 0:
-                time_since_start = time.monotonic() - streamer_obj.start_time
-                if time_since_start < 15.0:
-                    grace_period_active = True
-
-            if state and state.playing:
-                elapsed = time.monotonic() - state.last_update
-                current_position = state.position + elapsed
-            else:
-                current_position = state.position if state else 0.0
-
+            # Anchor-based late-joiner sync: send the anchor point so the client
+            # can compute its own position using its local clock. No grace period
+            # needed — the client only seeks if drift > 3s.
             state_msg = {
                 "type": "state",
                 "playing": state.playing if state else False,
-                # During grace period, send position 0 to avoid seeking
-                "position": 0.0 if grace_period_active else current_position,
+                "anchor_position": state.anchor_position if state else 0.0,
+                "anchor_time": state.anchor_time if state else time.time(),
+                "position": state.position if state else 0.0,  # backward compat
                 "timestamp": time.time(),
                 "subtitle_lang": state.subtitle_lang if state else None,
                 "audio_lang": state.audio_lang if state else None,
@@ -358,20 +382,19 @@ class WebSocketHub:
         state = self._playback_state.setdefault(guild_id, PlaybackState())
 
         if msg_type == "play":
-            state.playing = True
-            state.position = data.get("position", state.position)
-            state.last_update = time.monotonic()
+            state.set_playing(True)
         elif msg_type == "pause":
-            state.playing = False
-            state.position = data.get("position", state.position)
-            state.last_update = time.monotonic()
+            pos = data.get("position")
+            if pos is not None:
+                state.seek_to(pos)
+            state.set_playing(False)
         elif msg_type == "seek":
-            state.position = data.get("position", state.position)
-            state.last_update = time.monotonic()
+            pos = data.get("position", state.anchor_position)
+            state.seek_to(pos)
             # Forward seek to the ActivityStreamer so its elapsed timer stays in sync
             streamer = self._streamers.get(guild_id)
             if streamer is not None:
-                streamer.on_seek(state.position)
+                streamer.on_seek(pos)
         elif msg_type == "subtitle_change":
             if data.get("for_everyone"):
                 state.subtitle_lang = data.get("lang")
@@ -379,8 +402,13 @@ class WebSocketHub:
             if data.get("for_everyone"):
                 state.audio_lang = data.get("lang")
 
-        # Broadcast to all other clients in this guild
-        broadcast_msg = {**data, "timestamp": time.time()}
+        # Broadcast to all other clients — include anchor_time for sync
+        broadcast_msg = {
+            **data,
+            "anchor_time": state.anchor_time,
+            "anchor_position": state.anchor_position,
+            "timestamp": time.time(),
+        }
         await self.broadcast(guild_id, broadcast_msg, exclude=sender)
 
     async def _handle_ready(
@@ -418,8 +446,8 @@ class WebSocketHub:
         # Update the PlaybackState to reflect position 0 playing
         state = self._playback_state.setdefault(guild_id, PlaybackState())
         state.playing = True
-        state.position = 0.0
-        state.last_update = time.monotonic()
+        state.anchor_position = 0.0
+        state.anchor_time = time.time()
 
         log.info(
             "Countdown complete for guild %d — broadcast start to %d clients",

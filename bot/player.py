@@ -1096,7 +1096,7 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
                 # since viewers are already connected
                 video_cog._backend.ws_hub.set_state(
                     guild_id,
-                    PlaybackState(playing=True, position=0.0, last_update=_time.monotonic()),
+                    PlaybackState(playing=True, anchor_position=0.0, anchor_time=_time.time()),
                 )
                 # Mark playback as started (skip countdown protocol)
                 streamer.waiting_for_viewer = False
@@ -1143,7 +1143,7 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
         import time as _time
         video_cog._backend.ws_hub.set_state(
             guild_id,
-            PlaybackState(playing=False, position=0.0, last_update=_time.monotonic()),
+            PlaybackState(playing=False, anchor_position=0.0, anchor_time=_time.time()),
         )
 
         if text_channel:

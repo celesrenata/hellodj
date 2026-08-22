@@ -280,7 +280,7 @@ class TestHandleReady:
         state = hub.get_state(GUILD_ID)
         assert state is not None
         assert state.playing is True
-        assert state.position == 0.0
+        assert state.anchor_position == 0.0
 
 
 # ---------------------------------------------------------------------------

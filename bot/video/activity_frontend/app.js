@@ -643,14 +643,24 @@ import { DiscordSDK } from './discord-sdk.js';
           videoEl.play().catch(() => {});
           videoEl.muted = wasMuted;
         }
-        if (data.position != null) videoEl.currentTime = data.position;
+        // Use anchor for position if available, otherwise fall back to position field
+        if (data.anchor_position != null && data.anchor_time != null) {
+          const expected = data.anchor_position + (Date.now() / 1000 - data.anchor_time);
+          if (Math.abs(videoEl.currentTime - expected) > 3) videoEl.currentTime = expected;
+        } else if (data.position != null) {
+          videoEl.currentTime = data.position;
+        }
         _remoteAction = false;
         break;
 
       case 'pause':
         _remoteAction = true;
         videoEl.pause();
-        if (data.position != null) videoEl.currentTime = data.position;
+        if (data.anchor_position != null) {
+          videoEl.currentTime = data.anchor_position;
+        } else if (data.position != null) {
+          videoEl.currentTime = data.position;
+        }
         _remoteAction = false;
         break;
 
@@ -661,24 +671,31 @@ import { DiscordSDK } from './discord-sdk.js';
         break;
 
       case 'state':
-        // Late-joiner sync: apply full state (preserve muted state)
+        // Late-joiner / reconnect sync: use anchor-based position computation.
+        // Only seek if drift > 3s — eliminates jitter from network latency.
         _remoteAction = true;
         if (mode !== 'VIDEO_PLAYING') setMode('VIDEO_PLAYING');
         {
           const wasMuted = videoEl.muted;
-          // Only seek if position differs by more than 10s — avoids jitter
-          // from server position computation lag during early playback.
-          // Manual seeks use the 'seek' message type which always applies.
-          if (data.position != null) {
-            const drift = Math.abs(videoEl.currentTime - data.position);
-            if (drift > 10) videoEl.currentTime = data.position;
+          let expectedPos = 0;
+          if (data.anchor_position != null && data.anchor_time != null) {
+            if (data.playing) {
+              expectedPos = data.anchor_position + (Date.now() / 1000 - data.anchor_time);
+            } else {
+              expectedPos = data.anchor_position;
+            }
+          } else if (data.position != null) {
+            expectedPos = data.position;
           }
+
+          const drift = Math.abs(videoEl.currentTime - expectedPos);
+          if (drift > 3) videoEl.currentTime = expectedPos;
+
           if (data.playing) {
             videoEl.play().catch(() => {});
           } else {
             videoEl.pause();
           }
-          // Restore muted state — don't let play() unmute
           videoEl.muted = wasMuted;
         }
         // Apply subtitle if set for everyone

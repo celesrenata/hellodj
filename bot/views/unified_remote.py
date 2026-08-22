@@ -258,7 +258,7 @@ class UnifiedControlView(discord.ui.View):
         video_cog = _get_video_cog(interaction)
         if video_cog and streamer.is_active and streamer.source:
             from video.ws_hub import PlaybackState
-            new_state = PlaybackState(playing=True, position=0.0, last_update=_time.monotonic())
+            new_state = PlaybackState(playing=True, anchor_position=0.0, anchor_time=_time.time())
             video_cog._backend.ws_hub.set_state(guild_id, new_state)
             await video_cog._backend.ws_hub.broadcast_from_bot(guild_id, {
                 "type": "state",
@@ -297,13 +297,11 @@ class UnifiedControlView(discord.ui.View):
             return
 
         if state.playing:
-            state.playing = False
-            state.last_update = _time.monotonic()
-            msg = {"type": "pause", "position": state.position, "timestamp": _time.time()}
+            state.set_playing(False)
+            msg = {"type": "pause", "position": state.anchor_position, "anchor_position": state.anchor_position, "anchor_time": state.anchor_time, "timestamp": _time.time()}
         else:
-            state.playing = True
-            state.last_update = _time.monotonic()
-            msg = {"type": "play", "position": state.position, "timestamp": _time.time()}
+            state.set_playing(True)
+            msg = {"type": "play", "position": state.anchor_position, "anchor_position": state.anchor_position, "anchor_time": state.anchor_time, "timestamp": _time.time()}
 
         ws_hub.set_state(guild_id, state)
         await ws_hub.broadcast_from_bot(guild_id, msg)
@@ -344,7 +342,7 @@ class UnifiedControlView(discord.ui.View):
         if had_internal_queue and streamer.is_active and streamer.source:
             # Skipped within the video streamer's own queue
             from video.ws_hub import PlaybackState
-            new_state = PlaybackState(playing=True, position=0.0, last_update=_time.monotonic())
+            new_state = PlaybackState(playing=True, anchor_position=0.0, anchor_time=_time.time())
             video_cog._backend.ws_hub.set_state(guild_id, new_state)
             await video_cog._backend.ws_hub.broadcast_from_bot(guild_id, {
                 "type": "state",
