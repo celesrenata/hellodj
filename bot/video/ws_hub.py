@@ -348,12 +348,17 @@ class WebSocketHub:
             if streamer and hasattr(streamer, "skip"):
                 try:
                     await streamer.skip()
-                    # Notify all clients to check for new session
-                    await self.broadcast(guild_id, {"type": "session_change"}, exclude=None)
                 except Exception as exc:
-                    log.debug("WS skip ignored for guild %d: %s", guild_id, exc)
-                    # Still notify clients so they can update UI (e.g. show "idle")
-                    await self.broadcast(guild_id, {"type": "session_change"}, exclude=None)
+                    log.debug("WS skip failed for guild %d: %s", guild_id, exc)
+                    # If streamer is idle, try advancing the unified player queue
+                    await self._try_unified_queue_advance(guild_id)
+                else:
+                    # Skip succeeded. If streamer ended up idle (queue was empty),
+                    # advance the unified player queue.
+                    if streamer.state.value == "idle":
+                        await self._try_unified_queue_advance(guild_id)
+                # Notify all clients to check for new session
+                await self.broadcast(guild_id, {"type": "session_change"}, exclude=None)
             return
         if msg_type == "previous":
             log.info("WS previous requested for guild %d", guild_id)
@@ -361,10 +366,10 @@ class WebSocketHub:
             if streamer and hasattr(streamer, "previous"):
                 try:
                     await streamer.previous()
-                    await self.broadcast(guild_id, {"type": "session_change"}, exclude=None)
                 except Exception as exc:
-                    log.debug("WS previous ignored for guild %d: %s", guild_id, exc)
-                    await self.broadcast(guild_id, {"type": "session_change"}, exclude=None)
+                    log.debug("WS previous failed for guild %d: %s", guild_id, exc)
+                # Notify all clients to check for new session
+                await self.broadcast(guild_id, {"type": "session_change"}, exclude=None)
             return
 
         if msg_type not in ("play", "pause", "seek", "subtitle_change", "audio_change"):
@@ -562,6 +567,30 @@ class WebSocketHub:
             message: The JSON-serializable message dict.
         """
         await self.broadcast(guild_id, message)
+
+    async def _try_unified_queue_advance(self, guild_id: int) -> None:
+        """Try to advance the unified player queue after video skip with empty queue.
+
+        Imports the player module and calls _play_next_from_queue if the
+        unified queue has items. This bridges the video Activity skip button
+        to the bot's unified playback system.
+        """
+        try:
+            from player import get_state, _play_next_from_queue
+
+            state = get_state(guild_id)
+            if state and state.get("queue"):
+                log.info(
+                    "WS skip: video queue empty, advancing unified queue for guild %d (%d items)",
+                    guild_id,
+                    len(state["queue"]),
+                )
+                state["current"] = None
+                await _play_next_from_queue(guild_id)
+            else:
+                log.debug("WS skip: both video and unified queues empty for guild %d", guild_id)
+        except Exception as exc:
+            log.warning("WS skip: failed to advance unified queue for guild %d: %s", guild_id, exc)
 
     def get_state(self, guild_id: int) -> PlaybackState | None:
         """Get the current playback state for a guild."""
