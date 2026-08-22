@@ -1113,7 +1113,18 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
                     from cogs.video import _build_now_playing_embed
                     from views.unified_remote import UnifiedControlView
                     embed = _build_now_playing_embed(source, len(streamer.queue), elapsed_seconds=0.0)
-                    msg = await text_channel.send(embed=embed, view=UnifiedControlView())
+                    view = UnifiedControlView()
+                    # Edit existing Now Playing message if available (unified remote)
+                    existing_msg = state.get("now_playing_msg")
+                    if existing_msg:
+                        try:
+                            await existing_msg.edit(embed=embed, view=view)
+                            msg = existing_msg
+                        except (discord.NotFound, discord.HTTPException):
+                            msg = await text_channel.send(embed=embed, view=view)
+                    else:
+                        msg = await text_channel.send(embed=embed, view=view)
+                    state["now_playing_msg"] = msg
                     key = (guild_id, voice_channel.id)
                     video_cog._now_playing_messages[key] = msg
                     video_cog._start_seek_bar_update(key)
@@ -1152,7 +1163,18 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
             from cogs.video import _build_now_playing_embed
             from views.unified_remote import UnifiedControlView
             embed = _build_now_playing_embed(source, len(streamer.queue), activity_url=activity_url, elapsed_seconds=0.0)
-            msg = await text_channel.send(embed=embed, view=UnifiedControlView())
+            view = UnifiedControlView()
+            # Edit existing Now Playing message if available (unified remote)
+            existing_msg = state.get("now_playing_msg")
+            if existing_msg:
+                try:
+                    await existing_msg.edit(embed=embed, view=view)
+                    msg = existing_msg
+                except (discord.NotFound, discord.HTTPException):
+                    msg = await text_channel.send(embed=embed, view=view)
+            else:
+                msg = await text_channel.send(embed=embed, view=view)
+            state["now_playing_msg"] = msg
             key = (guild_id, voice_channel.id)
             video_cog._now_playing_messages[key] = msg
             if activity_url:
