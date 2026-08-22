@@ -60,7 +60,7 @@ def _build_eq_display(gains: list[float], selected_band: int) -> str:
     Uses fixed 4-char columns so bars, indicators, and labels align
     consistently in Discord's code block font.
     """
-    COL = 4  # characters per column
+    COL = 3  # characters per column
 
     # Bars row: left-align each block char in a fixed-width column
     bar_parts = [_gain_to_block(g).ljust(COL) for g in gains]
