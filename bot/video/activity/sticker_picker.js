@@ -202,17 +202,23 @@ export class StickerPicker {
     if (this._loadingPage || !this.selectedCategory) return;
     this._loadingPage = true;
 
+    // Capture current category to detect stale responses after tab switch
+    const requestCategory = this.selectedCategory;
+
     try {
-      const url = `stickers/category/${this.selectedCategory}?offset=${this._offset}&limit=${PAGE_SIZE}`;
+      const url = `stickers/category/${requestCategory}?offset=${this._offset}&limit=${PAGE_SIZE}`;
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
+
+      // Discard response if category changed while request was in flight
+      if (this.selectedCategory !== requestCategory) return;
 
       // Remove old sentinel before appending new items
       this._removeSentinel();
 
       for (const s of data.stickers) {
-        this._appendThumbnail(this.selectedCategory, s.filename, s.animated, s.name);
+        this._appendThumbnail(requestCategory, s.filename, s.animated, s.name);
       }
 
       this._offset += data.stickers.length;

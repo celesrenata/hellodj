@@ -1292,14 +1292,16 @@ class StickerPicker {
   async _loadNextPage() {
     if (this._loadingPage || !this.selectedCategory) return;
     this._loadingPage = true;
+    const requestCategory = this.selectedCategory;
     try {
-      const url = `stickers/category/${this.selectedCategory}?offset=${this._offset}&limit=${STICKER_PAGE_SIZE}`;
+      const url = `stickers/category/${requestCategory}?offset=${this._offset}&limit=${STICKER_PAGE_SIZE}`;
       const resp = await fetch(url);
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
       const data = await resp.json();
+      if (this.selectedCategory !== requestCategory) return;
       this._removeSentinel();
       for (const s of data.stickers) {
-        this._appendThumbnail(this.selectedCategory, s.filename, s.animated, s.name);
+        this._appendThumbnail(requestCategory, s.filename, s.animated, s.name);
       }
       this._offset += data.stickers.length;
       this._hasMore = data.has_more;
