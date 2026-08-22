@@ -80,6 +80,8 @@ class UnifiedControlView(discord.ui.View):
         filter_select = discord.ui.Select(
             placeholder="🎛️ Filters & EQ…",
             options=[
+                discord.SelectOption(label="Equalizer", value="equalizer", emoji="🎛️",
+                                     description="Fine-tune frequency bands"),
                 discord.SelectOption(label="Bass Boost", value="bassboost", emoji="🔊",
                                      description="Boost low-end frequencies"),
                 discord.SelectOption(label="Nightcore", value="nightcore", emoji="⚡",
@@ -88,6 +90,10 @@ class UnifiedControlView(discord.ui.View):
                                      description="Spatial panning effect"),
                 discord.SelectOption(label="Vaporwave", value="vaporwave", emoji="🌊",
                                      description="Slowed, mellow vibe"),
+                discord.SelectOption(label="8-Bit", value="8bit", emoji="🕹️",
+                                     description="Arcade chiptune effect"),
+                discord.SelectOption(label="808 Cowbell", value="808", emoji="🔔",
+                                     description="Play the 808 cowbell"),
                 discord.SelectOption(label="Tune (Enhanced)", value="tune", emoji="✨",
                                      description="Studio master polish"),
                 discord.SelectOption(label="Reset Filters", value="reset", emoji="🔄",
@@ -552,6 +558,53 @@ class UnifiedControlView(discord.ui.View):
                 await player_obj.set_filters(filters)
                 player.persist(guild_id)
                 await interaction.response.send_message("✨ Tune disabled.", ephemeral=True)
+
+        elif value == "equalizer":
+            from cogs.equalizer_view import EqualizerView, _build_eq_embed
+            eq_view = EqualizerView(guild_id)
+            embed = _build_eq_embed(eq_view.gains, eq_view.selected_band)
+            await interaction.response.send_message(embed=embed, view=eq_view, ephemeral=True)
+
+        elif value == "8bit":
+            filters = player_obj.filters
+            gains = [0, 0.05, 0.1, 0.2, 0.25, 0.3, 0.25, 0.2, 0.15, 0.1, 0.05, 0, -0.1, -0.2, -0.3]
+            bands = [{"band": i, "gain": g} for i, g in enumerate(gains)]
+            filters.distortion.set(scale=2.0)
+            filters.tremolo.set(frequency=16.0, depth=0.6)
+            filters.vibrato.set(frequency=12.0, depth=0.4)
+            filters.timescale.set(speed=1.0, pitch=1.1, rate=1.0)
+            filters.equalizer.set(bands=bands)
+            filters.low_pass.reset()
+            filters.rotation.reset()
+            filters.karaoke.reset()
+            filters.channel_mix.reset()
+            await player_obj.set_filters(filters)
+            state["filters"]["8bit"] = {
+                "gains": gains,
+                "speed": 1.0, "pitch": 1.1, "rate": 1.0,
+                "distortion_scale": 2.0,
+                "tremolo": {"frequency": 16.0, "depth": 0.6},
+                "vibrato": {"frequency": 12.0, "depth": 0.4},
+            }
+            player.persist(guild_id)
+            await interaction.response.send_message("🕹️ 8-Bit arcade filter applied.", ephemeral=True)
+
+        elif value == "808":
+            import sounds
+            await interaction.response.defer(ephemeral=True)
+            path = await sounds.ensure_preset(sounds.DEFAULT_PRESET)
+            if not path:
+                await interaction.followup.send(
+                    "Could not load the 808 cowbell sample.", ephemeral=True
+                )
+                return
+            ok = await sounds.play_sound(player_obj, path, volume=100)
+            if ok:
+                await interaction.followup.send("🔔 808 cowbell played.", ephemeral=True)
+            else:
+                await interaction.followup.send(
+                    "Could not play the 808 cowbell.", ephemeral=True
+                )
 
 
 class _PlaylistSelectView(discord.ui.View):
