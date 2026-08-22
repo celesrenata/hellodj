@@ -807,59 +807,93 @@ class PlaybackRouter:
         return results
 
     async def _search_tidal_videos(self, query: str) -> list[dict]:
-        """Search Tidal's v1 API for music videos (metadata only).
+        """Search Tidal's v2 API for music videos (metadata only).
 
-        Returns up to 5 results in the unified format expected by the picker.
+        Uses the same JSON:API pattern as album search but with
+        include=videos,videos.artists. Returns up to 5 results.
         """
         import aiohttp
+        import re as _re
         from credentials import creds
+        from urllib.parse import quote
 
         token = creds.get("tidal.access_token", "")
         if not token:
             return []
 
-        url = "https://api.tidal.com/v1/search/videos"
+        encoded = quote(query)
+        url = (
+            f"https://openapi.tidal.com/v2/searchResults"
+            f"?filter%5Bquery%5D={encoded}"
+            f"&countryCode=US"
+            f"&include=videos,videos.artists"
+        )
         headers = {
             "Authorization": f"Bearer {token}",
-            "Accept": "application/json",
-        }
-        params = {
-            "query": query,
-            "limit": "5",
-            "countryCode": "US",
+            "Accept": "application/vnd.api+json",
         }
 
         try:
             async with aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=10)) as session:
-                async with session.get(url, headers=headers, params=params) as resp:
+                async with session.get(url, headers=headers) as resp:
                     if resp.status != 200:
-                        log.debug("Tidal video search returned %d", resp.status)
+                        log.debug("Tidal v2 video search returned %d", resp.status)
                         return []
                     data = await resp.json()
         except Exception as exc:
-            log.debug("Tidal video search network error: %s", exc)
+            log.debug("Tidal v2 video search network error: %s", exc)
             return []
 
-        items = data.get("items", [])
-        results = []
-        for item in items:
-            title = item.get("title", "")
-            # Tidal v1 uses "artists" array, not "artist" object
-            artists = item.get("artists") or []
-            artist_name = artists[0].get("name", "") if artists else ""
+        included = data.get("included", [])
 
-            duration = item.get("duration", 0)  # seconds
-            video_id = item.get("id", "")
-            video_url = f"https://tidal.com/browse/video/{video_id}" if video_id else ""
+        # Build artist lookup
+        artist_map: dict[str, str] = {}
+        for resource in included:
+            if resource.get("type") == "artists":
+                aid = resource.get("id", "")
+                name = resource.get("attributes", {}).get("name", "")
+                if aid and name:
+                    artist_map[aid] = name
+
+        # Extract video results
+        results = []
+        for resource in included:
+            if resource.get("type") != "videos":
+                continue
+            attrs = resource.get("attributes", {})
+            video_id = resource.get("id", "")
+            title = attrs.get("title", "")
+            if not title or not video_id:
+                continue
+
+            # Resolve artist names from relationships
+            rels = resource.get("relationships", {})
+            artist_refs = rels.get("artists", {}).get("data", [])
+            artist_names = [artist_map.get(ref.get("id", ""), "") for ref in artist_refs]
+            artist_names = [n for n in artist_names if n]
+            artist = ", ".join(artist_names)
+
+            # Parse ISO 8601 duration (PT3M24S) to seconds
+            duration_str = attrs.get("duration", "")
+            duration = 0
+            if duration_str:
+                m = _re.match(r"PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?", duration_str)
+                if m:
+                    duration = int(m.group(1) or 0) * 3600 + int(m.group(2) or 0) * 60 + int(m.group(3) or 0)
+
+            video_url = f"https://tidal.com/browse/video/{video_id}"
 
             results.append({
                 "title": title,
-                "uploader": artist_name,
-                "channel": artist_name,
+                "uploader": artist,
+                "channel": artist,
                 "duration": duration,
                 "url": video_url,
                 "webpage_url": video_url,
             })
+
+            if len(results) >= 5:
+                break
 
         return results
 
