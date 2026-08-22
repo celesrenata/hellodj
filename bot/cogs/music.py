@@ -1337,7 +1337,9 @@ class Music(commands.Cog):
         elif provider == "youtube_music":
             search_queries.append(("ytmsearch", f"ytmsearch:{query} album", "youtube_music"))
         elif provider == "youtube":
-            search_queries.append(("ytsearch", f"ytsearch:{query} album", "youtube"))
+            # Use YouTube Music for album search even when provider is "youtube" —
+            # regular ytsearch returns video playlists, not proper album results.
+            search_queries.append(("ytmsearch", f"ytmsearch:{query} album", "youtube_music"))
         elif provider == "soundcloud":
             search_queries.append(("scsearch", f"scsearch:{query}", "soundcloud"))
 
