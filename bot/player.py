@@ -801,9 +801,17 @@ def _is_video_active(guild_id: int) -> bool:
         # Check all registered sessions for this guild
         for (gid, _cid), streamer in video_cog._registry._sessions.items():
             if gid == guild_id and streamer.is_active:
+                log.debug("_is_video_active: guild=%d has active video session", guild_id)
                 return True
-    except Exception:
-        pass
+        # Also check if current entry is a video (streamer may have been unregistered
+        # but video is still the "current" item)
+        state = get_state(guild_id)
+        current = state.get("current")
+        if current and current.get("type") == "music_video":
+            log.debug("_is_video_active: guild=%d current is a music_video entry", guild_id)
+            return True
+    except Exception as exc:
+        log.debug("_is_video_active check failed: %s", exc)
     return False
 
 
@@ -841,6 +849,11 @@ async def enqueue_and_start(
     for track in tracks:
         state["queue"].append(track)
 
+    # Don't auto-start if a video session is active — just queue silently
+    if _is_video_active(guild.id):
+        persist(guild.id)
+        return len(tracks)
+
     # Trigger playback — connect if needed, then start if idle
     p = get_player(guild.id)
     if not p or not p.connected:
@@ -855,8 +868,7 @@ async def enqueue_and_start(
                 p = None
 
     if p and p.connected and not p.playing and not p.paused:
-        if not _is_video_active(guild.id):
-            await _play_next_from_queue(guild.id)
+        await _play_next_from_queue(guild.id)
 
     persist(guild.id)
     return len(tracks)
