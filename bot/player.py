@@ -987,6 +987,17 @@ async def _play_next_from_queue(guild_id: int, *, skip_history_push: bool = Fals
         await _on_queue_empty(guild_id)
         return
 
+    # Guard: do NOT start audio if a video session is active or in transition.
+    # Check BEFORE popping to avoid an infinite pop/re-insert cycle.
+    # Video entries (music_video) are still allowed through — they use the Activity pipeline.
+    peek_entry = state["queue"][0]
+    if peek_entry.get("type") != "music_video" and (_is_video_active(guild_id) or state.get("_video_transition")):
+        log.info("play_next: video active — leaving audio entry in queue guild=%d title=%r",
+                 guild_id, peek_entry.get("title"))
+        state["current"] = None
+        persist(guild_id)
+        return
+
     next_entry = state["queue"].pop(0)
 
     # Check if this track is blocked (by URL or title keyword)
@@ -1007,16 +1018,6 @@ async def _play_next_from_queue(guild_id: int, *, skip_history_push: bool = Fals
     # Check if this is a video entry — needs Activity pipeline, not Lavalink
     if next_entry.get("type") == "music_video":
         await _start_video_from_queue(guild_id, next_entry)
-        return
-
-    # Guard: do NOT start audio if a video session is active or in transition.
-    # This prevents audio from starting during video setup/buffering/streaming.
-    if _is_video_active(guild_id) or state.get("_video_transition"):
-        log.info("play_next: video active — re-queuing audio entry guild=%d title=%r",
-                 guild_id, next_entry.get("title"))
-        state["queue"].insert(0, next_entry)
-        state["current"] = None
-        persist(guild_id)
         return
 
     # Audio entry — needs a connected player
