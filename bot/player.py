@@ -1548,6 +1548,30 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
                 current["source"] = sp
             persist(guild_id)
 
+        # Sync PlaybackState to ws_hub so Activity clients can show audio progress
+        try:
+            if _bot_ref is not None:
+                video_cog = _bot_ref.get_cog("Video")
+                if video_cog is not None and hasattr(video_cog, "_backend"):
+                    from video.ws_hub import PlaybackState as _PS
+                    duration_sec = (getattr(track, "length", 0) or 0) / 1000.0
+                    video_cog._backend.ws_hub.set_state(
+                        guild_id,
+                        _PS(playing=True, anchor_position=0.0, anchor_time=time.time()),
+                    )
+                    # Broadcast audio state to Activity clients
+                    await video_cog._backend.ws_hub.broadcast_from_bot(guild_id, {
+                        "type": "audio_state",
+                        "playing": True,
+                        "position": 0.0,
+                        "duration": duration_sec,
+                        "title": current.get("title") if current else entry.get("title"),
+                        "author": current.get("author") if current else entry.get("author"),
+                        "artwork_url": (current.get("artwork_url") if current else entry.get("artwork_url")) or None,
+                    })
+        except Exception as ws_exc:
+            log.debug("_resolve_and_play: ws_hub state sync failed: %s", ws_exc)
+
     except Exception as exc:
         dbg.error("resolve_failed guild=%d title=%r provider=%r error=%s",
                   guild_id, title, sp, exc)

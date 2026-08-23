@@ -428,11 +428,15 @@ class WebSocketHub:
 
         if msg_type == "play":
             state.set_playing(True)
+            # Also control Lavalink audio player if no video is active
+            asyncio.ensure_future(self._handle_audio_play_pause(guild_id, playing=True))
         elif msg_type == "pause":
             pos = data.get("position")
             if pos is not None:
                 state.seek_to(pos)
             state.set_playing(False)
+            # Also control Lavalink audio player if no video is active
+            asyncio.ensure_future(self._handle_audio_play_pause(guild_id, playing=False))
         elif msg_type == "seek":
             pos = data.get("position", state.anchor_position)
             state.seek_to(pos)
@@ -440,6 +444,9 @@ class WebSocketHub:
             streamer = self._streamers.get(guild_id)
             if streamer is not None:
                 streamer.on_seek(pos)
+            else:
+                # No video streamer — seek the Lavalink audio player
+                asyncio.ensure_future(self._handle_audio_seek(guild_id, pos))
         elif msg_type == "subtitle_change":
             if data.get("for_everyone"):
                 state.subtitle_lang = data.get("lang")
@@ -644,6 +651,46 @@ class WebSocketHub:
         except Exception as exc:
             log.error("WS previous failed for guild %d: %s", guild_id, exc)
         await self.broadcast(guild_id, {"type": "session_change"}, exclude=None)
+
+    async def _handle_audio_play_pause(self, guild_id: int, *, playing: bool) -> None:
+        """Control the Lavalink audio player play/pause from Activity controls.
+
+        Only acts when no video streamer is active for this guild — otherwise
+        the play/pause is for the video element (handled by client-side HLS).
+        """
+        streamer = self._streamers.get(guild_id)
+        if streamer is not None and streamer.is_active:
+            return  # Video is active — play/pause is for the video element
+
+        try:
+            import player
+            p = player.get_player(guild_id)
+            if p and p.connected:
+                if playing and p.paused:
+                    await p.pause(False)
+                    log.info("WS play: resumed audio for guild %d", guild_id)
+                elif not playing and p.playing:
+                    await p.pause(True)
+                    log.info("WS pause: paused audio for guild %d", guild_id)
+        except Exception as exc:
+            log.warning("WS audio play/pause failed for guild %d: %s", guild_id, exc)
+
+    async def _handle_audio_seek(self, guild_id: int, position: float) -> None:
+        """Seek the Lavalink audio player from Activity scrubber.
+
+        Only acts when no video streamer is active — video seek is handled
+        by the HLS element directly.
+        """
+        try:
+            import player
+            p = player.get_player(guild_id)
+            if p and p.connected and (p.playing or p.paused):
+                # position is in seconds from the frontend; Lavalink expects milliseconds
+                position_ms = int(position * 1000)
+                await p.seek(position_ms)
+                log.info("WS seek: seeked audio to %.1fs for guild %d", position, guild_id)
+        except Exception as exc:
+            log.warning("WS audio seek failed for guild %d: %s", guild_id, exc)
 
     # ------------------------------------------------------------------
     # Search protocol handlers

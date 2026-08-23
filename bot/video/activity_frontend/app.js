@@ -726,6 +726,28 @@ import { DiscordSDK } from './discord-sdk.js';
         _remoteAction = false;
         break;
 
+      case 'audio_state':
+        // Audio track metadata from the bot — update scrubber for audio playback
+        // when no video is playing (Activity acts as universal remote)
+        _remoteAction = true;
+        if (data.duration != null && data.duration > 0) {
+          window._audioDuration = data.duration;
+          window._audioPlaying = data.playing !== false;
+          window._audioPosition = data.position || 0;
+          window._audioAnchorTime = Date.now() / 1000;
+          window._audioTitle = data.title || '';
+          window._audioAuthor = data.author || '';
+          window._audioArtwork = data.artwork_url || '';
+          // Update title bar with audio track info
+          if (data.title) {
+            titleBar.textContent = formatTitle(data.title, data.author);
+          }
+          // Update play/pause button state
+          btnPlayPause.textContent = data.playing ? '⏸️' : '▶️';
+        }
+        _remoteAction = false;
+        break;
+
       case 'state':
         // Late-joiner / reconnect sync: use anchor-based position computation.
         // Only seek if drift > 3s — eliminates jitter from network latency.
@@ -1106,7 +1128,22 @@ import { DiscordSDK } from './discord-sdk.js';
   videoEl.volume = volumeSlider.value / 100;
 
   btnPlayPause.addEventListener('click', () => {
-    if (videoEl.paused) {
+    if (window._audioDuration > 0 && mode !== 'VIDEO_PLAYING') {
+      // Audio mode — toggle via WS (no local video element involved)
+      if (window._audioPlaying) {
+        window._audioPlaying = false;
+        // Freeze position at current computed value
+        window._audioPosition = window._audioPosition + (Date.now() / 1000 - window._audioAnchorTime);
+        window._audioAnchorTime = Date.now() / 1000;
+        btnPlayPause.textContent = '▶️';
+        wsSend({ type: 'pause', position: window._audioPosition });
+      } else {
+        window._audioPlaying = true;
+        window._audioAnchorTime = Date.now() / 1000;
+        btnPlayPause.textContent = '⏸️';
+        wsSend({ type: 'play', position: window._audioPosition });
+      }
+    } else if (videoEl.paused) {
       videoEl.play();
       btnPlayPause.textContent = '⏸️';
       if (!_remoteAction) wsSend({ type: 'play', position: videoEl.currentTime });
@@ -1181,8 +1218,24 @@ import { DiscordSDK } from './discord-sdk.js';
   const getDuration = () => knownDuration > 0 ? knownDuration : (videoEl.duration || 0);
 
   const updateTime = () => {
-    const cur = videoEl.currentTime || 0;
-    const dur = getDuration();
+    let cur, dur;
+
+    // If we're in audio mode (no video playing, but audio state received from bot)
+    if (window._audioDuration > 0 && mode !== 'VIDEO_PLAYING') {
+      dur = window._audioDuration;
+      if (window._audioPlaying && window._audioAnchorTime) {
+        cur = window._audioPosition + (Date.now() / 1000 - window._audioAnchorTime);
+      } else {
+        cur = window._audioPosition || 0;
+      }
+      // Clamp to duration
+      if (cur > dur) cur = dur;
+      if (cur < 0) cur = 0;
+    } else {
+      cur = videoEl.currentTime || 0;
+      dur = getDuration();
+    }
+
     timeDisplay.textContent = `${fmt(cur)} / ${fmt(dur)}`;
 
     // Update played position
@@ -1190,8 +1243,8 @@ import { DiscordSDK } from './discord-sdk.js';
     scrubberFill.style.width = `${pct}%`;
     scrubberThumb.style.left = `${pct}%`;
 
-    // Update buffered range
-    if (videoEl.buffered.length > 0) {
+    // Update buffered range (video only)
+    if (mode === 'VIDEO_PLAYING' && videoEl.buffered.length > 0) {
       const bufferedEnd = videoEl.buffered.end(videoEl.buffered.length - 1);
       const bufPct = dur > 0 ? (bufferedEnd / dur) * 100 : 0;
       scrubberBuffered.style.width = `${bufPct}%`;
@@ -1202,6 +1255,8 @@ import { DiscordSDK } from './discord-sdk.js';
   };
   videoEl.addEventListener('timeupdate', updateTime);
   videoEl.addEventListener('progress', updateTime);
+  // Tick for audio mode (no video timeupdate events to drive the loop)
+  setInterval(() => { if (window._audioDuration > 0 && mode !== 'VIDEO_PLAYING') updateTime(); }, 500);
 
   // Update play/pause icon on state change
   videoEl.addEventListener('play', () => { btnPlayPause.textContent = '⏸️'; });
@@ -1248,14 +1303,21 @@ import { DiscordSDK } from './discord-sdk.js';
     if (dragging) {
       dragging = false;
       scrubber.classList.remove('dragging');
-      if (!_remoteAction) wsSend({ type: 'seek', position: videoEl.currentTime });
+      // In audio mode, compute position from audio duration; in video mode use videoEl
+      const seekPos = (window._audioDuration > 0 && mode !== 'VIDEO_PLAYING')
+        ? window._audioPosition
+        : videoEl.currentTime;
+      if (!_remoteAction) wsSend({ type: 'seek', position: seekPos });
     }
   });
   document.addEventListener('touchend', () => {
     if (dragging) {
       dragging = false;
       scrubber.classList.remove('dragging');
-      if (!_remoteAction) wsSend({ type: 'seek', position: videoEl.currentTime });
+      const seekPos = (window._audioDuration > 0 && mode !== 'VIDEO_PLAYING')
+        ? window._audioPosition
+        : videoEl.currentTime;
+      if (!_remoteAction) wsSend({ type: 'seek', position: seekPos });
     }
   });
 
@@ -1268,8 +1330,17 @@ import { DiscordSDK } from './discord-sdk.js';
 
   const seekTo = (e) => {
     const pct = getPercent(e);
-    const dur = getDuration();
-    videoEl.currentTime = pct * dur;
+    const dur = (window._audioDuration > 0 && mode !== 'VIDEO_PLAYING')
+      ? window._audioDuration
+      : getDuration();
+    const newPos = pct * dur;
+    if (window._audioDuration > 0 && mode !== 'VIDEO_PLAYING') {
+      // Audio mode — update the local audio position tracker
+      window._audioPosition = newPos;
+      window._audioAnchorTime = Date.now() / 1000;
+    } else {
+      videoEl.currentTime = newPos;
+    }
     scrubberFill.style.width = `${pct * 100}%`;
     scrubberThumb.style.left = `${pct * 100}%`;
     updateTooltip(pct, e);
