@@ -596,6 +596,13 @@ async def setup_hook():
     except Exception as _video_exc:
         log.warning("setup_hook: could not load video cog (non-fatal): %s", _video_exc)
 
+    # Visualizer cog (optional — provides /visualizer command)
+    try:
+        await bot.load_extension("cogs.visualizer")
+        dbg.info("setup_hook: visualizer cog loaded")
+    except Exception as _viz_exc:
+        log.warning("setup_hook: could not load visualizer cog (non-fatal): %s", _viz_exc)
+
     # Register the unified remote control view as persistent (survives restarts)
     from views.unified_remote import UnifiedControlView
     bot.add_view(UnifiedControlView())
