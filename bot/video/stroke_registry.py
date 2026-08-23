@@ -15,7 +15,7 @@ class StrokeData:
     """Server-side stroke record."""
 
     id: str
-    type: str  # freehand, line, rect, ellipse, arrow, text, sticker
+    type: str  # freehand, line, rect, ellipse, circle, triangle, star, arrow, text, sticker
     author: str  # user_id string
     color: str  # hex color
     width: float  # normalized width
@@ -24,6 +24,7 @@ class StrokeData:
     text_bg: bool = False
     sticker_category: str | None = None  # category slug (for type "sticker")
     sticker_filename: str | None = None  # image filename (for type "sticker")
+    animated: bool = False  # whether the shape rotates continuously
 
 
 class StrokeRegistry:

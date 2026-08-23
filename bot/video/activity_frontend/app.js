@@ -1401,10 +1401,12 @@ import { DiscordSDK } from './discord-sdk.js';
     // Wire HUD tool buttons with popup slider toggle
     const penPopup = document.getElementById('pen-popup');
     const eraserPopup = document.getElementById('eraser-popup');
+    const shapePopup = document.getElementById('shape-popup');
 
     function closeAllPopups() {
       penPopup?.classList.remove('open');
       eraserPopup?.classList.remove('open');
+      shapePopup?.classList.remove('open');
     }
 
     document.querySelectorAll('.hud-tools .hud-btn[data-tool]').forEach((btn) => {
@@ -1420,13 +1422,19 @@ import { DiscordSDK } from './discord-sdk.js';
         if (toolName === 'shape') {
           shapeTool.setColor(colorPicker.getColor());
         }
-        // Toggle popup for pen/eraser
+        // Toggle popup for pen/eraser/shape
         if (toolName === 'pen') {
           eraserPopup?.classList.remove('open');
+          shapePopup?.classList.remove('open');
           penPopup?.classList.toggle('open');
         } else if (toolName === 'eraser') {
           penPopup?.classList.remove('open');
+          shapePopup?.classList.remove('open');
           eraserPopup?.classList.toggle('open');
+        } else if (toolName === 'shape') {
+          penPopup?.classList.remove('open');
+          eraserPopup?.classList.remove('open');
+          shapePopup?.classList.toggle('open');
         } else if (toolName === 'sticker') {
           closeAllPopups();
           // Toggle sticker picker if already active
@@ -1445,6 +1453,24 @@ import { DiscordSDK } from './discord-sdk.js';
       });
     });
 
+    // Wire shape type buttons
+    document.querySelectorAll('.shape-type-btn[data-shape]').forEach((btn) => {
+      btn.addEventListener('click', (e) => {
+        const shapeType = btn.dataset.shape;
+        shapeTool.setShapeType(shapeType);
+        // Update active state
+        document.querySelectorAll('.shape-type-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        e.stopPropagation();
+      });
+    });
+
+    // Wire animated toggle
+    const shapeAnimatedToggle = document.getElementById('shape-animated-toggle');
+    shapeAnimatedToggle?.addEventListener('change', (e) => {
+      shapeTool.setAnimated(e.target.checked);
+    });
+
     // Close popups when clicking outside
     document.addEventListener('click', (e) => {
       if (!e.target.closest('.hud-tool-wrapper')) {
@@ -1455,13 +1481,17 @@ import { DiscordSDK } from './discord-sdk.js';
     // Prevent popup clicks from closing themselves
     penPopup?.addEventListener('click', (e) => e.stopPropagation());
     eraserPopup?.addEventListener('click', (e) => e.stopPropagation());
+    shapePopup?.addEventListener('click', (e) => e.stopPropagation());
     // Prevent pointer events on popups from reaching the canvas
     penPopup?.addEventListener('pointerdown', (e) => e.stopPropagation());
     eraserPopup?.addEventListener('pointerdown', (e) => e.stopPropagation());
+    shapePopup?.addEventListener('pointerdown', (e) => e.stopPropagation());
     penPopup?.addEventListener('pointermove', (e) => e.stopPropagation());
     eraserPopup?.addEventListener('pointermove', (e) => e.stopPropagation());
+    shapePopup?.addEventListener('pointermove', (e) => e.stopPropagation());
     penPopup?.addEventListener('pointerup', (e) => e.stopPropagation());
     eraserPopup?.addEventListener('pointerup', (e) => e.stopPropagation());
+    shapePopup?.addEventListener('pointerup', (e) => e.stopPropagation());
 
     // Set initial active state on pen button
     document.querySelector('.hud-btn[data-tool="pen"]')?.classList.add('active');

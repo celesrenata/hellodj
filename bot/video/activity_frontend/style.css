@@ -333,6 +333,7 @@ body:hover {
     height: 100%;
     z-index: 35;
     pointer-events: none;
+    touch-action: none;
 }
 
 #whiteboard-canvas.active {
@@ -507,6 +508,52 @@ body:hover {
     height: 14px;
     accent-color: var(--accent);
     cursor: pointer;
+}
+
+/* === Shape type selector in popup === */
+.hud-shape-types {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px;
+    margin-bottom: 6px;
+}
+
+.shape-type-btn {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid transparent;
+    color: #fff;
+    font-size: 0.9rem;
+    cursor: pointer;
+    padding: 4px 6px;
+    border-radius: 4px;
+    opacity: 0.75;
+    transition: opacity 0.15s, border-color 0.15s;
+    min-width: 28px;
+    text-align: center;
+}
+
+.shape-type-btn:hover {
+    opacity: 1;
+}
+
+.shape-type-btn.active {
+    border-color: var(--accent);
+    opacity: 1;
+    background: rgba(88, 101, 242, 0.2);
+}
+
+.hud-anim-checkbox {
+    width: 14px;
+    height: 14px;
+    accent-color: var(--accent);
+    cursor: pointer;
+    margin-right: 4px;
+}
+
+/* === Whiteboard text input (mobile-friendly) === */
+.whiteboard-text-input-wrapper {
+    pointer-events: auto;
+    touch-action: manipulation;
 }
 
 /* === Sticker picker panel === */

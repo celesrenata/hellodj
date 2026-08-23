@@ -54,6 +54,9 @@ export class WhiteboardOverlay {
       () => this.redraw()
     );
 
+    // Wire the animation loop's redraw to our redraw method
+    this.renderer.setFullRedraw(() => this.redraw());
+
     // Set initial state: inactive, HUD hidden, pointer-events disabled
     this.hud.style.display = 'none';
     this.canvas.style.pointerEvents = 'none';
@@ -105,6 +108,7 @@ export class WhiteboardOverlay {
     if (stroke.author === this.localAuthorId) {
       this.undoStack.push(stroke.id);
     }
+    this.renderer.updateAnimationState(this.strokes);
     this.redraw();
   }
 
@@ -121,6 +125,7 @@ export class WhiteboardOverlay {
     if (undoIdx !== -1) {
       this.undoStack.splice(undoIdx, 1);
     }
+    this.renderer.updateAnimationState(this.strokes);
     this.redraw();
   }
 
@@ -131,6 +136,7 @@ export class WhiteboardOverlay {
   clearAll() {
     this.strokes.clear();
     this.undoStack.length = 0;
+    this.renderer.updateAnimationState(this.strokes);
     this.redraw();
   }
 

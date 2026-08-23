@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 
 _HEARTBEAT_INTERVAL = 30.0  # seconds between server pings
 
-_VALID_STROKE_TYPES = {"freehand", "line", "rect", "ellipse", "arrow", "text", "sticker"}
+_VALID_STROKE_TYPES = {"freehand", "line", "rect", "ellipse", "circle", "triangle", "star", "arrow", "text", "sticker"}
 
 
 @dataclasses.dataclass
@@ -497,6 +497,7 @@ class WebSocketHub:
             text_bg=data.get("text_bg", False),
             sticker_category=data.get("sticker_category"),
             sticker_filename=data.get("sticker_filename"),
+            animated=data.get("animated", False),
         )
 
         if not registry.add(stroke_data):

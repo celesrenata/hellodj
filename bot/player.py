@@ -1001,6 +1001,16 @@ async def _play_next_from_queue(guild_id: int, *, skip_history_push: bool = Fals
         await _start_video_from_queue(guild_id, next_entry)
         return
 
+    # Guard: do NOT start audio if a video session is active or in transition.
+    # This prevents audio from starting during video setup/buffering/streaming.
+    if _is_video_active(guild_id) or state.get("_video_transition"):
+        log.info("play_next: video active — re-queuing audio entry guild=%d title=%r",
+                 guild_id, next_entry.get("title"))
+        state["queue"].insert(0, next_entry)
+        state["current"] = None
+        persist(guild_id)
+        return
+
     # Audio entry — needs a connected player
     if not player or not player.connected:
         dbg.debug("play_next: no player or disconnected guild=%d — reconnecting", guild_id)
@@ -1222,6 +1232,16 @@ async def _on_video_session_end(guild_id: int) -> None:
 
 async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict) -> None:
     state = get_state(guild_id)
+
+    # Final safety check: abort if a video session became active since play_next ran
+    if _is_video_active(guild_id):
+        log.info("_resolve_and_play: video active — aborting audio start guild=%d", guild_id)
+        # Re-queue the entry since we won't play it
+        state["queue"].insert(0, entry)
+        state["current"] = None
+        persist(guild_id)
+        return
+
     url = entry.get("webpage_url") or entry.get("url")
     title = entry.get("title", "Unknown")
 
@@ -1617,6 +1637,12 @@ async def on_track_end(guild_id: int, player: wavelink.Player, track: wavelink.P
     if (_time.monotonic() - last_advance) < 5.0:
         dbg.debug("on_track_end: suppressed — queue advanced %.1fs ago guild=%d",
                   _time.monotonic() - last_advance, guild_id)
+        return
+
+    # Final guard: if a video session is currently active or in transition,
+    # do NOT advance the audio queue. The video pipeline manages its own lifecycle.
+    if _is_video_active(guild_id) or state.get("_video_transition"):
+        dbg.debug("on_track_end: suppressed — video active guild=%d", guild_id)
         return
 
     np_task = state.get("now_playing_task")
@@ -2039,8 +2065,14 @@ class NowPlayingView(discord.ui.View):
 
     async def _skip_next(self, interaction: discord.Interaction) -> None:
         """⏭ Next — skip to the next track."""
+        # If video is active, delegate to video skip logic
+        if _is_video_active(self.guild_id):
+            await interaction.response.defer()
+            return
         player = get_player(self.guild_id)
         if player:
+            state = get_state(self.guild_id)
+            state["_skip_transition"] = True
             await player.stop()
         await interaction.response.defer()
 

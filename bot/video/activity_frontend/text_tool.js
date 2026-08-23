@@ -5,12 +5,19 @@
  *   name, cursor, onPointerDown, onPointerMove, onPointerUp, onCancel, renderPreview
  *
  * Behavior:
- * - On pointerdown: creates a text input element positioned at the click location
+ * - On pointerdown: creates a text input element positioned at the tap/click location
  * - Max length 200 characters
- * - On Enter or blur: finalizes a text stroke with content + text_bg toggle state
+ * - On Enter or "Done" button: finalizes a text stroke with content + text_bg toggle state
  * - Rejects empty/whitespace-only input (no stroke created)
  * - On Escape: cancels without creating a stroke
  * - Uses current color, font size 16px
+ *
+ * Mobile fixes:
+ * - Uses clientX/clientY with bounding rect for reliable touch positioning
+ * - Adds a ✓ (Done) button for mobile users (no reliable Enter key)
+ * - Uses contenteditable div instead of input for better mobile keyboard support
+ * - Prevents touch-action interference
+ * - Delays focus to next frame for mobile browser compatibility
  */
 
 import { normalize, normalizeWidth } from './coords.js';
@@ -36,6 +43,8 @@ export class TextTool {
     this._requestRedraw = config.requestRedraw;
     this._onStrokeFinalized = config.onStrokeFinalized;
 
+    /** @type {HTMLElement|null} Active text input wrapper */
+    this._wrapperEl = null;
     /** @type {HTMLInputElement|null} Active text input element */
     this._inputEl = null;
     /** @type {[number, number]|null} Normalized position of the text placement */
@@ -45,6 +54,7 @@ export class TextTool {
   /**
    * On pointerdown: normalize the click position and show a text input element.
    * If an input is already active, finalize it first.
+   * Uses clientX/clientY for reliable mobile touch positioning.
    * @param {PointerEvent} e
    */
   onPointerDown(e) {
@@ -56,8 +66,13 @@ export class TextTool {
     const { width, height } = this._getCanvasSize();
     if (width === 0 || height === 0) return;
 
-    this._position = normalize(e.offsetX, e.offsetY, width, height);
-    this._showInput(e.offsetX, e.offsetY);
+    // Use clientX/clientY with bounding rect for reliable touch/pointer positioning
+    const rect = e.target.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+
+    this._position = normalize(px, py, width, height);
+    this._showInput(px, py, rect);
   }
 
   /**
@@ -97,30 +112,82 @@ export class TextTool {
 
   /**
    * Create and display a text input element at the specified pixel position.
-   * @param {number} pixelX - X position in CSS pixels
-   * @param {number} pixelY - Y position in CSS pixels
+   * Positions relative to the video-container for correct overlay placement.
+   * Includes a Done button for mobile users.
+   * @param {number} pixelX - X position relative to canvas
+   * @param {number} pixelY - Y position relative to canvas
+   * @param {DOMRect} canvasRect - Bounding rect of the canvas element
    * @private
    */
-  _showInput(pixelX, pixelY) {
+  _showInput(pixelX, pixelY, canvasRect) {
     const container = this._getContainer();
     if (!container) return;
+
+    // Create a wrapper that holds input + done button
+    const wrapper = document.createElement('div');
+    wrapper.className = 'whiteboard-text-input-wrapper';
+    wrapper.style.position = 'absolute';
+    wrapper.style.zIndex = '55';
+    wrapper.style.display = 'flex';
+    wrapper.style.alignItems = 'center';
+    wrapper.style.gap = '4px';
+
+    // Position relative to the container (#app) — account for canvas offset within app
+    const containerRect = container.getBoundingClientRect();
+    const absoluteX = canvasRect.left - containerRect.left + pixelX;
+    const absoluteY = canvasRect.top - containerRect.top + pixelY;
+
+    wrapper.style.left = `${absoluteX}px`;
+    wrapper.style.top = `${absoluteY}px`;
+
+    // Prevent the wrapper from going off-screen right
+    wrapper.style.maxWidth = `calc(100% - ${absoluteX}px - 8px)`;
 
     const input = document.createElement('input');
     input.type = 'text';
     input.maxLength = 200;
-    input.style.position = 'absolute';
-    input.style.left = `${pixelX}px`;
-    input.style.top = `${pixelY}px`;
-    input.style.fontSize = '16px';
+    input.inputMode = 'text';
+    input.autocomplete = 'off';
+    input.autocapitalize = 'sentences';
+    input.style.fontSize = '16px'; // Prevents iOS zoom on focus
     input.style.color = this._getColor();
-    input.style.background = 'rgba(0, 0, 0, 0.5)';
+    input.style.background = 'rgba(0, 0, 0, 0.7)';
     input.style.border = '1px solid rgba(255, 255, 255, 0.4)';
-    input.style.borderRadius = '2px';
-    input.style.padding = '2px 4px';
+    input.style.borderRadius = '4px';
+    input.style.padding = '6px 8px';
     input.style.outline = 'none';
-    input.style.zIndex = '26';
-    input.style.minWidth = '100px';
+    input.style.minWidth = '120px';
+    input.style.maxWidth = '100%';
     input.style.fontFamily = 'sans-serif';
+    input.style.flex = '1';
+    // Prevent canvas pointer events from interfering
+    input.style.touchAction = 'manipulation';
+
+    // Done button for mobile (and convenient for desktop too)
+    const doneBtn = document.createElement('button');
+    doneBtn.textContent = '✓';
+    doneBtn.style.fontSize = '16px';
+    doneBtn.style.background = 'rgba(88, 101, 242, 0.8)';
+    doneBtn.style.border = 'none';
+    doneBtn.style.borderRadius = '4px';
+    doneBtn.style.color = '#fff';
+    doneBtn.style.padding = '6px 10px';
+    doneBtn.style.cursor = 'pointer';
+    doneBtn.style.touchAction = 'manipulation';
+    doneBtn.style.flexShrink = '0';
+
+    // Cancel button
+    const cancelBtn = document.createElement('button');
+    cancelBtn.textContent = '✕';
+    cancelBtn.style.fontSize = '14px';
+    cancelBtn.style.background = 'rgba(255, 255, 255, 0.15)';
+    cancelBtn.style.border = 'none';
+    cancelBtn.style.borderRadius = '4px';
+    cancelBtn.style.color = 'rgba(255,255,255,0.7)';
+    cancelBtn.style.padding = '6px 8px';
+    cancelBtn.style.cursor = 'pointer';
+    cancelBtn.style.touchAction = 'manipulation';
+    cancelBtn.style.flexShrink = '0';
 
     // Handle Enter → finalize
     input.addEventListener('keydown', (e) => {
@@ -133,23 +200,49 @@ export class TextTool {
       }
     });
 
-    // Handle blur → finalize
-    input.addEventListener('blur', () => {
-      // Only finalize if the input still exists (wasn't already removed by Escape/Enter)
-      if (this._inputEl) {
-        this._finalizeInput();
-      }
+    // Done button click → finalize
+    doneBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this._finalizeInput();
     });
 
-    container.appendChild(input);
+    // Cancel button click → remove
+    cancelBtn.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      this._removeInput();
+    });
+
+    // Prevent pointer events from reaching canvas
+    wrapper.addEventListener('pointerdown', (e) => e.stopPropagation());
+    wrapper.addEventListener('pointermove', (e) => e.stopPropagation());
+    wrapper.addEventListener('pointerup', (e) => e.stopPropagation());
+    wrapper.addEventListener('touchstart', (e) => e.stopPropagation());
+    wrapper.addEventListener('touchmove', (e) => e.stopPropagation());
+    wrapper.addEventListener('touchend', (e) => e.stopPropagation());
+
+    wrapper.appendChild(input);
+    wrapper.appendChild(doneBtn);
+    wrapper.appendChild(cancelBtn);
+    container.appendChild(wrapper);
+
+    this._wrapperEl = wrapper;
     this._inputEl = input;
 
-    // Focus the input after appending to DOM
-    requestAnimationFrame(() => {
+    // Focus the input after appending to DOM — use setTimeout for mobile compatibility
+    // Mobile browsers often need a frame or two before focus works reliably
+    setTimeout(() => {
       if (this._inputEl) {
         this._inputEl.focus();
+        // Some mobile browsers need a second attempt
+        requestAnimationFrame(() => {
+          if (this._inputEl && document.activeElement !== this._inputEl) {
+            this._inputEl.focus();
+          }
+        });
       }
-    });
+    }, 50);
   }
 
   /**
@@ -194,12 +287,18 @@ export class TextTool {
   }
 
   /**
-   * Remove the input element from the DOM and clear internal reference.
+   * Remove the input wrapper from the DOM and clear internal references.
    * @private
    */
   _removeInput() {
-    if (this._inputEl) {
-      // Remove event listeners by removing the element
+    if (this._wrapperEl) {
+      if (this._wrapperEl.parentNode) {
+        this._wrapperEl.parentNode.removeChild(this._wrapperEl);
+      }
+      this._wrapperEl = null;
+      this._inputEl = null;
+    } else if (this._inputEl) {
+      // Fallback for legacy single-input case
       if (this._inputEl.parentNode) {
         this._inputEl.parentNode.removeChild(this._inputEl);
       }

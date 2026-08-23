@@ -1,9 +1,20 @@
 /**
- * ShapeTool — draws rect, ellipse, and arrow shapes on the whiteboard overlay.
+ * ShapeTool — draws shapes on the whiteboard overlay.
+ *
+ * Supported shape types:
+ * - rect: Rectangle
+ * - ellipse: Ellipse (oval)
+ * - circle: Perfect circle (constrained to smallest dimension)
+ * - triangle: Equilateral-ish triangle fitting the bounding box
+ * - star: 5-pointed star
+ * - arrow: Line with arrowhead
  *
  * Sub-types are configurable via setShapeType(). The tool records a start point
  * on pointerdown, renders a live preview on pointermove, and finalizes the stroke
  * on pointerup if the bounding box exceeds 5 CSS pixels in both dimensions.
+ *
+ * Shapes can optionally be marked as "animated" which causes them to rotate
+ * continuously when rendered.
  *
  * All coordinates are normalized to 0.0–1.0 using the coords module.
  * Strokes use outline only (not filled), 3px width, current color.
@@ -14,14 +25,19 @@ import { normalize, denormalize, normalizeWidth } from './coords.js';
 const STROKE_WIDTH_PX = 3;
 const MIN_SIZE_PX = 5;
 
+/** @type {string[]} All valid shape types */
+export const SHAPE_TYPES = ['rect', 'ellipse', 'circle', 'triangle', 'star', 'arrow'];
+
 export class ShapeTool {
   constructor() {
     /** @type {string} */
     this.name = 'shape';
     /** @type {string} */
     this.cursor = 'crosshair';
-    /** @type {'rect'|'ellipse'|'arrow'} */
+    /** @type {string} */
     this.shapeType = 'rect';
+    /** @type {boolean} Whether new shapes should be animated (rotating) */
+    this.animated = false;
 
     /** @type {[number, number]|null} Normalized start point */
     this.startPoint = null;
@@ -40,12 +56,20 @@ export class ShapeTool {
 
   /**
    * Set the active shape sub-type.
-   * @param {'rect'|'ellipse'|'arrow'} type
+   * @param {string} type
    */
   setShapeType(type) {
-    if (type === 'rect' || type === 'ellipse' || type === 'arrow') {
+    if (SHAPE_TYPES.includes(type)) {
       this.shapeType = type;
     }
+  }
+
+  /**
+   * Set whether new shapes should be animated.
+   * @param {boolean} animated
+   */
+  setAnimated(animated) {
+    this.animated = !!animated;
   }
 
   /**
@@ -99,7 +123,6 @@ export class ShapeTool {
 
     this.canvasWidth = w;
     this.canvasHeight = h;
-    // normalize() already clamps to [0, 1]
     this.currentPoint = normalize(px, py, w, h);
   }
 
@@ -143,6 +166,11 @@ export class ShapeTool {
       width: normalizeWidth(STROKE_WIDTH_PX, w),
     };
 
+    // Add animated flag if enabled
+    if (this.animated) {
+      stroke.animated = true;
+    }
+
     this._reset();
     return stroke;
   }
@@ -181,6 +209,15 @@ export class ShapeTool {
       case 'ellipse':
         this._previewEllipse(ctx, x0, y0, x1, y1);
         break;
+      case 'circle':
+        this._previewCircle(ctx, x0, y0, x1, y1);
+        break;
+      case 'triangle':
+        this._previewTriangle(ctx, x0, y0, x1, y1);
+        break;
+      case 'star':
+        this._previewStar(ctx, x0, y0, x1, y1);
+        break;
       case 'arrow':
         this._previewArrow(ctx, x0, y0, x1, y1);
         break;
@@ -189,9 +226,8 @@ export class ShapeTool {
     ctx.restore();
   }
 
-  /**
-   * Preview rectangle — outline only.
-   */
+  // ─── Preview Methods ────────────────────────────────────────────────────
+
   _previewRect(ctx, x0, y0, x1, y1) {
     const rx = Math.min(x0, x1);
     const ry = Math.min(y0, y1);
@@ -202,9 +238,6 @@ export class ShapeTool {
     ctx.strokeRect(rx, ry, rw, rh);
   }
 
-  /**
-   * Preview ellipse — outline only.
-   */
   _previewEllipse(ctx, x0, y0, x1, y1) {
     const cx = (x0 + x1) / 2;
     const cy = (y0 + y1) / 2;
@@ -216,17 +249,55 @@ export class ShapeTool {
     ctx.stroke();
   }
 
-  /**
-   * Preview arrow — line with proportional arrowhead at endpoint.
-   */
+  _previewCircle(ctx, x0, y0, x1, y1) {
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    // Use the smaller dimension to make a perfect circle
+    const r = Math.min(Math.abs(x1 - x0), Math.abs(y1 - y0)) / 2;
+
+    ctx.beginPath();
+    ctx.arc(cx, cy, r, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+
+  _previewTriangle(ctx, x0, y0, x1, y1) {
+    const minX = Math.min(x0, x1);
+    const maxX = Math.max(x0, x1);
+    const minY = Math.min(y0, y1);
+    const maxY = Math.max(y0, y1);
+
+    // Triangle: top-center, bottom-left, bottom-right
+    const topX = (minX + maxX) / 2;
+    const topY = minY;
+    const blX = minX;
+    const blY = maxY;
+    const brX = maxX;
+    const brY = maxY;
+
+    ctx.beginPath();
+    ctx.moveTo(topX, topY);
+    ctx.lineTo(blX, blY);
+    ctx.lineTo(brX, brY);
+    ctx.closePath();
+    ctx.stroke();
+  }
+
+  _previewStar(ctx, x0, y0, x1, y1) {
+    const cx = (x0 + x1) / 2;
+    const cy = (y0 + y1) / 2;
+    const outerR = Math.min(Math.abs(x1 - x0), Math.abs(y1 - y0)) / 2;
+    const innerR = outerR * 0.4;
+
+    this._drawStar(ctx, cx, cy, outerR, innerR, 5);
+    ctx.stroke();
+  }
+
   _previewArrow(ctx, x0, y0, x1, y1) {
-    // Draw the line
     ctx.beginPath();
     ctx.moveTo(x0, y0);
     ctx.lineTo(x1, y1);
     ctx.stroke();
 
-    // Draw arrowhead proportional to stroke width
     const headLength = Math.max(STROKE_WIDTH_PX * 4, 10);
     const angle = Math.atan2(y1 - y0, x1 - x0);
 
@@ -244,9 +315,35 @@ export class ShapeTool {
     ctx.stroke();
   }
 
+  // ─── Helpers ────────────────────────────────────────────────────────────
+
   /**
-   * Reset internal state.
+   * Draw a star path (5-pointed by default).
+   * @param {CanvasRenderingContext2D} ctx
+   * @param {number} cx - Center X
+   * @param {number} cy - Center Y
+   * @param {number} outerR - Outer radius
+   * @param {number} innerR - Inner radius
+   * @param {number} points - Number of points
    */
+  _drawStar(ctx, cx, cy, outerR, innerR, points) {
+    const step = Math.PI / points;
+
+    ctx.beginPath();
+    for (let i = 0; i < points * 2; i++) {
+      const r = i % 2 === 0 ? outerR : innerR;
+      const angle = -Math.PI / 2 + i * step;
+      const x = cx + r * Math.cos(angle);
+      const y = cy + r * Math.sin(angle);
+      if (i === 0) {
+        ctx.moveTo(x, y);
+      } else {
+        ctx.lineTo(x, y);
+      }
+    }
+    ctx.closePath();
+  }
+
   _reset() {
     this.startPoint = null;
     this.currentPoint = null;

@@ -53,6 +53,8 @@ export function initWhiteboardSync(wsSend, overlay) {
       // Optional fields for sticker strokes
       ...(stroke.sticker_category != null && { sticker_category: stroke.sticker_category }),
       ...(stroke.sticker_filename != null && { sticker_filename: stroke.sticker_filename }),
+      // Optional animated field for rotating shapes
+      ...(stroke.animated && { animated: true }),
     });
   }
 
@@ -149,6 +151,9 @@ export function initWhiteboardSync(wsSend, overlay) {
     if (data.sticker_category != null) stroke.sticker_category = data.sticker_category;
     if (data.sticker_filename != null) stroke.sticker_filename = data.sticker_filename;
 
+    // Include optional animated field
+    if (data.animated) stroke.animated = true;
+
     overlay.addStroke(stroke);
   }
 
@@ -215,13 +220,17 @@ export function initWhiteboardSync(wsSend, overlay) {
       if (s.sticker_category != null) stroke.sticker_category = s.sticker_category;
       if (s.sticker_filename != null) stroke.sticker_filename = s.sticker_filename;
 
+      // Include optional animated field
+      if (s.animated) stroke.animated = true;
+
       overlay.strokes.set(stroke.id, stroke);
     }
 
     // Rebuild undo history for the local author
     restoreUndoHistory(overlay, strokes);
 
-    // Redraw all strokes
+    // Update animation state and redraw
+    overlay.renderer.updateAnimationState(overlay.strokes);
     overlay.redraw();
   }
 
