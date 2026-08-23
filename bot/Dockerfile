@@ -92,6 +92,7 @@ COPY voice/ ./voice/
 COPY video/ ./video/
 COPY playback/ ./playback/
 COPY views/ ./views/
+COPY search/ ./search/
 
 # Copy curated sticker pack (manifest + assets) for whiteboard sticker catalog
 COPY stickers/ ./stickers/
