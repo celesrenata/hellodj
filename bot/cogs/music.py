@@ -1145,7 +1145,11 @@ class Music(commands.Cog):
                     p = player.get_player(interaction.guild.id)
 
                     # Respond to the interaction IMMEDIATELY (before slow resolve)
-                    if p and p.connected and not p.playing and not p.paused:
+                    # Check both Lavalink player AND video session — if either is active,
+                    # the track is queued, not immediately playing.
+                    is_idle = (p and p.connected and not p.playing and not p.paused
+                               and not player._is_video_active(interaction.guild.id))
+                    if is_idle:
                         embed = discord.Embed(
                             title="✅ Selected & playing",
                             description=f"**{title}**",
@@ -1194,7 +1198,7 @@ class Music(commands.Cog):
                     await picker.response.edit_message(embed=embed, view=None)
 
                     # Start playback AFTER responding (can be slow for Spotify)
-                    if p and p.connected and not p.playing and not p.paused:
+                    if is_idle:
                         await player._play_next_from_queue(interaction.guild.id)
                     elif p and not p.connected:
                         vc = state.get("voice_channel")
