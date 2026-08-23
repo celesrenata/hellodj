@@ -623,6 +623,7 @@ import { DiscordSDK } from './discord-sdk.js';
   let _wsReconnectTimer = null;
   let _wsIntentionalClose = false;
   let _whiteboardSync = null; // Whiteboard WebSocket sync handler
+  let _searchPanel = null; // Search panel instance
 
   const wsSend = (msg) => {
     if (ws && ws.readyState === WebSocket.OPEN) {
@@ -682,6 +683,11 @@ import { DiscordSDK } from './discord-sdk.js';
 
     // Forward whiteboard-related messages to whiteboard sync handler
     if (_whiteboardSync && _whiteboardSync.handleMessage(data)) {
+      return;
+    }
+
+    // Forward search-related messages to search panel
+    if (_searchPanel && _searchPanel.handleMessage(data)) {
       return;
     }
 
@@ -1706,5 +1712,19 @@ import { DiscordSDK } from './discord-sdk.js';
     // Update shape tool color when color changes
     swatches.forEach(s => s.addEventListener('click', () => shapeTool.setColor(colorPicker.getColor())));
     if (customColorInput) customColorInput.addEventListener('input', () => shapeTool.setColor(colorPicker.getColor()));
+  }
+
+  // --- Search Panel Initialization ---
+  const btnSearch = document.getElementById('btn-search');
+  if (btnSearch && window.SearchPanel) {
+    _searchPanel = new window.SearchPanel({
+      container: document.getElementById('app'),
+      wsSend: (msg) => wsSend(msg),
+    });
+
+    btnSearch.addEventListener('click', () => {
+      _searchPanel.toggle();
+      btnSearch.dataset.active = _searchPanel.active ? 'true' : 'false';
+    });
   }
 })();

@@ -6,9 +6,11 @@
     <meta name="discord-client-id" content="1534778518137995325">
     <title>HelloDJ Video</title>
     <link rel="stylesheet" href="static/style.css?v=27">
+    <link rel="stylesheet" href="static/search_panel.css?v=1">
     <script src="static/hls.min.js"></script>
     <script src="static/whiteboard-bundle.js?v=12"></script>
-    <script type="module" src="static/app.js?v=60"></script>
+    <script src="static/search_panel.js?v=1"></script>
+    <script type="module" src="static/app.js?v=61"></script>
 </head>
 <body>
     <div id="app">
@@ -141,6 +143,7 @@
                         </div>
                         <button class="ctrl-btn" id="btn-lyrics" title="Toggle lyrics" data-active="false">🎤</button>
                         <button class="ctrl-btn" id="btn-whiteboard" title="Whiteboard" data-active="false">🖌️</button>
+                        <button class="ctrl-btn" id="btn-search" title="Search" data-active="false">🔍</button>
                         <button class="ctrl-btn" id="btn-mute" title="Mute">🔊</button>
                         <input type="range" id="volume-slider" class="volume-slider" min="0" max="100" value="80">
                     </div>

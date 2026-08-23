@@ -23,6 +23,8 @@ from video.stroke_registry import StrokeData, StrokeRegistry
 if TYPE_CHECKING:
     from video.activity_streamer import ActivityStreamer
 
+    from search.models import SearchResult
+
 log = logging.getLogger(__name__)
 
 _HEARTBEAT_INTERVAL = 30.0  # seconds between server pings
@@ -97,6 +99,9 @@ class WebSocketHub:
         self._viewer_count_callback: Callable[[int, int, int], Awaitable[None]] | None = None
         self._streamers: dict[int, ActivityStreamer] = {}  # guild_id → streamer
         self._lyrics_state_getter: Callable[[int], object | None] | None = None
+        # Search: shared engine + active in-flight search tasks per guild
+        self._search_engine: object | None = None  # lazy-initialized UnifiedSearchEngine
+        self._active_searches: dict[int, dict[str, asyncio.Task]] = {}  # guild_id → {request_id → task}
 
     def set_viewer_count_callback(
         self, callback: Callable[[int, int, int], Awaitable[None]]
@@ -401,6 +406,20 @@ class WebSocketHub:
             asyncio.ensure_future(self._handle_unified_previous(guild_id))
             return
 
+        # Search protocol: search_request, search_cancel, search_play, search_enqueue
+        if msg_type == "search_request":
+            asyncio.ensure_future(self._handle_search_request(guild_id, sender, data))
+            return
+        if msg_type == "search_cancel":
+            asyncio.ensure_future(self._handle_search_cancel(guild_id, data))
+            return
+        if msg_type == "search_play":
+            asyncio.ensure_future(self._handle_search_play(guild_id, sender, data))
+            return
+        if msg_type == "search_enqueue":
+            asyncio.ensure_future(self._handle_search_enqueue(guild_id, sender, data))
+            return
+
         if msg_type not in ("play", "pause", "seek", "subtitle_change", "audio_change"):
             return
 
@@ -625,6 +644,240 @@ class WebSocketHub:
         except Exception as exc:
             log.error("WS previous failed for guild %d: %s", guild_id, exc)
         await self.broadcast(guild_id, {"type": "session_change"}, exclude=None)
+
+    # ------------------------------------------------------------------
+    # Search protocol handlers
+    # ------------------------------------------------------------------
+
+    def _get_search_engine(self):
+        """Lazily initialize and return the shared UnifiedSearchEngine."""
+        if self._search_engine is None:
+            from search import UnifiedSearchEngine
+            self._search_engine = UnifiedSearchEngine()
+        return self._search_engine
+
+    async def _handle_search_request(
+        self, guild_id: int, sender: web.WebSocketResponse, data: dict
+    ) -> None:
+        """Handle a search_request message: stream results as providers respond.
+
+        Cancels any previous in-flight search for this guild, then runs a new
+        streaming search in a background task.
+
+        Requirements: 17.1, 17.2, 17.3, 17.4, 17.5, 17.6, 17.7, 17.8
+        """
+        request_id = data.get("request_id", "")
+        query = data.get("query", "")
+        filters = data.get("filters", {})
+
+        # Cancel all previous searches for this guild
+        guild_searches = self._active_searches.setdefault(guild_id, {})
+        for rid, task in list(guild_searches.items()):
+            if not task.done():
+                task.cancel()
+        guild_searches.clear()
+
+        # Define callback that sends partial results to this client
+        async def on_provider_result(provider: str, results: list) -> None:
+            msg = {
+                "type": "search_partial_result",
+                "request_id": request_id,
+                "provider": provider,
+                "results": [self._serialize_search_result(r) for r in results],
+            }
+            try:
+                await sender.send_json(msg)
+            except (ConnectionResetError, RuntimeError):
+                pass
+
+        # Run search in background task
+        async def _do_search() -> None:
+            try:
+                engine = self._get_search_engine()
+                all_results = await engine.search_streaming(
+                    query,
+                    guild_id=guild_id,
+                    provider_filter=filters.get("provider") if filters.get("provider") != "all" else None,
+                    content_type=filters.get("content_type", "tracks"),
+                    sort_order=filters.get("sort_order", "relevance"),
+                    on_provider_result=on_provider_result,
+                )
+                await sender.send_json({
+                    "type": "search_complete",
+                    "request_id": request_id,
+                    "total_results": len(all_results),
+                })
+            except asyncio.CancelledError:
+                pass  # Search was superseded by a new request
+            except Exception as e:
+                log.warning("Search failed for guild %d request %s: %s", guild_id, request_id, e)
+                try:
+                    await sender.send_json({
+                        "type": "search_error",
+                        "request_id": request_id,
+                        "message": str(e),
+                    })
+                except (ConnectionResetError, RuntimeError):
+                    pass
+            finally:
+                guild_searches.pop(request_id, None)
+
+        task = asyncio.create_task(_do_search())
+        guild_searches[request_id] = task
+
+    async def _handle_search_cancel(self, guild_id: int, data: dict) -> None:
+        """Handle a search_cancel message: cancel in-flight search tasks.
+
+        Requirements: 17.6
+        """
+        request_id = data.get("request_id", "")
+        guild_searches = self._active_searches.get(guild_id, {})
+        task = guild_searches.pop(request_id, None)
+        if task and not task.done():
+            task.cancel()
+
+    async def _handle_search_play(
+        self, guild_id: int, sender: web.WebSocketResponse, data: dict
+    ) -> None:
+        """Handle a search_play message: resolve track and start playback.
+
+        Decodes provider + track_id, resolves via wavelink, delegates to the
+        player module's queue system for immediate playback.
+
+        Requirements: 16.1
+        """
+        request_id = data.get("request_id", "")
+        provider = data.get("provider", "")
+        track_id = data.get("track_id", "")
+
+        try:
+            import wavelink
+            import player as player_module
+            from search.formatter import ChoiceFormatter
+
+            # Encode to get the lavalink prefix
+            encoded = ChoiceFormatter.encode_value(provider, track_id)
+            lavalink_prefix, decoded_id = ChoiceFormatter.decode_value(encoded)
+
+            if lavalink_prefix is None:
+                raise ValueError(f"Unknown provider: {provider}")
+
+            # Resolve the track via wavelink
+            tracks = await wavelink.Playable.search(f"{lavalink_prefix}:{decoded_id}")
+            if not tracks:
+                raise ValueError(f"No playable track found for {provider}:{track_id}")
+
+            track = tracks[0]
+            title = getattr(track, "title", "Unknown")
+
+            # Use the player module to start/enqueue the track immediately
+            state = player_module.get_state(guild_id)
+            entry = player_module._track_entry(track, provider)
+
+            # Clear queue and set as current for immediate playback
+            p = player_module.get_player(guild_id)
+            if p and p.connected:
+                # Insert at front and trigger play
+                state["queue"].insert(0, entry)
+                player_module.persist(guild_id)
+                if p.playing or p.paused:
+                    await p.stop()  # Triggers on_wavelink_track_end → plays next
+                else:
+                    await player_module._play_next_from_queue(guild_id)
+
+            await sender.send_json({
+                "type": "search_play_ack",
+                "request_id": request_id,
+                "success": True,
+                "track_title": title,
+            })
+        except Exception as e:
+            log.warning("search_play failed for guild %d: %s", guild_id, e)
+            try:
+                await sender.send_json({
+                    "type": "search_play_ack",
+                    "request_id": request_id,
+                    "success": False,
+                    "message": str(e),
+                })
+            except (ConnectionResetError, RuntimeError):
+                pass
+
+    async def _handle_search_enqueue(
+        self, guild_id: int, sender: web.WebSocketResponse, data: dict
+    ) -> None:
+        """Handle a search_enqueue message: resolve track and add to queue.
+
+        Does not interrupt current playback — appends to the end of the queue.
+
+        Requirements: 16.3
+        """
+        request_id = data.get("request_id", "")
+        provider = data.get("provider", "")
+        track_id = data.get("track_id", "")
+
+        try:
+            import wavelink
+            import player as player_module
+            from search.formatter import ChoiceFormatter
+
+            # Encode to get the lavalink prefix
+            encoded = ChoiceFormatter.encode_value(provider, track_id)
+            lavalink_prefix, decoded_id = ChoiceFormatter.decode_value(encoded)
+
+            if lavalink_prefix is None:
+                raise ValueError(f"Unknown provider: {provider}")
+
+            # Resolve the track via wavelink
+            tracks = await wavelink.Playable.search(f"{lavalink_prefix}:{decoded_id}")
+            if not tracks:
+                raise ValueError(f"No playable track found for {provider}:{track_id}")
+
+            track = tracks[0]
+            title = getattr(track, "title", "Unknown")
+
+            # Add to queue without interrupting current playback
+            state = player_module.get_state(guild_id)
+            entry = player_module._track_entry(track, provider)
+            await player_module.add_track(state, guild_id, entry)
+            position = len(state["queue"])
+
+            await sender.send_json({
+                "type": "search_enqueue_ack",
+                "request_id": request_id,
+                "success": True,
+                "position": position,
+                "track_title": title,
+            })
+        except Exception as e:
+            log.warning("search_enqueue failed for guild %d: %s", guild_id, e)
+            try:
+                await sender.send_json({
+                    "type": "search_enqueue_ack",
+                    "request_id": request_id,
+                    "success": False,
+                    "position": 0,
+                    "message": str(e),
+                })
+            except (ConnectionResetError, RuntimeError):
+                pass
+
+    @staticmethod
+    def _serialize_search_result(result: "SearchResult") -> dict:
+        """Convert a SearchResult to a JSON-serializable dict for WebSocket."""
+        return {
+            "title": result.title,
+            "artist": result.artist,
+            "album": result.album,
+            "release_year": result.release_year,
+            "duration_ms": result.duration_ms,
+            "artwork_url": result.artwork_url,
+            "isrc": result.isrc,
+            "provider": result.provider,
+            "track_id": result.track_id,
+            "variant_type": result.variant_type,
+            "has_music_video": result.has_music_video,
+        }
 
     def get_state(self, guild_id: int) -> PlaybackState | None:
         """Get the current playback state for a guild."""

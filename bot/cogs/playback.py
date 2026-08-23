@@ -25,6 +25,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from search import UnifiedSearchEngine
+from search.formatter import ChoiceFormatter
+
 if TYPE_CHECKING:
     from bot.playback.router import PlaybackRouter
 
@@ -39,6 +42,7 @@ class PlaybackCog(commands.Cog, name="Playback"):
     def __init__(self, bot: commands.Bot, router: PlaybackRouter) -> None:
         self.bot = bot
         self.router = router
+        self._search_engine = UnifiedSearchEngine()
 
     @app_commands.command(name="play", description="Play a song or video")
     @app_commands.describe(
@@ -53,7 +57,51 @@ class PlaybackCog(commands.Cog, name="Playback"):
         mode: Literal["auto", "audio", "video", "music_video", "album"] = "auto",
     ) -> None:
         """Play audio or video content — auto-detected or forced via mode."""
+        # Attempt to decode autocomplete selection value
+        lavalink_prefix, track_id = ChoiceFormatter.decode_value(query)
+
+        if lavalink_prefix is not None:
+            # Value was encoded — try to resolve directly via wavelink
+            try:
+                import wavelink
+
+                tracks = await wavelink.Playable.search(f"{lavalink_prefix}:{track_id}")
+                if tracks:
+                    # Route through router with the resolved track's URI
+                    await self.router.play(interaction, tracks[0].uri or query, mode=mode)
+                    return
+            except Exception:
+                log.debug(
+                    "Direct resolve failed for %s:%s, falling through",
+                    lavalink_prefix,
+                    track_id,
+                )
+
+        # Fall through to router for raw text queries or failed decodes
         await self.router.play(interaction, query, mode=mode)
+
+    @play.autocomplete("query")
+    async def play_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        """Autocomplete handler for the /play command query parameter."""
+        try:
+            results = await self._search_engine.search(
+                current,
+                guild_id=interaction.guild_id,
+            )
+            # URL detection: engine returns a single result with track_id as URL
+            if len(results) == 1 and results[0].track_id.startswith("http"):
+                url_result = results[0]
+                name = f"🔗 {url_result.title}"[:100]
+                value = url_result.track_id[:100]
+                return [app_commands.Choice(name=name, value=value)]
+            return ChoiceFormatter.format_choices(results)
+        except Exception:
+            log.exception("Autocomplete search failed")
+            return []
 
     @app_commands.command(name="upload", description="Upload a video or audio file to play")
     @app_commands.describe(attachment="File to play (audio or video)")
