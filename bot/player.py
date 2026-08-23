@@ -984,7 +984,7 @@ async def _play_next_from_queue(guild_id: int, *, skip_history_push: bool = Fals
     # Check if this track is blocked (by URL or title keyword)
     from blacklist import track_blacklist
     guild_list = track_blacklist.get(guild_id, [])
-    entry_url = next_entry.get("webpage_url") or next_entry.get("url") or ""
+    entry_url = next_entry.get("webpage_url") or next_entry.get("url") or next_entry.get("uri") or ""
     entry_title = (next_entry.get("title") or "").lower().strip()
     title_key = f"title:{entry_title}" if entry_title else ""
     if (entry_url and entry_url in guild_list) or (title_key and title_key in guild_list):
