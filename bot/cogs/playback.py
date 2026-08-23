@@ -88,10 +88,15 @@ class PlaybackCog(commands.Cog, name="Playback"):
         current: str,
     ) -> list[app_commands.Choice[str]]:
         """Autocomplete handler for the /play command query parameter."""
+        import asyncio
+
         try:
-            results = await self._search_engine.search(
-                current,
-                guild_id=interaction.guild_id,
+            results = await asyncio.wait_for(
+                self._search_engine.search(
+                    current,
+                    guild_id=interaction.guild_id,
+                ),
+                timeout=2.5,
             )
             # URL detection: engine returns a single result with track_id as URL
             if len(results) == 1 and results[0].track_id.startswith("http"):
@@ -100,6 +105,9 @@ class PlaybackCog(commands.Cog, name="Playback"):
                 value = url_result.track_id[:100]
                 return [app_commands.Choice(name=name, value=value)]
             return ChoiceFormatter.format_choices(results)
+        except asyncio.TimeoutError:
+            log.warning("Autocomplete search timed out for query=%r", current[:30])
+            return []
         except Exception:
             log.exception("Autocomplete search failed")
             return []
