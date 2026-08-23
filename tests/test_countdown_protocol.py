@@ -67,9 +67,7 @@ def _make_streamer(
     # Set start_time so get_elapsed_seconds returns the desired value
     if state == StreamState.STREAMING and elapsed >= 0:
         streamer.start_time = time.monotonic() - elapsed
-    # For fresh sessions (elapsed < 5s), we're in WAITING_FOR_VIEWER
-    if elapsed < 5.0:
-        streamer.waiting_for_viewer = True
+    # CSM starts in WAITING phase by default (equivalent to waiting_for_viewer=True)
     return streamer
 
 
@@ -87,17 +85,22 @@ class TestActivityStreamerCountdown:
 
     def test_should_countdown_returns_false_after_5s(self):
         streamer = _make_streamer(elapsed=6.0)
-        streamer.waiting_for_viewer = False
+        # Transition CSM to PLAYING (simulates playback already started)
+        streamer._csm.start_countdown()
+        streamer._csm.complete_countdown()
         assert streamer.should_countdown() is False
 
     def test_should_countdown_returns_false_if_already_started(self):
         streamer = _make_streamer(elapsed=1.0)
-        streamer.playback_started = True
+        # Transition CSM to PLAYING
+        streamer._csm.start_countdown()
+        streamer._csm.complete_countdown()
         assert streamer.should_countdown() is False
 
     def test_should_countdown_returns_false_if_countdown_active(self):
         streamer = _make_streamer(elapsed=1.0)
-        streamer.countdown_active = True
+        # Transition CSM to COUNTDOWN
+        streamer._csm.start_countdown()
         assert streamer.should_countdown() is False
 
     def test_should_countdown_returns_false_in_idle(self):
@@ -108,22 +111,26 @@ class TestActivityStreamerCountdown:
         streamer = _make_streamer(elapsed=1.0)
         streamer.start_countdown()
         assert streamer.countdown_active is True
-        assert streamer.countdown_start_time > 0
+        assert streamer._csm.countdown_start_mono > 0
         assert streamer.waiting_for_viewer is False
 
     def test_start_countdown_noop_if_already_active(self):
         streamer = _make_streamer(elapsed=1.0)
-        streamer.countdown_active = True
-        original_time = streamer.countdown_start_time
-        streamer.start_countdown()
+        streamer.start_countdown()  # Transition to COUNTDOWN
+        original_time = streamer._csm.countdown_start_mono
+        streamer.start_countdown()  # Should be no-op
         # Should not change the start time
-        assert streamer.countdown_start_time == original_time
+        assert streamer._csm.countdown_start_mono == original_time
 
     def test_start_countdown_noop_if_playback_started(self):
         streamer = _make_streamer(elapsed=1.0)
-        streamer.playback_started = True
+        # Transition CSM through COUNTDOWN → PLAYING
+        streamer._csm.start_countdown()
+        streamer._csm.complete_countdown()
         streamer.start_countdown()
+        # Phase should remain PLAYING, not go back to COUNTDOWN
         assert streamer.countdown_active is False
+        assert streamer.playback_started is True
 
     def test_on_ready_received_first_ready_triggers_start(self):
         streamer = _make_streamer(elapsed=1.0)
@@ -152,7 +159,7 @@ class TestActivityStreamerCountdown:
         streamer.start_countdown()
         streamer.cancel_countdown()
         assert streamer.countdown_active is False
-        assert streamer.countdown_start_time == 0.0
+        assert streamer._csm.countdown_start_mono == 0.0
         assert streamer.waiting_for_viewer is True
 
     def test_cancel_countdown_noop_if_not_active(self):
@@ -162,8 +169,9 @@ class TestActivityStreamerCountdown:
 
     def test_get_countdown_remaining_returns_remaining(self):
         streamer = _make_streamer(elapsed=1.0)
-        streamer.countdown_active = True
-        streamer.countdown_start_time = time.monotonic() - 1.0
+        # Start countdown via CSM and backdate the start time by 1s
+        streamer._csm.start_countdown()
+        streamer._csm.countdown_start_mono = time.monotonic() - 1.0
         remaining = streamer.get_countdown_remaining()
         # 3s countdown - 1s elapsed = ~2s remaining
         assert 1.5 < remaining < 2.5
@@ -220,12 +228,13 @@ class TestHandleReady:
 
         await hub._handle_ready(GUILD_ID, ws1)
 
-        # Both clients should receive start message
-        for ws in (ws1, ws2):
-            ws.send_json.assert_awaited()
-            call_args = ws.send_json.await_args[0][0]
-            assert call_args["type"] == "start"
-            assert call_args["position"] == 0.0
+        # Only ws2 (non-sender) should receive start message via broadcast
+        ws2.send_json.assert_awaited()
+        call_args = ws2.send_json.await_args[0][0]
+        assert call_args["type"] == "start"
+        assert call_args["position"] == 0.0
+        # Sender (ws1) is excluded from broadcast
+        ws1.send_json.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_ready_without_streamer_is_ignored(self):
@@ -348,13 +357,16 @@ class TestLateJoinerSync:
     """Tests that late joiners get state message, not countdown."""
 
     def test_should_countdown_false_for_late_joiner(self):
-        """Streamer with elapsed >= 5s should not trigger countdown."""
+        """Streamer with CSM in PLAYING state should not trigger countdown."""
         streamer = _make_streamer(elapsed=10.0)
-        streamer.waiting_for_viewer = False
+        # Simulate playback already started
+        streamer._csm.start_countdown()
+        streamer._csm.complete_countdown()
         assert streamer.should_countdown() is False
 
     def test_should_countdown_false_when_playback_already_started(self):
         """After countdown completed and playback started, no more countdowns."""
         streamer = _make_streamer(elapsed=3.0)
-        streamer.playback_started = True
+        streamer._csm.start_countdown()
+        streamer._csm.complete_countdown()
         assert streamer.should_countdown() is False

@@ -59,10 +59,11 @@ def manager(mock_ws_hub):
 
 
 class TestInitialState:
-    """VisualizerManager starts in DISABLED state."""
+    """VisualizerManager starts in IDLE_NO_VIEWERS when an engine is configured."""
 
-    def test_starts_disabled(self, manager):
-        assert manager.state == VisualizerState.DISABLED
+    def test_starts_idle_no_viewers_with_engine(self, manager):
+        # Manager fixture has engine="dvd" (not "off"), so starts ready for viewers
+        assert manager.state == VisualizerState.IDLE_NO_VIEWERS
 
     def test_stores_guild_id(self, manager):
         assert manager.guild_id == 12345

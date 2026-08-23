@@ -94,7 +94,7 @@ class TestZeroGPUWhenNoViewers:
 
     def test_no_engine_in_disabled_state(self, manager):
         """DISABLED state has no engine instance."""
-        assert manager.state == VisualizerState.DISABLED
+        manager.state = VisualizerState.DISABLED
         assert manager._engine is None
 
     def test_no_render_task_in_idle(self, manager):

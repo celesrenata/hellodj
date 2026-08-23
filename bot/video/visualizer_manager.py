@@ -83,11 +83,18 @@ class VisualizerManager:
         bot_avatar_url: str = "https://cdn.discordapp.com/embed/avatars/0.png",
     ) -> None:
         self.guild_id = guild_id
-        self.state = VisualizerState.DISABLED
         self._ws_hub = ws_hub
         self._bot_avatar_url = bot_avatar_url
         self._engine: VisualizerRenderer | None = None
         self._engine_type: str = guild_settings.get_visualizer_engine(guild_id)
+        # Start in IDLE_NO_VIEWERS if an engine is configured (ready for viewers),
+        # otherwise DISABLED. This ensures the visualizer starts on first viewer
+        # connect after a bot restart without requiring a /visualizer command.
+        self.state = (
+            VisualizerState.IDLE_NO_VIEWERS
+            if self._engine_type and self._engine_type != "off"
+            else VisualizerState.DISABLED
+        )
         self._suspend_task: asyncio.Task | None = None
         self._track_metadata: TrackMetadata | None = None
 

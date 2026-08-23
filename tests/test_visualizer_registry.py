@@ -53,7 +53,8 @@ class TestGetOrCreate:
         manager = registry.get_or_create(111)
         assert manager is not None
         assert manager.guild_id == 111
-        assert manager.state == VisualizerState.DISABLED
+        # Manager starts in IDLE_NO_VIEWERS when an engine is configured (not "off")
+        assert manager.state == VisualizerState.IDLE_NO_VIEWERS
 
     def test_returns_same_manager_on_subsequent_calls(self):
         hub = _make_ws_hub()

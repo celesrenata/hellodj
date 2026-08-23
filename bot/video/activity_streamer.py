@@ -9,6 +9,7 @@ and max session duration enforcement.
 from __future__ import annotations
 
 import asyncio
+import enum
 import logging
 import shutil
 import time
@@ -43,6 +44,63 @@ class QueueFullError(Exception):
 
 class TransitionDeniedError(Exception):
     """Raised when a state transition is not allowed in the current state."""
+
+
+class CountdownPhase(enum.Enum):
+    """Three-phase countdown state for video session startup."""
+
+    WAITING = "waiting"
+    COUNTDOWN = "countdown"
+    PLAYING = "playing"
+
+
+class CountdownStateMachine:
+    """Finite state machine governing the countdown lifecycle.
+
+    Transitions:
+        WAITING → COUNTDOWN (start_countdown)
+        COUNTDOWN → PLAYING (complete_countdown)
+        COUNTDOWN → WAITING (reset, e.g. all viewers disconnect)
+        PLAYING → WAITING (reset, e.g. new track)
+    """
+
+    def __init__(self, countdown_seconds: int = 3) -> None:
+        self.phase: CountdownPhase = CountdownPhase.WAITING
+        self.countdown_seconds: int = countdown_seconds
+        self.countdown_start_mono: float = 0.0
+        self._disconnect_timer: asyncio.Task | None = None
+
+    def can_start_countdown(self) -> bool:
+        """Return True if the machine is in WAITING and can begin a countdown."""
+        return self.phase == CountdownPhase.WAITING
+
+    def start_countdown(self) -> bool:
+        """Transition WAITING → COUNTDOWN. Returns False if not in WAITING."""
+        if self.phase != CountdownPhase.WAITING:
+            return False
+        self.phase = CountdownPhase.COUNTDOWN
+        self.countdown_start_mono = time.monotonic()
+        return True
+
+    def complete_countdown(self) -> bool:
+        """Transition COUNTDOWN → PLAYING. Returns False if not in COUNTDOWN."""
+        if self.phase != CountdownPhase.COUNTDOWN:
+            return False
+        self.phase = CountdownPhase.PLAYING
+        return True
+
+    def reset(self) -> None:
+        """Reset for a new video session (any phase → WAITING)."""
+        self.phase = CountdownPhase.WAITING
+        self.countdown_start_mono = 0.0
+
+    @property
+    def remaining_seconds(self) -> float:
+        """Seconds remaining in the countdown, or 0.0 if not counting down."""
+        if self.phase != CountdownPhase.COUNTDOWN:
+            return 0.0
+        elapsed = time.monotonic() - self.countdown_start_mono
+        return max(0.0, self.countdown_seconds - elapsed)
 
 
 class ActivityStreamer:
@@ -85,12 +143,52 @@ class ActivityStreamer:
         # Lock guarding all source-change operations
         self._transition_lock: asyncio.Lock = asyncio.Lock()
 
-        # Countdown protocol sub-states
-        self.waiting_for_viewer: bool = False
-        self.countdown_active: bool = False
-        self.countdown_start_time: float = 0.0
-        self.countdown_seconds: int = 3
-        self.playback_started: bool = False
+        # Countdown state machine (replaces boolean flags)
+        self._csm = CountdownStateMachine(countdown_seconds=3)
+
+    # ------------------------------------------------------------------
+    # Backward-compatible property accessors (bridge old API to CSM)
+    # ------------------------------------------------------------------
+
+    @property
+    def waiting_for_viewer(self) -> bool:
+        """True when in WAITING phase (waiting for first viewer)."""
+        return self._csm.phase == CountdownPhase.WAITING
+
+    @waiting_for_viewer.setter
+    def waiting_for_viewer(self, value: bool) -> None:
+        """Legacy setter — ignored; state managed by CSM."""
+        pass
+
+    @property
+    def countdown_active(self) -> bool:
+        """True when in COUNTDOWN phase."""
+        return self._csm.phase == CountdownPhase.COUNTDOWN
+
+    @countdown_active.setter
+    def countdown_active(self, value: bool) -> None:
+        """Legacy setter — ignored; state managed by CSM."""
+        pass
+
+    @property
+    def playback_started(self) -> bool:
+        """True when in PLAYING phase."""
+        return self._csm.phase == CountdownPhase.PLAYING
+
+    @playback_started.setter
+    def playback_started(self, value: bool) -> None:
+        """Legacy setter — ignored; state managed by CSM."""
+        pass
+
+    @property
+    def countdown_seconds(self) -> int:
+        """Return the countdown duration in seconds."""
+        return self._csm.countdown_seconds
+
+    @countdown_seconds.setter
+    def countdown_seconds(self, value: int) -> None:
+        """Set the countdown duration."""
+        self._csm.countdown_seconds = value
 
     @property
     def is_active(self) -> bool:
@@ -165,11 +263,8 @@ class ActivityStreamer:
             self.start_time = 0.0
             self.state = StreamState.IDLE
 
-            # Reset countdown sub-states
-            self.waiting_for_viewer = False
-            self.countdown_active = False
-            self.countdown_start_time = 0.0
-            self.playback_started = False
+            # Reset countdown state machine
+            self._csm.reset()
 
             log.info("Activity session stopped for guild=%d", self.guild_id)
 
@@ -354,7 +449,7 @@ class ActivityStreamer:
 
         # If we're waiting for the first viewer or countdown hasn't completed,
         # the video hasn't actually started playing — report 0.
-        if not self.playback_started:
+        if self._csm.phase != CountdownPhase.PLAYING:
             return 0.0
 
         elapsed = time.monotonic() - self.start_time
@@ -378,7 +473,7 @@ class ActivityStreamer:
         Resets start_time so that get_elapsed_seconds() returns the new
         position. Called by ws_hub when a client sends a seek message.
         """
-        if not self.playback_started or self.start_time == 0.0:
+        if self._csm.phase != CountdownPhase.PLAYING or self.start_time == 0.0:
             return
 
         # Clamp position to [0, duration]
@@ -405,18 +500,16 @@ class ActivityStreamer:
     def start_countdown(self) -> None:
         """Begin the countdown sequence.
 
-        Sets countdown_active and records the start time. The WebSocketHub
+        Delegates to the CountdownStateMachine. The WebSocketHub
         is responsible for broadcasting the countdown message to clients.
         """
-        if self.countdown_active or self.playback_started:
+        if not self._csm.can_start_countdown():
             return
-        self.countdown_active = True
-        self.countdown_start_time = time.monotonic()
-        self.waiting_for_viewer = False
+        self._csm.start_countdown()
         log.info(
             "Countdown started for guild=%d (seconds=%d)",
             self.guild_id,
-            self.countdown_seconds,
+            self._csm.countdown_seconds,
         )
 
     def on_ready_received(self) -> bool:
@@ -425,17 +518,16 @@ class ActivityStreamer:
         Returns True if this is the first ready (triggers start broadcast),
         False if playback already started or countdown not active.
         """
-        if not self.countdown_active:
-            # Stale or spurious ready — ignore
+        if self._csm.phase != CountdownPhase.COUNTDOWN:
+            # Not in countdown phase — ignore stale/spurious ready
             return False
-        if self.playback_started:
-            # Already started from a previous ready — ignore duplicate
+
+        # Transition COUNTDOWN → PLAYING
+        if not self._csm.complete_countdown():
             return False
 
         # Mark position 0: reset start_time to now
         self.start_time = time.monotonic()
-        self.playback_started = True
-        self.countdown_active = False
         log.info(
             "Playback started (ready received) for guild=%d — position reset to 0",
             self.guild_id,
@@ -445,13 +537,11 @@ class ActivityStreamer:
     def cancel_countdown(self) -> None:
         """Cancel an active countdown (e.g., all viewers disconnected).
 
-        Resets countdown state without starting playback.
+        Resets countdown state machine back to WAITING without starting playback.
         """
-        if not self.countdown_active:
+        if self._csm.phase != CountdownPhase.COUNTDOWN:
             return
-        self.countdown_active = False
-        self.countdown_start_time = 0.0
-        self.waiting_for_viewer = True
+        self._csm.reset()
         log.info(
             "Countdown cancelled for guild=%d (all viewers disconnected)",
             self.guild_id,
@@ -459,27 +549,17 @@ class ActivityStreamer:
 
     def get_countdown_remaining(self) -> float:
         """Return remaining countdown seconds, or 0 if not active."""
-        if not self.countdown_active or self.countdown_start_time == 0.0:
-            return 0.0
-        elapsed = time.monotonic() - self.countdown_start_time
-        remaining = self.countdown_seconds - elapsed
-        return max(0.0, remaining)
+        return self._csm.remaining_seconds
 
     def should_countdown(self) -> bool:
         """Return True if a countdown should be triggered for a new viewer.
 
-        Conditions: in BUFFERING/STREAMING, elapsed < 5s, countdown not already
-        fired, playback not yet started.
+        Conditions: in BUFFERING/STREAMING, CSM is in WAITING phase (can
+        start countdown), and playback not yet started.
         """
         if self.state not in (StreamState.BUFFERING, StreamState.STREAMING):
             return False
-        if self.playback_started:
-            return False
-        if self.countdown_active:
-            # Already counting down — new joiners get the remaining time
-            return False
-        elapsed = self.get_elapsed_seconds()
-        return elapsed < 5.0
+        return self._csm.can_start_countdown()
 
     async def cleanup(self) -> None:
         """Delete all HLS files for the current session.
@@ -514,6 +594,76 @@ class ActivityStreamer:
         # Trim oldest entries if over max
         while len(self.history) > _MAX_HISTORY_SIZE:
             self.history.pop(0)
+
+    async def _await_segment_zero(self, hls_dir: Path, timeout: float = 10.0) -> float:
+        """Poll for segment 0 in the HLS output directory.
+
+        Checks every 200ms for ``stream0.ts`` with size > 0.  Returns 0.0
+        when found, or a fallback anchor offset computed from the lowest
+        available segment if the timeout expires.
+        """
+        deadline = time.monotonic() + timeout
+        while time.monotonic() < deadline:
+            playlist = hls_dir / "stream.m3u8"
+            if playlist.exists():
+                seg0 = hls_dir / "stream0.ts"
+                if seg0.exists() and seg0.stat().st_size > 0:
+                    return 0.0
+            await asyncio.sleep(0.2)
+        # Fallback: find lowest segment, compute offset
+        return self._find_lowest_segment_offset(hls_dir)
+
+    def _find_lowest_segment_offset(self, hls_dir: Path) -> float:
+        """Parse .m3u8 and compute offset from lowest available segment.
+
+        Returns ``min_index * segment_duration``, or 0.0 if the playlist
+        is missing or unparseable.
+        """
+        playlist = hls_dir / "stream.m3u8"
+        if not playlist.exists():
+            log.error("Segment-zero timeout: no playlist found in %s", hls_dir)
+            return 0.0
+
+        segment_duration = 0.0
+        min_index = float("inf")
+
+        try:
+            content = playlist.read_text()
+            for line in content.splitlines():
+                if line.startswith("#EXTINF:"):
+                    # Extract duration from EXTINF tag (all segments same duration)
+                    try:
+                        segment_duration = float(line.split(":")[1].rstrip(","))
+                    except (ValueError, IndexError):
+                        pass
+                elif line.startswith("stream") and line.endswith(".ts"):
+                    # Extract segment index from filename like "stream0.ts"
+                    try:
+                        idx = int(line.replace("stream", "").replace(".ts", ""))
+                        min_index = min(min_index, idx)
+                    except ValueError:
+                        pass
+        except OSError as exc:
+            log.error("Failed to parse playlist %s: %s", playlist, exc)
+            return 0.0
+
+        if min_index == float("inf") or segment_duration <= 0:
+            log.error(
+                "Segment-zero timeout: could not determine offset from %s",
+                playlist,
+            )
+            return 0.0
+
+        offset = min_index * segment_duration
+        log.warning(
+            "Segment-zero timeout: using fallback offset %.1fs "
+            "(segment %d × %.1fs) from %s",
+            offset,
+            min_index,
+            segment_duration,
+            hls_dir,
+        )
+        return offset
 
     async def _stop_internal(self) -> None:
         """Stop session internals without acquiring the lock (caller holds it)."""
@@ -556,11 +706,8 @@ class ActivityStreamer:
         self.start_time = 0.0
         self.state = StreamState.IDLE
 
-        # Reset countdown sub-states
-        self.waiting_for_viewer = False
-        self.countdown_active = False
-        self.countdown_start_time = 0.0
-        self.playback_started = False
+        # Reset countdown state machine
+        self._csm.reset()
 
         log.info("Activity session stopped for guild=%d", self.guild_id)
 
@@ -648,11 +795,8 @@ class ActivityStreamer:
         self.state = StreamState.STREAMING
         self.start_time = time.monotonic()
 
-        # Enter WAITING_FOR_VIEWER sub-state: countdown hasn't fired yet
-        self.waiting_for_viewer = True
-        self.countdown_active = False
-        self.countdown_start_time = 0.0
-        self.playback_started = False
+        # Enter WAITING phase: countdown hasn't fired yet (reset CSM for new track)
+        self._csm.reset()
 
         log.info(
             "Activity now streaming for guild=%d session=%s title='%s'",

@@ -6,6 +6,139 @@
  */
 import { DiscordSDK } from './discord-sdk.js';
 
+/**
+ * ClockSync — Manages the monotonic clock sync handshake with the server.
+ *
+ * Computes the offset between local performance.now() and the server's
+ * time.monotonic(), enabling accurate drift detection without wall-clock
+ * dependency. Retries up to 3 times on timeout, then signals failure.
+ */
+class ClockSync {
+  constructor(wsSend) {
+    this._wsSend = wsSend;
+    this.serverOffset = 0;
+    this.rtt = 0;
+    this.synced = false;
+    this._pendingT1 = null;
+    this._retryCount = 0;
+    this._maxRetries = 3;
+    this._timeout = null;
+    this._onFailed = null; // Callback set by caller to close WS on exhausted retries
+  }
+
+  initiate() {
+    this._pendingT1 = performance.now();
+    this._wsSend({ type: 'clock_sync', client_t1: this._pendingT1 });
+    this._timeout = setTimeout(() => this._onTimeout(), 2000);
+  }
+
+  handleReply(data) {
+    if (data.client_t1 !== this._pendingT1) return false;
+    clearTimeout(this._timeout);
+    this._timeout = null;
+    const now = performance.now();
+    this.rtt = now - this._pendingT1;
+    this.serverOffset = data.server_mono - (this._pendingT1 + this.rtt / 2);
+    this.synced = true;
+    this._retryCount = 0;
+    return true;
+  }
+
+  serverNow() {
+    return performance.now() + this.serverOffset;
+  }
+
+  get driftTolerance() {
+    const rttSeconds = this.rtt / 1000;
+    return Math.min(10.0, Math.max(3.0, rttSeconds * 2));
+  }
+
+  _onTimeout() {
+    this._timeout = null;
+    this._retryCount++;
+    if (this._retryCount >= this._maxRetries) {
+      // Exhausted retries — close WebSocket to trigger reconnection
+      if (this._onFailed) this._onFailed();
+      return;
+    }
+    // Retry after 500ms delay
+    setTimeout(() => this.initiate(), 500);
+  }
+
+  destroy() {
+    if (this._timeout) {
+      clearTimeout(this._timeout);
+      this._timeout = null;
+    }
+  }
+}
+
+// --- Drift Checker State (module scope) ---
+let driftCheckInterval = null;
+let isBuffering = false;
+
+/**
+ * Select the correct anchor_time field from a state message.
+ * Prefers anchor_time_mono (monotonic) if present and > 0.
+ */
+function selectAnchorTime(state) {
+  if (state.anchor_time_mono && state.anchor_time_mono > 0) {
+    return state.anchor_time_mono;
+  }
+  return state.anchor_time;
+}
+
+/**
+ * Compute expected playback position from server state + clock sync.
+ * Uses monotonic anchor math: anchor_position + (serverNow - anchorTime).
+ * Returns clamped to >= 0.0.
+ */
+function computeExpectedPosition(state, clockSync) {
+  const anchorTime = selectAnchorTime(state);
+  if (!state.playing) return Math.max(0.0, state.anchor_position);
+  const serverNow = clockSync.serverNow();
+  const expected = state.anchor_position + (serverNow - anchorTime);
+  return Math.max(0.0, expected);
+}
+
+/**
+ * Start the drift checker interval. Every 2 seconds, compares the video
+ * element's currentTime to the expected server position and seeks if drift
+ * exceeds the RTT-adaptive tolerance.
+ *
+ * @param {HTMLVideoElement} videoEl - The video element to monitor
+ * @param {Function} getState - Returns the current playback state object
+ * @param {ClockSync} clockSync - The clock sync instance for offset/tolerance
+ */
+function startDriftChecker(videoEl, getState, clockSync) {
+  stopDriftChecker();
+  driftCheckInterval = setInterval(() => {
+    if (isBuffering) return;
+    const state = getState();
+    if (!state || !state.playing) return;
+    if (!clockSync.synced) return;
+
+    const expected = computeExpectedPosition(state, clockSync);
+    const actual = videoEl.currentTime;
+    const drift = Math.abs(actual - expected);
+
+    if (drift > clockSync.driftTolerance) {
+      console.log(`[DriftChecker] drift=${drift.toFixed(2)}s > tolerance=${clockSync.driftTolerance.toFixed(2)}s — seeking`);
+      videoEl.currentTime = expected;
+    }
+  }, 2000);
+}
+
+/**
+ * Stop the drift checker interval.
+ */
+function stopDriftChecker() {
+  if (driftCheckInterval) {
+    clearInterval(driftCheckInterval);
+    driftCheckInterval = null;
+  }
+}
+
 (async () => {
   // --- Remote debug logger ---
   const _logQueue = [];
@@ -625,9 +758,31 @@ import { DiscordSDK } from './discord-sdk.js';
   let _whiteboardSync = null; // Whiteboard WebSocket sync handler
   let _searchPanel = null; // Search panel instance
 
+  // --- Clock Sync State (module-scope within IIFE) ---
+  let clockSync = null;          // Current ClockSync instance
+  let _syncQueue = [];           // Messages queued while awaiting clock sync
+  let _syncTimeout = null;       // 5s timeout for sync completion on reconnect
+  let _hasConnectedBefore = false; // Track if this is a reconnection
+  let _lastState = null;         // Last received state for drift checking
+
   const wsSend = (msg) => {
     if (ws && ws.readyState === WebSocket.OPEN) {
       ws.send(JSON.stringify(msg));
+    }
+  };
+
+  /**
+   * Process queued messages after clock sync completes (or times out).
+   * Replays state messages with the (possibly new) clock offset.
+   */
+  const _processSyncQueue = () => {
+    if (_syncTimeout) {
+      clearTimeout(_syncTimeout);
+      _syncTimeout = null;
+    }
+    const queue = _syncQueue.splice(0);
+    for (const msg of queue) {
+      handleWsMessage(msg);
     }
   };
 
@@ -643,20 +798,92 @@ import { DiscordSDK } from './discord-sdk.js';
     ws = new WebSocket(wsUrl);
 
     ws.addEventListener('open', () => {
-      console.log('[HelloDJ] WebSocket connected');
+      console.log('[HelloDJ] WebSocket connected' + (_hasConnectedBefore ? ' (reconnect)' : ''));
       clearTimeout(_wsReconnectTimer);
+
+      // Destroy old clock sync (preserve serverOffset/rtt for fallback)
+      const prevOffset = clockSync ? clockSync.serverOffset : 0;
+      const prevRtt = clockSync ? clockSync.rtt : 0;
+      if (clockSync) clockSync.destroy();
+
+      // Create new ClockSync instance
+      clockSync = new ClockSync(wsSend);
+      // Carry forward previous offset/rtt as fallback
+      clockSync.serverOffset = prevOffset;
+      clockSync.rtt = prevRtt;
+      clockSync._onFailed = () => {
+        // Exhausted retries — on reconnect, use stored offset and process queue
+        if (_hasConnectedBefore && (prevOffset !== 0 || prevRtt !== 0)) {
+          console.log('[HelloDJ] Clock sync failed on reconnect, using stored offset');
+          clockSync.serverOffset = prevOffset;
+          clockSync.rtt = prevRtt;
+          _processSyncQueue();
+        } else {
+          // First connection with no previous offset — close WS to trigger reconnect
+          if (ws) ws.close();
+        }
+      };
+
+      // Reset sync queue
+      _syncQueue = [];
+
+      // Initiate clock sync handshake immediately
+      clockSync.initiate();
+
+      // Set up 5s sync timeout — if clock sync doesn't complete in 5s,
+      // proceed with stored offset and process queued messages
+      if (_syncTimeout) clearTimeout(_syncTimeout);
+      _syncTimeout = setTimeout(() => {
+        _syncTimeout = null;
+        if (!clockSync.synced) {
+          console.log('[HelloDJ] Clock sync timeout (5s), using stored offset');
+          _processSyncQueue();
+        }
+      }, 5000);
+
+      _hasConnectedBefore = true;
     });
 
     ws.addEventListener('message', (event) => {
       let data;
       try { data = JSON.parse(event.data); } catch { return; }
+
+      // Handle clock_sync_reply directly
+      if (data.type === 'clock_sync_reply') {
+        if (clockSync && clockSync.handleReply(data)) {
+          console.log(`[HelloDJ] Clock synced: offset=${clockSync.serverOffset.toFixed(2)}ms, rtt=${clockSync.rtt.toFixed(2)}ms`);
+          // Sync complete — process queued messages with new offset
+          _processSyncQueue();
+          // Start drift checker if we have a PLAYING state
+          if (_lastState && _lastState.playing && mode === 'VIDEO_PLAYING') {
+            startDriftChecker(videoEl, () => _lastState, clockSync);
+          }
+        }
+        return;
+      }
+
+      // While clock sync is pending on reconnect, queue state messages
+      // but let time-critical messages (countdown, start) through immediately
+      if (clockSync && !clockSync.synced && _syncTimeout) {
+        const timeCritical = ['countdown', 'start', 'session_end', 'session_change',
+                             'visualizer', 'track_change', 'lyrics_data', 'lyrics_unavailable',
+                             'lyrics_overlay_enable', 'lyrics_overlay_disable'];
+        if (!timeCritical.includes(data.type)) {
+          // Queue state/play/pause/seek messages until sync completes
+          _syncQueue.push(data);
+          return;
+        }
+      }
+
       handleWsMessage(data);
     });
 
     ws.addEventListener('close', () => {
       console.log('[HelloDJ] WebSocket closed');
+      // Stop drift checker on disconnect (will restart after reconnect + sync)
+      stopDriftChecker();
       if (!_wsIntentionalClose) {
-        // Reconnect after 3s
+        // Reconnect after 3s — preserve video element and HLS session
         _wsReconnectTimer = setTimeout(connectWebSocket, 3000);
       }
     });
@@ -669,6 +896,15 @@ import { DiscordSDK } from './discord-sdk.js';
   const disconnectWebSocket = () => {
     _wsIntentionalClose = true;
     clearTimeout(_wsReconnectTimer);
+    if (_syncTimeout) {
+      clearTimeout(_syncTimeout);
+      _syncTimeout = null;
+    }
+    _syncQueue = [];
+    stopDriftChecker();
+    if (clockSync) {
+      clockSync.destroy();
+    }
     if (ws) {
       ws.close();
       ws = null;
@@ -699,12 +935,30 @@ import { DiscordSDK } from './discord-sdk.js';
           videoEl.play().catch(() => {});
           videoEl.muted = wasMuted;
         }
-        // Use anchor for position if available, otherwise fall back to position field
-        if (data.anchor_position != null && data.anchor_time != null) {
+        // Update _lastState for drift checker
+        if (data.anchor_position != null) {
+          _lastState = {
+            playing: true,
+            anchor_position: data.anchor_position,
+            anchor_time_mono: data.anchor_time_mono || 0,
+            anchor_time: data.anchor_time || 0,
+          };
+        }
+        // Use monotonic clock math if clock sync is available
+        if (clockSync && clockSync.synced && data.anchor_position != null && data.anchor_time_mono > 0) {
+          const expected = computeExpectedPosition(_lastState, clockSync);
+          const drift = Math.abs(videoEl.currentTime - expected);
+          if (drift > clockSync.driftTolerance) videoEl.currentTime = expected;
+        } else if (data.anchor_position != null && data.anchor_time != null) {
+          // Fallback to wall-clock math
           const expected = data.anchor_position + (Date.now() / 1000 - data.anchor_time);
           if (Math.abs(videoEl.currentTime - expected) > 3) videoEl.currentTime = expected;
         } else if (data.position != null) {
           videoEl.currentTime = data.position;
+        }
+        // Start drift checker on play
+        if (clockSync && clockSync.synced && _lastState && mode === 'VIDEO_PLAYING') {
+          startDriftChecker(videoEl, () => _lastState, clockSync);
         }
         _remoteAction = false;
         break;
@@ -712,9 +966,23 @@ import { DiscordSDK } from './discord-sdk.js';
       case 'pause':
         _remoteAction = true;
         videoEl.pause();
-        // Only seek if server position differs significantly from client
-        // (avoids jumping when client is already at the correct position)
+        // Update _lastState for drift checker
         if (data.anchor_position != null) {
+          _lastState = {
+            playing: false,
+            anchor_position: data.anchor_position,
+            anchor_time_mono: data.anchor_time_mono || 0,
+            anchor_time: data.anchor_time || 0,
+          };
+        }
+        // Use monotonic clock math if clock sync is available
+        if (clockSync && clockSync.synced && data.anchor_position != null && data.anchor_time_mono > 0) {
+          // When paused, expected is just anchor_position
+          const expected = data.anchor_position;
+          const drift = Math.abs(videoEl.currentTime - expected);
+          if (drift > clockSync.driftTolerance) videoEl.currentTime = expected;
+        } else if (data.anchor_position != null) {
+          // Fallback: only seek if server position differs significantly
           if (Math.abs(videoEl.currentTime - data.anchor_position) > 3) {
             videoEl.currentTime = data.anchor_position;
           }
@@ -723,6 +991,8 @@ import { DiscordSDK } from './discord-sdk.js';
             videoEl.currentTime = data.position;
           }
         }
+        // Stop drift checker on pause
+        stopDriftChecker();
         _remoteAction = false;
         break;
 
@@ -755,8 +1025,8 @@ import { DiscordSDK } from './discord-sdk.js';
         break;
 
       case 'state':
-        // Late-joiner / reconnect sync: use anchor-based position computation.
-        // Only seek if drift > 3s — eliminates jitter from network latency.
+        // Late-joiner / reconnect sync: use monotonic anchor-based position computation.
+        // Uses RTT-adaptive drift tolerance when clock sync is available.
         _remoteAction = true;
         // Only switch to VIDEO_PLAYING for actual video streams
         if (data.media_type === 'video') {
@@ -776,8 +1046,24 @@ import { DiscordSDK } from './discord-sdk.js';
         }
         {
           const wasMuted = videoEl.muted;
+
+          // Update _lastState for drift checker
+          _lastState = {
+            playing: !!data.playing,
+            anchor_position: data.anchor_position || 0,
+            anchor_time_mono: data.anchor_time_mono || 0,
+            anchor_time: data.anchor_time || 0,
+          };
+
           let expectedPos = 0;
-          if (data.anchor_position != null && data.anchor_time != null) {
+          let tolerance = 3; // default fixed tolerance
+
+          // Use monotonic clock math if clock sync is available and message has anchor_time_mono
+          if (clockSync && clockSync.synced && data.anchor_time_mono > 0) {
+            expectedPos = computeExpectedPosition(_lastState, clockSync);
+            tolerance = clockSync.driftTolerance;
+          } else if (data.anchor_position != null && data.anchor_time != null) {
+            // Fallback to wall-clock math
             if (data.playing) {
               expectedPos = data.anchor_position + (Date.now() / 1000 - data.anchor_time);
             } else {
@@ -788,12 +1074,18 @@ import { DiscordSDK } from './discord-sdk.js';
           }
 
           const drift = Math.abs(videoEl.currentTime - expectedPos);
-          if (drift > 3) videoEl.currentTime = expectedPos;
+          if (drift > tolerance) videoEl.currentTime = expectedPos;
 
           if (data.playing) {
             videoEl.play().catch(() => {});
+            // Start drift checker for playing state
+            if (clockSync && clockSync.synced) {
+              startDriftChecker(videoEl, () => _lastState, clockSync);
+            }
           } else {
             videoEl.pause();
+            // Stop drift checker for non-playing states
+            stopDriftChecker();
           }
           videoEl.muted = wasMuted;
         }
@@ -822,10 +1114,21 @@ import { DiscordSDK } from './discord-sdk.js';
         // Countdown complete on server side — begin HLS playback at position 0.
         // Skip if HLS is already initialized (this client triggered the ready
         // and already called initHls from its own countdown onComplete).
+        // Store state for drift checker
+        _lastState = {
+          playing: true,
+          anchor_position: data.position || 0,
+          anchor_time_mono: data.anchor_time_mono || 0,
+          anchor_time: data.timestamp || 0,
+        };
         if (!hls) {
           setMode('VIDEO_PLAYING');
           const playlistUrl = `stream/${guildId}/playlist.m3u8?token=${encodeURIComponent(instanceId)}`;
           initHls(playlistUrl, true);
+        }
+        // Start drift checker after playback begins
+        if (clockSync && clockSync.synced && _lastState) {
+          startDriftChecker(videoEl, () => _lastState, clockSync);
         }
         break;
 
@@ -884,6 +1187,9 @@ import { DiscordSDK } from './discord-sdk.js';
       case 'session_end':
         // Session ended — show DVD screensaver instead of blank IDLE
         _rlog('[session_end] received — going VISUALIZER_DVD, currentSessionId=' + currentSessionId);
+        // Stop drift checker and clear state
+        stopDriftChecker();
+        _lastState = null;
         setMode('VISUALIZER_DVD');
         if (hls) { hls.destroy(); hls = null; }
         videoEl.pause();
@@ -1033,13 +1339,20 @@ import { DiscordSDK } from './discord-sdk.js';
       return;
     }
 
+    // Determine startPosition: use anchor_position from _lastState if > 0
+    // (fallback from segment-zero timeout), otherwise default to 0
+    let startPos = isLive ? -1 : 0;
+    if (!isLive && _lastState && _lastState.anchor_position > 0 && seekToStart) {
+      startPos = _lastState.anchor_position;
+    }
+
     const hlsConfig = {
       enableWorker: true,
       lowLatencyMode: isLive,
       maxBufferLength: isLive ? 10 : 30,
       maxMaxBufferLength: isLive ? 20 : 60,
       startLevel: 0,
-      startPosition: isLive ? -1 : 0,
+      startPosition: startPos,
       // Start rendering immediately — don't wait for large buffer before first frame
       maxBufferHole: 0.5,
       nudgeMaxRetry: 5,
@@ -1289,6 +1602,10 @@ import { DiscordSDK } from './discord-sdk.js';
       visualizerLoading.style.display = 'none';
     }
   });
+
+  // Buffering detection for drift checker — skip checks while rebuffering
+  videoEl.addEventListener('waiting', () => { isBuffering = true; });
+  videoEl.addEventListener('canplay', () => { isBuffering = false; });
 
   // --- Scrubber drag-to-seek ---
   let dragging = false;

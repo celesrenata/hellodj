@@ -1259,18 +1259,18 @@ async def _start_video_from_queue(guild_id: int, entry: dict, *, from_unified_qu
                 log.info("_start_video_from_queue: reusing idle streamer for guild=%d", guild_id)
                 await streamer.play(source)
 
-                import time as _time
                 # Set state as playing immediately — no countdown for reused sessions
-                # since viewers are already connected
+                # since viewers are already connected.
+                # Use default anchor_time (time.monotonic()) — NOT wall-clock.
                 video_cog._backend.ws_hub.set_state(
                     guild_id,
-                    PlaybackState(playing=True, anchor_position=0.0, anchor_time=_time.time()),
+                    PlaybackState(playing=True, anchor_position=0.0),
                 )
                 # Mark playback as started (skip countdown protocol)
-                streamer.waiting_for_viewer = False
-                streamer.countdown_active = False
-                streamer.playback_started = True
-                streamer.start_time = _time.monotonic()
+                # Force CSM through WAITING → COUNTDOWN → PLAYING
+                streamer._csm.start_countdown()
+                streamer._csm.complete_countdown()
+                streamer.start_time = time.monotonic()
 
                 # Broadcast session_change so clients reinit HLS and auto-play
                 await video_cog._backend.ws_hub.broadcast_from_bot(guild_id, {
@@ -1322,10 +1322,10 @@ async def _start_video_from_queue(guild_id: int, entry: dict, *, from_unified_qu
         # until the first viewer connects and the countdown completes.
         # The ws_hub's _handle_ready resets position=0 and playing=True
         # after the countdown finishes.
-        import time as _time
+        # Use default anchor_time (time.monotonic()) — NOT wall-clock.
         video_cog._backend.ws_hub.set_state(
             guild_id,
-            PlaybackState(playing=False, anchor_position=0.0, anchor_time=_time.time()),
+            PlaybackState(playing=False, anchor_position=0.0),
         )
 
         if text_channel:
@@ -1615,7 +1615,7 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
                     duration_sec = (_cur.get("duration") or getattr(track, "length", 0) or 0) / 1000.0
                     video_cog._backend.ws_hub.set_state(
                         guild_id,
-                        _PS(playing=True, anchor_position=0.0, anchor_time=time.time()),
+                        _PS(playing=True, anchor_position=0.0),
                     )
                     # Broadcast audio state to Activity clients (fire-and-forget to avoid blocking)
                     _asyncio.ensure_future(video_cog._backend.ws_hub.broadcast_from_bot(guild_id, {

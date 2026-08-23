@@ -38,44 +38,56 @@ class PlaybackState:
 
     Uses an anchor-based model for jitter-free global sync:
     - anchor_position: the video position (seconds) at anchor_time
-    - anchor_time: wall-clock time (time.time()) when anchor_position was set
+    - anchor_time: monotonic time (time.monotonic()) when anchor_position was set
     - playing: whether the video is advancing from the anchor
 
     Clients compute current position as:
-        if playing: anchor_position + (local_now - anchor_time)
+        if playing: anchor_position + (local_mono_now + server_offset - anchor_time)
         else: anchor_position
 
     The anchor only changes on seek, play, or pause — NOT on periodic ticks.
     This eliminates network-latency-induced jitter for global viewers.
+
+    The _epoch_offset field captures the difference between wall-clock and
+    monotonic time at construction, allowing conversion back to wall-clock
+    via the anchor_time_wall property for backward compatibility.
     """
 
     playing: bool = True
     anchor_position: float = 0.0  # video position in seconds at anchor_time
-    anchor_time: float = dataclasses.field(default_factory=time.time)  # wall clock
+    anchor_time: float = dataclasses.field(default_factory=time.monotonic)  # monotonic
+    _epoch_offset: float = dataclasses.field(
+        default_factory=lambda: time.time() - time.monotonic()
+    )
     subtitle_lang: str | None = None  # "for everyone" subtitle
     audio_lang: str | None = None  # "for everyone" audio track
+
+    @property
+    def anchor_time_wall(self) -> float:
+        """Wall-clock equivalent of anchor_time (for backward compat)."""
+        return self.anchor_time + self._epoch_offset
 
     @property
     def position(self) -> float:
         """Compute current position from anchor (for backward compat)."""
         if self.playing:
-            return self.anchor_position + (time.time() - self.anchor_time)
+            return self.anchor_position + (time.monotonic() - self.anchor_time)
         return self.anchor_position
 
     def seek_to(self, position: float) -> None:
         """Update anchor for a seek operation."""
         self.anchor_position = position
-        self.anchor_time = time.time()
+        self.anchor_time = time.monotonic()
 
     def set_playing(self, playing: bool) -> None:
         """Toggle play/pause, freezing or resuming the anchor."""
         if playing and not self.playing:
             # Resuming: anchor stays at current position, time resets to now
-            self.anchor_time = time.time()
+            self.anchor_time = time.monotonic()
         elif not playing and self.playing:
             # Pausing: freeze position at current computed value
-            self.anchor_position = self.position
-            self.anchor_time = time.time()
+            self.anchor_position = self.anchor_position + (time.monotonic() - self.anchor_time)
+            self.anchor_time = time.monotonic()
         self.playing = playing
 
 
@@ -240,18 +252,28 @@ class WebSocketHub:
         strokes = self.get_stroke_registry(guild_id).get_all()
         streamer = self._streamers.get(guild_id)
 
+        # Cancel any pending disconnect timeout if a viewer reconnects during COUNTDOWN
+        if streamer is not None and streamer.countdown_active:
+            if streamer._csm._disconnect_timer is not None:
+                streamer._csm._disconnect_timer.cancel()
+                streamer._csm._disconnect_timer = None
+                log.debug(
+                    "Disconnect timer cancelled for guild %d — viewer reconnected",
+                    guild_id,
+                )
+
         # Countdown protocol integration:
-        # If a streamer is active and within the first 5s, trigger or join countdown
-        # instead of sending the regular state message.
+        # If a streamer is active, send phase-appropriate message to new client.
         countdown_sent = False
         if streamer is not None and streamer.state.value in ("buffering", "streaming"):
             if streamer.should_countdown():
-                # First viewer within 5s — start the countdown
+                # First viewer in WAITING phase — start the countdown
                 streamer.start_countdown()
                 countdown_msg = {
                     "type": "countdown",
                     "seconds": streamer.countdown_seconds,
                     "video_title": streamer.source.title if streamer.source else "",
+                    "phase": "countdown",
                 }
                 # Broadcast to ALL clients (including this new one)
                 await self.broadcast(guild_id, countdown_msg)
@@ -264,6 +286,7 @@ class WebSocketHub:
                         "type": "countdown",
                         "seconds": remaining,
                         "video_title": streamer.source.title if streamer.source else "",
+                        "phase": "countdown",
                     }
                     try:
                         await ws.send_json(countdown_msg)
@@ -271,6 +294,19 @@ class WebSocketHub:
                         self._connections[guild_id].discard(ws)
                         return ws
                     countdown_sent = True
+            elif streamer.waiting_for_viewer:
+                # Still in WAITING phase (segment zero not ready yet, or no
+                # countdown triggered yet) — inform client
+                waiting_msg = {
+                    "type": "waiting",
+                    "status": "waiting_for_segment_zero",
+                }
+                try:
+                    await ws.send_json(waiting_msg)
+                except (ConnectionResetError, RuntimeError):
+                    self._connections[guild_id].discard(ws)
+                    return ws
+                countdown_sent = True
 
         if not countdown_sent and (state is not None or strokes):
             # Anchor-based late-joiner sync: send the anchor point so the client
@@ -284,7 +320,8 @@ class WebSocketHub:
                 "media_type": media_type,
                 "playing": state.playing if state else False,
                 "anchor_position": state.anchor_position if state else 0.0,
-                "anchor_time": state.anchor_time if state else time.time(),
+                "anchor_time_mono": state.anchor_time if state else time.monotonic(),
+                "anchor_time": state.anchor_time_wall if state else time.time(),
                 "position": state.position if state else 0.0,  # backward compat
                 "timestamp": time.time(),
                 "subtitle_lang": state.subtitle_lang if state else None,
@@ -361,11 +398,16 @@ class WebSocketHub:
                 guild_id,
                 remaining,
             )
-            # Cancel countdown if all viewers disconnected
+            # Start 5s disconnect timeout if all viewers left during COUNTDOWN
             if was_present and remaining == 0:
                 streamer = self._streamers.get(guild_id)
                 if streamer is not None and streamer.countdown_active:
-                    streamer.cancel_countdown()
+                    # Don't cancel immediately — allow 5s for reconnection
+                    if streamer._csm._disconnect_timer is not None:
+                        streamer._csm._disconnect_timer.cancel()
+                    streamer._csm._disconnect_timer = asyncio.create_task(
+                        self._countdown_disconnect_timeout(guild_id)
+                    )
 
             # Notify viewer count change (1→0 transition)
             if was_present and remaining == 0:
@@ -408,6 +450,11 @@ class WebSocketHub:
         if msg_type == "previous":
             log.info("WS previous requested for guild %d", guild_id)
             asyncio.ensure_future(self._handle_unified_previous(guild_id))
+            return
+
+        # Clock sync handshake — respond immediately regardless of playback state
+        if msg_type == "clock_sync":
+            await self._handle_clock_sync(guild_id, sender, data)
             return
 
         # Search protocol: search_request, search_cancel, search_play, search_enqueue
@@ -461,7 +508,8 @@ class WebSocketHub:
         # Broadcast to all other clients — include anchor_time for sync
         broadcast_msg = {
             **data,
-            "anchor_time": state.anchor_time,
+            "anchor_time": state.anchor_time_wall,
+            "anchor_time_mono": state.anchor_time,
             "anchor_position": state.anchor_position,
             "timestamp": time.time(),
         }
@@ -492,9 +540,13 @@ class WebSocketHub:
 
         # Broadcast `start` to all connected clients EXCEPT the sender
         # (the sender already started HLS from its own countdown onComplete)
+        mono_now = time.monotonic()
         start_msg = {
             "type": "start",
             "position": 0.0,
+            "anchor_position": 0.0,
+            "anchor_time_mono": mono_now,
+            "anchor_time": mono_now + (time.time() - time.monotonic()),
             "timestamp": time.time(),
         }
         await self.broadcast(guild_id, start_msg, exclude=sender)
@@ -503,13 +555,34 @@ class WebSocketHub:
         state = self._playback_state.setdefault(guild_id, PlaybackState())
         state.playing = True
         state.anchor_position = 0.0
-        state.anchor_time = time.time()
+        state.anchor_time = time.monotonic()
 
         log.info(
             "Countdown complete for guild %d — broadcast start to %d clients",
             guild_id,
             len(self._connections.get(guild_id, set())),
         )
+
+    async def _handle_clock_sync(
+        self, guild_id: int, sender: web.WebSocketResponse, data: dict
+    ) -> None:
+        """Respond to clock_sync with server monotonic time.
+
+        The reply echoes the client's original timestamp and provides the
+        server's current monotonic clock value. The client uses the round-trip
+        to compute its offset relative to the server clock. This handler
+        responds regardless of the current playback or countdown state.
+        """
+        client_t1 = data.get("client_t1")
+        if client_t1 is None:
+            log.debug("clock_sync missing client_t1 from guild %d — ignoring", guild_id)
+            return
+        reply = {
+            "type": "clock_sync_reply",
+            "client_t1": client_t1,
+            "server_mono": time.monotonic(),
+        }
+        await sender.send_json(reply)
 
     async def _handle_stroke_add(
         self, guild_id: int, sender: web.WebSocketResponse, data: dict
@@ -948,6 +1021,21 @@ class WebSocketHub:
     def set_state(self, guild_id: int, state: PlaybackState) -> None:
         """Set the playback state for a guild."""
         self._playback_state[guild_id] = state
+
+    async def _countdown_disconnect_timeout(self, guild_id: int) -> None:
+        """5s timeout: if no viewer reconnects, reset countdown to WAITING."""
+        try:
+            await asyncio.sleep(5.0)
+        except asyncio.CancelledError:
+            return
+        streamer = self._streamers.get(guild_id)
+        if streamer is not None and streamer.countdown_active:
+            streamer._csm.reset()
+            streamer._csm._disconnect_timer = None
+            log.info(
+                "Countdown reset for guild %d — no viewer reconnected within 5s",
+                guild_id,
+            )
 
     async def disconnect_all(self, guild_id: int) -> None:
         """Close all WebSocket connections for a guild (on session end)."""

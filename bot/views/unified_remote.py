@@ -308,10 +308,24 @@ class UnifiedControlView(discord.ui.View):
 
         if state.playing:
             state.set_playing(False)
-            msg = {"type": "pause", "position": state.anchor_position, "anchor_position": state.anchor_position, "anchor_time": state.anchor_time, "timestamp": _time.time()}
+            msg = {
+                "type": "pause",
+                "position": state.anchor_position,
+                "anchor_position": state.anchor_position,
+                "anchor_time": state.anchor_time_wall,
+                "anchor_time_mono": state.anchor_time,
+                "timestamp": _time.time(),
+            }
         else:
             state.set_playing(True)
-            msg = {"type": "play", "position": state.anchor_position, "anchor_position": state.anchor_position, "anchor_time": state.anchor_time, "timestamp": _time.time()}
+            msg = {
+                "type": "play",
+                "position": state.anchor_position,
+                "anchor_position": state.anchor_position,
+                "anchor_time": state.anchor_time_wall,
+                "anchor_time_mono": state.anchor_time,
+                "timestamp": _time.time(),
+            }
 
         ws_hub.set_state(guild_id, state)
         await ws_hub.broadcast_from_bot(guild_id, msg)

@@ -368,7 +368,7 @@ class VideoCog(commands.Cog, name="Video"):
         # Initialize WebSocketHub playback state for this guild
         self._backend.ws_hub.set_state(
             guild_id,
-            PlaybackState(playing=True, anchor_position=0.0, anchor_time=time.time()),
+            PlaybackState(playing=True, anchor_position=0.0, anchor_time=time.monotonic()),
         )
 
         # Send embed — uploads show "Added to Queue", others show "Now Playing"
@@ -489,7 +489,7 @@ class VideoCog(commands.Cog, name="Video"):
         # Initialize WebSocketHub playback state for this guild
         self._backend.ws_hub.set_state(
             guild_id,
-            PlaybackState(playing=True, anchor_position=0.0, anchor_time=time.time()),
+            PlaybackState(playing=True, anchor_position=0.0, anchor_time=time.monotonic()),
         )
 
         # Send "Now Playing" embed with control buttons
@@ -617,12 +617,15 @@ class VideoCog(commands.Cog, name="Video"):
 
         if had_queue and streamer.is_active and streamer.source:
             # Skipped to next — send Now Playing with seek bar
-            new_state = PlaybackState(playing=True, anchor_position=0.0, anchor_time=time.time())
+            new_state = PlaybackState(playing=True, anchor_position=0.0, anchor_time=time.monotonic())
             self._backend.ws_hub.set_state(guild_id, new_state)
             await self._backend.ws_hub.broadcast_from_bot(guild_id, {
                 "type": "state",
                 "playing": True,
                 "position": 0.0,
+                "anchor_position": 0.0,
+                "anchor_time_mono": new_state.anchor_time,
+                "anchor_time": new_state.anchor_time_wall,
                 "timestamp": time.time(),
                 "subtitle_lang": None,
                 "audio_lang": None,
@@ -720,12 +723,15 @@ class VideoCog(commands.Cog, name="Video"):
 
         # Success — now playing previous video
         if streamer.is_active and streamer.source:
-            new_state = PlaybackState(playing=True, anchor_position=0.0, anchor_time=time.time())
+            new_state = PlaybackState(playing=True, anchor_position=0.0, anchor_time=time.monotonic())
             self._backend.ws_hub.set_state(guild_id, new_state)
             await self._backend.ws_hub.broadcast_from_bot(guild_id, {
                 "type": "state",
                 "playing": True,
                 "position": 0.0,
+                "anchor_position": 0.0,
+                "anchor_time_mono": new_state.anchor_time,
+                "anchor_time": new_state.anchor_time_wall,
                 "timestamp": time.time(),
                 "subtitle_lang": None,
                 "audio_lang": None,
@@ -1066,12 +1072,15 @@ class BlockConfirmView(discord.ui.View):
             # Update the now-playing embed if still streaming
             if streamer.is_active and streamer.source:
                 import time as _time
-                new_state = PlaybackState(playing=True, anchor_position=0.0, anchor_time=_time.time())
+                new_state = PlaybackState(playing=True, anchor_position=0.0, anchor_time=_time.monotonic())
                 self._cog._backend.ws_hub.set_state(self._guild_id, new_state)
                 await self._cog._backend.ws_hub.broadcast_from_bot(self._guild_id, {
                     "type": "state",
                     "playing": True,
                     "position": 0.0,
+                    "anchor_position": 0.0,
+                    "anchor_time_mono": new_state.anchor_time,
+                    "anchor_time": new_state.anchor_time_wall,
                     "timestamp": _time.time(),
                     "subtitle_lang": None,
                     "audio_lang": None,
@@ -1169,12 +1178,15 @@ class VideoControlView(discord.ui.View):
         # Success
         if streamer.is_active and streamer.source:
             import time as _time
-            new_state = PlaybackState(playing=True, anchor_position=0.0, anchor_time=_time.time())
+            new_state = PlaybackState(playing=True, anchor_position=0.0, anchor_time=_time.monotonic())
             self._cog._backend.ws_hub.set_state(guild_id, new_state)
             await self._cog._backend.ws_hub.broadcast_from_bot(guild_id, {
                 "type": "state",
                 "playing": True,
                 "position": 0.0,
+                "anchor_position": 0.0,
+                "anchor_time_mono": new_state.anchor_time,
+                "anchor_time": new_state.anchor_time_wall,
                 "timestamp": _time.time(),
                 "subtitle_lang": None,
                 "audio_lang": None,
@@ -1204,7 +1216,7 @@ class VideoControlView(discord.ui.View):
         state.seek_to(new_pos)
         ws_hub.set_state(guild_id, state)
 
-        msg = {"type": "seek", "position": new_pos, "anchor_position": state.anchor_position, "anchor_time": state.anchor_time, "timestamp": _time.time()}
+        msg = {"type": "seek", "position": new_pos, "anchor_position": state.anchor_position, "anchor_time": state.anchor_time_wall, "anchor_time_mono": state.anchor_time, "timestamp": _time.time()}
         await ws_hub.broadcast_from_bot(guild_id, msg)
         await interaction.response.send_message(f"⏪ Seeked back to {int(new_pos)}s", ephemeral=True)
 
@@ -1224,10 +1236,24 @@ class VideoControlView(discord.ui.View):
 
         if state.playing:
             state.set_playing(False)
-            msg = {"type": "pause", "position": state.anchor_position, "anchor_position": state.anchor_position, "anchor_time": state.anchor_time, "timestamp": _time.time()}
+            msg = {
+                "type": "pause",
+                "position": state.anchor_position,
+                "anchor_position": state.anchor_position,
+                "anchor_time": state.anchor_time_wall,
+                "anchor_time_mono": state.anchor_time,
+                "timestamp": _time.time(),
+            }
         else:
             state.set_playing(True)
-            msg = {"type": "play", "position": state.anchor_position, "anchor_position": state.anchor_position, "anchor_time": state.anchor_time, "timestamp": _time.time()}
+            msg = {
+                "type": "play",
+                "position": state.anchor_position,
+                "anchor_position": state.anchor_position,
+                "anchor_time": state.anchor_time_wall,
+                "anchor_time_mono": state.anchor_time,
+                "timestamp": _time.time(),
+            }
 
         ws_hub.set_state(guild_id, state)
         await ws_hub.broadcast_from_bot(guild_id, msg)
@@ -1254,7 +1280,7 @@ class VideoControlView(discord.ui.View):
         state.seek_to(new_pos)
         ws_hub.set_state(guild_id, state)
 
-        msg = {"type": "seek", "position": new_pos, "anchor_position": state.anchor_position, "anchor_time": state.anchor_time, "timestamp": _time.time()}
+        msg = {"type": "seek", "position": new_pos, "anchor_position": state.anchor_position, "anchor_time": state.anchor_time_wall, "anchor_time_mono": state.anchor_time, "timestamp": _time.time()}
         await ws_hub.broadcast_from_bot(guild_id, msg)
         await interaction.response.send_message(f"⏩ Seeked forward to {int(new_pos)}s", ephemeral=True)
 
@@ -1307,12 +1333,15 @@ class VideoControlView(discord.ui.View):
 
         if had_queue and streamer.is_active and streamer.source:
             import time as _time
-            new_state = PlaybackState(playing=True, anchor_position=0.0, anchor_time=_time.time())
+            new_state = PlaybackState(playing=True, anchor_position=0.0, anchor_time=_time.monotonic())
             self._cog._backend.ws_hub.set_state(guild_id, new_state)
             await self._cog._backend.ws_hub.broadcast_from_bot(guild_id, {
                 "type": "state",
                 "playing": True,
                 "position": 0.0,
+                "anchor_position": 0.0,
+                "anchor_time_mono": new_state.anchor_time,
+                "anchor_time": new_state.anchor_time_wall,
                 "timestamp": _time.time(),
                 "subtitle_lang": None,
                 "audio_lang": None,
