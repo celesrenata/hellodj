@@ -472,9 +472,9 @@ class UnifiedSearchEngine:
         # Attempt to read from player guild state — import lazily to avoid
         # circular imports and hard dependency on the player module.
         try:
-            from bot.player import guild_state  # type: ignore[import]
+            import player as _player_module  # type: ignore[import]
 
-            state = guild_state.get(guild_id)
+            state = _player_module.guild_state.get(guild_id)
             if state and "source_provider" in state:
                 return state["source_provider"]
         except (ImportError, Exception):
