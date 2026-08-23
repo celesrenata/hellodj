@@ -29,7 +29,7 @@ resources:
 # Image tags
 images:
   - name: registry.celestium.life/hellodj/bot
-    newTag: video-audio-guard-2026-08-23
+    newTag: visualizer-cog-2026-08-23
   - name: registry.celestium.life/hellodj/web-ui
     newTag: latest
   - name: registry.celestium.life/hellodj/tidal-stream
