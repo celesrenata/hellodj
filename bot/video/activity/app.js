@@ -656,10 +656,15 @@ import { DiscordSDK } from './discord-sdk.js';
       case 'pause':
         _remoteAction = true;
         videoEl.pause();
+        // Only seek if server position differs significantly from client
         if (data.anchor_position != null) {
-          videoEl.currentTime = data.anchor_position;
+          if (Math.abs(videoEl.currentTime - data.anchor_position) > 3) {
+            videoEl.currentTime = data.anchor_position;
+          }
         } else if (data.position != null) {
-          videoEl.currentTime = data.position;
+          if (Math.abs(videoEl.currentTime - data.position) > 3) {
+            videoEl.currentTime = data.position;
+          }
         }
         _remoteAction = false;
         break;
