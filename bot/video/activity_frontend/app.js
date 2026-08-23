@@ -1266,7 +1266,8 @@ import { DiscordSDK } from './discord-sdk.js';
     // If the engine is DVD, we can go straight to DVD mode (WS will confirm with config)
     if (status.visualizer_engine === 'dvd') {
       setMode('VISUALIZER_DVD');
-      _dvdScreensaver = new DVDScreensaver(dvdContainer, '', null);
+      const avatarUrl = status.bot_avatar_url || '';
+      _dvdScreensaver = new DVDScreensaver(dvdContainer, avatarUrl, null);
       _dvdScreensaver.start();
     }
   } else {

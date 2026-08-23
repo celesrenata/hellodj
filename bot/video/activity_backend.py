@@ -81,6 +81,7 @@ class ActivityBackend:
     def __init__(self, registry: SessionRegistry) -> None:
         self._registry = registry
         self._tokens: dict[str, int] = {}  # instance_id → guild_id
+        self.bot_avatar_url: str = ""  # Set by VideoCog after creation
 
         self._ws_hub = WebSocketHub(self._validate_ws_token)
 
@@ -491,6 +492,7 @@ class ActivityBackend:
                     "uploader": None,
                     "playback_started": False,
                     "visualizer_engine": engine,
+                    "bot_avatar_url": self.bot_avatar_url,
                 })
             return self._json_error(404, "No active session for this guild")
 

@@ -74,6 +74,14 @@ class VideoCog(commands.Cog, name="Video"):
         # At startup there are no active sessions, so remove everything.
         cleanup_orphaned_dirs(active_sessions=set())
 
+        # Set the bot's avatar URL for visualizer engines (DVD screensaver)
+        if self.bot.user and self.bot.user.avatar:
+            self._backend.bot_avatar_url = self.bot.user.avatar.url
+            self._backend.ws_hub.bot_avatar_url = self.bot.user.avatar.url
+        elif self.bot.user:
+            self._backend.bot_avatar_url = self.bot.user.default_avatar.url
+            self._backend.ws_hub.bot_avatar_url = self.bot.user.default_avatar.url
+
         # Start the Activity backend HTTP server
         await self._backend.start(port=8090)
 

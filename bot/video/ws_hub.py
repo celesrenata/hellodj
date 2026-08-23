@@ -301,7 +301,7 @@ class WebSocketHub:
                         "engine": engine,
                         "state": "active",
                         "config": {
-                            "avatar_url": self._bot_avatar_url if hasattr(self, '_bot_avatar_url') else "",
+                            "avatar_url": getattr(self, 'bot_avatar_url', '') or "",
                         },
                     }
                     await ws.send_json(viz_msg)
