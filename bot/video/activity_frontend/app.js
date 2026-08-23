@@ -87,10 +87,16 @@ import { DiscordSDK } from './discord-sdk.js';
       this.logo = document.createElement('img');
       this.logo.src = avatarUrl;
       this.logo.className = 'dvd-logo';
-      this.x = Math.random() * (container.clientWidth - 128);
-      this.y = Math.random() * (container.clientHeight - 128);
-      this.dx = 2;  // pixels per frame (constant velocity)
-      this.dy = 2;
+      // Initialize position within safe bounds (avoid edges)
+      const maxX = Math.max(0, container.clientWidth - 128);
+      const maxY = Math.max(0, container.clientHeight - 128);
+      this.x = 10 + Math.random() * Math.max(0, maxX - 20);
+      this.y = 10 + Math.random() * Math.max(0, maxY - 20);
+      this.dx = 1.5;  // pixels per frame
+      this.dy = 1.5;
+      // Randomize initial direction
+      if (Math.random() > 0.5) this.dx = -this.dx;
+      if (Math.random() > 0.5) this.dy = -this.dy;
       this.hue = 0;
       this.animFrame = null;
       this.trackInfo = trackInfo || null;
@@ -139,15 +145,26 @@ import { DiscordSDK } from './discord-sdk.js';
     }
 
     _animate() {
-      const w = this.container.clientWidth - 128;
-      const h = this.container.clientHeight - 128;
+      const w = this.container.clientWidth;
+      const h = this.container.clientHeight;
+      if (w === 0 || h === 0) {
+        this.animFrame = requestAnimationFrame(() => this._animate());
+        return;
+      }
+
+      const size = 128;
+      const maxX = w - size;
+      const maxY = h - size;
 
       this.x += this.dx;
       this.y += this.dy;
 
+      // Bounce off edges and clamp to bounds
       let hitEdge = false;
-      if (this.x <= 0 || this.x >= w) { this.dx = -this.dx; hitEdge = true; }
-      if (this.y <= 0 || this.y >= h) { this.dy = -this.dy; hitEdge = true; }
+      if (this.x <= 0) { this.x = 0; this.dx = Math.abs(this.dx); hitEdge = true; }
+      else if (this.x >= maxX) { this.x = maxX; this.dx = -Math.abs(this.dx); hitEdge = true; }
+      if (this.y <= 0) { this.y = 0; this.dy = Math.abs(this.dy); hitEdge = true; }
+      else if (this.y >= maxY) { this.y = maxY; this.dy = -Math.abs(this.dy); hitEdge = true; }
 
       if (hitEdge) {
         this.hue = (this.hue + 60) % 360;
@@ -733,7 +750,23 @@ import { DiscordSDK } from './discord-sdk.js';
       case 'visualizer':
         // Visualizer activation/update message
         if (data.engine === 'dvd') {
-          // Stop existing DVD screensaver if re-activated in same mode
+          // If already in DVD mode, just update config (don't reset position)
+          if (mode === 'VISUALIZER_DVD' && _dvdScreensaver) {
+            // Update avatar if different
+            const newAvatar = data.config?.avatar_url || '';
+            if (newAvatar && _dvdScreensaver.logo.src !== newAvatar) {
+              _dvdScreensaver.logo.src = newAvatar;
+            }
+            // Update track info if provided
+            if (data.config?.track) {
+              _dvdScreensaver.updateTrack(data.config.track);
+              if (data.config.track.title) {
+                titleBar.textContent = formatTitle(data.config.track.title, data.config.track.artist);
+              }
+            }
+            break;
+          }
+          // First activation — create the screensaver
           if (_dvdScreensaver) {
             _dvdScreensaver.stop();
             _dvdScreensaver = null;
