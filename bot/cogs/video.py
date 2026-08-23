@@ -92,6 +92,21 @@ class VideoCog(commands.Cog, name="Video"):
         self._backend._bot_ref = self.bot
         self._backend.ws_hub._bot_ref = self.bot
 
+        # Initialize the VisualizerRegistry — manages per-guild visualizer
+        # state machines, GPU allocation, and HLS render pipelines for
+        # server-rendered engines (projectm, audiovis, fosfora, varda).
+        # Wires into WebSocketHub's viewer count callback for demand rendering.
+        from video.visualizer_registry import VisualizerRegistry
+        bot_avatar = ""
+        if self.bot.user and self.bot.user.avatar:
+            bot_avatar = self.bot.user.avatar.url
+        elif self.bot.user:
+            bot_avatar = self.bot.user.default_avatar.url
+        self._visualizer_registry = VisualizerRegistry(
+            ws_hub=self._backend.ws_hub,
+            bot_avatar_url=bot_avatar,
+        )
+
         # Start the Activity backend HTTP server
         await self._backend.start(port=8090)
 

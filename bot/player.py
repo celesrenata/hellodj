@@ -1305,6 +1305,7 @@ async def _start_video_from_queue(guild_id: int, entry: dict, *, from_unified_qu
             guild_id=guild_id, channel_id=voice_channel.id,
             ws_hub=video_cog._backend.ws_hub,
             on_session_end=_on_video_session_end,
+            on_session_start=_on_video_session_start,
             guild_bitrate_limit=guild_bitrate,
         )
         video_cog._registry.register(guild_id, voice_channel.id, streamer)
@@ -1363,6 +1364,22 @@ async def _start_video_from_queue(guild_id: int, entry: dict, *, from_unified_qu
         await _play_next_from_queue(guild_id)
 
 
+async def _on_video_session_start(guild_id: int) -> None:
+    """Callback fired when a video Activity session starts streaming.
+
+    Notifies the VisualizerRegistry so it disables the visualizer engine
+    (video takes precedence over visualizer rendering).
+    """
+    if _bot_ref is None:
+        return
+    video_cog = _bot_ref.get_cog("Video")
+    if video_cog is not None and hasattr(video_cog, '_visualizer_registry'):
+        try:
+            await video_cog._visualizer_registry.on_video_start(guild_id)
+        except Exception as exc:
+            log.debug("_on_video_session_start: visualizer on_video_start failed: %s", exc)
+
+
 async def _on_video_session_end(guild_id: int) -> None:
     """Callback fired when a video Activity session ends (queue empty).
 
@@ -1405,36 +1422,19 @@ async def _on_video_session_end(guild_id: int) -> None:
                 log.debug("_on_video_session_end: ws_hub unregister failed: %s", exc)
 
     # Notify visualizer registry that video ended — allows visualizer to resume
-    if video_cog is not None and hasattr(video_cog, '_backend'):
+    if video_cog is not None and hasattr(video_cog, '_visualizer_registry'):
         try:
             ws_hub = video_cog._backend.ws_hub
             viewer_count = ws_hub.viewer_count(guild_id)
-            # Send visualizer activation message to connected clients
+            await video_cog._visualizer_registry.on_video_end(guild_id)
+            # If viewers are connected, on_video_end sets IDLE_NO_VIEWERS.
+            # Trigger on_viewer_join so the manager starts the engine.
             if viewer_count > 0:
-                import guild_settings as _gs
-                engine = _gs.get_visualizer_engine(guild_id)
-                if engine and engine != "off":
-                    icon_url = ""
-                    if hasattr(ws_hub, '_bot_ref') and ws_hub._bot_ref is not None:
-                        guild = ws_hub._bot_ref.get_guild(guild_id)
-                        if guild and guild.icon:
-                            icon_url = guild.icon.url
-                        elif ws_hub._bot_ref.user and ws_hub._bot_ref.user.avatar:
-                            icon_url = ws_hub._bot_ref.user.avatar.url
-                    # Always send DVD as the client-side fallback visualizer.
-                    # Server-rendered engines (projectm, audiovis, etc.) would
-                    # need the VisualizerManager to start their HLS pipeline and
-                    # send hls_ready. DVD is always available client-side.
-                    await ws_hub.broadcast_from_bot(guild_id, {
-                        "type": "visualizer",
-                        "engine": "dvd",
-                        "state": "active",
-                        "config": {
-                            "avatar_url": icon_url,
-                        },
-                    })
+                manager = video_cog._visualizer_registry.get(guild_id)
+                if manager is not None:
+                    await manager.on_viewer_join()
         except Exception as exc:
-            log.debug("_on_video_session_end: visualizer activation failed: %s", exc)
+            log.debug("_on_video_session_end: visualizer on_video_end failed: %s", exc)
 
     lock = _get_queue_lock(guild_id)
     async with lock:
