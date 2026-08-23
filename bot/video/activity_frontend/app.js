@@ -87,20 +87,26 @@ import { DiscordSDK } from './discord-sdk.js';
       this.logo = document.createElement('img');
       this.logo.src = avatarUrl;
       this.logo.className = 'dvd-logo';
-      // Initialize position within safe bounds (avoid edges)
-      const maxX = Math.max(0, container.clientWidth - 128);
-      const maxY = Math.max(0, container.clientHeight - 128);
-      this.x = 10 + Math.random() * Math.max(0, maxX - 20);
-      this.y = 10 + Math.random() * Math.max(0, maxY - 20);
-      this.dx = 1.5;  // pixels per frame
-      this.dy = 1.5;
-      // Randomize initial direction
-      if (Math.random() > 0.5) this.dx = -this.dx;
-      if (Math.random() > 0.5) this.dy = -this.dy;
       this.hue = 0;
       this.animFrame = null;
       this.trackInfo = trackInfo || null;
       this._trackLabel = null;
+
+      // Use proportional sizing: 15% of the smaller container dimension
+      const dim = Math.min(container.clientWidth, container.clientHeight);
+      this._size = Math.max(48, Math.round(dim * 0.15));
+      this.logo.style.width = `${this._size}px`;
+      this.logo.style.height = `${this._size}px`;
+
+      // Initialize position within safe bounds
+      const maxX = Math.max(0, container.clientWidth - this._size);
+      const maxY = Math.max(0, container.clientHeight - this._size);
+      this.x = 10 + Math.random() * Math.max(0, maxX - 20);
+      this.y = 10 + Math.random() * Math.max(0, maxY - 20);
+      this.dx = 1.5;
+      this.dy = 1.5;
+      if (Math.random() > 0.5) this.dx = -this.dx;
+      if (Math.random() > 0.5) this.dy = -this.dy;
     }
 
     start() {
@@ -108,16 +114,41 @@ import { DiscordSDK } from './discord-sdk.js';
       if (this.trackInfo && (this.trackInfo.title || this.trackInfo.artist)) {
         this._createTrackLabel();
       }
+      // Listen for container resize to update size proportionally
+      this._resizeObserver = new ResizeObserver(() => this._onResize());
+      this._resizeObserver.observe(this.container);
       this._animate();
     }
 
     stop() {
       cancelAnimationFrame(this.animFrame);
       this.animFrame = null;
+      if (this._resizeObserver) {
+        this._resizeObserver.disconnect();
+        this._resizeObserver = null;
+      }
       this.logo.remove();
       if (this._trackLabel) {
         this._trackLabel.remove();
         this._trackLabel = null;
+      }
+    }
+
+    _onResize() {
+      const dim = Math.min(this.container.clientWidth, this.container.clientHeight);
+      const newSize = Math.max(48, Math.round(dim * 0.15));
+      if (newSize !== this._size) {
+        // Scale position proportionally to new container size
+        const scaleX = this.container.clientWidth / (this.container.clientWidth + (this._size - newSize));
+        const scaleY = this.container.clientHeight / (this.container.clientHeight + (this._size - newSize));
+        this._size = newSize;
+        this.logo.style.width = `${this._size}px`;
+        this.logo.style.height = `${this._size}px`;
+        // Clamp position to new bounds
+        const maxX = Math.max(0, this.container.clientWidth - this._size);
+        const maxY = Math.max(0, this.container.clientHeight - this._size);
+        this.x = Math.max(0, Math.min(this.x, maxX));
+        this.y = Math.max(0, Math.min(this.y, maxY));
       }
     }
 
@@ -152,9 +183,8 @@ import { DiscordSDK } from './discord-sdk.js';
         return;
       }
 
-      const size = 128;
-      const maxX = w - size;
-      const maxY = h - size;
+      const maxX = w - this._size;
+      const maxY = h - this._size;
 
       this.x += this.dx;
       this.y += this.dy;

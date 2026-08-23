@@ -798,8 +798,6 @@ body:hover {
 
 .dvd-logo {
     position: absolute;
-    width: 128px;
-    height: 128px;
     border-radius: 50%;
     transition: filter 0.2s ease;
     will-change: transform, filter;
