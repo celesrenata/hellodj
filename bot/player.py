@@ -1072,7 +1072,13 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
         return
     video_cog = _bot_ref.get_cog("Video")
     if video_cog is None:
-        log.error("_start_video_from_queue: VideoCog not loaded, skipping video entry")
+        # If bot has no cogs at all, it's shutting down — don't touch persistence
+        if not _bot_ref.cogs:
+            log.debug("_start_video_from_queue: bot shutting down (cogs empty), aborting")
+            return
+        log.error("_start_video_from_queue: VideoCog not loaded, skipping video entry. "
+                  "bot_ref=%r cogs=%s is_closed=%s",
+                  _bot_ref, list(_bot_ref.cogs.keys()), _bot_ref.is_closed())
         # Clear current so _is_video_active doesn't block audio playback
         state = get_state(guild_id)
         state["current"] = None
@@ -1245,6 +1251,12 @@ async def _on_video_session_end(guild_id: int) -> None:
     Advances the unified player queue so audio tracks resume after video.
     """
     log.info("_on_video_session_end: video finished, checking unified queue guild=%d", guild_id)
+
+    # Guard: if bot is shutting down (cogs torn down), don't try to advance
+    if _bot_ref is None or not _bot_ref.cogs:
+        log.debug("_on_video_session_end: bot shutting down, skipping queue advance")
+        return
+
     state = get_state(guild_id)
     state["current"] = None  # Clear the video entry from current
     if state["queue"]:
