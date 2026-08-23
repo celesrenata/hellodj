@@ -1334,7 +1334,12 @@ import { DiscordSDK } from './discord-sdk.js';
       _dvdScreensaver.start();
     }
   } else {
-    showError('No active video session. Start one with /video play');
+    // No active session — show DVD screensaver as idle state instead of blank screen
+    connectWebSocket();
+    setMode('VISUALIZER_DVD');
+    const avatarUrl = status.bot_avatar_url || '';
+    _dvdScreensaver = new DVDScreensaver(dvdContainer, avatarUrl, null);
+    _dvdScreensaver.start();
   }
 
   // --- Poll for changes ---
@@ -1371,11 +1376,14 @@ import { DiscordSDK } from './discord-sdk.js';
       // Still streaming same session — clear any stale error overlay
       errorOverlay.classList.remove('visible');
     } else if (updated.state === 'idle' || !updated.session_id) {
-      // Session ended with no next video — show message but keep polling
-      // Don't show error if we're in visualizer mode
+      // Session ended with no next video — show DVD screensaver as idle
       if (mode !== 'VISUALIZER_DVD' && mode !== 'VISUALIZER_HLS') {
-        _rlog('[_checkForNextSession] idle/no session — showing queue empty');
-        showError('Playback complete — queue is empty.');
+        _rlog('[_checkForNextSession] idle/no session — showing DVD screensaver');
+        errorOverlay.classList.remove('visible');
+        setMode('VISUALIZER_DVD');
+        const avatarUrl = updated.bot_avatar_url || status.bot_avatar_url || '';
+        _dvdScreensaver = new DVDScreensaver(dvdContainer, avatarUrl, null);
+        _dvdScreensaver.start();
       }
     } else if (updated.state === 'visualizer') {
       // Visualizer-only mode — no video session, keep visualizer running

@@ -505,7 +505,24 @@ class ActivityBackend:
                     "visualizer_engine": engine,
                     "bot_avatar_url": icon_url,
                 })
-            return self._json_error(404, "No active session for this guild")
+            # No video session and no visualizer — return idle state with guild icon
+            # (frontend will show DVD screensaver as idle screen)
+            icon_url = self._get_guild_icon_url(guild_id)
+            return web.json_response({
+                "state": "idle",
+                "video_title": None,
+                "video_duration": 0.0,
+                "elapsed_seconds": 0.0,
+                "playlist_url": None,
+                "queue_length": 0,
+                "session_id": None,
+                "subtitles": [],
+                "audio_tracks": [],
+                "playing": False,
+                "uploader": None,
+                "playback_started": False,
+                "bot_avatar_url": icon_url,
+            })
 
         # Build SessionStatus response
         from video import SessionStatus
