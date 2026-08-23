@@ -1521,6 +1521,33 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
         if player.paused:
             await player.pause(False)
 
+        # Update state["current"] with resolved metadata from the track
+        # so /remote and now-playing embeds show correct info
+        current = state.get("current")
+        if current is not None:
+            resolved_author = getattr(track, "author", None)
+            resolved_length = getattr(track, "length", None)
+            resolved_source = getattr(track, "source", None)
+            resolved_title = getattr(track, "title", None)
+            resolved_uri = getattr(track, "uri", None)
+            resolved_artwork = getattr(track, "artwork", None)
+            if resolved_author and not current.get("author"):
+                current["author"] = resolved_author
+            if resolved_length and (not current.get("duration") or current["duration"] == 0):
+                current["duration"] = resolved_length
+            if resolved_source and current.get("source") in (None, "unknown", "http"):
+                current["source"] = str(resolved_source) if resolved_source else sp
+            if resolved_title and current.get("title") in (None, "Unknown"):
+                current["title"] = resolved_title
+            if resolved_uri and not current.get("webpage_url"):
+                current["webpage_url"] = str(resolved_uri)
+            if resolved_artwork and not current.get("artwork_url"):
+                current["artwork_url"] = str(resolved_artwork)
+            # Always set source to the provider used for resolution
+            if sp and current.get("source") in (None, "unknown", "http"):
+                current["source"] = sp
+            persist(guild_id)
+
     except Exception as exc:
         dbg.error("resolve_failed guild=%d title=%r provider=%r error=%s",
                   guild_id, title, sp, exc)
