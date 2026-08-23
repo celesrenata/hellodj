@@ -243,9 +243,10 @@ class UnifiedControlView(discord.ui.View):
         """Go to previous video in the video streamer's history."""
         streamer = _get_active_streamer(guild_id, interaction)
         if streamer is None:
-            await interaction.response.send_message(
-                "No video is currently streaming.", ephemeral=True
-            )
+            # No active streamer — fall back to unified queue history
+            # This handles the case where the session just ended but
+            # _is_video_active() hasn't caught up yet, or queue is empty
+            await self._audio_previous(interaction, guild_id)
             return
 
         await interaction.response.defer()
