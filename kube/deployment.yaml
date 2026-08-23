@@ -60,7 +60,7 @@ spec:
         runAsGroup: 1000
         runAsUser: 1000
         supplementalGroups:
-          - 26    # video group — access to /dev/dri/renderD* for QSV
+          - 26    # video/render group — access to SR-IOV VF render node
         sysctls:
           - name: net.ipv4.tcp_keepalive_time
             value: "60"
@@ -211,17 +211,20 @@ spec:
             limits:
               cpu: "2.5"
               memory: 3Gi
+              intel.com/sriov-gpudevice: "1"
             requests:
               cpu: 1
               memory: 1Gi
+              intel.com/sriov-gpudevice: "1"
           ports:
             - containerPort: 8090
               name: activity
               protocol: TCP
           securityContext:
-            # Allow access to /dev/dri/renderD* for QSV video transcoding.
-            # The hostPath device node requires device cgroup allowance.
-            privileged: true
+            # SR-IOV GPU VF is assigned by the Intel GPU device plugin —
+            # no privileged mode needed. Device access is granted via the
+            # resource allocation mechanism.
+            privileged: false
           volumeMounts:
             - mountPath: /app/data
               name: hellodj-data
@@ -232,8 +235,6 @@ spec:
             - mountPath: /app/models
               name: hellodj-models
               readOnly: true
-            - mountPath: /dev/dri
-              name: dev-dri
             - mountPath: /tmp/hellodj_hls
               name: hls-tmp
 
@@ -418,10 +419,6 @@ spec:
         - name: hellodj-models
           persistentVolumeClaim:
             claimName: hellodj-models-pvc
-        - name: dev-dri
-          hostPath:
-            path: /dev/dri
-            type: Directory
         - name: hls-tmp
           emptyDir:
             medium: Memory

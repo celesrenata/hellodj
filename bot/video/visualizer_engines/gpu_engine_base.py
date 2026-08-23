@@ -77,7 +77,10 @@ class GPUEngineBase(VisualizerRenderer):
 
     async def activate(self, metadata: TrackMetadata | None = None) -> None:
         """Create EGL headless context and call subclass _on_gl_ready hook."""
-        self._egl_ctx = EGLHeadlessContext()
+        import glob as _glob
+        render_devices = sorted(_glob.glob("/dev/dri/renderD*"))
+        render_device = render_devices[0] if render_devices else "/dev/dri/renderD128"
+        self._egl_ctx = EGLHeadlessContext(render_device=render_device)
         self._egl_ctx.create()
         self._running = True
         await self._on_gl_ready(metadata)
