@@ -160,8 +160,8 @@ class VisualizerRegistry:
     async def on_video_end(self, guild_id: int) -> None:
         """Notify the guild's VisualizerManager that a video session ended.
 
-        Called by ActivityStreamer when the video session stops.
-        Transitions the visualizer to IDLE_NO_VIEWERS (ready for viewers).
+        Called when the video session stops. Transitions the visualizer to
+        IDLE_NO_VIEWERS (ready for viewers).
 
         Args:
             guild_id: The guild where the video ended.

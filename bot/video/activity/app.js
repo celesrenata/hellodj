@@ -1091,35 +1091,20 @@ function stopDriftChecker() {
         break;
 
       case 'session_end':
-        // Session ended — show DVD screensaver instead of blank IDLE
-        _rlog('[session_end] received — going VISUALIZER_DVD, currentSessionId=' + currentSessionId);
+        // Session ended — clean up video state, wait for visualizer message from server
+        _rlog('[session_end] received — cleaning up video, currentSessionId=' + currentSessionId);
         // Stop drift checker and clear state
         stopDriftChecker();
         _lastState = null;
-        setMode('VISUALIZER_DVD');
         if (hls) { hls.destroy(); hls = null; }
         videoEl.pause();
         videoEl.removeAttribute('src');
         videoEl.load();
         titleBar.textContent = '';
-        // Initialize DVD screensaver with bot avatar
-        {
-          const avatarUrl = data.bot_avatar_url || (status && status.bot_avatar_url) || '';
-          const lastTrack = data.last_track || null;
-          if (_dvdScreensaver) {
-            _dvdScreensaver.stop();
-            _dvdScreensaver = null;
-          }
-          try {
-            _dvdScreensaver = new DVDScreensaver(dvdContainer, avatarUrl, lastTrack);
-            _dvdScreensaver.start();
-          } catch (e) {
-            _rlog('[session_end] DVDScreensaver init error: ' + e.message);
-          }
-          if (lastTrack && lastTrack.title) {
-            titleBar.textContent = formatTitle(lastTrack.title, lastTrack.artist);
-          }
-        }
+        // Go to IDLE temporarily — the server will send a 'visualizer' message
+        // immediately after session_end if an engine is configured, which will
+        // transition to the correct visualizer mode with proper settings.
+        setMode('IDLE');
         break;
 
       case 'track_change':

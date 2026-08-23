@@ -1404,6 +1404,34 @@ async def _on_video_session_end(guild_id: int) -> None:
             except Exception as exc:
                 log.debug("_on_video_session_end: ws_hub unregister failed: %s", exc)
 
+    # Notify visualizer registry that video ended — allows visualizer to resume
+    if video_cog is not None and hasattr(video_cog, '_backend'):
+        try:
+            ws_hub = video_cog._backend.ws_hub
+            viewer_count = ws_hub.viewer_count(guild_id)
+            # Send visualizer activation message to connected clients
+            if viewer_count > 0:
+                import guild_settings as _gs
+                engine = _gs.get_visualizer_engine(guild_id)
+                if engine and engine != "off":
+                    icon_url = ""
+                    if hasattr(ws_hub, '_bot_ref') and ws_hub._bot_ref is not None:
+                        guild = ws_hub._bot_ref.get_guild(guild_id)
+                        if guild and guild.icon:
+                            icon_url = guild.icon.url
+                        elif ws_hub._bot_ref.user and ws_hub._bot_ref.user.avatar:
+                            icon_url = ws_hub._bot_ref.user.avatar.url
+                    await ws_hub.broadcast_from_bot(guild_id, {
+                        "type": "visualizer",
+                        "engine": engine,
+                        "state": "active",
+                        "config": {
+                            "avatar_url": icon_url,
+                        },
+                    })
+        except Exception as exc:
+            log.debug("_on_video_session_end: visualizer activation failed: %s", exc)
+
     lock = _get_queue_lock(guild_id)
     async with lock:
         state = get_state(guild_id)
