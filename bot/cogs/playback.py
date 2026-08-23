@@ -61,28 +61,22 @@ class PlaybackCog(commands.Cog, name="Playback"):
         lavalink_prefix, track_id = ChoiceFormatter.decode_value(query)
 
         if lavalink_prefix is not None:
-            # Value was encoded — resolve directly via wavelink
-            # For YouTube, use the full URL since ytsearch: is for text queries
-            # For Spotify/Tidal, the search prefix + ID works as a direct lookup
-            try:
-                import wavelink
+            # Value was encoded from autocomplete — construct the proper query for the router
+            if lavalink_prefix == "ytsearch":
+                # YouTube: pass the full URL directly to router (it handles YouTube URLs natively)
+                resolved_query = f"https://www.youtube.com/watch?v={track_id}"
+            elif lavalink_prefix == "spsearch":
+                # Spotify: pass as spotify track URL
+                resolved_query = f"https://open.spotify.com/track/{track_id}"
+            elif lavalink_prefix == "tdsearch":
+                # Tidal: pass as tidal track URL
+                resolved_query = f"https://tidal.com/track/{track_id}"
+            else:
+                # SoundCloud or unknown: fall through to router with raw query
+                resolved_query = query
 
-                if lavalink_prefix == "ytsearch":
-                    search_query = f"https://www.youtube.com/watch?v={track_id}"
-                else:
-                    search_query = f"{lavalink_prefix}:{track_id}"
-
-                tracks = await wavelink.Playable.search(search_query)
-                if tracks:
-                    # Route through router with the resolved track's URI
-                    await self.router.play(interaction, tracks[0].uri or query, mode=mode)
-                    return
-            except Exception:
-                log.debug(
-                    "Direct resolve failed for %s:%s, falling through",
-                    lavalink_prefix,
-                    track_id,
-                )
+            await self.router.play(interaction, resolved_query, mode=mode)
+            return
 
         # Fall through to router for raw text queries or failed decodes
         await self.router.play(interaction, query, mode=mode)
