@@ -119,6 +119,7 @@ class TidalResolver:
                 "track_title": track_title,
                 "video_id": video_id,
                 "tidal_url": url,
+                "thumbnail": metadata.get("thumbnail", ""),
             },
             audio_url=None,
             cleanup_on_finish=False,
@@ -183,6 +184,7 @@ class TidalResolver:
                 "track_title": track_title,
                 "video_id": video_id,
                 "tidal_url": f"https://tidal.com/browse/video/{video_id}",
+                "thumbnail": metadata.get("thumbnail", ""),
             },
             audio_url=None,
             cleanup_on_finish=False,
@@ -489,11 +491,20 @@ class TidalResolver:
         else:
             artist = ""
 
+        # Extract thumbnail URL from imageId (Tidal CDN pattern)
+        thumbnail = ""
+        image_id = data.get("imageId") or data.get("imagePath") or ""
+        if image_id:
+            # Tidal image CDN: replace hyphens with slashes, append size
+            image_path = image_id.replace("-", "/")
+            thumbnail = f"https://resources.tidal.com/images/{image_path}/640x640.jpg"
+
         return {
             "title": title,
             "duration": duration,
             "artist": artist,
             "video_id": video_id,
+            "thumbnail": thumbnail,
         }
 
     async def _fetch_stream_url(self, video_id: int, access_token: str) -> str:

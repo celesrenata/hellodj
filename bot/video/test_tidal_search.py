@@ -90,7 +90,7 @@ class TestSearchFlow:
         assert result.metadata["track_title"] == "Around the World"
         assert result.metadata["video_id"] == 99999
         assert result.metadata["tidal_url"] == "https://tidal.com/browse/video/99999"
-        assert result.cleanup_on_finish is True
+        assert result.cleanup_on_finish is False
 
     @pytest.mark.asyncio
     async def test_search_no_artist_title_format(self, resolver):

@@ -403,8 +403,10 @@ class YouTubeResolver:
             metadata={
                 "uploader": info.get("uploader", "Unknown"),
                 "channel": info.get("channel", info.get("uploader", "Unknown")),
+                "artist": info.get("artist") or info.get("creator") or info.get("channel") or info.get("uploader", ""),
                 "video_id": info.get("id", ""),
                 "webpage_url": info.get("webpage_url", ""),
+                "thumbnail": info.get("thumbnail", ""),
                 "height": info.get("height", 0),
                 "width": info.get("width", 0),
             },

@@ -634,7 +634,7 @@ class VideoCog(commands.Cog, name="Video"):
             # Send deprecation notice
             await interaction.followup.send(self._deprecation_notice("skip"), ephemeral=True)
         else:
-            # Queue was empty, session stopped
+            # Queue was empty, session stopped — clean up Activity resources
             self._stop_seek_bar_update(key)
             # Disconnect WebSocket clients
             await self._backend.ws_hub.disconnect_all(guild_id)
@@ -648,21 +648,14 @@ class VideoCog(commands.Cog, name="Video"):
             self._registry.unregister(guild_id, channel_id)
             self._backend.ws_hub.unregister_streamer(guild_id)
 
-            # Guard against double-advance: _stop_internal may have already fired
-            # _on_video_session_end which clears state["current"] and advances.
-            import player as _player
-            state = _player.get_state(guild_id)
-            if state.get("current") is None and not state["queue"]:
-                # _on_video_session_end already handled advancement (or queue is empty)
-                await interaction.followup.send(
-                    "⏭️ Skipped! Queue is empty — Activity closed."
-                )
-            elif state["queue"]:
-                # Queue has items and hasn't been advanced yet — use lock
+            # Delegate unified queue advancement to unified_controls.
+            # unified_skip acquires the queue lock internally and handles
+            # all cases: queue has items, queue empty, double-advance guard.
+            from playback.unified_controls import unified_skip as _unified_skip
+            result = await _unified_skip(guild_id)
+
+            if result in ("skipped_to_next", "skipped_audio"):
                 await interaction.followup.send("⏭️ Skipped! Resuming audio queue...")
-                lock = _player._get_queue_lock(guild_id)
-                async with lock:
-                    await _player._play_next_from_queue(guild_id)
             else:
                 await interaction.followup.send(
                     "⏭️ Skipped! Queue is empty — Activity closed."

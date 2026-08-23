@@ -98,7 +98,12 @@ _DURATION_MAX_MS = 86_400_000  # 24 hours in milliseconds
 # ── helpers ───────────────────────────────────────────────
 
 def _to_entry(info: dict) -> dict:
-    """Lightweight ``{webpage_url, title, type}`` form for persistence."""
+    """Convert a queue entry to a persistence-safe dict.
+
+    Preserves all metadata needed by the unified remote (author, duration,
+    artwork, album, source) so that Now Playing embeds display correctly
+    after a bot restart without needing re-resolution.
+    """
     entry = {
         "webpage_url": info.get("webpage_url") or info.get("url"),
         "title": info.get("title", "Unknown"),
@@ -108,6 +113,17 @@ def _to_entry(info: dict) -> dict:
         entry["type"] = info["type"]
     if info.get("query"):
         entry["query"] = info["query"]
+    # Preserve metadata for Now Playing display
+    if info.get("author"):
+        entry["author"] = info["author"]
+    if info.get("duration"):
+        entry["duration"] = info["duration"]
+    if info.get("artwork_url"):
+        entry["artwork_url"] = info["artwork_url"]
+    if info.get("album"):
+        entry["album"] = info["album"]
+    if info.get("source"):
+        entry["source"] = info["source"]
     return entry
 
 
@@ -910,7 +926,9 @@ async def add_track(state: dict, guild_id: int, entry: dict) -> None:
         return
     p = get_player(guild_id)
     if p and p.connected and not p.playing and not p.paused:
-        await _play_next_from_queue(guild_id)
+        lock = _get_queue_lock(guild_id)
+        async with lock:
+            await _play_next_from_queue(guild_id)
 
 
 async def enqueue_and_start(
@@ -954,7 +972,9 @@ async def enqueue_and_start(
                 p = None
 
     if p and p.connected and not p.playing and not p.paused:
-        await _play_next_from_queue(guild.id)
+        lock = _get_queue_lock(guild.id)
+        async with lock:
+            await _play_next_from_queue(guild.id)
 
     persist(guild.id)
     return len(tracks)
@@ -1185,6 +1205,34 @@ async def _start_video_from_queue(guild_id: int, entry: dict, *, from_unified_qu
 
         resolver = MusicVideoResolver()
         source = await resolver.resolve(query, source_provider=state.get("source_provider"))
+
+        # Backfill queue entry metadata from the resolved VideoSource so that
+        # the unified remote and Now Playing embeds show correct info.
+        current = state.get("current")
+        if current is not None:
+            if source.title and (not current.get("title") or current["title"].startswith("🎬 http")):
+                current["title"] = f"🎬 {source.title}"
+            if source.duration_seconds and (not current.get("duration") or current["duration"] == 0):
+                # Store as milliseconds for consistency with audio entries
+                current["duration"] = int(source.duration_seconds * 1000)
+            # Extract artist from VideoSource metadata or title
+            if not current.get("author"):
+                # VideoSource.metadata may contain uploader/artist
+                author = source.metadata.get("artist") or source.metadata.get("uploader") or source.metadata.get("channel") or ""
+                if not author and (" — " in source.title or " - " in source.title):
+                    # Common patterns: "Artist — Title" (Tidal) or "Artist - Title" (YouTube)
+                    sep = " — " if " — " in source.title else " - "
+                    author = source.title.split(sep, 1)[0].strip()
+                if author:
+                    current["author"] = author
+            if not current.get("artwork_url"):
+                artwork = source.metadata.get("thumbnail") or source.metadata.get("artwork_url") or ""
+                if artwork:
+                    current["artwork_url"] = artwork
+            # Set source type for display
+            if not current.get("source") or current["source"] in ("unknown", "http"):
+                current["source"] = source.source_type
+            persist(guild_id)
 
         # Check for existing video session (active or idle but with connected clients)
         streamer = video_cog._registry.get(guild_id, voice_channel.id)
@@ -1529,19 +1577,21 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
         # so /remote and now-playing embeds show correct info
         current = state.get("current")
         if current is not None:
-            resolved_author = getattr(track, "author", None)
-            resolved_length = getattr(track, "length", None)
+            resolved_author = getattr(track, "author", None) or ""
+            resolved_length = getattr(track, "length", None) or 0
             resolved_source = getattr(track, "source", None)
-            resolved_title = getattr(track, "title", None)
+            resolved_title = getattr(track, "title", None) or ""
             resolved_uri = getattr(track, "uri", None)
-            resolved_artwork = getattr(track, "artwork", None)
-            if resolved_author and not current.get("author"):
+            resolved_artwork = getattr(track, "artwork", None) or ""
+            # Backfill author: update if current has no author or only empty/default
+            if resolved_author and (not current.get("author") or current["author"] in ("Unknown Artist", "")):
                 current["author"] = resolved_author
-            if resolved_length and (not current.get("duration") or current["duration"] == 0):
+            # Backfill duration: update if current has 0 or missing duration
+            if resolved_length and 0 < resolved_length <= _DURATION_MAX_MS and (not current.get("duration") or current["duration"] == 0):
                 current["duration"] = resolved_length
             if resolved_source and current.get("source") in (None, "unknown", "http"):
                 current["source"] = str(resolved_source) if resolved_source else sp
-            if resolved_title and current.get("title") in (None, "Unknown"):
+            if resolved_title and current.get("title") in (None, "Unknown", "Unknown title", ""):
                 current["title"] = resolved_title
             if resolved_uri and not current.get("webpage_url"):
                 current["webpage_url"] = str(resolved_uri)
@@ -1559,7 +1609,10 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
                 if video_cog is not None and hasattr(video_cog, "_backend"):
                     from video.ws_hub import PlaybackState as _PS
                     import asyncio as _asyncio
-                    duration_sec = (getattr(track, "length", 0) or 0) / 1000.0
+                    # Prefer the updated current entry duration (correct after backfill)
+                    # over track.length which may be 0 for direct stream HTTP sources.
+                    _cur = current if current else entry
+                    duration_sec = (_cur.get("duration") or getattr(track, "length", 0) or 0) / 1000.0
                     video_cog._backend.ws_hub.set_state(
                         guild_id,
                         _PS(playing=True, anchor_position=0.0, anchor_time=time.time()),
@@ -1570,9 +1623,9 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
                         "playing": True,
                         "position": 0.0,
                         "duration": duration_sec,
-                        "title": current.get("title") if current else entry.get("title"),
-                        "author": current.get("author") if current else entry.get("author"),
-                        "artwork_url": (current.get("artwork_url") if current else entry.get("artwork_url")) or None,
+                        "title": _cur.get("title") or entry.get("title"),
+                        "author": _cur.get("author") or entry.get("author"),
+                        "artwork_url": _cur.get("artwork_url") or entry.get("artwork_url") or None,
                     }))
         except Exception as ws_exc:
             log.debug("_resolve_and_play: ws_hub state sync failed: %s", ws_exc)
@@ -1944,6 +1997,9 @@ def _split_title(raw_title: str, author: str, *, source: str | None = None) -> t
     "Bohemian Rhapsody - Remastered 2011"), NOT an artist separator.
     """
     title = (raw_title or "Unknown").strip()
+    # Strip video emoji prefix if present (music video entries)
+    if title.startswith("🎬 "):
+        title = title[2:].strip()
     artist_fallback = (author or "Unknown Artist").strip()
     # Strip YouTube auto-generated " - Topic" suffix from artist names
     if artist_fallback.endswith(" - Topic"):
@@ -1952,9 +2008,21 @@ def _split_title(raw_title: str, author: str, *, source: str | None = None) -> t
     # For Spotify/Tidal, the title is the song name and author is the artist.
     # Do NOT split on " - " — it's a version/remix/subtitle separator, not artist.
     if source in ("spotify", "tidal"):
+        # Tidal video titles come as "Artist — Title" (em-dash) from TidalResolver
+        if " — " in title:
+            artist_part, song_part = title.split(" — ", 1)
+            if artist_part.strip() and song_part.strip():
+                return song_part.strip(), artist_part.strip()
         return title, artist_fallback
 
     # For YouTube, SoundCloud, and unknown sources: split on the FIRST ' - '.
+    # Also handle em-dash which some sources use
+    if " — " in title:
+        artist_part, song_part = title.split(" — ", 1)
+        artist_part = artist_part.strip()
+        song_part = song_part.strip()
+        if artist_part and song_part:
+            return song_part, artist_part
     if " - " in title:
         artist_part, song_part = title.split(" - ", 1)
         artist_part = artist_part.strip()

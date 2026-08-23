@@ -722,7 +722,10 @@ class PlaybackRouter:
                 content=f"🎬 Loading: **{title}**…", view=None
             )
             await self._music_video_enqueue_or_start(
-                interaction, video_url, guild_id, channel_id, title=title
+                interaction, video_url, guild_id, channel_id,
+                title=title,
+                author=info.get("author") or "",
+                duration=info.get("duration") or 0,
             )
 
         view = SearchSelectView(picker_results, interaction.user.id, on_pick, guild_id=interaction.guild_id)
@@ -907,6 +910,9 @@ class PlaybackRouter:
         channel_id: int,
         *,
         title: str | None = None,
+        author: str | None = None,
+        duration: int | None = None,
+        artwork_url: str | None = None,
     ) -> None:
         """Enqueue or start a music video by URL (after user has picked)."""
         import player
@@ -922,7 +928,21 @@ class PlaybackRouter:
             "type": "music_video",
             "query": video_url,
             "title": f"🎬 {title or video_url}",
+            "webpage_url": video_url,
         }
+        if author:
+            entry["author"] = author
+        if duration:
+            entry["duration"] = duration
+        if artwork_url:
+            entry["artwork_url"] = artwork_url
+        # Detect source from URL for display in unified remote
+        if "tidal.com" in video_url:
+            entry["source"] = "tidal"
+        elif "youtube.com" in video_url or "youtu.be" in video_url or "music.youtube.com" in video_url:
+            entry["source"] = "youtube"
+        elif "spotify.com" in video_url:
+            entry["source"] = "spotify"
 
         current = state.get("current")
         p = player.get_player(guild_id)

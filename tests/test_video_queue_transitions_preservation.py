@@ -127,7 +127,6 @@ def _make_guild_state(
         "history": [],
         "source_provider": "youtube",
         "_video_transition": video_transition,
-        "_advancing_queue_at": 0.0,
         "persist_enabled": False,
     }
 

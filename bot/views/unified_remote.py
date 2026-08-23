@@ -374,17 +374,21 @@ class UnifiedControlView(discord.ui.View):
             import player
             state = player.get_state(guild_id)
             if state["queue"]:
-                # More items in unified queue — clean up video session, advance
-                video_cog._stop_seek_bar_update(key)
-                await video_cog._backend.ws_hub.broadcast_from_bot(guild_id, {
-                    "type": "session_end",
-                })
-                await streamer.stop()
-                video_cog._backend.ws_hub.unregister_streamer(guild_id)
-                video_cog._registry.unregister(guild_id, channel_id)
-                state["current"] = None
-                await interaction.followup.send("⏭ Skipping to next in queue...")
-                await player._play_next_from_queue(guild_id)
+                # More items in unified queue — clean up video session, advance.
+                # Acquire queue lock BEFORE stopping streamer to prevent
+                # on_track_end from racing (it checks lock.locked()).
+                lock = player._get_queue_lock(guild_id)
+                async with lock:
+                    video_cog._stop_seek_bar_update(key)
+                    await video_cog._backend.ws_hub.broadcast_from_bot(guild_id, {
+                        "type": "session_end",
+                    })
+                    await streamer.stop()
+                    video_cog._backend.ws_hub.unregister_streamer(guild_id)
+                    video_cog._registry.unregister(guild_id, channel_id)
+                    state["current"] = None
+                    await interaction.followup.send("⏭ Skipping to next in queue...")
+                    await player._play_next_from_queue(guild_id)
             else:
                 # Truly empty — stop everything
                 video_cog._stop_seek_bar_update(key)
