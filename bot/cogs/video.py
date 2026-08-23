@@ -75,12 +75,17 @@ class VideoCog(commands.Cog, name="Video"):
         cleanup_orphaned_dirs(active_sessions=set())
 
         # Set the bot's avatar URL for visualizer engines (DVD screensaver)
+        # We prefer the guild icon (set per-request), but fall back to bot avatar
         if self.bot.user and self.bot.user.avatar:
             self._backend.bot_avatar_url = self.bot.user.avatar.url
             self._backend.ws_hub.bot_avatar_url = self.bot.user.avatar.url
         elif self.bot.user:
             self._backend.bot_avatar_url = self.bot.user.default_avatar.url
             self._backend.ws_hub.bot_avatar_url = self.bot.user.default_avatar.url
+
+        # Give backend access to bot for guild icon lookups
+        self._backend._bot_ref = self.bot
+        self._backend.ws_hub._bot_ref = self.bot
 
         # Start the Activity backend HTTP server
         await self._backend.start(port=8090)

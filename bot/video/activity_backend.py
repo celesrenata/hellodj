@@ -82,6 +82,7 @@ class ActivityBackend:
         self._registry = registry
         self._tokens: dict[str, int] = {}  # instance_id → guild_id
         self.bot_avatar_url: str = ""  # Set by VideoCog after creation
+        self._bot_ref = None  # Set by VideoCog after creation (for guild icon lookup)
 
         self._ws_hub = WebSocketHub(self._validate_ws_token)
 
@@ -93,8 +94,16 @@ class ActivityBackend:
         self._site: web.TCPSite | None = None
 
     # ------------------------------------------------------------------
-    # Public attributes
+    # Public attributes / helpers
     # ------------------------------------------------------------------
+
+    def _get_guild_icon_url(self, guild_id: int) -> str:
+        """Get the guild's icon URL, falling back to bot avatar URL."""
+        if self._bot_ref is not None:
+            guild = self._bot_ref.get_guild(guild_id)
+            if guild and guild.icon:
+                return guild.icon.url
+        return self.bot_avatar_url
 
     @property
     def ws_hub(self) -> WebSocketHub:
@@ -477,6 +486,8 @@ class ActivityBackend:
             import guild_settings
             engine = guild_settings.get_visualizer_engine(guild_id)
             if engine and engine != "off":
+                # Get guild icon URL (prefer guild icon over bot avatar for DVD)
+                icon_url = self._get_guild_icon_url(guild_id)
                 # Return a visualizer-only status so the frontend connects WS
                 return web.json_response({
                     "state": "visualizer",
@@ -492,7 +503,7 @@ class ActivityBackend:
                     "uploader": None,
                     "playback_started": False,
                     "visualizer_engine": engine,
-                    "bot_avatar_url": self.bot_avatar_url,
+                    "bot_avatar_url": icon_url,
                 })
             return self._json_error(404, "No active session for this guild")
 

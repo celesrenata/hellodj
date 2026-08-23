@@ -296,12 +296,18 @@ class WebSocketHub:
                 import guild_settings
                 engine = guild_settings.get_visualizer_engine(guild_id)
                 if engine and engine != "off":
+                    # Get guild icon URL (prefer guild icon for DVD screensaver)
+                    icon_url = getattr(self, 'bot_avatar_url', '') or ""
+                    if hasattr(self, '_bot_ref') and self._bot_ref is not None:
+                        guild = self._bot_ref.get_guild(guild_id)
+                        if guild and guild.icon:
+                            icon_url = guild.icon.url
                     viz_msg = {
                         "type": "visualizer",
                         "engine": engine,
                         "state": "active",
                         "config": {
-                            "avatar_url": getattr(self, 'bot_avatar_url', '') or "",
+                            "avatar_url": icon_url,
                         },
                     }
                     await ws.send_json(viz_msg)
