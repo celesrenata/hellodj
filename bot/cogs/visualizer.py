@@ -606,11 +606,4 @@ def _get_projectm_categories() -> dict[str, int]:
 
 
 async def setup(bot: commands.Bot) -> None:
-    cog = VisualizerCog(bot)
-    # Add the top-level group to the command tree
-    bot.tree.add_command(cog.visualizer_group)
-    await bot.add_cog(cog)
-
-
-async def teardown(bot: commands.Bot) -> None:
-    bot.tree.remove_command("visualizer")
+    await bot.add_cog(VisualizerCog(bot))
