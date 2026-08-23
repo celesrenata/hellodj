@@ -119,13 +119,20 @@ def _track_entry(track, provider: str | None = None) -> dict:
     source = getattr(track, "source", None) or provider or "unknown"
     # Album name from lavasrc plugin info (Spotify/Tidal/Apple Music)
     album = ""
+    artwork_url = ""
     extras = getattr(track, "extras", None)
     if extras and hasattr(extras, "get"):
         album = extras.get("albumName", "") or ""
+        artwork_url = extras.get("artworkUrl", "") or ""
     if not album:
         raw = getattr(track, "raw_data", None)
         if raw and isinstance(raw, dict):
             album = raw.get("pluginInfo", {}).get("albumName", "") or ""
+            if not artwork_url:
+                artwork_url = raw.get("pluginInfo", {}).get("artworkUrl", "") or ""
+    # Fallback to wavelink's native artwork property
+    if not artwork_url:
+        artwork_url = getattr(track, "artwork", None) or ""
 
     entry = {
         "webpage_url": str(uri) if uri else None,
@@ -134,11 +141,12 @@ def _track_entry(track, provider: str | None = None) -> dict:
         "album": album,
         "duration": length if length <= _DURATION_MAX_MS else 0,
         "source": source,
+        "artwork_url": artwork_url or None,
     }
 
     log.debug(
-        "track_entry type=%s provider=%s uri=%r title=%r author=%r album=%r length=%r source=%r",
-        type(track).__name__, provider, uri, title, author, album, length, source,
+        "track_entry type=%s provider=%s uri=%r title=%r author=%r album=%r length=%r source=%r artwork=%r",
+        type(track).__name__, provider, uri, title, author, album, length, source, artwork_url[:50] if artwork_url else None,
     )
     return entry
 
@@ -1754,13 +1762,16 @@ def _fmt_duration_ms(ms: int) -> str:
     return f"{mins}:{secs:02d}"
 
 
-def _split_title(raw_title: str, author: str) -> tuple[str, str]:
+def _split_title(raw_title: str, author: str, *, source: str | None = None) -> tuple[str, str]:
     """Split a track title into (song, artist).
 
-    YouTube returns titles as 'Artist - Song Name' while `author` is the
-    channel/uploader (e.g. 'AAA FM'), NOT the artist. So parse the real artist
-    out of the title. For sources where the title is just the song name (e.g.
-    Spotify via LavaSrc), fall back to using `author` as the artist.
+    YouTube and SoundCloud return titles as 'Artist - Song Name' while
+    `author` is the channel/uploader (e.g. 'AAA FM'), NOT the artist.
+    So parse the real artist out of the title for those sources.
+
+    Spotify and Tidal return clean song titles with correct `author` fields.
+    A dash in those titles is a subtitle/version tag (e.g.
+    "Bohemian Rhapsody - Remastered 2011"), NOT an artist separator.
     """
     title = (raw_title or "Unknown").strip()
     artist_fallback = (author or "Unknown Artist").strip()
@@ -1768,7 +1779,12 @@ def _split_title(raw_title: str, author: str) -> tuple[str, str]:
     if artist_fallback.endswith(" - Topic"):
         artist_fallback = artist_fallback[:-8].strip()
 
-    # Split on the FIRST ' - ' separator only.
+    # For Spotify/Tidal, the title is the song name and author is the artist.
+    # Do NOT split on " - " — it's a version/remix/subtitle separator, not artist.
+    if source in ("spotify", "tidal"):
+        return title, artist_fallback
+
+    # For YouTube, SoundCloud, and unknown sources: split on the FIRST ' - '.
     if " - " in title:
         artist_part, song_part = title.split(" - ", 1)
         artist_part = artist_part.strip()
@@ -1791,10 +1807,6 @@ def build_now_playing_embed_from_entry(entry: dict) -> discord.Embed:
     """
     raw_title = entry.get("title") or "Unknown"
     author = entry.get("author") or "Unknown Artist"
-    song, artist = _split_title(raw_title, author)
-    duration = entry.get("duration") or 0
-    if duration > _DURATION_MAX_MS:
-        duration = 0
     source = entry.get("source") or "unknown"
 
     # Map http source to real provider based on URL pattern
@@ -1805,11 +1817,21 @@ def build_now_playing_embed_from_entry(entry: dict) -> discord.Embed:
         elif "tidal.com" in url_for_source:
             source = "tidal"
 
+    song, artist = _split_title(raw_title, author, source=source)
+    duration = entry.get("duration") or 0
+    if duration > _DURATION_MAX_MS:
+        duration = 0
+
     embed = discord.Embed(title="🎵 HelloDJ — Now Playing", colour=discord.Colour.blurple())
     embed.add_field(name="Song", value=song, inline=True)
     embed.add_field(name="Artist", value=artist, inline=True)
     embed.add_field(name="Duration", value=_fmt_duration_ms(duration), inline=True)
     embed.add_field(name="Source", value=str(source).capitalize(), inline=True)
+
+    # Album (stored by _track_entry from LavasRC plugin info)
+    album_name = entry.get("album")
+    if album_name:
+        embed.add_field(name="Album", value=album_name, inline=True)
 
     # Progress bar at position 0 (will be updated by _now_playing_updater)
     if duration > 0:
@@ -1821,6 +1843,12 @@ def build_now_playing_embed_from_entry(entry: dict) -> discord.Embed:
     if url:
         embed.add_field(name="Link", value=url, inline=False)
         embed.url = url
+
+    # Artwork thumbnail
+    artwork = entry.get("artwork_url")
+    if artwork:
+        embed.set_thumbnail(url=artwork)
+
     embed.set_footer(text="HelloDJ — Use the buttons below to control playback")
     return embed
 
@@ -1835,7 +1863,6 @@ def _build_now_playing_embed(track: wavelink.Playable, entry: dict | None = None
             author = entry["author"]
         if entry.get("title") and raw_title in ("Unknown", "Unknown title"):
             raw_title = entry["title"]
-    song, artist = _split_title(raw_title, author)
     duration = track.length or 0
     if duration > _DURATION_MAX_MS:
         # Track reports Long.MAX_VALUE (HLS stream) — use entry's duration
@@ -1851,6 +1878,12 @@ def _build_now_playing_embed(track: wavelink.Playable, entry: dict | None = None
         elif "8801/stream" in uri:
             source = "tidal"
 
+    # Also check entry for correct source (entry is set before resolve)
+    if source in ("http", "unknown") and entry and entry.get("source") not in ("http", "unknown", None):
+        source = entry["source"]
+
+    song, artist = _split_title(raw_title, author, source=source)
+
     # Album (may be None for some sources)
     album_name = None
     try:
@@ -1859,6 +1892,14 @@ def _build_now_playing_embed(track: wavelink.Playable, entry: dict | None = None
             album_name = getattr(album_obj, "name", None)
     except Exception:
         album_name = None
+    # Fallback to entry's album
+    if not album_name and entry:
+        album_name = entry.get("album")
+
+    # Artwork: prefer track.artwork, then entry's artwork_url
+    artwork_url = getattr(track, "artwork", None) or ""
+    if not artwork_url and entry:
+        artwork_url = entry.get("artwork_url") or ""
 
     embed = discord.Embed(title="🎵 HelloDJ — Now Playing", colour=discord.Colour.blurple())
     embed.add_field(name="Song", value=song, inline=True)
@@ -1867,6 +1908,8 @@ def _build_now_playing_embed(track: wavelink.Playable, entry: dict | None = None
     embed.add_field(name="Source", value=source.capitalize(), inline=True)
     if album_name:
         embed.add_field(name="Album", value=album_name, inline=True)
+    if artwork_url:
+        embed.set_thumbnail(url=artwork_url)
     embed.set_footer(text="HelloDJ — Use the buttons below to control playback")
     return embed
 
