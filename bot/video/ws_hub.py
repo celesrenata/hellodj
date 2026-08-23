@@ -288,6 +288,26 @@ class WebSocketHub:
                 self._connections[guild_id].discard(ws)
                 return ws
 
+        # If no video streamer is active but a visualizer engine is configured,
+        # send a visualizer activation message to the late-joiner so it enters
+        # the correct mode (e.g. DVD screensaver).
+        if streamer is None and not countdown_sent:
+            try:
+                import guild_settings
+                engine = guild_settings.get_visualizer_engine(guild_id)
+                if engine and engine != "off":
+                    viz_msg = {
+                        "type": "visualizer",
+                        "engine": engine,
+                        "state": "active",
+                        "config": {
+                            "avatar_url": self._bot_avatar_url if hasattr(self, '_bot_avatar_url') else "",
+                        },
+                    }
+                    await ws.send_json(viz_msg)
+            except Exception:
+                pass  # Non-fatal — visualizer info is best-effort
+
         # Late-joiner lyrics sync: send current lyrics if overlay is enabled
         if self._lyrics_state_getter is not None:
             try:

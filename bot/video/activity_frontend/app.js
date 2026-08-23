@@ -1259,6 +1259,16 @@ import { DiscordSDK } from './discord-sdk.js';
         };
       }
     }, 2000);
+  } else if (status.state === 'visualizer') {
+    // Visualizer-only mode — no video session, but a visualizer engine is configured.
+    // Connect WebSocket and let the VisualizerManager send the engine activation message.
+    connectWebSocket();
+    // If the engine is DVD, we can go straight to DVD mode (WS will confirm with config)
+    if (status.visualizer_engine === 'dvd') {
+      setMode('VISUALIZER_DVD');
+      _dvdScreensaver = new DVDScreensaver(dvdContainer, '', null);
+      _dvdScreensaver.start();
+    }
   } else {
     showError('No active video session. Start one with /video play');
   }
@@ -1298,8 +1308,14 @@ import { DiscordSDK } from './discord-sdk.js';
       errorOverlay.classList.remove('visible');
     } else if (updated.state === 'idle' || !updated.session_id) {
       // Session ended with no next video — show message but keep polling
-      _rlog('[_checkForNextSession] idle/no session — showing queue empty');
-      showError('Playback complete — queue is empty.');
+      // Don't show error if we're in visualizer mode
+      if (mode !== 'VISUALIZER_DVD' && mode !== 'VISUALIZER_HLS') {
+        _rlog('[_checkForNextSession] idle/no session — showing queue empty');
+        showError('Playback complete — queue is empty.');
+      }
+    } else if (updated.state === 'visualizer') {
+      // Visualizer-only mode — no video session, keep visualizer running
+      errorOverlay.classList.remove('visible');
     }
   };
 

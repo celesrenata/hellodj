@@ -324,7 +324,9 @@ class ActivityBackend:
         the requested resource. This ensures:
         - Only requests from inside a Discord Activity iframe can access streams
         - A token for guild A cannot access guild B's stream
-        - An active session must exist for the guild+channel
+
+        Note: Does NOT require an active video session — visualizer-only mode
+        is valid when the token's guild matches the request.
 
         Returns:
             None if authentication succeeds, or a web.Response with the
@@ -343,14 +345,10 @@ class ActivityBackend:
         if token_guild != guild_id:
             return self._json_error(403, "Token not authorized for this guild")
 
-        # Parse channel_id for composite key lookup
+        # Parse channel_id (needed for composite key lookups elsewhere)
         token_channel = self._parse_channel_from_instance_id(token)
         if token_channel is None:
             return self._json_error(401, "Invalid authentication token (missing channel)")
-
-        # Verify an active session exists using composite key
-        if self._registry.get(guild_id, token_channel) is None:
-            return self._json_error(404, "No active session for this guild")
 
         return None
 
@@ -474,6 +472,26 @@ class ActivityBackend:
         # Look up session
         streamer = self._get_streamer_from_request(request, guild_id)
         if streamer is None:
+            # No video session — check if a visualizer is configured for this guild
+            import guild_settings
+            engine = guild_settings.get_visualizer_engine(guild_id)
+            if engine and engine != "off":
+                # Return a visualizer-only status so the frontend connects WS
+                return web.json_response({
+                    "state": "visualizer",
+                    "video_title": None,
+                    "video_duration": 0.0,
+                    "elapsed_seconds": 0.0,
+                    "playlist_url": None,
+                    "queue_length": 0,
+                    "session_id": None,
+                    "subtitles": [],
+                    "audio_tracks": [],
+                    "playing": False,
+                    "uploader": None,
+                    "playback_started": False,
+                    "visualizer_engine": engine,
+                })
             return self._json_error(404, "No active session for this guild")
 
         # Build SessionStatus response
