@@ -348,9 +348,13 @@ class WebSocketHub:
                         guild = self._bot_ref.get_guild(guild_id)
                         if guild and guild.icon:
                             icon_url = guild.icon.url
+                    # For non-client-side engines (projectm, audiovis, etc.),
+                    # the VisualizerManager sends hls_ready when the pipeline
+                    # is active. If it's not active, fall back to DVD mode so
+                    # the client shows something visual rather than a blank screen.
                     viz_msg = {
                         "type": "visualizer",
-                        "engine": engine,
+                        "engine": "dvd",
                         "state": "active",
                         "config": {
                             "avatar_url": icon_url,

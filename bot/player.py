@@ -1421,9 +1421,13 @@ async def _on_video_session_end(guild_id: int) -> None:
                             icon_url = guild.icon.url
                         elif ws_hub._bot_ref.user and ws_hub._bot_ref.user.avatar:
                             icon_url = ws_hub._bot_ref.user.avatar.url
+                    # Always send DVD as the client-side fallback visualizer.
+                    # Server-rendered engines (projectm, audiovis, etc.) would
+                    # need the VisualizerManager to start their HLS pipeline and
+                    # send hls_ready. DVD is always available client-side.
                     await ws_hub.broadcast_from_bot(guild_id, {
                         "type": "visualizer",
-                        "engine": engine,
+                        "engine": "dvd",
                         "state": "active",
                         "config": {
                             "avatar_url": icon_url,
