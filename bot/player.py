@@ -982,6 +982,9 @@ async def _terminate_active_video_session(guild_id: int) -> None:
     except Exception as exc:
         log.warning("Error stopping streamer during transition: %s", exc)
 
+    # Clear the video transition flag so audio entries can proceed
+    state["_video_transition"] = False
+
     # Unregister from registry and ws_hub so _is_video_active returns False
     video_cog._registry.unregister(guild_id, channel_id)
     try:
@@ -1352,6 +1355,7 @@ async def _on_video_session_end(guild_id: int) -> None:
 
     state = get_state(guild_id)
     state["current"] = None  # Clear the video entry from current
+    state["_video_transition"] = False  # Clear transition flag so audio can proceed
     persist(guild_id)
 
     if state["queue"]:
