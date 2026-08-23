@@ -956,6 +956,40 @@ async def enqueue_and_start(
 
 # ── event-driven playback ─────────────────────────────────
 
+
+async def _terminate_active_video_session(guild_id: int) -> None:
+    """Terminate the active video session for a guild, cleaning up registry and ws_hub."""
+    if _bot_ref is None:
+        return
+    video_cog = _bot_ref.get_cog("Video")
+    if video_cog is None:
+        return
+
+    state = get_state(guild_id)
+    voice_channel = state.get("voice_channel")
+    if voice_channel is None:
+        return
+
+    channel_id = voice_channel.id
+    streamer = video_cog._registry.get(guild_id, channel_id)
+    if streamer is None:
+        return
+
+    log.info("_terminate_active_video_session: stopping video for guild=%d channel=%d", guild_id, channel_id)
+
+    try:
+        await streamer.stop()
+    except Exception as exc:
+        log.warning("Error stopping streamer during transition: %s", exc)
+
+    # Unregister from registry and ws_hub so _is_video_active returns False
+    video_cog._registry.unregister(guild_id, channel_id)
+    try:
+        video_cog._backend.ws_hub.unregister_streamer(guild_id)
+    except Exception as exc:
+        log.debug("_terminate_active_video_session: ws_hub unregister failed: %s", exc)
+
+
 async def _play_next_from_queue(guild_id: int, *, skip_history_push: bool = False) -> None:
     state = get_state(guild_id)
     player = state.get("player")
@@ -991,8 +1025,19 @@ async def _play_next_from_queue(guild_id: int, *, skip_history_push: bool = Fals
     # Check BEFORE popping to avoid an infinite pop/re-insert cycle.
     # Video entries (music_video) are still allowed through — they use the Activity pipeline.
     peek_entry = state["queue"][0]
-    if peek_entry.get("type") != "music_video" and (_is_video_active(guild_id) or state.get("_video_transition")):
-        log.info("play_next: video active — leaving audio entry in queue guild=%d title=%r",
+
+    # If a video session is active and we're transitioning away from it:
+    if _is_video_active(guild_id) and not state.get("_video_transition"):
+        if peek_entry.get("type") == "music_video":
+            # Video-to-video: terminate old session, then continue to start new one
+            await _terminate_active_video_session(guild_id)
+        elif peek_entry.get("type") != "music_video":
+            # Video-to-audio: terminate session, then allow audio to play
+            await _terminate_active_video_session(guild_id)
+
+    # Original guard: only block audio during _video_transition (setup in progress)
+    if peek_entry.get("type") != "music_video" and state.get("_video_transition"):
+        log.info("play_next: video transition in progress — leaving audio entry in queue guild=%d title=%r",
                  guild_id, peek_entry.get("title"))
         state["current"] = None
         persist(guild_id)
@@ -1017,7 +1062,7 @@ async def _play_next_from_queue(guild_id: int, *, skip_history_push: bool = Fals
 
     # Check if this is a video entry — needs Activity pipeline, not Lavalink
     if next_entry.get("type") == "music_video":
-        await _start_video_from_queue(guild_id, next_entry)
+        await _start_video_from_queue(guild_id, next_entry, from_unified_queue=True)
         return
 
     # Audio entry — needs a connected player
@@ -1039,11 +1084,19 @@ async def _play_next_from_queue(guild_id: int, *, skip_history_push: bool = Fals
     await _resolve_and_play(player, guild_id, next_entry)
 
 
-async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
+async def _start_video_from_queue(guild_id: int, entry: dict, *, from_unified_queue: bool = False) -> None:
     """Start a video Activity for a queued music_video entry.
 
     Stops audio playback but keeps the bot connected to voice.
     The bot should NOT leave and rejoin — it stays in the channel.
+
+    Parameters
+    ----------
+    from_unified_queue:
+        When True, indicates this call originates from unified queue
+        progression (e.g. _play_next_from_queue). An existing active
+        streamer will be terminated and replaced rather than having the
+        new source enqueued to its internal queue.
     """
     state = get_state(guild_id)
 
@@ -1131,11 +1184,22 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
         streamer = video_cog._registry.get(guild_id, voice_channel.id)
         if streamer is not None:
             if streamer.is_active:
-                # Currently streaming — enqueue
-                streamer.enqueue(source)
-                if text_channel:
-                    await text_channel.send(f"📥 Added to video queue: **{source.title}**")
-                return
+                if from_unified_queue:
+                    # Unified queue progression: terminate old session, create new one
+                    log.info("_start_video_from_queue: from_unified_queue=True, terminating old session guild=%d", guild_id)
+                    try:
+                        await streamer.stop()
+                    except Exception as exc:
+                        log.warning("Error stopping old streamer for unified queue transition: %s", exc)
+                    video_cog._registry.unregister(guild_id, voice_channel.id)
+                    video_cog._backend.ws_hub.unregister_streamer(guild_id)
+                    # Fall through to create new session below
+                else:
+                    # Direct /video play: enqueue to existing session
+                    streamer.enqueue(source)
+                    if text_channel:
+                        await text_channel.send(f"📥 Added to video queue: **{source.title}**")
+                    return
             else:
                 # Idle streamer — reuse it (clients still connected via WS)
                 log.info("_start_video_from_queue: reusing idle streamer for guild=%d", guild_id)
@@ -1249,6 +1313,8 @@ async def _on_video_session_end(guild_id: int) -> None:
     """Callback fired when a video Activity session ends (queue empty).
 
     Advances the unified player queue so audio tracks resume after video.
+    Unregisters from session registry BEFORE advancing so _is_video_active()
+    returns False and audio entries can proceed.
     """
     log.info("_on_video_session_end: video finished, checking unified queue guild=%d", guild_id)
 
@@ -1257,8 +1323,37 @@ async def _on_video_session_end(guild_id: int) -> None:
         log.debug("_on_video_session_end: bot shutting down, skipping queue advance")
         return
 
+    # Unregister from session registry BEFORE advancing queue
+    # so that _is_video_active() returns False and audio entries can proceed
+    video_cog = _bot_ref.get_cog("Video")
+    if video_cog is not None:
+        state = get_state(guild_id)
+        voice_channel = state.get("voice_channel")
+        if voice_channel is not None:
+            channel_id = voice_channel.id
+            # Mark the streamer as inactive before unregistering so that
+            # _is_video_active() returns False even if registry cleanup is delayed
+            try:
+                streamer = video_cog._registry._sessions.get((guild_id, channel_id))
+                if streamer is not None:
+                    streamer.is_active = False
+            except Exception:
+                pass
+            video_cog._registry.unregister(guild_id, channel_id)
+            # Also directly remove from _sessions dict as defensive cleanup
+            try:
+                video_cog._registry._sessions.pop((guild_id, channel_id), None)
+            except Exception:
+                pass
+            try:
+                video_cog._backend.ws_hub.unregister_streamer(guild_id)
+            except Exception as exc:
+                log.debug("_on_video_session_end: ws_hub unregister failed: %s", exc)
+
     state = get_state(guild_id)
     state["current"] = None  # Clear the video entry from current
+    persist(guild_id)
+
     if state["queue"]:
         await _play_next_from_queue(guild_id)
 

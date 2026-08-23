@@ -646,11 +646,19 @@ class VideoCog(commands.Cog, name="Video"):
                     log.warning("Error closing Activity after skip for guild %d: %s", guild_id, exc)
 
             self._registry.unregister(guild_id, channel_id)
+            self._backend.ws_hub.unregister_streamer(guild_id)
 
-            # Check if there are more tracks in the unified player queue
+            # Guard against double-advance: _stop_internal may have already fired
+            # _on_video_session_end which clears state["current"] and advances.
             import player as _player
             state = _player.get_state(guild_id)
-            if state["queue"]:
+            if state.get("current") is None and not state["queue"]:
+                # _on_video_session_end already handled advancement (or queue is empty)
+                await interaction.followup.send(
+                    "⏭️ Skipped! Queue is empty — Activity closed."
+                )
+            elif state["queue"]:
+                # Queue has items and hasn't been advanced yet
                 await interaction.followup.send("⏭️ Skipped! Resuming audio queue...")
                 await _player._play_next_from_queue(guild_id)
             else:

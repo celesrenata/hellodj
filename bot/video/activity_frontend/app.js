@@ -839,14 +839,32 @@ import { DiscordSDK } from './discord-sdk.js';
         break;
 
       case 'session_end':
-        // Session ended — clean up and go idle
-        _rlog('[session_end] received — going IDLE, currentSessionId=' + currentSessionId);
-        setMode('IDLE');
+        // Session ended — show DVD screensaver instead of blank IDLE
+        _rlog('[session_end] received — going VISUALIZER_DVD, currentSessionId=' + currentSessionId);
+        setMode('VISUALIZER_DVD');
         if (hls) { hls.destroy(); hls = null; }
         videoEl.pause();
         videoEl.removeAttribute('src');
         videoEl.load();
         titleBar.textContent = '';
+        // Initialize DVD screensaver with bot avatar
+        {
+          const avatarUrl = data.bot_avatar_url || (status && status.bot_avatar_url) || '';
+          const lastTrack = data.last_track || null;
+          if (_dvdScreensaver) {
+            _dvdScreensaver.stop();
+            _dvdScreensaver = null;
+          }
+          try {
+            _dvdScreensaver = new DVDScreensaver(dvdContainer, avatarUrl, lastTrack);
+            _dvdScreensaver.start();
+          } catch (e) {
+            _rlog('[session_end] DVDScreensaver init error: ' + e.message);
+          }
+          if (lastTrack && lastTrack.title) {
+            titleBar.textContent = formatTitle(lastTrack.title, lastTrack.artist);
+          }
+        }
         break;
 
       case 'track_change':
