@@ -14,6 +14,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libva-dev \
     vainfo \
     libsndfile1 \
+    # EGL/OpenGL for GPU visualizer engines (headless rendering)
+    libegl1-mesa-dev \
+    libgl1-mesa-dev \
+    libgles2-mesa-dev \
+    # libprojectM for Milkdrop preset rendering
+    libprojectm-dev \
     # Build deps for ffmpeg
     build-essential \
     nasm \
@@ -89,6 +95,13 @@ COPY views/ ./views/
 
 # Copy curated sticker pack (manifest + assets) for whiteboard sticker catalog
 COPY stickers/ ./stickers/
+
+# Copy bundled presets for GPU visualizer engines
+COPY data/presets/projectm/ ./data/presets/projectm/
+COPY data/presets/varda/ ./data/presets/varda/
+
+# Copy GLSL shader files for visualizer engines
+COPY video/visualizer_engines/shaders/ ./video/visualizer_engines/shaders/
 
 # Copy wake word model (optional — the artifact is a training output and may be
 # absent from the build context; it can be mounted at runtime instead).

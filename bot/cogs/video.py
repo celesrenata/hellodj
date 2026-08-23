@@ -70,6 +70,11 @@ class VideoCog(commands.Cog, name="Video"):
         """Probe GPU, start Activity backend, and prepare launcher on cog load."""
         await self._gpu_probe.probe()
 
+        # Publish GPU availability to the engine registry so get_available_engines()
+        # can filter without needing a reference to this cog.
+        from video.visualizer_engines import set_gpu_available
+        set_gpu_available(self._gpu_probe.gpu_available)
+
         # Clean up orphaned HLS directories from previous sessions/crashes.
         # At startup there are no active sessions, so remove everything.
         cleanup_orphaned_dirs(active_sessions=set())

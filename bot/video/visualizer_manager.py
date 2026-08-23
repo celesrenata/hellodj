@@ -15,13 +15,16 @@ import asyncio
 import enum
 import logging
 import shutil
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING
 
 from video.audio_feature_bus import AudioFeatureBus
+from video.gpu_scheduler import GPUCapacityExceededError, GPUResourceScheduler
 from video.hls_transcode import HLSTranscodePipeline
 from video.visualizer_engines import VisualizerRenderer, create_engine
 from video.visualizer_engines.base import TrackMetadata
+from video.visualizer_engines.gpu_engine_base import GPURenderError
 
 if TYPE_CHECKING:
     from video.ws_hub import WebSocketHub
@@ -29,6 +32,9 @@ if TYPE_CHECKING:
 import guild_settings
 
 log = logging.getLogger(__name__)
+
+# Module-level singleton GPU scheduler (one per process)
+_gpu_scheduler = GPUResourceScheduler()
 
 
 class VisualizerState(enum.Enum):
@@ -68,7 +74,7 @@ class VisualizerManager:
     # Engines eligible for "random" mode selection. Only includes engines that
     # are fully implemented (not stubs). Expand this list as new engines become
     # production-ready.
-    _RANDOM_POOL_ENGINES: list[str] = ["native"]
+    _RANDOM_POOL_ENGINES: list[str] = ["projectm", "audiovis", "fosfora", "varda"]
 
     def __init__(
         self,
@@ -89,10 +95,13 @@ class VisualizerManager:
         self._audio_bus: AudioFeatureBus | None = None
         self._pipeline: HLSTranscodePipeline | None = None
         self._render_task: asyncio.Task | None = None
+        self._device_loss_task: asyncio.Task | None = None
+        self._last_frame_time: float = 0.0
 
         # Random mode cycling state
         self._random_cycle: list[str] = []
         self._random_index: int = 0
+        self._last_random_engine: str = ""
 
         log.debug(
             "VisualizerManager created for guild %d (engine=%s, state=%s)",
@@ -308,9 +317,9 @@ class VisualizerManager:
         For client-side engines (e.g., DVD): broadcasts config and transitions
         to ACTIVE immediately.
 
-        For server-rendered engines: starts the HLS pipeline, render loop,
-        and AudioFeatureBus subscription. Transitions to ACTIVE once the
-        first HLS segment is ready.
+        For server-rendered engines: allocates a GPU VF slot via the scheduler,
+        starts the HLS pipeline, render loop, and AudioFeatureBus subscription.
+        Transitions to ACTIVE once the first HLS segment is ready.
         """
         self.state = VisualizerState.STARTING
         log.debug(
@@ -318,7 +327,38 @@ class VisualizerManager:
         )
 
         try:
-            self._engine = self._create_engine_instance()
+            if self._engine_type == "random":
+                # Use fallback chain for random mode (Req 9 AC 3-4)
+                self._engine, actual_engine_type = self._create_random_engine_with_fallback()
+            else:
+                self._engine = self._create_engine_instance()
+                actual_engine_type = self._engine_type
+        except Exception:
+            log.exception(
+                "Guild %d: failed to create engine '%s'",
+                self.guild_id,
+                self._engine_type,
+            )
+            self._engine = None
+            self.state = VisualizerState.ERROR
+            return
+
+        # For server-rendered engines, allocate a GPU VF before EGL context
+        if not self._engine.is_client_side:
+            try:
+                _gpu_scheduler.allocate(self.guild_id, self._engine_type)
+            except GPUCapacityExceededError:
+                log.warning(
+                    "Guild %d: GPU capacity exceeded — cannot start engine '%s', "
+                    "remaining in IDLE_NO_VIEWERS",
+                    self.guild_id,
+                    self._engine_type,
+                )
+                self._engine = None
+                self.state = VisualizerState.IDLE_NO_VIEWERS
+                return
+
+        try:
             await self._engine.initialize(metadata=self._track_metadata)
             await self._engine.activate(metadata=self._track_metadata)
         except Exception:
@@ -327,6 +367,9 @@ class VisualizerManager:
                 self.guild_id,
                 self._engine_type,
             )
+            # Release GPU allocation if we had one
+            if not self._engine.is_client_side:
+                _gpu_scheduler.release(self.guild_id)
             self._engine = None
             self.state = VisualizerState.ERROR
             return
@@ -363,12 +406,15 @@ class VisualizerManager:
         """Stop the current engine and release resources.
 
         For server-rendered engines, also tears down the render loop,
-        AudioFeatureBus subscription, and HLS pipeline.
+        AudioFeatureBus subscription, HLS pipeline, and releases the GPU VF.
         """
         # Clean up server-rendered resources first
         await self._stop_server_render_resources()
 
         if self._engine is not None:
+            # Release GPU VF allocation for server-rendered engines
+            if not self._engine.is_client_side:
+                _gpu_scheduler.release(self.guild_id)
             try:
                 await self._engine.stop()
             except Exception:
@@ -398,6 +444,57 @@ class VisualizerManager:
             kwargs["bot_avatar_url"] = self._bot_avatar_url
 
         return create_engine(engine_type, **kwargs)
+
+    def _create_random_engine_with_fallback(self) -> tuple[VisualizerRenderer, str]:
+        """Try each engine in the random pool with fallback chain.
+
+        Selects the next random engine (no consecutive repeat), and if it
+        fails to instantiate, tries each remaining pool engine in order.
+        If all fail, falls back to the DVD engine.
+
+        Returns:
+            Tuple of (engine_instance, engine_type_string).
+        """
+        pool = list(self._RANDOM_POOL_ENGINES)
+
+        if not pool:
+            log.warning(
+                "Guild %d: random pool is empty — falling back to dvd",
+                self.guild_id,
+            )
+            return create_engine("dvd", bot_avatar_url=self._bot_avatar_url), "dvd"
+
+        # Get the primary selection (no-repeat logic)
+        primary = self._select_next_random_engine()
+
+        # Build ordered attempt list: primary first, then remaining pool engines
+        attempt_order = [primary] + [e for e in pool if e != primary]
+
+        for engine_name in attempt_order:
+            try:
+                engine = create_engine(engine_name)
+                log.debug(
+                    "Guild %d: random mode selected engine '%s'",
+                    self.guild_id,
+                    engine_name,
+                )
+                return engine, engine_name
+            except Exception:
+                log.warning(
+                    "Guild %d: random mode — engine '%s' failed to instantiate, "
+                    "trying next in pool",
+                    self.guild_id,
+                    engine_name,
+                    exc_info=True,
+                )
+                continue
+
+        # All pool engines failed — fall back to DVD (Req 9 AC 4)
+        log.warning(
+            "Guild %d: all random pool engines failed — falling back to dvd",
+            self.guild_id,
+        )
+        return create_engine("dvd", bot_avatar_url=self._bot_avatar_url), "dvd"
 
     def _select_next_random_engine(self) -> str:
         """Select the next engine from the random pool, cycling to avoid repeats.
@@ -429,49 +526,58 @@ class VisualizerManager:
             self._random_index = 0
 
         # Select the next engine, avoiding the currently active one if possible
-        current_engine = (
-            self._engine_type
-            if self._engine is None
-            else type(self._engine).__name__.lower().replace("engine", "")
-        )
+        current_engine = self._last_random_engine or ""
 
         # Try up to len(pool) times to find a different engine
         for _ in range(len(self._random_cycle)):
             candidate = self._random_cycle[self._random_index]
             self._random_index = (self._random_index + 1) % len(self._random_cycle)
             if candidate != current_engine:
+                self._last_random_engine = candidate
                 return candidate
 
         # All engines are the same as current (shouldn't happen with len > 1)
         # Just return whatever is next in the cycle
         result = self._random_cycle[self._random_index]
         self._random_index = (self._random_index + 1) % len(self._random_cycle)
+        self._last_random_engine = result
         return result
 
     # ------------------------------------------------------------------
     # Suspension debounce
     # ------------------------------------------------------------------
 
-    async def _begin_suspension(self) -> None:
-        """Start 2-second debounce before suspending the engine.
+    # Debounce duration (seconds) before suspending engine after last viewer leaves.
+    # 10 seconds handles transient disconnects (Req 12 AC 3).
+    SUSPENSION_DEBOUNCE_SECONDS: float = 10.0
 
-        For Task 5.1, this transitions immediately to IDLE_NO_VIEWERS.
-        Task 5.3 will add the actual 2s asyncio timer.
+    async def _begin_suspension(self) -> None:
+        """Start 10-second debounce before suspending the engine.
+
+        Transitions to SUSPENDING state and starts an asyncio timer.
+        If a viewer reconnects within 10s, the timer is cancelled and
+        the engine remains ACTIVE. After 10s with zero viewers, the
+        engine is fully suspended (EGL context destroyed, GPU VF released).
         """
         self.state = VisualizerState.SUSPENDING
-        log.debug("Guild %d: beginning suspension", self.guild_id)
+        log.debug(
+            "Guild %d: beginning suspension (%.0fs debounce)",
+            self.guild_id,
+            self.SUSPENSION_DEBOUNCE_SECONDS,
+        )
 
-        # Immediate transition for now — Task 5.3 adds the 2s timer
         self._suspend_task = asyncio.create_task(self._suspension_timer())
 
     async def _suspension_timer(self) -> None:
-        """Wait 2s, then re-check viewer count before suspending.
+        """Wait SUSPENSION_DEBOUNCE_SECONDS, then re-check viewer count.
 
-        Task 5.3 will flesh this out with proper debounce. For now,
-        transitions immediately to IDLE_NO_VIEWERS.
+        If zero viewers remain after the debounce period, executes full
+        suspension (EGL context destroyed, GPU VF released, segments cleaned).
+        If viewers reconnected during the debounce window, transitions back
+        to ACTIVE without any resource teardown.
         """
         try:
-            await asyncio.sleep(2.0)
+            await asyncio.sleep(self.SUSPENSION_DEBOUNCE_SECONDS)
         except asyncio.CancelledError:
             return
 
@@ -489,7 +595,9 @@ class VisualizerManager:
             )
 
     async def _execute_suspension(self) -> None:
-        """Actually suspend: stop engine, clean segments, transition to IDLE_NO_VIEWERS."""
+        """Actually suspend: stop engine, release GPU VF, clean segments, transition to IDLE_NO_VIEWERS."""
+        # Release GPU VF before stopping engine
+        _gpu_scheduler.release(self.guild_id)
         await self._stop_engine()
         self.state = VisualizerState.IDLE_NO_VIEWERS
 
@@ -600,6 +708,13 @@ class VisualizerManager:
             name=f"viz-render-{self.guild_id}",
         )
 
+        # 3b. Start device loss watchdog (Req 11 AC 5)
+        self._last_frame_time = time.monotonic()
+        self._device_loss_task = asyncio.create_task(
+            self._device_loss_watchdog(),
+            name=f"viz-devloss-{self.guild_id}",
+        )
+
         # 4. Start a task to wait for pipeline readiness and notify frontend
         asyncio.create_task(
             self._wait_for_hls_ready(),
@@ -611,22 +726,71 @@ class VisualizerManager:
 
         Runs until the engine is stopped, the pipeline dies, or an error
         occurs. On error, triggers the render error handler for fallback.
+
+        Exception isolation (Req 11 AC 4): ALL exceptions are caught here
+        and never propagate to the bot's main event loop.
+
+        GPU device loss detection (Req 11 AC 5): If no frames are produced
+        within 5 seconds while the engine is running, the loop triggers
+        graceful degradation.
         """
+        last_frame_time = time.monotonic()
+        DEVICE_LOSS_TIMEOUT = 5.0
         try:
             async for frame_data in self._engine.render_frames():
+                last_frame_time = time.monotonic()
+                self._last_frame_time = last_frame_time
                 if self._pipeline and self._pipeline.stdin_pipe:
                     self._pipeline.stdin_pipe.write(frame_data)
                     await self._pipeline.stdin_pipe.drain()
                 else:
                     # Pipeline gone — stop rendering
                     break
-        except (asyncio.CancelledError, BrokenPipeError, ConnectionResetError):
-            pass
+        except asyncio.CancelledError:
+            return
+        except (BrokenPipeError, ConnectionResetError) as exc:
+            log.warning(
+                "Guild %d: render loop pipe error (%s) — triggering graceful degradation",
+                self.guild_id,
+                type(exc).__name__,
+            )
+            await self._handle_render_error()
         except Exception:
             log.exception(
                 "Guild %d: render loop error", self.guild_id
             )
             await self._handle_render_error()
+
+    async def _device_loss_watchdog(self) -> None:
+        """Monitor for GPU device loss (Req 11 AC 5).
+
+        Checks every 2 seconds whether the render loop has produced a frame
+        within the last 5 seconds. If not, this indicates a GPU device loss
+        (broken driver, hot-unplug, hung render node) and triggers graceful
+        degradation.
+        """
+        DEVICE_LOSS_TIMEOUT = 5.0
+        CHECK_INTERVAL = 2.0
+        try:
+            while self.state in (VisualizerState.STARTING, VisualizerState.ACTIVE):
+                await asyncio.sleep(CHECK_INTERVAL)
+                if self._last_frame_time == 0.0:
+                    # No frames yet — still starting up, skip check
+                    continue
+                elapsed_since_frame = time.monotonic() - self._last_frame_time
+                if elapsed_since_frame > DEVICE_LOSS_TIMEOUT:
+                    log.error(
+                        "Guild %d: GPU device loss detected — no frames for %.1fs",
+                        self.guild_id,
+                        elapsed_since_frame,
+                    )
+                    # Cancel the render task before handling the error
+                    if self._render_task and not self._render_task.done():
+                        self._render_task.cancel()
+                    await self._handle_render_error()
+                    return
+        except asyncio.CancelledError:
+            return
 
     async def _wait_for_hls_ready(self) -> None:
         """Wait for the first HLS segment and notify the frontend.
@@ -672,8 +836,8 @@ class VisualizerManager:
     async def _stop_server_render_resources(self) -> None:
         """Tear down all server-rendered engine resources.
 
-        Cancels the render task, unsubscribes from AudioFeatureBus,
-        shuts down the bus, and kills the HLS pipeline.
+        Cancels the render task, device loss watchdog, unsubscribes from
+        AudioFeatureBus, shuts down the bus, and kills the HLS pipeline.
         """
         # Cancel render loop
         if self._render_task is not None and not self._render_task.done():
@@ -683,6 +847,15 @@ class VisualizerManager:
             except (asyncio.CancelledError, Exception):
                 pass
         self._render_task = None
+
+        # Cancel device loss watchdog
+        if self._device_loss_task is not None and not self._device_loss_task.done():
+            self._device_loss_task.cancel()
+            try:
+                await self._device_loss_task
+            except (asyncio.CancelledError, Exception):
+                pass
+        self._device_loss_task = None
 
         # Unsubscribe and shutdown AudioFeatureBus
         if self._audio_bus is not None:
@@ -713,16 +886,22 @@ class VisualizerManager:
     async def _handle_render_error(self) -> None:
         """Handle a render loop or pipeline error.
 
-        Stops all server-rendered resources, transitions to ERROR state,
-        and attempts fallback to the DVD engine (client-side, zero resources).
+        Graceful degradation sequence (Req 11 AC 1-3, 5):
+        1. Stop server-rendered resources (HLS pipeline, audio bus, render task)
+        2. Release GPU VF allocation
+        3. Transition to ERROR state
+        4. Notify connected viewers via WebSocket
+        5. Attempt fallback to the DVD engine (client-side, zero resources)
         """
+        failed_engine = self._engine_type
         log.error(
             "Guild %d: render error — stopping server-rendered resources, "
-            "falling back to DVD engine",
+            "falling back to DVD engine (was: %s)",
             self.guild_id,
+            failed_engine,
         )
 
-        # Stop everything
+        # 1. Stop server-rendered resources
         await self._stop_server_render_resources()
         if self._engine is not None:
             try:
@@ -731,9 +910,27 @@ class VisualizerManager:
                 pass
             self._engine = None
 
+        # 2. Release GPU VF allocation
+        _gpu_scheduler.release(self.guild_id)
+
+        # 3. Transition to ERROR state
         self.state = VisualizerState.ERROR
 
-        # Attempt fallback to DVD engine (client-side, zero server resources)
+        # 4. Notify connected viewers of the error (Req 11 AC 2)
+        try:
+            await self._ws_hub.notify_visualizer_error(
+                self.guild_id,
+                engine=failed_engine,
+                message=f"GPU engine '{failed_engine}' encountered an error, switching to fallback",
+            )
+        except Exception:
+            log.debug(
+                "Guild %d: failed to send error notification to viewers",
+                self.guild_id,
+                exc_info=True,
+            )
+
+        # 5. Attempt fallback to DVD engine (client-side, zero server resources)
         try:
             self._engine_type = "dvd"
             self._engine = self._create_engine_instance()

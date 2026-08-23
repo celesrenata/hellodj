@@ -679,3 +679,23 @@ class WebSocketHub:
             await ws.send_json({"type": "error", "message": message})
         except (ConnectionResetError, RuntimeError):
             pass
+
+    async def notify_visualizer_error(
+        self, guild_id: int, engine: str, message: str = ""
+    ) -> None:
+        """Broadcast a visualizer error notification to all viewers.
+
+        Called by VisualizerManager when entering ERROR state (Req 11 AC 2).
+
+        Args:
+            guild_id: The guild experiencing the error.
+            engine: The engine type that failed.
+            message: Optional human-readable error description.
+        """
+        error_msg = {
+            "type": "visualizer_error",
+            "engine": engine,
+            "message": message or f"Visualizer engine '{engine}' encountered an error",
+            "fallback": "dvd",
+        }
+        await self.broadcast(guild_id, error_msg)

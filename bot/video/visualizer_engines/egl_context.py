@@ -1,0 +1,264 @@
+"""EGL headless rendering context for GPU-accelerated visualizer engines.
+
+Creates an OpenGL 3.3 Core context on a DRM render node using the
+EGL surfaceless platform. No X11/Wayland required.
+
+Platform requirements:
+- Render node: /dev/dri/renderD128 (discovered by GPUProbe)
+- Mesa iris driver for OpenGL 3.3 Core on Intel Meteor Lake
+- EGL extensions: EGL_MESA_platform_surfaceless, EGL_KHR_create_context
+"""
+
+from __future__ import annotations
+
+import ctypes
+import logging
+
+log = logging.getLogger(__name__)
+
+# Frame constants
+FRAME_WIDTH = 1280
+FRAME_HEIGHT = 720
+FRAME_SIZE = FRAME_WIDTH * FRAME_HEIGHT * 4  # RGBA = 3,686,400 bytes
+
+# EGL constants
+EGL_PLATFORM_SURFACELESS_MESA = 0x31DD
+EGL_OPENGL_API = 0x30A2
+EGL_CONTEXT_MAJOR_VERSION = 0x3098
+EGL_CONTEXT_MINOR_VERSION = 0x30FB
+EGL_CONTEXT_OPENGL_PROFILE_MASK = 0x30FD
+EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT = 0x00000001
+EGL_NONE = 0x3038
+EGL_RENDERABLE_TYPE = 0x3040
+EGL_OPENGL_BIT = 0x0008
+EGL_SURFACE_TYPE = 0x3033
+EGL_PBUFFER_BIT = 0x0001
+
+# GL constants
+GL_FRAMEBUFFER = 0x8D40
+GL_COLOR_ATTACHMENT0 = 0x8CE0
+GL_RENDERBUFFER = 0x8D41
+GL_RGBA8 = 0x8058
+GL_RGBA = 0x1908
+GL_UNSIGNED_BYTE = 0x1401
+GL_FRAMEBUFFER_COMPLETE = 0x8CD5
+
+
+class EGLContextError(Exception):
+    """Raised when EGL context creation or operation fails."""
+
+
+class EGLHeadlessContext:
+    """Headless EGL/OpenGL context on a DRM render node.
+
+    Lifecycle::
+
+        ctx = EGLHeadlessContext()
+        ctx.create(width=1280, height=720)
+        ctx.make_current()
+        # ... OpenGL rendering via ctypes ...
+        frame = ctx.read_pixels()  # RGBA bytes, 1280x720
+        ctx.destroy()
+
+    Uses EGL_MESA_platform_surfaceless — no X11/Wayland dependency.
+    """
+
+    def __init__(self, render_device: str = "/dev/dri/renderD128") -> None:
+        self.render_device = render_device
+        self.width = FRAME_WIDTH
+        self.height = FRAME_HEIGHT
+        self._egl: ctypes.CDLL | None = None
+        self._gl: ctypes.CDLL | None = None
+        self._display: ctypes.c_void_p | None = None
+        self._context: ctypes.c_void_p | None = None
+        self._fbo: int | None = None
+        self._rbo: int | None = None
+        self._created: bool = False
+
+    @property
+    def is_valid(self) -> bool:
+        """True if the EGL context and FBO are created and usable."""
+        return self._created
+
+    def create(self, width: int = FRAME_WIDTH, height: int = FRAME_HEIGHT) -> None:
+        """Initialize EGL display, context, and offscreen FBO.
+
+        Args:
+            width: Framebuffer width in pixels. Defaults to 1280.
+            height: Framebuffer height in pixels. Defaults to 720.
+
+        Raises:
+            EGLContextError: If any EGL/GL operation fails.
+        """
+        self.width = width
+        self.height = height
+
+        # Load shared libraries
+        try:
+            self._egl = ctypes.CDLL("libEGL.so.1")
+        except OSError as exc:
+            raise EGLContextError(f"Failed to load libEGL.so.1: {exc}") from exc
+        try:
+            self._gl = ctypes.CDLL("libGL.so.1")
+        except OSError as exc:
+            raise EGLContextError(f"Failed to load libGL.so.1: {exc}") from exc
+
+        # eglGetPlatformDisplay(EGL_PLATFORM_SURFACELESS_MESA, NULL, NULL)
+        get_platform_display = self._egl.eglGetPlatformDisplay
+        get_platform_display.restype = ctypes.c_void_p
+        self._display = get_platform_display(
+            EGL_PLATFORM_SURFACELESS_MESA, None, None,
+        )
+        if not self._display:
+            raise EGLContextError("eglGetPlatformDisplay failed (surfaceless)")
+
+        # Initialize EGL
+        major, minor = ctypes.c_int(), ctypes.c_int()
+        if not self._egl.eglInitialize(
+            self._display, ctypes.byref(major), ctypes.byref(minor)
+        ):
+            raise EGLContextError("eglInitialize failed")
+
+        log.debug("EGL initialized: version %d.%d", major.value, minor.value)
+
+        # Bind OpenGL API
+        if not self._egl.eglBindAPI(EGL_OPENGL_API):
+            raise EGLContextError("eglBindAPI(EGL_OPENGL_API) failed")
+
+        # Choose config
+        config_attribs = (ctypes.c_int * 7)(
+            EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+            EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
+            EGL_NONE, 0, 0,
+        )
+        config = ctypes.c_void_p()
+        num_configs = ctypes.c_int()
+        self._egl.eglChooseConfig(
+            self._display,
+            config_attribs,
+            ctypes.byref(config),
+            1,
+            ctypes.byref(num_configs),
+        )
+        if num_configs.value == 0:
+            raise EGLContextError("eglChooseConfig found no valid configs")
+
+        # Create OpenGL 3.3 Core context
+        context_attribs = (ctypes.c_int * 7)(
+            EGL_CONTEXT_MAJOR_VERSION, 3,
+            EGL_CONTEXT_MINOR_VERSION, 3,
+            EGL_CONTEXT_OPENGL_PROFILE_MASK, EGL_CONTEXT_OPENGL_CORE_PROFILE_BIT,
+            EGL_NONE,
+        )
+        create_context = self._egl.eglCreateContext
+        create_context.restype = ctypes.c_void_p
+        self._context = create_context(
+            self._display, config, None, context_attribs
+        )
+        if not self._context:
+            raise EGLContextError("eglCreateContext failed (OpenGL 3.3 Core)")
+
+        # Make current and create FBO
+        self.make_current()
+        self._create_fbo()
+        self._created = True
+
+        log.info(
+            "EGL headless context created: %dx%d, OpenGL 3.3 Core",
+            self.width,
+            self.height,
+        )
+
+    def make_current(self) -> None:
+        """Bind this context as the current GL context (surfaceless, no surface).
+
+        Raises:
+            EGLContextError: If eglMakeCurrent fails.
+        """
+        if not self._egl or not self._display or not self._context:
+            raise EGLContextError("Cannot make_current: context not created")
+        if not self._egl.eglMakeCurrent(
+            self._display, None, None, self._context
+        ):
+            raise EGLContextError("eglMakeCurrent failed")
+
+    def read_pixels(self) -> bytes:
+        """Read FBO contents as RGBA bytes.
+
+        Returns:
+            Exactly width * height * 4 bytes of RGBA pixel data.
+            For default 1280x720: 3,686,400 bytes.
+
+        Raises:
+            EGLContextError: If the context is not valid.
+        """
+        if not self._created:
+            raise EGLContextError("Cannot read_pixels: context not created")
+        buf = (ctypes.c_ubyte * (self.width * self.height * 4))()
+        self._gl.glReadPixels(
+            0, 0, self.width, self.height, GL_RGBA, GL_UNSIGNED_BYTE, buf
+        )
+        return bytes(buf)
+
+    def destroy(self) -> None:
+        """Release all EGL/GL resources (FBO, renderbuffer, context, display).
+
+        Idempotent — safe to call multiple times. Completes within 500ms.
+        """
+        if not self._created:
+            return
+
+        # Delete FBO
+        if self._fbo is not None:
+            fbo_id = ctypes.c_uint(self._fbo)
+            self._gl.glDeleteFramebuffers(1, ctypes.byref(fbo_id))
+            self._fbo = None
+
+        # Delete renderbuffer
+        if self._rbo is not None:
+            rbo_id = ctypes.c_uint(self._rbo)
+            self._gl.glDeleteRenderbuffers(1, ctypes.byref(rbo_id))
+            self._rbo = None
+
+        # Destroy EGL context
+        if self._context:
+            self._egl.eglMakeCurrent(self._display, None, None, None)
+            self._egl.eglDestroyContext(self._display, self._context)
+            self._context = None
+
+        # Terminate EGL display
+        if self._display:
+            self._egl.eglTerminate(self._display)
+            self._display = None
+
+        self._created = False
+        log.info("EGL headless context destroyed")
+
+    def _create_fbo(self) -> None:
+        """Create offscreen framebuffer with RGBA8 renderbuffer.
+
+        Raises:
+            EGLContextError: If framebuffer is incomplete.
+        """
+        # Create and configure renderbuffer
+        rbo = ctypes.c_uint()
+        self._gl.glGenRenderbuffers(1, ctypes.byref(rbo))
+        self._gl.glBindRenderbuffer(GL_RENDERBUFFER, rbo)
+        self._gl.glRenderbufferStorage(
+            GL_RENDERBUFFER, GL_RGBA8, self.width, self.height
+        )
+        self._rbo = rbo.value
+
+        # Create FBO and attach renderbuffer
+        fbo = ctypes.c_uint()
+        self._gl.glGenFramebuffers(1, ctypes.byref(fbo))
+        self._gl.glBindFramebuffer(GL_FRAMEBUFFER, fbo)
+        self._gl.glFramebufferRenderbuffer(
+            GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_RENDERBUFFER, rbo
+        )
+        self._fbo = fbo.value
+
+        # Validate
+        status = self._gl.glCheckFramebufferStatus(GL_FRAMEBUFFER)
+        if status != GL_FRAMEBUFFER_COMPLETE:
+            raise EGLContextError(f"FBO incomplete: status=0x{status:04X}")

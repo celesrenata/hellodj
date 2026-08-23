@@ -13,8 +13,9 @@ Sources
     * Stream:  ``streams.secure_hls_stream`` / ``secure_shoutcast_stream``
       (``https://stream.revma.ihrhls.com/zc{id}/hls.m3u8`` or ``/zc{id}``)
 * **The Lot Radio** — public HLS stream (verified).
-* **Poolsuite / Poolside FM** — session-gated stream URL (best-effort).
-* **Nightwave Plaza** — site offline at probe time (best-effort URL).
+* **Nightwave Plaza** — 24/7 vaporwave radio via radio.plaza.one/mp3.
+* **Nightride FM** — Icecast streams: synthwave, chillsynth, darksynth channels.
+* **313.FM** — Detroit electronic music via Icecast (icecast.ofdoom.com).
 """
 
 import asyncio
@@ -58,23 +59,44 @@ PRESETS = {
             "307 → playback.livepeer.studio → nyc-prod-catalyst LP playback)."
         ),
     },
-    "poolsuite": {
-        "name": "Poolsuite / Poolside FM",
-        "url": "https://stream.poolsuite.net/stream.mp3",
-        "note": (
-            "BEST-EFFORT: poolsuite.net serves its stream URL at runtime from "
-            "api.poolsuite.net (session-gated, X-Poolsuite-API key). Static "
-            "probing of stream.poolsuite.net/radio.poolsuite.net returned 404, "
-            "so this is the documented public URL and may need updating."
-        ),
-    },
     "nightwave": {
         "name": "Nightwave Plaza",
-        "url": "https://plaza.nightwaveplaza.com/stream",
+        "url": "https://radio.plaza.one/mp3",
         "note": (
-            "BEST-EFFORT: plaza/radio/stream.nightwaveplaza.com did not "
-            "resolve DNS at probe time (2026-08-18) — the site appears offline. "
-            "This URL is the documented public stream and may need updating."
+            "24/7 vaporwave radio. Direct MP3 stream via radio.plaza.one "
+            "(plaza.one is the site, radio.plaza.one/mp3 is the Icecast endpoint)."
+        ),
+    },
+    "nightride": {
+        "name": "Nightride FM — Synthwave",
+        "url": "https://stream.nightride.fm/nightride.ogg",
+        "note": (
+            "Nightride FM main synthwave/retrowave channel. Icecast at "
+            "stream.nightride.fm, 320kbps OGG. See nightride.fm/stations."
+        ),
+    },
+    "chillsynth": {
+        "name": "Nightride FM — Chillsynth",
+        "url": "https://stream.nightride.fm/chillsynth.ogg",
+        "note": (
+            "Nightride FM chillsynth/chillwave/instrumental channel. "
+            "Icecast at stream.nightride.fm."
+        ),
+    },
+    "darksynth": {
+        "name": "Nightride FM — Darksynth",
+        "url": "https://stream.nightride.fm/darksynth.ogg",
+        "note": (
+            "Nightride FM darksynth/cyberpunk/horror channel. "
+            "Icecast at stream.nightride.fm."
+        ),
+    },
+    "313fm": {
+        "name": "313.FM",
+        "url": "http://icecast.ofdoom.com/313fm",
+        "note": (
+            "Detroit electronic music radio. Icecast server at "
+            "icecast.ofdoom.com, mountpoint /313fm."
         ),
     },
 }
@@ -258,7 +280,7 @@ class Radio(commands.Cog):
 
     @radio_group.command(name="preset", description="Play a curated internet-radio preset")
     @app_commands.describe(
-        preset="Preset name: thelot, poolsuite, or nightwave",
+        preset="Preset name: thelot, nightwave, nightride, chillsynth, darksynth, or 313fm",
     )
     async def radio_preset(self, interaction: discord.Interaction, preset: str):
         if not interaction.user.voice:

@@ -367,11 +367,13 @@ class TestShutdown:
 
 
 class TestSuspensionDebounce:
-    """Suspension debounce transitions correctly."""
+    """Suspension debounce transitions correctly (10s per Req 12 AC 3)."""
 
     @pytest.mark.asyncio
     async def test_debounce_completes_to_idle(self, manager, mock_ws_hub):
-        """After 2s with no viewers, transitions to IDLE_NO_VIEWERS."""
+        """After 10s with no viewers, transitions to IDLE_NO_VIEWERS."""
+        # Use a short debounce for test speed
+        manager.SUSPENSION_DEBOUNCE_SECONDS = 0.1
         manager.state = VisualizerState.ACTIVE
         mock_ws_hub.viewer_count.return_value = 0
 
@@ -379,18 +381,25 @@ class TestSuspensionDebounce:
         assert manager.state == VisualizerState.SUSPENDING
 
         # Wait for the debounce timer to complete
-        await asyncio.sleep(2.1)
+        await asyncio.sleep(0.15)
         assert manager.state == VisualizerState.IDLE_NO_VIEWERS
 
     @pytest.mark.asyncio
     async def test_viewer_reconnect_cancels_suspension(self, manager, mock_ws_hub):
         """Viewer rejoining during SUSPENDING cancels and returns to ACTIVE."""
+        # Use a short debounce for test speed
+        manager.SUSPENSION_DEBOUNCE_SECONDS = 0.1
         manager.state = VisualizerState.ACTIVE
         mock_ws_hub.viewer_count.return_value = 0
 
         await manager.on_viewer_leave(viewer_count=0)
         assert manager.state == VisualizerState.SUSPENDING
 
-        # Viewer rejoins within 2s
+        # Viewer rejoins within debounce window
         await manager.on_viewer_join()
         assert manager.state == VisualizerState.ACTIVE
+
+    def test_default_debounce_is_10_seconds(self, manager):
+        """Default SUSPENSION_DEBOUNCE_SECONDS is 10.0 per Req 12 AC 3."""
+        # Check the class-level default (not the instance override)
+        assert VisualizerManager.SUSPENSION_DEBOUNCE_SECONDS == 10.0

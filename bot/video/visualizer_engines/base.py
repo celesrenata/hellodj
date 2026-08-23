@@ -104,6 +104,14 @@ class VisualizerRenderer(ABC):
         """Config to send to frontend for client-side engines. None for server-rendered."""
         ...
 
+    def on_audio_features(self, features: AudioFeatures) -> None:
+        """Receive audio analysis data from AudioFeatureBus.
+
+        Called synchronously at ~47fps. Store features for next render pass.
+        Must be non-blocking. Default no-op for client-side engines.
+        """
+        pass
+
     async def render_frames(self) -> AsyncIterator[bytes]:
         """Yield raw RGBA frames for server-rendered engines.
 
