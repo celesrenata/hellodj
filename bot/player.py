@@ -1115,9 +1115,10 @@ async def _start_video_from_queue(guild_id: int, entry: dict, *, from_unified_qu
             await p.stop()
         except Exception as exc:
             log.warning("Failed to stop audio before video: %s", exc)
-
-    # Note: _video_transition flag is consumed by on_track_end (pop)
-    # so we don't need to clear it here.
+        # on_track_end will consume _video_transition via pop()
+    else:
+        # No audio was playing — clear the flag now since on_track_end won't fire
+        state["_video_transition"] = False
 
     # Get the bot and VideoCog
     if _bot_ref is None:
