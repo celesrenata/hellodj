@@ -103,8 +103,10 @@ import { DiscordSDK } from './discord-sdk.js';
       const maxY = Math.max(0, container.clientHeight - this._size);
       this.x = 10 + Math.random() * Math.max(0, maxX - 20);
       this.y = 10 + Math.random() * Math.max(0, maxY - 20);
-      this.dx = 1.5;
-      this.dy = 1.5;
+      // Speed proportional to viewport: ~0.3% of smaller dimension per frame
+      const baseSpeed = Math.max(0.5, dim * 0.003);
+      this.dx = baseSpeed;
+      this.dy = baseSpeed;
       if (Math.random() > 0.5) this.dx = -this.dx;
       if (Math.random() > 0.5) this.dy = -this.dy;
     }
@@ -138,9 +140,6 @@ import { DiscordSDK } from './discord-sdk.js';
       const dim = Math.min(this.container.clientWidth, this.container.clientHeight);
       const newSize = Math.max(48, Math.round(dim * 0.15));
       if (newSize !== this._size) {
-        // Scale position proportionally to new container size
-        const scaleX = this.container.clientWidth / (this.container.clientWidth + (this._size - newSize));
-        const scaleY = this.container.clientHeight / (this.container.clientHeight + (this._size - newSize));
         this._size = newSize;
         this.logo.style.width = `${this._size}px`;
         this.logo.style.height = `${this._size}px`;
@@ -149,6 +148,10 @@ import { DiscordSDK } from './discord-sdk.js';
         const maxY = Math.max(0, this.container.clientHeight - this._size);
         this.x = Math.max(0, Math.min(this.x, maxX));
         this.y = Math.max(0, Math.min(this.y, maxY));
+        // Update speed proportionally
+        const newSpeed = Math.max(0.5, dim * 0.003);
+        this.dx = Math.sign(this.dx) * newSpeed;
+        this.dy = Math.sign(this.dy) * newSpeed;
       }
     }
 
