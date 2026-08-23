@@ -1326,13 +1326,13 @@ import { DiscordSDK } from './discord-sdk.js';
     // Visualizer-only mode — no video session, but a visualizer engine is configured.
     // Connect WebSocket and let the VisualizerManager send the engine activation message.
     connectWebSocket();
-    // If the engine is DVD, we can go straight to DVD mode (WS will confirm with config)
-    if (status.visualizer_engine === 'dvd') {
-      setMode('VISUALIZER_DVD');
-      const avatarUrl = status.bot_avatar_url || '';
-      _dvdScreensaver = new DVDScreensaver(dvdContainer, avatarUrl, null);
-      _dvdScreensaver.start();
-    }
+    // For client-side engines (dvd) or any engine without server rendering,
+    // start the DVD screensaver as the default visualization.
+    // Server-rendered engines (audiovis, projectm, etc.) will override via WS message.
+    setMode('VISUALIZER_DVD');
+    const avatarUrl = status.bot_avatar_url || '';
+    _dvdScreensaver = new DVDScreensaver(dvdContainer, avatarUrl, null);
+    _dvdScreensaver.start();
   } else {
     // No active session — show DVD screensaver as idle state instead of blank screen
     connectWebSocket();
@@ -1374,6 +1374,9 @@ import { DiscordSDK } from './discord-sdk.js';
       }
     } else if (updated.state === 'streaming' && updated.session_id === currentSessionId) {
       // Still streaming same session — clear any stale error overlay
+      errorOverlay.classList.remove('visible');
+    } else if (updated.state === 'visualizer') {
+      // Visualizer-only mode — keep current visualizer running, don't interfere
       errorOverlay.classList.remove('visible');
     } else if (updated.state === 'idle' || !updated.session_id) {
       // Session ended with no next video — show DVD screensaver as idle
