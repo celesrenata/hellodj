@@ -201,11 +201,14 @@ class UnifiedControlView(discord.ui.View):
         await interaction.response.defer()
 
     async def _audio_skip(self, interaction: discord.Interaction, guild_id: int) -> None:
-        """Skip current audio track (triggers on_track_end → _play_next_from_queue)."""
+        """Skip current audio track using the queue lock to prevent race conditions."""
         import player
-        p = player.get_player(guild_id)
-        if p:
-            await p.stop()
+        lock = player._get_queue_lock(guild_id)
+        async with lock:
+            p = player.get_player(guild_id)
+            if p:
+                await p.stop()
+            await player._play_next_from_queue(guild_id)
         await interaction.response.defer()
 
     async def _audio_block(self, interaction: discord.Interaction, guild_id: int) -> None:

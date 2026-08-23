@@ -833,12 +833,13 @@ class WebSocketHub:
             # Clear queue and set as current for immediate playback
             p = player_module.get_player(guild_id)
             if p and p.connected:
-                # Insert at front and trigger play
+                # Insert at front and trigger play under the queue lock
                 state["queue"].insert(0, entry)
                 player_module.persist(guild_id)
-                if p.playing or p.paused:
-                    await p.stop()  # Triggers on_wavelink_track_end → plays next
-                else:
+                lock = player_module._get_queue_lock(guild_id)
+                async with lock:
+                    if p.playing or p.paused:
+                        await p.stop()
                     await player_module._play_next_from_queue(guild_id)
 
             await sender.send_json({

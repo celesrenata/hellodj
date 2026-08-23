@@ -57,6 +57,18 @@ def set_on_track_start_callback(callback) -> None:
 # `ClientException('Already connected to a voice channel.')`.
 _connect_locks: dict[int, asyncio.Lock] = {}
 
+# Per-guild queue advancement locks: serialize all queue advancement operations
+# (on_track_end, unified_skip, jump_to, _on_video_session_end, video_skip, etc.)
+# to eliminate race conditions between concurrent callers.
+_queue_locks: dict[int, asyncio.Lock] = {}
+
+
+def _get_queue_lock(guild_id: int) -> asyncio.Lock:
+    """Get or create the per-guild queue advancement lock."""
+    if guild_id not in _queue_locks:
+        _queue_locks[guild_id] = asyncio.Lock()
+    return _queue_locks[guild_id]
+
 # ── mid-song recovery (retry) ───────────────────────────────
 # When a track fails mid-song, on_track_exception re-resolves and replays the
 # SAME track up to MAX_TRACK_RETRIES times (instead of advancing the queue) so
@@ -727,43 +739,37 @@ async def jump_to(guild_id: int, *, history_index: int | None = None, queue_inde
 
     Returns True if playback was triggered, False on invalid index.
     """
-    state = get_state(guild_id)
-    from_history = False
+    lock = _get_queue_lock(guild_id)
+    async with lock:
+        state = get_state(guild_id)
+        from_history = False
 
-    if history_index is not None:
-        history = state.setdefault("history", [])
-        if history_index < 0 or history_index >= len(history):
+        if history_index is not None:
+            history = state.setdefault("history", [])
+            if history_index < 0 or history_index >= len(history):
+                return False
+            track = history.pop(history_index)
+            # When going "previous" (from history), push the current track to
+            # queue[0] first, then insert the history track before it.
+            # This way "next" returns to the track we just left.
+            if state.get("current"):
+                state["queue"].insert(0, state["current"])
+            state["queue"].insert(0, track)
+            from_history = True
+        elif queue_index is not None:
+            if queue_index < 0 or queue_index >= len(state["queue"]):
+                return False
+            # Move the selected track to position 0
+            track = state["queue"].pop(queue_index)
+            state["queue"].insert(0, track)
+        else:
             return False
-        track = history.pop(history_index)
-        # When going "previous" (from history), push the current track to
-        # queue[0] first, then insert the history track before it.
-        # This way "next" returns to the track we just left.
-        if state.get("current"):
-            state["queue"].insert(0, state["current"])
-        state["queue"].insert(0, track)
-        from_history = True
-    elif queue_index is not None:
-        if queue_index < 0 or queue_index >= len(state["queue"]):
-            return False
-        # Move the selected track to position 0
-        track = state["queue"].pop(queue_index)
-        state["queue"].insert(0, track)
-    else:
-        return False
 
-    # Stop current playback — this triggers _play_next_from_queue via on_track_end
-    p = get_player(guild_id)
-    if p and p.connected and p.playing:
-        # on_track_end fires asynchronously via event dispatch, so we can't
-        # rely on it running before we return. Instead, stop the player and
-        # manually advance the queue ourselves. Set a flag to suppress the
-        # duplicate advance from on_track_end.
-        state["_jump_transition"] = True
-        await p.stop()
-        state.pop("_jump_transition", None)
-        await _play_next_from_queue(guild_id, skip_history_push=from_history)
-    else:
-        # No player playing — manually advance
+        # Stop current playback if active, then advance manually.
+        # The lock prevents on_track_end from also advancing.
+        p = get_player(guild_id)
+        if p and p.connected and p.playing:
+            await p.stop()
         await _play_next_from_queue(guild_id, skip_history_push=from_history)
     return True
 
@@ -996,10 +1002,6 @@ async def _terminate_active_video_session(guild_id: int) -> None:
 async def _play_next_from_queue(guild_id: int, *, skip_history_push: bool = False) -> None:
     state = get_state(guild_id)
     player = state.get("player")
-
-    # Reentrance guard: prevent on_track_end from double-advancing
-    import time as _time
-    state["_advancing_queue_at"] = _time.monotonic()
 
     dbg.event("play_next", guild_id=guild_id, queue_len=len(state["queue"]),
               repeat_mode=state["repeat_mode"],
@@ -1354,13 +1356,15 @@ async def _on_video_session_end(guild_id: int) -> None:
             except Exception as exc:
                 log.debug("_on_video_session_end: ws_hub unregister failed: %s", exc)
 
-    state = get_state(guild_id)
-    state["current"] = None  # Clear the video entry from current
-    state["_video_transition"] = False  # Clear transition flag so audio can proceed
-    persist(guild_id)
+    lock = _get_queue_lock(guild_id)
+    async with lock:
+        state = get_state(guild_id)
+        state["current"] = None  # Clear the video entry from current
+        state["_video_transition"] = False  # Clear transition flag so audio can proceed
+        persist(guild_id)
 
-    if state["queue"]:
-        await _play_next_from_queue(guild_id)
+        if state["queue"]:
+            await _play_next_from_queue(guild_id)
 
 
 async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict) -> None:
@@ -1804,46 +1808,35 @@ async def on_track_end(guild_id: int, player: wavelink.Player, track: wavelink.P
         dbg.debug("on_track_end: suppressed during video transition guild=%d", guild_id)
         return
 
-    # If unified_skip is handling the advancement, suppress duplicate advance
-    if state.get("_skip_transition"):
-        state.pop("_skip_transition", None)
-        dbg.debug("on_track_end: suppressed during skip transition guild=%d", guild_id)
-        return
-
-    # If jump_to is handling the advancement, suppress duplicate advance
-    if state.get("_jump_transition"):
-        dbg.debug("on_track_end: suppressed during jump transition guild=%d", guild_id)
-        return
-
-    # Reentrance guard: if _play_next_from_queue ran recently (within 5s),
-    # this on_track_end is from the track being replaced — don't double-advance
-    import time as _time
-    last_advance = state.get("_advancing_queue_at", 0)
-    if (_time.monotonic() - last_advance) < 5.0:
-        dbg.debug("on_track_end: suppressed — queue advanced %.1fs ago guild=%d",
-                  _time.monotonic() - last_advance, guild_id)
-        return
-
     # Final guard: if a video session is currently active or in transition,
     # do NOT advance the audio queue. The video pipeline manages its own lifecycle.
     if _is_video_active(guild_id) or state.get("_video_transition"):
         dbg.debug("on_track_end: suppressed — video active guild=%d", guild_id)
         return
 
-    np_task = state.get("now_playing_task")
-    if np_task and not np_task.done():
-        np_task.cancel()
-    state["now_playing_task"] = None
+    # Try to acquire the lock WITHOUT blocking.
+    # If locked, another caller (unified_skip, jump_to, etc.) is already
+    # handling the advancement — we should NOT also advance.
+    lock = _get_queue_lock(guild_id)
+    if lock.locked():
+        dbg.debug("on_track_end: suppressed — queue lock held by another caller guild=%d", guild_id)
+        return
 
-    # Cancel any in-flight crossfade fades for the ended track.
-    _cancel_crossfade_tasks(state)
+    async with lock:
+        np_task = state.get("now_playing_task")
+        if np_task and not np_task.done():
+            np_task.cancel()
+        state["now_playing_task"] = None
 
-    # Lightweight "up next" heads-up before advancing (only when a next track
-    # exists and repeat isn't single-track). The full now-playing embed is still
-    # the primary display, sent on track start.
-    await _announce_up_next(guild_id)
+        # Cancel any in-flight crossfade fades for the ended track.
+        _cancel_crossfade_tasks(state)
 
-    await _play_next_from_queue(guild_id)
+        # Lightweight "up next" heads-up before advancing (only when a next track
+        # exists and repeat isn't single-track). The full now-playing embed is still
+        # the primary display, sent on track start.
+        await _announce_up_next(guild_id)
+
+        await _play_next_from_queue(guild_id)
 
 
 async def on_track_exception(guild_id: int, player: wavelink.Player, track: wavelink.Playable, exc: Exception) -> None:
@@ -2289,11 +2282,12 @@ class NowPlayingView(discord.ui.View):
         if _is_video_active(self.guild_id):
             await interaction.response.defer()
             return
-        player = get_player(self.guild_id)
-        if player:
-            state = get_state(self.guild_id)
-            state["_skip_transition"] = True
-            await player.stop()
+        lock = _get_queue_lock(self.guild_id)
+        async with lock:
+            player = get_player(self.guild_id)
+            if player:
+                await player.stop()
+            await _play_next_from_queue(self.guild_id)
         await interaction.response.defer()
 
     async def _block(self, interaction: discord.Interaction) -> None:

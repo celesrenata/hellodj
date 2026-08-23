@@ -658,9 +658,11 @@ class VideoCog(commands.Cog, name="Video"):
                     "⏭️ Skipped! Queue is empty — Activity closed."
                 )
             elif state["queue"]:
-                # Queue has items and hasn't been advanced yet
+                # Queue has items and hasn't been advanced yet — use lock
                 await interaction.followup.send("⏭️ Skipped! Resuming audio queue...")
-                await _player._play_next_from_queue(guild_id)
+                lock = _player._get_queue_lock(guild_id)
+                async with lock:
+                    await _player._play_next_from_queue(guild_id)
             else:
                 await interaction.followup.send(
                     "⏭️ Skipped! Queue is empty — Activity closed."
