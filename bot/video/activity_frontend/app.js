@@ -752,7 +752,22 @@ import { DiscordSDK } from './discord-sdk.js';
         // Late-joiner / reconnect sync: use anchor-based position computation.
         // Only seek if drift > 3s — eliminates jitter from network latency.
         _remoteAction = true;
-        if (mode !== 'VIDEO_PLAYING') setMode('VIDEO_PLAYING');
+        // Only switch to VIDEO_PLAYING for actual video streams
+        if (data.media_type === 'video') {
+          if (mode !== 'VIDEO_PLAYING') setMode('VIDEO_PLAYING');
+        } else if (data.media_type === 'audio') {
+          // Audio state — update audio tracking variables for scrubber
+          if (data.anchor_position != null) {
+            window._audioPosition = data.anchor_position;
+            window._audioAnchorTime = data.anchor_time || (Date.now() / 1000);
+            window._audioPlaying = data.playing !== false;
+          }
+          _remoteAction = false;
+          break;
+        } else {
+          // Legacy state message without media_type — assume video
+          if (mode !== 'VIDEO_PLAYING') setMode('VIDEO_PLAYING');
+        }
         {
           const wasMuted = videoEl.muted;
           let expectedPos = 0;

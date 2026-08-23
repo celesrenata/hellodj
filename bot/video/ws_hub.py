@@ -276,8 +276,12 @@ class WebSocketHub:
             # Anchor-based late-joiner sync: send the anchor point so the client
             # can compute its own position using its local clock. No grace period
             # needed — the client only seeks if drift > 3s.
+            # Include media_type so the frontend knows whether to enter VIDEO_PLAYING
+            # or stay in visualizer mode (audio only).
+            media_type = "video" if streamer is not None and streamer.is_active else "audio"
             state_msg = {
                 "type": "state",
+                "media_type": media_type,
                 "playing": state.playing if state else False,
                 "anchor_position": state.anchor_position if state else 0.0,
                 "anchor_time": state.anchor_time if state else time.time(),
