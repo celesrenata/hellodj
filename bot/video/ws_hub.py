@@ -763,7 +763,12 @@ class WebSocketHub:
                 raise ValueError(f"Unknown provider: {provider}")
 
             # Resolve the track via wavelink
-            tracks = await wavelink.Playable.search(f"{lavalink_prefix}:{decoded_id}")
+            # YouTube needs full URL (ytsearch: is for text queries, not ID lookups)
+            if lavalink_prefix == "ytsearch":
+                search_query = f"https://www.youtube.com/watch?v={decoded_id}"
+            else:
+                search_query = f"{lavalink_prefix}:{decoded_id}"
+            tracks = await wavelink.Playable.search(search_query)
             if not tracks:
                 raise ValueError(f"No playable track found for {provider}:{track_id}")
 
@@ -829,7 +834,12 @@ class WebSocketHub:
                 raise ValueError(f"Unknown provider: {provider}")
 
             # Resolve the track via wavelink
-            tracks = await wavelink.Playable.search(f"{lavalink_prefix}:{decoded_id}")
+            # YouTube needs full URL (ytsearch: is for text queries, not ID lookups)
+            if lavalink_prefix == "ytsearch":
+                search_query = f"https://www.youtube.com/watch?v={decoded_id}"
+            else:
+                search_query = f"{lavalink_prefix}:{decoded_id}"
+            tracks = await wavelink.Playable.search(search_query)
             if not tracks:
                 raise ValueError(f"No playable track found for {provider}:{track_id}")
 

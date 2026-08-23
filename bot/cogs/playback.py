@@ -61,11 +61,18 @@ class PlaybackCog(commands.Cog, name="Playback"):
         lavalink_prefix, track_id = ChoiceFormatter.decode_value(query)
 
         if lavalink_prefix is not None:
-            # Value was encoded — try to resolve directly via wavelink
+            # Value was encoded — resolve directly via wavelink
+            # For YouTube, use the full URL since ytsearch: is for text queries
+            # For Spotify/Tidal, the search prefix + ID works as a direct lookup
             try:
                 import wavelink
 
-                tracks = await wavelink.Playable.search(f"{lavalink_prefix}:{track_id}")
+                if lavalink_prefix == "ytsearch":
+                    search_query = f"https://www.youtube.com/watch?v={track_id}"
+                else:
+                    search_query = f"{lavalink_prefix}:{track_id}"
+
+                tracks = await wavelink.Playable.search(search_query)
                 if tracks:
                     # Route through router with the resolved track's URI
                     await self.router.play(interaction, tracks[0].uri or query, mode=mode)
