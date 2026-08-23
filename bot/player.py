@@ -1066,10 +1066,17 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
     # Get the bot and VideoCog
     if _bot_ref is None:
         log.error("_start_video_from_queue: bot reference not set")
+        state = get_state(guild_id)
+        state["current"] = None
+        persist(guild_id)
         return
     video_cog = _bot_ref.get_cog("Video")
     if video_cog is None:
         log.error("_start_video_from_queue: VideoCog not loaded, skipping video entry")
+        # Clear current so _is_video_active doesn't block audio playback
+        state = get_state(guild_id)
+        state["current"] = None
+        persist(guild_id)
         # Skip to next in queue
         await _play_next_from_queue(guild_id)
         return
@@ -1099,6 +1106,8 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
 
     if voice_channel is None:
         log.error("_start_video_from_queue: no voice_channel in state guild=%d", guild_id)
+        state["current"] = None
+        persist(guild_id)
         await _play_next_from_queue(guild_id)
         return
 
