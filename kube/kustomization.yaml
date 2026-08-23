@@ -29,7 +29,7 @@ resources:
 # Image tags
 images:
   - name: registry.celestium.life/hellodj/bot
-    newTag: dvd-circle-idle-2026-08-23
+    newTag: viz-poll-fix-2026-08-23
   - name: registry.celestium.life/hellodj/web-ui
     newTag: latest
   - name: registry.celestium.life/hellodj/tidal-stream
