@@ -60,6 +60,7 @@ class ActivityStreamer:
         self, guild_id: int, channel_id: int, *, ws_hub: WebSocketHub | None = None,
         on_session_end=None,
         on_session_start=None,
+        guild_bitrate_limit: int = 384_000,
     ) -> None:
         self.guild_id: int = guild_id
         self.channel_id: int = channel_id
@@ -74,6 +75,8 @@ class ActivityStreamer:
         self._ws_hub: WebSocketHub | None = ws_hub
         self._on_session_end = on_session_end
         self._on_session_start = on_session_start
+        # Guild's max audio bitrate in kbps (derived from Discord boost tier)
+        self._audio_bitrate_kbps: int = guild_bitrate_limit // 1000
 
         # Background tasks
         self._advance_task: asyncio.Task[None] | None = None
@@ -604,6 +607,7 @@ class ActivityStreamer:
             session_id=self.session_id,
             source_codec=source_codec,
             source_fps=source_fps,
+            audio_bitrate_kbps=self._audio_bitrate_kbps,
         )
 
         try:

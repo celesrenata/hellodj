@@ -71,11 +71,14 @@ class HLSTranscodePipeline:
         session_id: str,
         source_codec: str = "h264",
         source_fps: float = 30.0,
+        audio_bitrate_kbps: int = 384,
     ) -> None:
         self.guild_id = guild_id
         self.session_id = session_id
         self.source_codec: str = source_codec.lower()
         self.source_fps: float = source_fps
+        # Audio bitrate capped at guild's supported maximum (Discord boost tier)
+        self.audio_bitrate_kbps: int = min(audio_bitrate_kbps, 384)
 
         # Output paths
         self.output_dir: Path = _HLS_BASE_DIR / str(guild_id) / session_id
@@ -178,23 +181,29 @@ class HLSTranscodePipeline:
                 "-filter_hw_device", "qsv",
             ])
 
-        # Video encode: h264_qsv with constrained VBR
-        # force_key_frames ensures keyframes align with HLS segment boundaries
+        # Video encode: h264_qsv with ICQ (Intelligent Constant Quality)
+        # ICQ lets the encoder allocate bits per-frame for maximum compression
+        # at a given quality level. global_quality 23 ≈ visually transparent.
+        # look_ahead enables look-ahead rate control for better bit allocation.
+        # force_key_frames ensures keyframes align with HLS segment boundaries.
         args.extend([
             "-c:v", "h264_qsv",
-            "-profile:v", "main",
-            "-preset", "fast",
-            "-b:v", str(bitrate),
+            "-profile:v", "high",
+            "-preset", "veryslow",
+            "-global_quality", "23",
+            "-look_ahead", "1",
+            "-look_ahead_depth", "40",
+            "-extbrc", "1",
             "-maxrate", str(maxrate),
             "-bufsize", str(bitrate * 2),
             "-g", "48",
             "-force_key_frames", f"expr:gte(t,n_forced*{_HLS_SEGMENT_DURATION})",
         ])
 
-        # Audio encode: AAC at 128 kbps
+        # Audio encode: AAC at guild-supported bitrate (scales with Nitro boost tier)
         args.extend([
             "-c:a", "aac",
-            "-b:a", "128k",
+            "-b:a", f"{self.audio_bitrate_kbps}k",
         ])
 
         # HLS output format
@@ -600,20 +609,25 @@ class HLSTranscodePipeline:
         if audio_url:
             args.extend(["-map", "0:v:0", "-map", "1:a:0"])
 
-        # Video encode: h264_qsv
+        # Video encode: h264_qsv with ICQ (Intelligent Constant Quality)
+        # For streaming: use "medium" preset (balances compression vs latency)
+        # with look-ahead for better bit allocation across frames.
         args.extend([
             "-c:v", "h264_qsv",
-            "-profile:v", "main",
-            "-preset", "fast",
-            "-b:v", str(bitrate),
+            "-profile:v", "high",
+            "-preset", "medium",
+            "-global_quality", "23",
+            "-look_ahead", "1",
+            "-look_ahead_depth", "40",
+            "-extbrc", "1",
             "-maxrate", str(maxrate),
             "-bufsize", str(bitrate * 2),
             "-g", "48",
             "-force_key_frames", f"expr:gte(t,n_forced*{_HLS_SEGMENT_DURATION})",
         ])
 
-        # Audio encode: AAC at 128 kbps
-        args.extend(["-c:a", "aac", "-b:a", "128k"])
+        # Audio encode: AAC at guild-supported bitrate (scales with Nitro boost tier)
+        args.extend(["-c:a", "aac", "-b:a", f"{self.audio_bitrate_kbps}k"])
 
         # HLS output (event type — segments accumulate for VOD-like seeking)
         segment_pattern = str(self.output_dir / "seg%05d.ts")
@@ -896,20 +910,31 @@ class HLSTranscodePipeline:
     # Visualizer raw-frame input pipeline
     # ------------------------------------------------------------------
 
-    def build_visualizer_ffmpeg_args(
+    def _build_visualizer_ffmpeg_args(
         self,
         width: int = 1280,
         height: int = 720,
         fps: int = 30,
     ) -> list[str]:
-        """Build ffmpeg args for raw frame input → QSV HLS output.
+        """Build ffmpeg args for raw RGBA frame input → QSV HLS output.
 
-        Constructs an ffmpeg command that reads raw RGBA frames from stdin,
-        uploads to QSV for hardware-accelerated H.264 encoding, and outputs
-        a live-like HLS stream with short segments and a rolling window.
+        Constructs an ffmpeg command that:
+        - Reads raw RGBA frames from stdin (pipe:0)
+        - Converts RGBA → NV12 and uploads to QSV hardware surfaces
+        - Encodes via h264_qsv at 2.5 Mbps constrained VBR
+        - Outputs 2-second HLS segments in a rolling 10-segment window
 
         The output directory is guild-level:
             /tmp/hellodj_hls/{guild_id}/viz/
+
+        Key differences from the video transcode pipeline:
+        - rawvideo input on stdin (not file/URL)
+        - format=nv12,hwupload filter (RGBA → NV12 → QSV surface)
+        - hls_flags delete_segments (live window, not VOD)
+        - hls_list_size 10 (keep last 20s of segments)
+        - No audio stream
+        - 2.5 Mbps bitrate (generated content compresses well)
+        - -r 30 for constant output even if engine renders slower
 
         Args:
             width: Frame width in pixels (default 1280).
@@ -921,28 +946,44 @@ class HLSTranscodePipeline:
         """
         viz_output_dir = _HLS_BASE_DIR / str(self.guild_id) / "viz"
         return [
-            "ffmpeg", "-hide_banner", "-y",
+            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
             # Input: raw RGBA from stdin
             "-f", "rawvideo",
             "-pixel_format", "rgba",
             "-video_size", f"{width}x{height}",
             "-framerate", str(fps),
             "-i", "pipe:0",
-            # Hardware upload + QSV encode
+            # QSV hardware device initialization
+            "-init_hw_device", "qsv=qsv:hw",
+            "-filter_hw_device", "qsv",
+            # Filter: RGBA → NV12 → QSV surface upload
             "-vf", "format=nv12,hwupload=extra_hw_frames=64",
+            # Video encode: h264_qsv ICQ (generated content compresses well)
             "-c:v", "h264_qsv",
-            "-preset", "veryfast",
-            "-b:v", "2500k",
+            "-profile:v", "high",
+            "-preset", "medium",
+            "-global_quality", "28",
+            "-look_ahead", "1",
+            "-look_ahead_depth", "40",
+            "-extbrc", "1",
             "-maxrate", "3000k",
-            "-bufsize", "6000k",
-            # HLS output
+            "-bufsize", "5000k",
+            # GOP and keyframe alignment with HLS segments
+            "-g", "60",
+            "-force_key_frames", "expr:gte(t,n_forced*2)",
+            # Constant 30fps output (duplicates frames if engine is slower)
+            "-r", str(fps),
+            # HLS output: live rolling window
             "-f", "hls",
             "-hls_time", "2",
-            "-hls_list_size", "5",
-            "-hls_flags", "delete_segments+append_list",
+            "-hls_list_size", "10",
+            "-hls_flags", "delete_segments+independent_segments",
             "-hls_segment_filename", str(viz_output_dir / "seg%05d.ts"),
             str(viz_output_dir / "playlist.m3u8"),
         ]
+
+    # Keep public alias for backward compatibility
+    build_visualizer_ffmpeg_args = _build_visualizer_ffmpeg_args
 
     @property
     def stdin_pipe(self) -> asyncio.StreamWriter | None:
@@ -994,7 +1035,7 @@ class HLSTranscodePipeline:
         # Ensure output directory exists
         viz_output_dir.mkdir(parents=True, exist_ok=True)
 
-        args = self.build_visualizer_ffmpeg_args(width, height, fps)
+        args = self._build_visualizer_ffmpeg_args(width, height, fps)
         log.info("HLS visualizer pipeline starting: %s", " ".join(args))
 
         try:
@@ -1023,6 +1064,34 @@ class HLSTranscodePipeline:
 
         assert self.process.stdin is not None
         return self.process.stdin
+
+    async def write_frame(self, data: bytes) -> None:
+        """Write a single raw RGBA frame to the ffmpeg stdin pipe.
+
+        Writes the frame data to the ffmpeg process stdin and drains the
+        buffer. Each frame must be exactly width × height × 4 bytes
+        (default: 1280 × 720 × 4 = 3,686,400 bytes).
+
+        Args:
+            data: Raw RGBA pixel data for one frame.
+
+        Raises:
+            HLSTranscodePipelineError: If the pipeline is not running or
+                the write fails (e.g., ffmpeg process has exited).
+        """
+        if not self._running or self.process is None or self.process.stdin is None:
+            raise HLSTranscodePipelineError(
+                "Cannot write frame: visualizer pipeline is not running"
+            )
+
+        try:
+            self.process.stdin.write(data)
+            await self.process.stdin.drain()
+        except (BrokenPipeError, ConnectionResetError, OSError) as exc:
+            self._running = False
+            raise HLSTranscodePipelineError(
+                f"Failed to write frame to ffmpeg stdin: {exc}"
+            ) from exc
 
     async def _fallback_software_decode(self) -> None:
         """Restart the pipeline using software decode but keeping QSV encode.

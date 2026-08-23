@@ -324,7 +324,9 @@ class VideoCog(commands.Cog, name="Video"):
 
         # No active session — create streamer, launch Activity, start playback
         await self._disconnect_audio_if_playing(guild_id)
-        streamer = ActivityStreamer(guild_id=guild_id, channel_id=voice_channel.id, ws_hub=self._backend.ws_hub)
+        guild = interaction.guild
+        guild_bitrate = guild.bitrate_limit if guild else 384_000
+        streamer = ActivityStreamer(guild_id=guild_id, channel_id=voice_channel.id, ws_hub=self._backend.ws_hub, guild_bitrate_limit=guild_bitrate)
         self._registry.register(guild_id, voice_channel.id, streamer)
         self._backend.ws_hub.register_streamer(guild_id, streamer)
 
@@ -431,7 +433,9 @@ class VideoCog(commands.Cog, name="Video"):
 
         # No active session — create streamer, launch Activity, start playback
         await self._disconnect_audio_if_playing(guild_id)
-        streamer = ActivityStreamer(guild_id=guild_id, channel_id=voice_channel.id, ws_hub=self._backend.ws_hub)
+        guild = interaction.guild
+        guild_bitrate = guild.bitrate_limit if guild else 384_000
+        streamer = ActivityStreamer(guild_id=guild_id, channel_id=voice_channel.id, ws_hub=self._backend.ws_hub, guild_bitrate_limit=guild_bitrate)
         self._registry.register(guild_id, voice_channel.id, streamer)
         self._backend.ws_hub.register_streamer(guild_id, streamer)
 

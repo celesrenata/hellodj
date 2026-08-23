@@ -1165,10 +1165,13 @@ async def _start_video_from_queue(guild_id: int, entry: dict) -> None:
                 return
 
         # Create new Activity session
+        guild = _bot_ref.get_guild(guild_id)
+        guild_bitrate = guild.bitrate_limit if guild else 384_000
         streamer = ActivityStreamer(
             guild_id=guild_id, channel_id=voice_channel.id,
             ws_hub=video_cog._backend.ws_hub,
             on_session_end=_on_video_session_end,
+            guild_bitrate_limit=guild_bitrate,
         )
         video_cog._registry.register(guild_id, voice_channel.id, streamer)
         video_cog._backend.ws_hub.register_streamer(guild_id, streamer)

@@ -144,12 +144,17 @@ class TranscodePipeline:
                 "-filter_hw_device", "qsv",
             ])
 
-        # Encode stage: h264_qsv with constrained VBR
+        # Encode stage: h264_qsv with ICQ (maximum compression, maintain quality)
+        # This pipeline outputs raw H.264 NAL units — no container overhead concerns.
+        # ICQ global_quality 23 ≈ visually transparent; look-ahead for optimal bit allocation.
         args.extend([
             "-c:v", "h264_qsv",
-            "-profile:v", "main",
-            "-preset", "fast",
-            "-b:v", str(bitrate),
+            "-profile:v", "high",
+            "-preset", "veryslow",
+            "-global_quality", "23",
+            "-look_ahead", "1",
+            "-look_ahead_depth", "40",
+            "-extbrc", "1",
             "-maxrate", str(maxrate),
             "-bufsize", str(bitrate * 2),
             "-g", "60",  # keyframe interval
