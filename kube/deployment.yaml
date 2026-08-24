@@ -211,20 +211,17 @@ spec:
             limits:
               cpu: "2.5"
               memory: 3Gi
-              intel.com/sriov-gpudevice: "1"
             requests:
               cpu: 1
               memory: 1Gi
-              intel.com/sriov-gpudevice: "1"
           ports:
             - containerPort: 8090
               name: activity
               protocol: TCP
           securityContext:
-            # SR-IOV GPU VF is assigned by the Intel GPU device plugin —
-            # no privileged mode needed. Device access is granted via the
-            # resource allocation mechanism.
-            privileged: false
+            # GPU render node access via hostPath /dev/dri.
+            # Privileged needed for device cgroup allowance on the PF.
+            privileged: true
           volumeMounts:
             - mountPath: /app/data
               name: hellodj-data
@@ -235,6 +232,8 @@ spec:
             - mountPath: /app/models
               name: hellodj-models
               readOnly: true
+            - mountPath: /dev/dri
+              name: dev-dri
             - mountPath: /tmp/hellodj_hls
               name: hls-tmp
 
@@ -419,6 +418,10 @@ spec:
         - name: hellodj-models
           persistentVolumeClaim:
             claimName: hellodj-models-pvc
+        - name: dev-dri
+          hostPath:
+            path: /dev/dri
+            type: Directory
         - name: hls-tmp
           emptyDir:
             medium: Memory
