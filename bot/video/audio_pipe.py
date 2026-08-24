@@ -75,8 +75,10 @@ class AudioPipeSession:
 
             # Open O_RDWR | O_NONBLOCK to "prime" the FIFO. This never blocks
             # because O_RDWR on a FIFO satisfies both reader/writer requirements.
-            # FFmpeg can then open for reading without blocking, and Lavalink
-            # can open for writing without blocking.
+            # Lavalink can then open for writing without blocking.
+            # IMPORTANT: must be closed after Lavalink connects, otherwise the
+            # primer fd competes as a reader and absorbs data meant for the pipe
+            # reader task.
             self._primer_fd = os.open(str(self._pipe_path), os.O_RDWR | os.O_NONBLOCK)
 
             self._active = True
@@ -87,17 +89,26 @@ class AudioPipeSession:
             self._active = False
             return False
 
-    async def stop(self) -> None:
-        """Remove the FIFO and clean up the session directory if empty."""
-        self._active = False
+    def close_primer(self) -> None:
+        """Close the O_RDWR primer fd after a writer has connected.
 
-        # Close primer fd first
+        Must be called after Lavalink's enable_pipe succeeds, so the primer
+        fd no longer competes as a reader on the FIFO. The actual reader
+        (pipe reader task) will then receive all data from Lavalink's writer.
+        """
         if self._primer_fd is not None:
             try:
                 os.close(self._primer_fd)
             except OSError:
                 pass
             self._primer_fd = None
+
+    async def stop(self) -> None:
+        """Remove the FIFO and clean up the session directory if empty."""
+        self._active = False
+
+        # Close primer fd first
+        self.close_primer()
 
         try:
             if self._pipe_path.exists():

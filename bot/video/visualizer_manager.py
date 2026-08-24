@@ -741,6 +741,10 @@ class VisualizerManager:
                 self.guild_id, self._pipe_session.ffmpeg_input_path
             )
             if pipe_enabled:
+                # Close the primer fd NOW — Lavalink has opened the FIFO for writing,
+                # so we no longer need the primer. If we leave it open, it competes
+                # as a reader and absorbs data meant for the pipe reader task.
+                self._pipe_session.close_primer()
                 audio_pipe_path = self._pipe_session.ffmpeg_input_path
                 log.info(
                     "Guild %d: audio pipe enabled for visualizer: %s",
