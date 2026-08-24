@@ -20,8 +20,10 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from video.audio_feature_bus import AudioFeatureBus
+from video.audio_pipe import AudioPipeSession
 from video.gpu_scheduler import GPUCapacityExceededError, GPUResourceScheduler
 from video.hls_transcode import HLSTranscodePipeline
+from video.lavalink_pipe_client import LavalinkPipeClient
 from video.visualizer_engines import VisualizerRenderer, create_engine
 from video.visualizer_engines.base import TrackMetadata
 from video.visualizer_engines.gpu_engine_base import GPURenderError
@@ -104,6 +106,10 @@ class VisualizerManager:
         self._render_task: asyncio.Task | None = None
         self._device_loss_task: asyncio.Task | None = None
         self._last_frame_time: float = 0.0
+
+        # Audio pipe resources (Lavalink PCM → visualizer HLS audio)
+        self._pipe_session: AudioPipeSession | None = None
+        self._pipe_client = LavalinkPipeClient()
 
         # Random mode cycling state
         self._random_cycle: list[str] = []
@@ -702,9 +708,11 @@ class VisualizerManager:
 
         Called when a server-rendered engine is activated. Sets up:
         1. AudioFeatureBus — subscribes the engine's audio callback
-        2. HLSTranscodePipeline — ffmpeg visualizer mode (rawvideo stdin)
-        3. Render loop — async task piping frames to ffmpeg stdin
-        4. Ready watcher — notifies frontend when first segment appears
+        2. AudioPipeSession — creates FIFO for Lavalink PCM → FFmpeg audio
+        3. HLSTranscodePipeline — ffmpeg visualizer mode (rawvideo stdin + pipe audio)
+        4. Lavalink pipe enable — tells Lavalink to write PCM to the FIFO
+        5. Render loop — async task piping frames to ffmpeg stdin
+        6. Ready watcher — notifies frontend when first segment appears
 
         Raises:
             Exception: If the pipeline fails to start.
@@ -717,30 +725,78 @@ class VisualizerManager:
                 "Guild %d: subscribed engine to AudioFeatureBus", self.guild_id
             )
 
-        # 2. Create HLS pipeline in visualizer mode
+        # 2. Create audio pipe session (FIFO for Lavalink PCM output)
+        # The pipe carries Lavalink's filtered audio into the visualizer HLS stream.
+        # If Lavalink has no active player or the pipe enable fails, the visualizer
+        # gracefully degrades to video-only output.
+        audio_pipe_path: str | None = None
+        self._pipe_session = AudioPipeSession(self.guild_id, "viz")
+        pipe_ok = await self._pipe_session.start()
+        if pipe_ok:
+            audio_pipe_path = self._pipe_session.ffmpeg_input_path
+            log.info(
+                "Guild %d: audio pipe created for visualizer: %s",
+                self.guild_id,
+                audio_pipe_path,
+            )
+        else:
+            log.warning(
+                "Guild %d: audio pipe creation failed — visualizer will have no audio",
+                self.guild_id,
+            )
+            self._pipe_session = None
+
+        # 3. Create HLS pipeline in visualizer mode (with audio pipe if available)
         self._pipeline = HLSTranscodePipeline(
             guild_id=self.guild_id,
             session_id="viz",  # Overridden by start_visualizer()
         )
-        await self._pipeline.start_visualizer()
+        await self._pipeline.start_visualizer(audio_pipe_path=audio_pipe_path)
         log.debug(
             "Guild %d: HLS visualizer pipeline started", self.guild_id
         )
 
-        # 3. Start the render loop task
+        # 4. Enable Lavalink pipe AFTER FFmpeg has started (FFmpeg opens FIFO
+        # for reading first, then Lavalink can open for writing without blocking)
+        if audio_pipe_path and self._pipe_session:
+            pipe_enabled = await self._pipe_client.enable_pipe(
+                self.guild_id, audio_pipe_path
+            )
+            if not pipe_enabled:
+                log.warning(
+                    "Guild %d: Lavalink audio pipe enable failed — "
+                    "unblocking FIFO so FFmpeg can proceed without audio",
+                    self.guild_id,
+                )
+                # Open+close the FIFO for writing to unblock FFmpeg's blocking
+                # read-open. FFmpeg will then read EOF on the audio stream and
+                # produce video-only output (or silence).
+                try:
+                    import os
+                    fd = os.open(audio_pipe_path, os.O_WRONLY | os.O_NONBLOCK)
+                    os.close(fd)
+                except OSError as exc:
+                    log.debug(
+                        "Guild %d: FIFO unblock attempt failed: %s "
+                        "(FFmpeg may hang — will be caught by watchdog)",
+                        self.guild_id,
+                        exc,
+                    )
+
+        # 5. Start the render loop task
         self._render_task = asyncio.create_task(
             self._render_loop(),
             name=f"viz-render-{self.guild_id}",
         )
 
-        # 3b. Start device loss watchdog (Req 11 AC 5)
+        # 5b. Start device loss watchdog (Req 11 AC 5)
         self._last_frame_time = time.monotonic()
         self._device_loss_task = asyncio.create_task(
             self._device_loss_watchdog(),
             name=f"viz-devloss-{self.guild_id}",
         )
 
-        # 4. Start a task to wait for pipeline readiness and notify frontend
+        # 6. Start a task to wait for pipeline readiness and notify frontend
         asyncio.create_task(
             self._wait_for_hls_ready(),
             name=f"viz-ready-{self.guild_id}",
@@ -862,7 +918,8 @@ class VisualizerManager:
         """Tear down all server-rendered engine resources.
 
         Cancels the render task, device loss watchdog, unsubscribes from
-        AudioFeatureBus, shuts down the bus, and kills the HLS pipeline.
+        AudioFeatureBus, shuts down the bus, disables audio pipe, and kills
+        the HLS pipeline.
         """
         # Cancel render loop
         if self._render_task is not None and not self._render_task.done():
@@ -881,6 +938,26 @@ class VisualizerManager:
             except (asyncio.CancelledError, Exception):
                 pass
         self._device_loss_task = None
+
+        # Disable Lavalink audio pipe and clean up FIFO
+        if self._pipe_session and self._pipe_session.active:
+            try:
+                await self._pipe_client.disable_pipe(self.guild_id)
+            except Exception:
+                log.debug(
+                    "Guild %d: error disabling Lavalink pipe (non-fatal)",
+                    self.guild_id,
+                    exc_info=True,
+                )
+            try:
+                await self._pipe_session.stop()
+            except Exception:
+                log.debug(
+                    "Guild %d: error stopping pipe session (non-fatal)",
+                    self.guild_id,
+                    exc_info=True,
+                )
+        self._pipe_session = None
 
         # Unsubscribe and shutdown AudioFeatureBus
         if self._audio_bus is not None:

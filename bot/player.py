@@ -1807,7 +1807,15 @@ async def on_track_start(guild_id: int, player: wavelink.Player, track: wavelink
 
     # A track started successfully — clear any mid-song retry counter so the
     # next failure episode starts fresh at 0.
-    state["track_retries"] = 0
+    # BUT: if we're in the middle of a retry cycle (_retrying flag set by
+    # on_track_exception), do NOT reset the counter — the track "started" but
+    # may immediately fail again (e.g. BufferUnderflowException on HLS streams).
+    # Resetting here would create an infinite retry loop.
+    if state.pop("_retrying", False):
+        # Still in retry cycle — don't reset counter
+        pass
+    else:
+        state["track_retries"] = 0
 
     # Do NOT overwrite state["current"] here. It was already set correctly by
     # _play_next_from_queue with the original queue entry metadata (proper title,
@@ -1893,6 +1901,12 @@ async def on_track_end(guild_id: int, player: wavelink.Player, track: wavelink.P
         dbg.debug("on_track_end: suppressed during video transition guild=%d", guild_id)
         return
 
+    # If a retry is in progress and the track was replaced (by the retry itself),
+    # suppress queue advancement — on_track_exception owns the flow.
+    if reason == "replaced" and state.get("_retrying"):
+        dbg.debug("on_track_end: suppressed — retry in progress guild=%d", guild_id)
+        return
+
     # Final guard: if a video session is currently active or in transition,
     # do NOT advance the audio queue. The video pipeline manages its own lifecycle.
     if _is_video_active(guild_id) or state.get("_video_transition"):
@@ -1935,6 +1949,8 @@ async def on_track_exception(guild_id: int, player: wavelink.Player, track: wave
     retries = state.get("track_retries", 0)
     if retries < MAX_TRACK_RETRIES:
         state["track_retries"] = retries + 1
+        # Set _retrying flag so on_track_start doesn't reset the counter
+        state["_retrying"] = True
         log.info(
             "Retrying track %r in guild %s (attempt %d/%d)",
             track, guild_id, state["track_retries"], MAX_TRACK_RETRIES,
@@ -1963,6 +1979,7 @@ async def on_track_exception(guild_id: int, player: wavelink.Player, track: wave
         track, guild_id, MAX_TRACK_RETRIES,
     )
     state["track_retries"] = 0
+    state.pop("_retrying", None)
     await on_track_end(guild_id, player, track, "exception")
 
 

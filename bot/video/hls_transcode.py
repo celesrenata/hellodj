@@ -1015,11 +1015,13 @@ class HLSTranscodePipeline:
         width: int = 1280,
         height: int = 720,
         fps: int = 30,
+        audio_pipe_path: str | None = None,
     ) -> list[str]:
         """Build ffmpeg args for raw RGBA frame input → QSV HLS output.
 
         Constructs an ffmpeg command that:
         - Reads raw RGBA frames from stdin (pipe:0)
+        - Optionally reads s16le PCM audio from a named FIFO (Lavalink pipe)
         - Converts RGBA → NV12 and uploads to QSV hardware surfaces
         - Encodes via h264_qsv at 2.5 Mbps constrained VBR
         - Outputs 2-second HLS segments in a rolling 10-segment window
@@ -1027,32 +1029,47 @@ class HLSTranscodePipeline:
         The output directory is guild-level:
             /tmp/hellodj_hls/{guild_id}/viz/
 
-        Key differences from the video transcode pipeline:
-        - rawvideo input on stdin (not file/URL)
-        - format=nv12,hwupload filter (RGBA → NV12 → QSV surface)
-        - hls_flags delete_segments (live window, not VOD)
-        - hls_list_size 10 (keep last 20s of segments)
-        - No audio stream
-        - 2.5 Mbps bitrate (generated content compresses well)
-        - -r 30 for constant output even if engine renders slower
+        When audio_pipe_path is provided:
+        - Input 1 (pipe:0): rawvideo RGBA frames
+        - Input 2 (FIFO): s16le 48kHz stereo PCM from Lavalink
+        - Maps both video and audio into the HLS output
+        - Audio encoded as AAC 128k
+
+        Without audio_pipe_path:
+        - Video-only HLS output (no audio stream)
 
         Args:
             width: Frame width in pixels (default 1280).
             height: Frame height in pixels (default 720).
             fps: Frames per second (default 30).
+            audio_pipe_path: Optional path to FIFO with s16le PCM audio.
 
         Returns:
             Complete ffmpeg argument list suitable for asyncio subprocess.
         """
         viz_output_dir = _HLS_BASE_DIR / str(self.guild_id) / "viz"
-        return [
+
+        args = [
             "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-            # Input: raw RGBA from stdin
+            # Input 0: raw RGBA from stdin
             "-f", "rawvideo",
             "-pixel_format", "rgba",
             "-video_size", f"{width}x{height}",
             "-framerate", str(fps),
             "-i", "pipe:0",
+        ]
+
+        # Input 1 (optional): PCM audio from Lavalink pipe
+        if audio_pipe_path:
+            args.extend([
+                "-thread_queue_size", "4096",
+                "-f", "s16le",
+                "-ar", "48000",
+                "-ac", "2",
+                "-i", audio_pipe_path,
+            ])
+
+        args.extend([
             # QSV hardware device initialization
             "-init_hw_device", "qsv=qsv:hw",
             "-filter_hw_device", "qsv",
@@ -1073,6 +1090,24 @@ class HLSTranscodePipeline:
             "-force_key_frames", "expr:gte(t,n_forced*2)",
             # Constant 30fps output (duplicates frames if engine is slower)
             "-r", str(fps),
+        ])
+
+        # Audio encoding (only when pipe is provided)
+        if audio_pipe_path:
+            args.extend([
+                "-c:a", "aac",
+                "-b:a", "128k",
+                "-ar", "48000",
+                "-ac", "2",
+            ])
+
+        # Stream mapping
+        if audio_pipe_path:
+            args.extend(["-map", "0:v:0", "-map", "1:a:0"])
+        else:
+            args.extend(["-map", "0:v:0"])
+
+        args.extend([
             # HLS output: live rolling window
             "-f", "hls",
             "-hls_time", "2",
@@ -1080,7 +1115,9 @@ class HLSTranscodePipeline:
             "-hls_flags", "delete_segments+independent_segments",
             "-hls_segment_filename", str(viz_output_dir / "seg%05d.ts"),
             str(viz_output_dir / "playlist.m3u8"),
-        ]
+        ])
+
+        return args
 
     # Keep public alias for backward compatibility
     build_visualizer_ffmpeg_args = _build_visualizer_ffmpeg_args
@@ -1101,12 +1138,17 @@ class HLSTranscodePipeline:
         width: int = 1280,
         height: int = 720,
         fps: int = 30,
+        audio_pipe_path: str | None = None,
     ) -> asyncio.StreamWriter:
         """Launch ffmpeg visualizer pipeline reading raw frames from stdin.
 
         Creates the visualizer output directory, builds the ffmpeg command
         for rawvideo stdin input with QSV HLS encoding, and spawns the
         process with stdin=PIPE.
+
+        When audio_pipe_path is provided, the pipeline reads PCM audio from
+        the named FIFO (s16le, 48kHz, stereo) and muxes it with the video.
+        This carries Lavalink's filtered audio into the Activity HLS stream.
 
         The segment watcher and watchdog are started as with the normal
         pipeline, so `self.ready` is set when the first .ts segment appears.
@@ -1115,6 +1157,8 @@ class HLSTranscodePipeline:
             width: Frame width in pixels (default 1280).
             height: Frame height in pixels (default 720).
             fps: Frames per second (default 30).
+            audio_pipe_path: Optional path to named FIFO carrying s16le PCM
+                audio from Lavalink's audio pipe. If None, video-only output.
 
         Returns:
             The process stdin pipe (asyncio.StreamWriter) for writing
@@ -1135,7 +1179,7 @@ class HLSTranscodePipeline:
         # Ensure output directory exists
         viz_output_dir.mkdir(parents=True, exist_ok=True)
 
-        args = self._build_visualizer_ffmpeg_args(width, height, fps)
+        args = self._build_visualizer_ffmpeg_args(width, height, fps, audio_pipe_path)
         log.info("HLS visualizer pipeline starting: %s", " ".join(args))
 
         try:

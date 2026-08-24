@@ -771,8 +771,23 @@ async def _resume_sessions():
 
             entries = []
             if saved.get("current"):
-                entries.append(saved["current"])
-            entries.extend(saved.get("queue", []))
+                # Skip stale music_video entries — they are video HLS streams that
+                # Lavalink cannot decode as audio (causes infinite retry loops).
+                current = saved["current"]
+                url = current.get("webpage_url") or ""
+                is_video_entry = (
+                    current.get("type") == "music_video"
+                    or "/hls/video" in url
+                )
+                if not is_video_entry:
+                    entries.append(current)
+                else:
+                    log.info("resume guild=%d: skipping stale video HLS current entry", gid)
+            entries.extend(
+                e for e in saved.get("queue", [])
+                if e.get("type") != "music_video"
+                and "/hls/video" not in (e.get("webpage_url") or "")
+            )
             if entries:
                 await player.enqueue_and_start(guild, text_channel, entries, replace=True)
                 await text_channel.send("HelloDJ reconnected after a restart — resuming the queue.")
