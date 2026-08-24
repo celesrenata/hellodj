@@ -726,9 +726,9 @@ class VisualizerManager:
             )
 
         # 2. Audio pipe: Lavalink PCM → visualizer HLS audio mux.
-        # We attempt to enable the Lavalink pipe BEFORE starting FFmpeg.
-        # Only if it succeeds do we include the audio input in FFmpeg's command.
-        # This avoids FFmpeg stalling when it has a mapped audio input with no data.
+        # The FIFO lives on the shared hls-tmp volume (mounted in both bot and
+        # lavalink containers). We try enable_pipe first — only include the audio
+        # input in FFmpeg if Lavalink successfully connected to the pipe.
         audio_pipe_path: str | None = None
         pipe_enabled = False
 
@@ -737,26 +737,19 @@ class VisualizerManager:
         if pipe_ok:
             # Try to enable the Lavalink pipe. The FIFO is primed with O_RDWR
             # so Lavalink's open(O_WRONLY) won't block.
-            player_active = await self._pipe_client.is_player_active(self.guild_id)
-            if player_active:
-                pipe_enabled = await self._pipe_client.enable_pipe(
-                    self.guild_id, self._pipe_session.ffmpeg_input_path
+            pipe_enabled = await self._pipe_client.enable_pipe(
+                self.guild_id, self._pipe_session.ffmpeg_input_path
+            )
+            if pipe_enabled:
+                audio_pipe_path = self._pipe_session.ffmpeg_input_path
+                log.info(
+                    "Guild %d: audio pipe enabled for visualizer: %s",
+                    self.guild_id,
+                    audio_pipe_path,
                 )
-                if pipe_enabled:
-                    audio_pipe_path = self._pipe_session.ffmpeg_input_path
-                    log.info(
-                        "Guild %d: audio pipe enabled for visualizer: %s",
-                        self.guild_id,
-                        audio_pipe_path,
-                    )
-                else:
-                    log.info(
-                        "Guild %d: audio pipe enable failed — video-only visualizer",
-                        self.guild_id,
-                    )
             else:
                 log.info(
-                    "Guild %d: no active player — video-only visualizer",
+                    "Guild %d: audio pipe enable failed — video-only visualizer",
                     self.guild_id,
                 )
         else:
@@ -766,7 +759,7 @@ class VisualizerManager:
             )
             self._pipe_session = None
 
-        # If pipe wasn't enabled, clean up the session (no point keeping FIFO open)
+        # If pipe wasn't enabled, clean up the session
         if not pipe_enabled and self._pipe_session:
             await self._pipe_session.stop()
             self._pipe_session = None

@@ -316,6 +316,8 @@ spec:
               name: lavalink-config-rendered
               readOnly: true
               subPath: application.yml
+            - mountPath: /tmp/hellodj_hls
+              name: hls-tmp
 
         # ── Tidal stream sidecar ───────────────────────────────────
         # Direct audio streaming from Tidal via tidalapi.
