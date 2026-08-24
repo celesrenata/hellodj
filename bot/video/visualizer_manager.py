@@ -107,9 +107,10 @@ class VisualizerManager:
         self._device_loss_task: asyncio.Task | None = None
         self._last_frame_time: float = 0.0
 
-        # Audio pipe resources (Lavalink PCM → visualizer HLS audio)
+        # Audio pipe resources (Lavalink PCM → AudioFeatureBus)
         self._pipe_session: AudioPipeSession | None = None
         self._pipe_client = LavalinkPipeClient()
+        self._pipe_reader_task: asyncio.Task | None = None
 
         # Random mode cycling state
         self._random_cycle: list[str] = []
@@ -725,18 +726,17 @@ class VisualizerManager:
                 "Guild %d: subscribed engine to AudioFeatureBus", self.guild_id
             )
 
-        # 2. Audio pipe: Lavalink PCM → visualizer HLS audio mux.
-        # The FIFO lives on the shared hls-tmp volume (mounted in both bot and
-        # lavalink containers). We try enable_pipe first — only include the audio
-        # input in FFmpeg if Lavalink successfully connected to the pipe.
+        # 2. Audio pipe: Lavalink PCM → AudioFeatureBus for visualizer analysis.
+        # The FIFO carries raw PCM from Lavalink's filter chain. A reader task
+        # reads from it and feeds AudioFeatureBus.feed_pcm() so the engine gets
+        # frequency/beat data to drive the visualization. The audio does NOT go
+        # into the HLS stream — users hear audio via Discord VC.
         audio_pipe_path: str | None = None
         pipe_enabled = False
 
         self._pipe_session = AudioPipeSession(self.guild_id, "viz")
         pipe_ok = await self._pipe_session.start()
         if pipe_ok:
-            # Try to enable the Lavalink pipe. The FIFO is primed with O_RDWR
-            # so Lavalink's open(O_WRONLY) won't block.
             pipe_enabled = await self._pipe_client.enable_pipe(
                 self.guild_id, self._pipe_session.ffmpeg_input_path
             )
@@ -749,12 +749,12 @@ class VisualizerManager:
                 )
             else:
                 log.info(
-                    "Guild %d: audio pipe enable failed — video-only visualizer",
+                    "Guild %d: audio pipe enable failed — visualizer won't have audio features",
                     self.guild_id,
                 )
         else:
             log.warning(
-                "Guild %d: audio pipe creation failed — video-only visualizer",
+                "Guild %d: audio pipe creation failed — visualizer won't have audio features",
                 self.guild_id,
             )
             self._pipe_session = None
@@ -764,19 +764,23 @@ class VisualizerManager:
             await self._pipe_session.stop()
             self._pipe_session = None
 
-        # 3. Create HLS pipeline in visualizer mode
+        # 3. Create HLS pipeline in visualizer mode (VIDEO ONLY — no audio mux)
         self._pipeline = HLSTranscodePipeline(
             guild_id=self.guild_id,
             session_id="viz",
         )
-        await self._pipeline.start_visualizer(audio_pipe_path=audio_pipe_path)
+        await self._pipeline.start_visualizer(audio_pipe_path=None)  # No audio in HLS
         log.debug(
-            "Guild %d: HLS visualizer pipeline started (audio=%s)",
+            "Guild %d: HLS visualizer pipeline started (video-only)",
             self.guild_id,
-            bool(audio_pipe_path),
         )
 
-        # 4. (Lavalink pipe already enabled in step 2 if applicable)
+        # 4. Start FIFO reader task to feed AudioFeatureBus from the pipe
+        if audio_pipe_path and self._pipe_session:
+            self._pipe_reader_task = asyncio.create_task(
+                self._pipe_reader_loop(audio_pipe_path),
+                name=f"viz-pipe-reader-{self.guild_id}",
+            )
 
         # 5. Start the render loop task
         self._render_task = asyncio.create_task(
@@ -935,6 +939,14 @@ class VisualizerManager:
         self._device_loss_task = None
 
         # Disable Lavalink audio pipe and clean up FIFO
+        if self._pipe_reader_task is not None and not self._pipe_reader_task.done():
+            self._pipe_reader_task.cancel()
+            try:
+                await self._pipe_reader_task
+            except (asyncio.CancelledError, Exception):
+                pass
+        self._pipe_reader_task = None
+
         if self._pipe_session and self._pipe_session.active:
             try:
                 await self._pipe_client.disable_pipe(self.guild_id)
@@ -979,6 +991,60 @@ class VisualizerManager:
                     "Guild %d: error stopping HLS pipeline", self.guild_id
                 )
             self._pipeline = None
+
+    async def _pipe_reader_loop(self, pipe_path: str) -> None:
+        """Read PCM from the Lavalink audio pipe and feed AudioFeatureBus.
+
+        Opens the FIFO for reading and continuously reads 3840-byte frames
+        (20ms of s16le stereo 48kHz). Feeds each frame to AudioFeatureBus
+        which performs FFT/beat detection and dispatches to the engine.
+
+        The FIFO is primed with O_RDWR so this open won't block.
+        Runs until cancelled or the pipe is closed.
+        """
+        import os
+
+        FRAME_SIZE = 3840  # 20ms @ 48kHz stereo s16le = 960 samples * 2ch * 2 bytes
+        fd = -1
+        try:
+            # Open for reading (non-blocking to avoid hang if writer disappears)
+            fd = os.open(pipe_path, os.O_RDONLY | os.O_NONBLOCK)
+            log.info(
+                "Guild %d: pipe reader started — feeding AudioFeatureBus",
+                self.guild_id,
+            )
+
+            loop = asyncio.get_event_loop()
+            while True:
+                try:
+                    # Read in executor to avoid blocking the event loop
+                    data = await loop.run_in_executor(
+                        None, os.read, fd, FRAME_SIZE
+                    )
+                    if not data:
+                        # EOF — writer closed
+                        await asyncio.sleep(0.1)
+                        continue
+                    if self._audio_bus:
+                        self._audio_bus.feed_pcm(data)
+                except BlockingIOError:
+                    # No data available yet (non-blocking)
+                    await asyncio.sleep(0.02)
+                except OSError:
+                    # Pipe broken or removed
+                    break
+        except asyncio.CancelledError:
+            return
+        except Exception:
+            log.debug(
+                "Guild %d: pipe reader error", self.guild_id, exc_info=True
+            )
+        finally:
+            if fd >= 0:
+                try:
+                    os.close(fd)
+                except OSError:
+                    pass
 
     async def _handle_render_error(self) -> None:
         """Handle a render loop or pipeline error.
