@@ -727,24 +727,37 @@ class VisualizerManager:
 
         # 2. Create audio pipe session (FIFO for Lavalink PCM output)
         # The pipe carries Lavalink's filtered audio into the visualizer HLS stream.
-        # If Lavalink has no active player or the pipe enable fails, the visualizer
-        # gracefully degrades to video-only output.
+        # We must verify a Lavalink player is active BEFORE creating the FIFO,
+        # because FFmpeg blocks on opening the FIFO until a writer connects.
+        # If no player exists, Lavalink can't write to the pipe and FFmpeg hangs.
         audio_pipe_path: str | None = None
-        self._pipe_session = AudioPipeSession(self.guild_id, "viz")
-        pipe_ok = await self._pipe_session.start()
-        if pipe_ok:
-            audio_pipe_path = self._pipe_session.ffmpeg_input_path
-            log.info(
-                "Guild %d: audio pipe created for visualizer: %s",
-                self.guild_id,
-                audio_pipe_path,
-            )
+
+        # Pre-check: query Lavalink's audiopipe status endpoint.
+        # Returns non-None only if a player exists for this guild.
+        # If the endpoint doesn't exist or returns an error, we get None → skip pipe.
+        has_player = (await self._pipe_client.get_pipe_status(self.guild_id)) is not None
+
+        if has_player:
+            self._pipe_session = AudioPipeSession(self.guild_id, "viz")
+            pipe_ok = await self._pipe_session.start()
+            if pipe_ok:
+                audio_pipe_path = self._pipe_session.ffmpeg_input_path
+                log.info(
+                    "Guild %d: audio pipe created for visualizer: %s",
+                    self.guild_id,
+                    audio_pipe_path,
+                )
+            else:
+                log.warning(
+                    "Guild %d: audio pipe creation failed — visualizer will have no audio",
+                    self.guild_id,
+                )
+                self._pipe_session = None
         else:
-            log.warning(
-                "Guild %d: audio pipe creation failed — visualizer will have no audio",
+            log.info(
+                "Guild %d: no active Lavalink player — visualizer will be video-only",
                 self.guild_id,
             )
-            self._pipe_session = None
 
         # 3. Create HLS pipeline in visualizer mode (with audio pipe if available)
         self._pipeline = HLSTranscodePipeline(
@@ -756,8 +769,9 @@ class VisualizerManager:
             "Guild %d: HLS visualizer pipeline started", self.guild_id
         )
 
-        # 4. Enable Lavalink pipe AFTER FFmpeg has started (FFmpeg opens FIFO
-        # for reading first, then Lavalink can open for writing without blocking)
+        # 4. Enable Lavalink pipe AFTER FFmpeg has started.
+        # FFmpeg opens the FIFO for reading (blocking). When Lavalink opens
+        # the FIFO for writing (via enable_pipe), both sides unblock.
         if audio_pipe_path and self._pipe_session:
             pipe_enabled = await self._pipe_client.enable_pipe(
                 self.guild_id, audio_pipe_path
@@ -765,23 +779,9 @@ class VisualizerManager:
             if not pipe_enabled:
                 log.warning(
                     "Guild %d: Lavalink audio pipe enable failed — "
-                    "unblocking FIFO so FFmpeg can proceed without audio",
+                    "HLS will have no audio (FFmpeg may produce video-only)",
                     self.guild_id,
                 )
-                # Open+close the FIFO for writing to unblock FFmpeg's blocking
-                # read-open. FFmpeg will then read EOF on the audio stream and
-                # produce video-only output (or silence).
-                try:
-                    import os
-                    fd = os.open(audio_pipe_path, os.O_WRONLY | os.O_NONBLOCK)
-                    os.close(fd)
-                except OSError as exc:
-                    log.debug(
-                        "Guild %d: FIFO unblock attempt failed: %s "
-                        "(FFmpeg may hang — will be caught by watchdog)",
-                        self.guild_id,
-                        exc,
-                    )
 
         # 5. Start the render loop task
         self._render_task = asyncio.create_task(
