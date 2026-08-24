@@ -173,9 +173,10 @@ class EGLHeadlessContext:
         if not self._egl.eglBindAPI(EGL_OPENGL_API):
             raise EGLContextError("eglBindAPI(EGL_OPENGL_API) failed")
 
-        # Choose config
+        # Choose config — request surfaceless (EGL_SURFACE_TYPE = 0) since we
+        # use eglMakeCurrent with NULL surfaces on GBM platform.
         config_attribs = (ctypes.c_int * 7)(
-            EGL_SURFACE_TYPE, EGL_PBUFFER_BIT,
+            EGL_SURFACE_TYPE, 0,
             EGL_RENDERABLE_TYPE, EGL_OPENGL_BIT,
             EGL_NONE, 0, 0,
         )
