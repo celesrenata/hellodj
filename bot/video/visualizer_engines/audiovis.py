@@ -337,9 +337,39 @@ class AudioVisEngine(GPUEngineBase):
         self._u_bg_opacity = loc("iBgOpacity")
 
     def _create_vao(self, gl) -> int:
-        """Create an empty VAO for attribute-less quad rendering."""
+        """Create a VAO with a dummy vertex buffer for fullscreen quad rendering.
+
+        Mesa iris (Intel Meteor Lake) requires at least one enabled vertex
+        attribute for glDrawArrays to produce primitives, even when the shader
+        only uses gl_VertexID. Bind a simple 4-vertex position buffer.
+        """
         vao = ctypes.c_uint()
         gl.glGenVertexArrays(1, ctypes.byref(vao))
+        gl.glBindVertexArray(vao)
+
+        # Create VBO with fullscreen quad positions (matches audiovis_vert.glsl)
+        positions = (ctypes.c_float * 8)(
+            -1.0, -1.0,  # BL
+             1.0, -1.0,  # BR
+            -1.0,  1.0,  # TL
+             1.0,  1.0,  # TR
+        )
+        vbo = ctypes.c_uint()
+        gl.glGenBuffers(1, ctypes.byref(vbo))
+        gl.glBindBuffer(GL_ARRAY_BUFFER, vbo)
+        gl.glBufferData(GL_ARRAY_BUFFER, ctypes.sizeof(positions), positions, GL_STATIC_DRAW)
+
+        # Enable attribute 0 (position) — even though the shader ignores it,
+        # having an enabled attribute makes Mesa iris emit primitives.
+        gl.glEnableVertexAttribArray(0)
+        gl.glVertexAttribPointer = gl.glVertexAttribPointer
+        gl.glVertexAttribPointer.argtypes = [
+            ctypes.c_uint, ctypes.c_int, ctypes.c_uint,
+            ctypes.c_ubyte, ctypes.c_int, ctypes.c_void_p,
+        ]
+        gl.glVertexAttribPointer(0, 2, GL_FLOAT, 0, 0, None)
+
+        gl.glBindVertexArray(0)
         return vao.value
 
     def _create_fft_texture(self, gl) -> int:
