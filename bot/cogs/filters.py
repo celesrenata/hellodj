@@ -175,6 +175,112 @@ async def _broadcast_timescale_to_activity(bot: commands.Bot, guild_id: int, spe
         log.debug("_broadcast_timescale_to_activity failed: %s", exc)
 
 
+# ── Non-timing filter keys (Lavalink auto-propagates these through the pipe) ─
+_NON_TIMING_FILTER_KEYS = frozenset({
+    "equalizer", "rotation", "tremolo", "vibrato", "distortion",
+    "karaoke", "lowPass", "channelMix",
+})
+
+
+async def _sync_video_pipe_on_filter_change(
+    bot: commands.Bot,
+    guild_id: int,
+    *,
+    has_non_timing_filters: bool,
+    timescale_speed: float = 1.0,
+    was_reset: bool = False,
+) -> None:
+    """Synchronize the audio pipe with a filter change during active video.
+
+    Called after filters are applied to the wavelink player. Handles four cases:
+    1. Non-timing filter change with pipe active → no action (auto-propagates)
+    2. Non-timing filter added with no pipe → enable pipe, restart pipeline
+    3. Timescale change → restart pipeline with new speed
+    4. Filter reset → disable pipe, restart pipeline with source audio
+    """
+    video_cog = bot.get_cog("Video")
+    if video_cog is None or not hasattr(video_cog, "_registry"):
+        return
+
+    # Find active video session for this guild
+    sessions = video_cog._registry.get_by_guild(guild_id)
+    if not sessions:
+        return
+
+    # Use first active session
+    _channel_id, streamer = sessions[0]
+    if not streamer.is_active:
+        return
+
+    pipe_was_active = streamer._pipe_session is not None and streamer._pipe_session.active
+
+    # Determine previous timescale speed from the pipeline state
+    prev_speed = 1.0
+    if streamer.pipeline and hasattr(streamer.pipeline, "_timescale_speed"):
+        prev_speed = streamer.pipeline._timescale_speed or 1.0
+
+    try:
+        if was_reset:
+            # Case 4: Filter reset — disable pipe, restart with source audio
+            if pipe_was_active:
+                await streamer.restart_pipeline_for_filter_change(
+                    enable_pipe=False,
+                    timescale_speed=1.0,
+                )
+                log.info(
+                    "Filter reset: disabled pipe, restarted pipeline with source "
+                    "audio for guild=%d",
+                    guild_id,
+                )
+
+        elif timescale_speed != prev_speed:
+            # Case 3: Timescale changed — restart pipeline with new speed
+            await streamer.restart_pipeline_for_filter_change(
+                enable_pipe=has_non_timing_filters,
+                timescale_speed=timescale_speed,
+            )
+            log.info(
+                "Timescale change: restarted pipeline with speed=%.2f pipe=%s "
+                "for guild=%d",
+                timescale_speed,
+                has_non_timing_filters,
+                guild_id,
+            )
+
+        elif has_non_timing_filters and not pipe_was_active:
+            # Case 2: New non-timing filters on unfiltered video — enable pipe
+            await streamer.restart_pipeline_for_filter_change(
+                enable_pipe=True,
+                timescale_speed=timescale_speed,
+            )
+            log.info(
+                "New filters on unfiltered video: enabled pipe, restarted pipeline "
+                "for guild=%d",
+                guild_id,
+            )
+
+        # else: Case 1 — pipe already active, non-timing filter changed.
+        # Lavalink auto-propagates. No action needed.
+
+    except Exception as exc:
+        log.warning(
+            "_sync_video_pipe_on_filter_change failed for guild=%d: %s",
+            guild_id,
+            exc,
+        )
+
+    # Always broadcast filter_sync WS for frontend feedback
+    try:
+        ws_hub = video_cog._backend.ws_hub
+        await ws_hub.broadcast_from_bot(guild_id, {
+            "type": "filter_sync",
+            "speed": timescale_speed,
+            "filters_active": has_non_timing_filters,
+        })
+    except Exception as exc:
+        log.debug("filter_sync broadcast failed for guild=%d: %s", guild_id, exc)
+
+
 class Filters(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -228,6 +334,13 @@ class Filters(commands.Cog):
                 "on the Lavalink node. Check the logs."
             )
 
+        # Sync video pipe (non-timing filter, no timescale)
+        await _sync_video_pipe_on_filter_change(
+            self.bot, interaction.guild.id,
+            has_non_timing_filters=True,
+            timescale_speed=1.0,
+        )
+
     # ── Nightcore ───────────────────────────────────────────
 
     @filter_group.command(name="nightcore", description="Speed up tempo and shift pitch upward")
@@ -251,6 +364,13 @@ class Filters(commands.Cog):
 
         # Sync timescale to Activity video playback rate
         await _broadcast_timescale_to_activity(self.bot, interaction.guild.id, speed=1.25)
+
+        # Sync video pipe (timescale change)
+        await _sync_video_pipe_on_filter_change(
+            self.bot, interaction.guild.id,
+            has_non_timing_filters=False,
+            timescale_speed=1.25,
+        )
 
         verified, _ = await _verify_filter(player_obj, interaction.guild.id, "timescale")
         if verified:
@@ -305,6 +425,13 @@ class Filters(commands.Cog):
                 "Check the logs and run `/filter test` to inspect the active filters."
             )
 
+        # Sync video pipe (non-timing filter, no timescale)
+        await _sync_video_pipe_on_filter_change(
+            self.bot, interaction.guild.id,
+            has_non_timing_filters=True,
+            timescale_speed=1.0,
+        )
+
     # ── Vaporwave (new) ─────────────────────────────────────
     # "Slow toned vibe": slow the music down (timescale speed 0.85) and drop the
     # pitch slightly (pitch 0.9) for the classic vaporwave slowed feel, plus a
@@ -337,6 +464,13 @@ class Filters(commands.Cog):
 
         # Sync timescale to Activity video playback rate
         await _broadcast_timescale_to_activity(self.bot, interaction.guild.id, speed=0.85)
+
+        # Sync video pipe (timescale + non-timing EQ)
+        await _sync_video_pipe_on_filter_change(
+            self.bot, interaction.guild.id,
+            has_non_timing_filters=True,
+            timescale_speed=0.85,
+        )
 
         verified, _ = await _verify_filter(player_obj, interaction.guild.id, "timescale")
         if verified:
@@ -453,6 +587,15 @@ class Filters(commands.Cog):
                     "active on the Lavalink node. Check the logs and run `/filter test`."
                 )
 
+        # Sync video pipe (non-timing filters + timescale speed=1.0 pitch=1.1)
+        # Note: pitch without speed change is NOT a timing filter — only the speed
+        # component requires FFmpeg handling. speed=1.0 here means no timing change.
+        await _sync_video_pipe_on_filter_change(
+            self.bot, interaction.guild.id,
+            has_non_timing_filters=True,
+            timescale_speed=1.0,
+        )
+
     # ── /tune (enhanced audio) ──────────────────────────────
     # A permanent "light switch": /tune toggles enhanced audio ON/OFF and stays
     # on (persisted via player.persist -> session) until turned off. When ON, a
@@ -478,6 +621,12 @@ class Filters(commands.Cog):
                 "🎚️ **Enhanced audio: ON** — less compressed, more crisp. "
                 "It stays on for every new track until you turn it off with `/tune` again."
             )
+            # Sync video pipe (non-timing filters: EQ + distortion, speed=1.0)
+            await _sync_video_pipe_on_filter_change(
+                self.bot, interaction.guild.id,
+                has_non_timing_filters=True,
+                timescale_speed=1.0,
+            )
         else:
             # Turn the enhancement off: reset all filters so the previous tune
             # chain (and any other active filters) is cleared.
@@ -486,6 +635,13 @@ class Filters(commands.Cog):
             await player_obj.set_filters(filters)
             await interaction.response.send_message(
                 "🎚️ **Enhanced audio: OFF** — filters reset to default."
+            )
+            # Sync video pipe (filter reset)
+            await _sync_video_pipe_on_filter_change(
+                self.bot, interaction.guild.id,
+                has_non_timing_filters=False,
+                timescale_speed=1.0,
+                was_reset=True,
             )
 
     # ── 808 (new) ───────────────────────────────────────────
@@ -592,6 +748,13 @@ class Filters(commands.Cog):
                 "it is active on the Lavalink node. Check the logs."
             )
 
+        # Sync video pipe (non-timing filter, no timescale)
+        await _sync_video_pipe_on_filter_change(
+            self.bot, interaction.guild.id,
+            has_non_timing_filters=True,
+            timescale_speed=1.0,
+        )
+
     # ── Stems isolate (new) ─────────────────────────────────
     # True audio stem separation (isolated vocals/drums/bass/melody) requires a
     # source-separation ML model (demucs/spleeter/onnx) that is heavy and NOT
@@ -683,6 +846,13 @@ class Filters(commands.Cog):
                     "filter may not be enabled on the node. Check the logs and run "
                     "`/filter test`."
                 )
+
+            # Sync video pipe (non-timing karaoke filter)
+            await _sync_video_pipe_on_filter_change(
+                self.bot, interaction.guild.id,
+                has_non_timing_filters=True,
+                timescale_speed=1.0,
+            )
             return
 
         # ── drums / bass / melody → NOT possible via Lavalink filters ──
@@ -778,6 +948,14 @@ class Filters(commands.Cog):
         # Reset Activity video playback rate to normal
         await _broadcast_timescale_to_activity(self.bot, interaction.guild.id, speed=1.0)
 
+        # Sync video pipe (filter reset — disable pipe, restart with source audio)
+        await _sync_video_pipe_on_filter_change(
+            self.bot, interaction.guild.id,
+            has_non_timing_filters=False,
+            timescale_speed=1.0,
+            was_reset=True,
+        )
+
         # Verify the reset took effect server-side (no filters should remain).
         server_filters = await _get_server_filters(player_obj, interaction.guild.id)
         if server_filters is None:
@@ -817,6 +995,14 @@ class Filters(commands.Cog):
 
         # Reset Activity video playback rate to normal
         await _broadcast_timescale_to_activity(self.bot, interaction.guild.id, speed=1.0)
+
+        # Sync video pipe (filter reset — disable pipe, restart with source audio)
+        await _sync_video_pipe_on_filter_change(
+            self.bot, interaction.guild.id,
+            has_non_timing_filters=False,
+            timescale_speed=1.0,
+            was_reset=True,
+        )
 
         # Verify the reset took effect server-side (no filters should remain).
         server_filters = await _get_server_filters(player_obj, interaction.guild.id)

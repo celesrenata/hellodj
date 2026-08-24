@@ -1205,9 +1205,6 @@ function stopDriftChecker() {
         videoEl.load();
         videoEl.playbackRate = 1.0;
         titleBar.textContent = '';
-        // Reset Lavalink audio routing state
-        window._lavalinkAudioActive = false;
-        videoEl.muted = false;
         _updateMuteIcon();
         // Go to IDLE temporarily — the server will send a 'visualizer' message
         // immediately after session_end if an engine is configured, which will
@@ -1267,25 +1264,6 @@ function stopDriftChecker() {
         // Server notifies that skip/previous happened — immediately check for new session
         _rlog('[session_change] received via WS, calling _checkForNextSession');
         _checkForNextSession();
-        break;
-
-      case 'lavalink_audio':
-        // Lavalink is routing video audio through Discord voice channel.
-        // Mute HLS audio in the browser to avoid double audio.
-        if (data.active) {
-          _rlog('[lavalink_audio] active — muting HLS video element audio');
-          videoEl.muted = true;
-          window._lavalinkAudioActive = true;
-          // Apply initial timescale if provided
-          if (data.timescale && data.timescale !== 1.0) {
-            videoEl.playbackRate = data.timescale;
-          }
-        } else {
-          _rlog('[lavalink_audio] inactive — unmuting HLS video element audio');
-          videoEl.muted = false;
-          videoEl.playbackRate = 1.0;
-          window._lavalinkAudioActive = false;
-        }
         break;
 
       case 'filter_sync':
@@ -1464,12 +1442,6 @@ function stopDriftChecker() {
   // Mute toggle on speaker icon
   btnMute.addEventListener('click', (e) => {
     e.stopPropagation(); // don't trigger global unmute
-    // When Lavalink audio is routing through Discord VC, the HLS element
-    // must stay muted. Mute button becomes a no-op (audio control is in Discord).
-    if (window._lavalinkAudioActive) {
-      _rlog('[mute] Lavalink audio active — audio controlled via Discord voice');
-      return;
-    }
     if (videoEl.muted || videoEl.volume === 0) {
       videoEl.muted = false;
       videoEl.volume = _savedVolume || 0.8;
@@ -1482,10 +1454,6 @@ function stopDriftChecker() {
   });
 
   const _updateMuteIcon = () => {
-    if (window._lavalinkAudioActive) {
-      btnMute.textContent = '🎧'; // Headphones icon: audio via Discord VC
-      return;
-    }
     if (videoEl.muted || videoEl.volume === 0) {
       btnMute.textContent = '🔇';
     } else if (videoEl.volume < 0.5) {

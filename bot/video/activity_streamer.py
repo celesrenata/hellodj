@@ -18,7 +18,9 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from video import StreamState, VideoSource
+from video.audio_pipe import AudioPipeSession
 from video.hls_transcode import HLSTranscodePipeline, Resolution, _HLS_BASE_DIR
+from video.lavalink_pipe_client import LavalinkPipeClient
 
 if TYPE_CHECKING:
     from video.ws_hub import WebSocketHub
@@ -139,6 +141,10 @@ class ActivityStreamer:
         # Background tasks
         self._advance_task: asyncio.Task[None] | None = None
         self._duration_task: asyncio.Task[None] | None = None
+
+        # Audio pipe (Lavalink → FFmpeg FIFO bridge)
+        self._pipe_session: AudioPipeSession | None = None
+        self._pipe_client: LavalinkPipeClient = LavalinkPipeClient()
 
         # Lock guarding all source-change operations
         self._transition_lock: asyncio.Lock = asyncio.Lock()
@@ -298,6 +304,9 @@ class ActivityStreamer:
                 # Cancel current background tasks before starting new source
                 await self._cancel_background_tasks()
 
+                # Disable audio pipe before stopping pipeline
+                await self._disable_audio_pipe()
+
                 # Stop current pipeline
                 if self.pipeline is not None:
                     try:
@@ -382,6 +391,9 @@ class ActivityStreamer:
 
             # Cancel current background tasks
             await self._cancel_background_tasks()
+
+            # Disable audio pipe before stopping pipeline
+            await self._disable_audio_pipe()
 
             # Stop current pipeline
             if self.pipeline is not None:
@@ -676,8 +688,8 @@ class ActivityStreamer:
 
         await self._cancel_background_tasks()
 
-        # Stop Lavalink audio playback for this video
-        await self._stop_lavalink_audio()
+        # Disable audio pipe
+        await self._disable_audio_pipe()
 
         if self.pipeline is not None:
             try:
@@ -760,12 +772,77 @@ class ActivityStreamer:
             audio_bitrate_kbps=self._audio_bitrate_kbps,
         )
 
+        # ── Check guild filters for audio pipe routing ────────────────────
+        audio_pipe_path: str | None = None
+        timescale_speed: float = 1.0
+
+        try:
+            import player
+            state = player.get_state(self.guild_id)
+            guild_filters = state.get("filters") or {}
+
+            if guild_filters:
+                # Extract timescale speed from known filter presets
+                for _name, fdata in guild_filters.items():
+                    if isinstance(fdata, dict) and "speed" in fdata:
+                        speed_val = fdata["speed"]
+                        if speed_val and speed_val != 1.0:
+                            timescale_speed = float(speed_val)
+                            break
+
+                # Determine if non-timing filters are active (need pipe)
+                # Non-timing: anything that isn't purely timescale speed
+                has_non_timing = False
+                for _name, fdata in guild_filters.items():
+                    if isinstance(fdata, dict):
+                        # Check for EQ gains, rotation, distortion, etc.
+                        keys = set(fdata.keys())
+                        non_timing_keys = keys - {"speed"}
+                        if non_timing_keys:
+                            has_non_timing = True
+                            break
+                    else:
+                        # Any truthy filter entry counts
+                        has_non_timing = True
+                        break
+
+                if has_non_timing:
+                    # Create and start audio pipe session
+                    self._pipe_session = AudioPipeSession(
+                        self.guild_id, self.session_id
+                    )
+                    pipe_ok = await self._pipe_session.start()
+                    if pipe_ok:
+                        audio_pipe_path = self._pipe_session.ffmpeg_input_path
+                        log.info(
+                            "Audio pipe session started for guild=%d: %s",
+                            self.guild_id,
+                            audio_pipe_path,
+                        )
+                    else:
+                        log.warning(
+                            "Audio pipe creation failed for guild=%d — "
+                            "falling back to source audio",
+                            self.guild_id,
+                        )
+                        self._pipe_session = None
+        except Exception as exc:
+            log.warning(
+                "Filter check failed for guild=%d: %s — using source audio",
+                self.guild_id,
+                exc,
+            )
+            audio_pipe_path = None
+            timescale_speed = 1.0
+
         try:
             if source.stream_url:
                 # Stream directly from URL — throttled, no pre-download
                 await self.pipeline.start_streaming(
                     source.stream_url, Resolution.RES_720P,
                     audio_url=source.audio_url,
+                    audio_pipe_path=audio_pipe_path,
+                    timescale_speed=timescale_speed,
                 )
             else:
                 await self.pipeline.start(source.file_path, Resolution.RES_720P)
@@ -777,7 +854,26 @@ class ActivityStreamer:
             )
             self.state = StreamState.ERROR
             self.pipeline = None
+            # Clean up pipe session on failure
+            if self._pipe_session:
+                await self._pipe_session.stop()
+                self._pipe_session = None
             raise RuntimeError(f"Pipeline start failed: {exc}") from exc
+
+        # Enable Lavalink pipe AFTER FFmpeg has started (FFmpeg opens FIFO
+        # for reading first, then Lavalink can open for writing without blocking)
+        if audio_pipe_path and self._pipe_session:
+            pipe_enabled = await self._pipe_client.enable_pipe(
+                self.guild_id, audio_pipe_path
+            )
+            if not pipe_enabled:
+                log.warning(
+                    "Lavalink audio pipe enable failed for guild=%d — "
+                    "HLS will use source audio",
+                    self.guild_id,
+                )
+                # Non-fatal: pipeline is already running with the pipe path,
+                # FFmpeg will get EOF/silence from the pipe if Lavalink doesn't write
 
         # Wait for first segment (readiness)
         ready = await self.pipeline.wait_ready(timeout=30.0)
@@ -800,12 +896,6 @@ class ActivityStreamer:
 
         # Enter WAITING phase: countdown hasn't fired yet (reset CSM for new track)
         self._csm.reset()
-
-        # ── Lavalink audio routing ────────────────────────────────────────
-        # Play the audio through Lavalink so filters (nightcore, vaporwave, etc.)
-        # apply. The Activity frontend mutes its HLS audio and listens via
-        # Discord voice channel instead.
-        await self._start_lavalink_audio(source)
 
         log.info(
             "Activity now streaming for guild=%d session=%s title='%s'",
@@ -831,106 +921,150 @@ class ActivityStreamer:
             name=f"activity-duration-{self.guild_id}",
         )
 
-    async def _start_lavalink_audio(self, source: VideoSource) -> None:
-        """Play the video's audio through Lavalink for filter support.
+    async def restart_pipeline_for_filter_change(
+        self,
+        *,
+        enable_pipe: bool,
+        timescale_speed: float = 1.0,
+    ) -> bool:
+        """Restart the HLS pipeline after a filter change during active playback.
 
-        Routes the audio from the video source URL through the guild's
-        wavelink player so Lavalink filters (nightcore, vaporwave, 8D, etc.)
-        apply. The Activity frontend mutes its own HLS audio; users hear
-        filtered audio through the Discord voice channel.
+        Handles three scenarios:
+        1. enable_pipe=True: Create a new audio pipe session and restart with pipe
+        2. enable_pipe=False: Disable pipe and restart with source audio
+        3. timescale_speed changed: Restart pipeline with new speed factor
 
-        Falls back gracefully — if Lavalink can't play the audio URL, the
-        HLS audio in the Activity remains available as an unmuted fallback.
+        Returns True if the pipeline was successfully restarted, False otherwise.
         """
-        try:
-            import player
-            from wavelink import Playable, TrackSource
-
-            player_obj = player.get_player(self.guild_id)
-            if not player_obj or not player_obj.connected:
-                log.info(
-                    "Lavalink audio routing skipped — no connected player "
-                    "for guild=%d",
-                    self.guild_id,
-                )
-                return
-
-            # Determine audio source URL:
-            # 1. Separate audio_url (DASH/YouTube sources)
-            # 2. stream_url (combined video+audio — Lavalink extracts audio)
-            # 3. file_path (local file — less common)
-            audio_source = source.audio_url or source.stream_url or source.file_path
-            if not audio_source:
-                log.info(
-                    "Lavalink audio routing skipped — no audio URL available "
-                    "for guild=%d title=%r",
-                    self.guild_id,
-                    source.title,
-                )
-                return
-
-            # Search/load the audio through Lavalink
-            tracks = await Playable.search(audio_source)
-            if not tracks:
-                log.warning(
-                    "Lavalink could not load audio URL for video: guild=%d url=%s",
-                    self.guild_id,
-                    audio_source[:100],
-                )
-                return
-
-            track = tracks[0] if isinstance(tracks, list) else tracks
-
-            # Inject video metadata into the track for display purposes
-            try:
-                object.__setattr__(track, "_title", source.title)
-            except Exception:
-                pass
-
-            # Play through Lavalink — this sends audio to Discord voice channel
-            await player_obj.play(track)
-
-            # Mark the player state so the unified queue knows video audio is active
-            state = player.get_state(self.guild_id)
-            state["current"] = player._track_entry(track, "video")
-            state["current"]["type"] = "music_video"
-            state["current"]["title"] = source.title
-            if source.duration_seconds:
-                state["current"]["duration"] = int(source.duration_seconds * 1000)
-
-            log.info(
-                "Lavalink audio routed for video: guild=%d title=%r",
+        if self.state != StreamState.STREAMING or self.pipeline is None:
+            log.debug(
+                "restart_pipeline_for_filter_change skipped — not streaming "
+                "(state=%s) for guild=%d",
+                self.state.value if self.state else "None",
                 self.guild_id,
-                source.title,
             )
+            return False
 
-            # Broadcast lavalink_audio_active to Activity clients so they mute HLS audio
-            if self._ws_hub:
-                await self._ws_hub.broadcast_from_bot(self.guild_id, {
-                    "type": "lavalink_audio",
-                    "active": True,
-                    "timescale": 1.0,
-                })
-
-        except Exception as exc:
-            # Non-fatal: video still works with HLS audio if Lavalink fails
+        if self.source is None:
             log.warning(
-                "Lavalink audio routing failed for guild=%d: %s — "
-                "HLS audio will remain active in Activity",
+                "restart_pipeline_for_filter_change: no source for guild=%d",
+                self.guild_id,
+            )
+            return False
+
+        source_url = self.source.stream_url or self.source.file_path
+        if not source_url:
+            log.warning(
+                "restart_pipeline_for_filter_change: no source URL for guild=%d",
+                self.guild_id,
+            )
+            return False
+
+        log.info(
+            "Restarting HLS pipeline for filter change: guild=%d "
+            "enable_pipe=%s speed=%.2f",
+            self.guild_id,
+            enable_pipe,
+            timescale_speed,
+        )
+
+        # Stop current pipeline
+        try:
+            await self.pipeline.stop()
+        except Exception as exc:
+            log.warning(
+                "Error stopping pipeline during filter restart for guild=%d: %s",
                 self.guild_id,
                 exc,
             )
 
-    async def _stop_lavalink_audio(self) -> None:
-        """Stop Lavalink audio playback when video session ends."""
+        # Disable existing pipe session
+        await self._disable_audio_pipe()
+
+        # Set up new pipe session if needed
+        audio_pipe_path: str | None = None
+        if enable_pipe:
+            self._pipe_session = AudioPipeSession(self.guild_id, self.session_id)
+            pipe_ok = await self._pipe_session.start()
+            if pipe_ok:
+                audio_pipe_path = self._pipe_session.ffmpeg_input_path
+                log.info(
+                    "New audio pipe session for filter restart: guild=%d path=%s",
+                    self.guild_id,
+                    audio_pipe_path,
+                )
+            else:
+                log.warning(
+                    "Audio pipe creation failed during filter restart for guild=%d "
+                    "— falling back to source audio",
+                    self.guild_id,
+                )
+                self._pipe_session = None
+
+        # Restart pipeline with new configuration
         try:
-            import player
-            player_obj = player.get_player(self.guild_id)
-            if player_obj and player_obj.connected and player_obj.playing:
-                await player_obj.stop()
-                log.info("Stopped Lavalink audio for video: guild=%d", self.guild_id)
+            from video.hls_transcode import HLSTranscodePipeline, Resolution
+
+            # Create a fresh pipeline instance (same session, same output dir)
+            source_codec = self.source.metadata.get("codec", "h264")
+            source_fps = self.source.metadata.get("fps", 30.0)
+
+            self.pipeline = HLSTranscodePipeline(
+                guild_id=self.guild_id,
+                session_id=self.session_id,
+                source_codec=source_codec,
+                source_fps=source_fps,
+                audio_bitrate_kbps=self._audio_bitrate_kbps,
+            )
+
+            if self.source.stream_url:
+                await self.pipeline.start_streaming(
+                    self.source.stream_url,
+                    Resolution.RES_720P,
+                    audio_url=self.source.audio_url,
+                    audio_pipe_path=audio_pipe_path,
+                    timescale_speed=timescale_speed,
+                )
+            else:
+                await self.pipeline.start(self.source.file_path, Resolution.RES_720P)
+
         except Exception as exc:
-            log.debug("_stop_lavalink_audio failed: %s", exc)
+            log.error(
+                "Failed to restart pipeline for filter change guild=%d: %s",
+                self.guild_id,
+                exc,
+            )
+            # Clean up pipe session on failure
+            if self._pipe_session:
+                await self._pipe_session.stop()
+                self._pipe_session = None
+            return False
+
+        # Enable Lavalink pipe AFTER FFmpeg starts reading the FIFO
+        if audio_pipe_path and self._pipe_session:
+            pipe_enabled = await self._pipe_client.enable_pipe(
+                self.guild_id, audio_pipe_path
+            )
+            if not pipe_enabled:
+                log.warning(
+                    "Lavalink pipe enable failed after filter restart for guild=%d",
+                    self.guild_id,
+                )
+
+        log.info(
+            "Pipeline restarted for filter change: guild=%d pipe=%s speed=%.2f",
+            self.guild_id,
+            bool(audio_pipe_path),
+            timescale_speed,
+        )
+        return True
+
+    async def _disable_audio_pipe(self) -> None:
+        """Disable the audio pipe and clean up the FIFO session."""
+        if self._pipe_session and self._pipe_session.active:
+            await self._pipe_client.disable_pipe(self.guild_id)
+            await self._pipe_session.stop()
+        self._pipe_session = None
 
     async def _auto_advance(self) -> None:
         """Wait for pipeline completion and advance to the next queue item.

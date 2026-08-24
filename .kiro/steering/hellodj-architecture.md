@@ -345,7 +345,7 @@ The **active production config** is rendered by `render_lavalink_config.py`. The
 
 Deployment.yaml values (may be overridden by kustomize):
 - Bot: `registry.celestium.life/hellodj/bot:rm-video-cmd-2026-08-22`
-- Lavalink: `registry.celestium.life/hellodj/lavalink:playlist-pagination-2026-08-22` (NOT overridden by kustomize)
+- Lavalink: `registry.celestium.life/hellodj/lavalink:audio-pipe-2026-08-23` (NOT overridden by kustomize)
 - Tidal stream: `registry.celestium.life/hellodj/tidal-stream:whiteboard-2026-08-20`
 - Spotify stream: `registry.celestium.life/hellodj/spotify-stream:latest`
 - Web UI: `registry.celestium.life/hellodj/web-ui:v2026-08-17`

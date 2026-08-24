@@ -239,7 +239,7 @@ spec:
 
         # ── Lavalink sidecar ───────────────────────────────────────
         - name: lavalink
-          image: registry.celestium.life/hellodj/lavalink:playlist-pagination-2026-08-22
+          image: registry.celestium.life/hellodj/lavalink:audio-pipe-2026-08-23
           imagePullPolicy: Always
           ports:
             - containerPort: 2333

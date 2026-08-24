@@ -475,7 +475,15 @@ class HLSTranscodePipeline:
             else:
                 log.info("Extracted subtitle track: %s → %s", lang, output_path)
 
-    async def start_streaming(self, source_url: str, resolution: Resolution, *, audio_url: str | None = None) -> None:
+    async def start_streaming(
+        self,
+        source_url: str,
+        resolution: Resolution,
+        *,
+        audio_url: str | None = None,
+        audio_pipe_path: str | None = None,
+        timescale_speed: float = 1.0,
+    ) -> None:
         """Launch ffmpeg HLS transcode pipeline reading directly from a URL.
 
         Unlike start() which reads from a local file, this reads from an HTTP/
@@ -488,6 +496,11 @@ class HLSTranscodePipeline:
             resolution: Target output resolution (capped at 720p).
             audio_url: Optional separate audio stream URL (for DASH sources
                        like YouTube where video and audio are separate).
+            audio_pipe_path: Optional path to a Lavalink PCM FIFO pipe.
+                When set, audio is read from the pipe (s16le/48kHz/stereo)
+                instead of the source URL's embedded audio.
+            timescale_speed: FFmpeg-side speed adjustment factor (default 1.0).
+                When != 1.0, applies setpts to video and atempo to audio.
 
         Raises:
             HLSTranscodePipelineError: If the process fails to start.
@@ -497,6 +510,10 @@ class HLSTranscodePipeline:
         self.ready.clear()
         self._complete_event.clear()
 
+        # Store pipe parameters for potential pipeline restart
+        self._audio_pipe_path: str | None = audio_pipe_path
+        self._timescale_speed: float = timescale_speed
+
         # Ensure output directory exists
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -504,7 +521,12 @@ class HLSTranscodePipeline:
         self.subtitle_tracks = []
         self.audio_tracks = [{"lang": "und", "label": ""}]
 
-        args = self._build_streaming_ffmpeg_args(source_url, resolution, audio_url=audio_url)
+        args = self._build_streaming_ffmpeg_args(
+            source_url, resolution,
+            audio_url=audio_url,
+            audio_pipe_path=audio_pipe_path,
+            timescale_speed=timescale_speed,
+        )
         log.info("HLS streaming transcode starting: %s", " ".join(args))
 
         try:
@@ -528,8 +550,56 @@ class HLSTranscodePipeline:
         self._last_segment_time = asyncio.get_event_loop().time()
         self._timeout_task = asyncio.ensure_future(self._watchdog())
 
+    @staticmethod
+    def _build_atempo_chain(speed: float) -> str:
+        """Build an ffmpeg atempo filter chain for the given speed factor.
+
+        FFmpeg's atempo filter only accepts values in [0.5, 2.0]. For speeds
+        outside that range, multiple atempo filters are chained together.
+
+        Examples:
+            speed=4.0   → "atempo=2.0,atempo=2.0"
+            speed=0.25  → "atempo=0.5,atempo=0.5"
+            speed=1.25  → "atempo=1.25"
+
+        Args:
+            speed: Target playback speed factor (must be > 0).
+
+        Returns:
+            Comma-separated atempo filter chain string.
+        """
+        if speed <= 0:
+            raise ValueError(f"Speed must be positive, got {speed}")
+
+        filters: list[str] = []
+
+        remaining = speed
+        if speed > 1.0:
+            # Speed up: decompose into factors <= 2.0
+            while remaining > 2.0:
+                filters.append("atempo=2.0")
+                remaining /= 2.0
+            filters.append(f"atempo={remaining:.6g}")
+        elif speed < 1.0:
+            # Slow down: decompose into factors >= 0.5
+            while remaining < 0.5:
+                filters.append("atempo=0.5")
+                remaining /= 0.5
+            filters.append(f"atempo={remaining:.6g}")
+        else:
+            # speed == 1.0, no-op but return identity filter
+            filters.append("atempo=1.0")
+
+        return ",".join(filters)
+
     def _build_streaming_ffmpeg_args(
-        self, source_url: str, resolution: Resolution, *, audio_url: str | None = None
+        self,
+        source_url: str,
+        resolution: Resolution,
+        *,
+        audio_url: str | None = None,
+        audio_pipe_path: str | None = None,
+        timescale_speed: float = 1.0,
     ) -> list[str]:
         """Build ffmpeg args for streaming URL input → HLS output.
 
@@ -540,6 +610,14 @@ class HLSTranscodePipeline:
         input for the separate audio stream and maps video from input 0 and
         audio from input 1. Reconnect flags are skipped for DASH (finite
         content-length downloads that don't benefit from reconnection).
+
+        When audio_pipe_path is provided (Lavalink PCM FIFO), adds a second
+        input reading raw s16le/48kHz/stereo PCM from the named pipe. Video
+        is mapped from input 0, audio from input 1 (the pipe).
+
+        When timescale_speed != 1.0, applies setpts=PTS/{speed} to the video
+        filter graph and atempo={speed} (chained if outside [0.5, 2.0]) to
+        the audio filter.
         """
         resolution = self._cap_resolution(resolution)
         bitrate = _bitrate_for_resolution(resolution)
@@ -554,7 +632,8 @@ class HLSTranscodePipeline:
         #   is naturally limited by video duration × bitrate.
         # - HLS/live streams (single-input, e.g. Tidal): use readrate to avoid
         #   buffering the entire live stream.
-        if not audio_url:
+        # - Audio pipe mode: no readrate — FIFO blocking provides natural throttle.
+        if not audio_url and not audio_pipe_path:
             # Single-input (HLS/live) — throttle after initial burst
             args.extend([
                 "-readrate", "3",
@@ -573,7 +652,8 @@ class HLSTranscodePipeline:
         # HTTP reconnect options — only for HLS/live streams (single-input mode).
         # DASH sources (dual-input with audio_url) are finite downloads where
         # -reconnect causes ffmpeg to retry after normal EOF.
-        if not audio_url:
+        # Audio pipe mode doesn't need reconnect (local FIFO).
+        if not audio_url and not audio_pipe_path:
             args.extend([
                 "-reconnect", "1",
                 "-reconnect_streamed", "1",
@@ -591,22 +671,37 @@ class HLSTranscodePipeline:
         # -thread_queue_size: large input buffer so one slow CDN doesn't block the other
         args.extend(["-thread_queue_size", "4096", "-i", source_url])
 
-        # Input 1: separate audio URL (DASH sources like YouTube)
-        if audio_url:
+        # Input 1: separate audio source
+        if audio_pipe_path:
+            # Lavalink PCM FIFO: signed 16-bit LE, 48kHz, stereo
+            args.extend([
+                "-thread_queue_size", "4096",
+                "-f", "s16le",
+                "-ar", "48000",
+                "-ac", "2",
+                "-i", audio_pipe_path,
+            ])
+        elif audio_url:
             args.extend(["-thread_queue_size", "4096", "-i", audio_url])
 
-        # Video filter: VPP scale to target resolution
+        # Video filter: VPP scale to target resolution + optional timescale
+        vf_parts: list[str] = []
+        if timescale_speed != 1.0:
+            vf_parts.append(f"setpts=PTS/{timescale_speed}")
+
         if self._use_hwaccel_decode:
-            args.extend(["-vf", f"scale_qsv=w=-1:h={resolution.height}"])
+            vf_parts.append(f"scale_qsv=w=-1:h={resolution.height}")
+            args.extend(["-vf", ",".join(vf_parts)])
         else:
+            vf_parts.append(f"hwupload=extra_hw_frames=64,scale_qsv=w=-1:h={resolution.height}")
             args.extend([
-                "-vf", f"hwupload=extra_hw_frames=64,scale_qsv=w=-1:h={resolution.height}",
+                "-vf", ",".join(vf_parts),
                 "-init_hw_device", "qsv=qsv:hw",
                 "-filter_hw_device", "qsv",
             ])
 
-        # Stream mapping for dual-input (DASH) mode
-        if audio_url:
+        # Stream mapping for dual-input modes (DASH or audio pipe)
+        if audio_pipe_path or audio_url:
             args.extend(["-map", "0:v:0", "-map", "1:a:0"])
 
         # Video encode: h264_qsv with ICQ (Intelligent Constant Quality)
@@ -625,6 +720,11 @@ class HLSTranscodePipeline:
             "-g", "48",
             "-force_key_frames", f"expr:gte(t,n_forced*{_HLS_SEGMENT_DURATION})",
         ])
+
+        # Audio filter: atempo for timescale adjustment
+        if timescale_speed != 1.0:
+            atempo_chain = self._build_atempo_chain(timescale_speed)
+            args.extend(["-af", atempo_chain])
 
         # Audio encode: AAC at guild-supported bitrate (scales with Nitro boost tier)
         args.extend(["-c:a", "aac", "-b:a", f"{self.audio_bitrate_kbps}k"])

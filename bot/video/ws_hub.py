@@ -765,9 +765,15 @@ class WebSocketHub:
     async def _handle_audio_play_pause(self, guild_id: int, *, playing: bool) -> None:
         """Control the Lavalink audio player play/pause from Activity controls.
 
-        When video is active with Lavalink audio routing, also pause/resume
-        the Lavalink player so audio stays in sync with the video element.
+        When video is active, audio is muxed through the pipe/HLS pipeline —
+        do NOT control Lavalink separately or it will desync.
+        Only controls audio when in audio-only visualizer/DVD mode.
         """
+        # Guard: don't control audio while video is active (pipe handles it)
+        streamer = self._streamers.get(guild_id)
+        if streamer is not None and streamer.is_active:
+            return
+
         try:
             import player
             p = player.get_player(guild_id)
