@@ -735,10 +735,9 @@ class ActivityBackend:
         if guild_id is None:
             return self._json_error(404, "Invalid guild ID")
 
-        # Authenticate (guild-level, no session required)
-        auth_error = self._validate_guild_token(request, guild_id)
-        if auth_error is not None:
-            return auth_error
+        # Segments don't require auth — they're only discoverable through the
+        # authenticated playlist. This avoids issues with hls.js not forwarding
+        # auth tokens on segment requests.
 
         segment = request.match_info["segment"]
 

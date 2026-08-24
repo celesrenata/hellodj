@@ -1169,7 +1169,16 @@ function stopDriftChecker() {
           setMode('VISUALIZER_HLS');
           visualizerLoading.style.display = 'none';
           if (data.playlist_url) {
-            initHls(data.playlist_url, false, true);
+            // Strip /activity/ prefix (HLS.js uses relative URLs from page base)
+            // and append auth token (same pattern as video HLS)
+            let vizUrl = data.playlist_url;
+            if (vizUrl.startsWith('/activity/')) {
+              vizUrl = vizUrl.slice('/activity/'.length);
+            } else if (vizUrl.startsWith('/')) {
+              vizUrl = vizUrl.slice(1);
+            }
+            vizUrl += '?token=' + encodeURIComponent(instanceId);
+            initHls(vizUrl, false, true);
           }
         } else if (data.state === 'starting') {
           // Engine is starting up, show loading state
