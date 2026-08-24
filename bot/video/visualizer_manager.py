@@ -995,20 +995,19 @@ class VisualizerManager:
     async def _pipe_reader_loop(self, pipe_path: str) -> None:
         """Read PCM from the Lavalink audio pipe and feed AudioFeatureBus.
 
-        Opens the FIFO for reading and continuously reads 3840-byte frames
-        (20ms of s16le stereo 48kHz). Feeds each frame to AudioFeatureBus
-        which performs FFT/beat detection and dispatches to the engine.
+        Opens the FIFO for reading and continuously reads s16le stereo 48kHz
+        PCM chunks. Feeds raw bytes directly to AudioFeatureBus — the FFT
+        analysis works on interleaved stereo just fine for visualization.
 
         The FIFO is primed with O_RDWR so this open won't block.
         Runs until cancelled or the pipe is closed.
         """
         import os
 
-        FRAME_SIZE = 3840  # 20ms @ 48kHz stereo s16le = 960 samples * 2ch * 2 bytes
+        CHUNK_SIZE = 3840  # 20ms @ 48kHz stereo s16le
         fd = -1
         try:
-            # Open for reading (non-blocking to avoid hang if writer disappears)
-            fd = os.open(pipe_path, os.O_RDONLY | os.O_NONBLOCK)
+            fd = os.open(pipe_path, os.O_RDONLY)
             log.info(
                 "Guild %d: pipe reader started — feeding AudioFeatureBus",
                 self.guild_id,
@@ -1016,25 +1015,16 @@ class VisualizerManager:
 
             loop = asyncio.get_event_loop()
             while True:
-                try:
-                    # Read in executor to avoid blocking the event loop
-                    data = await loop.run_in_executor(
-                        None, os.read, fd, FRAME_SIZE
-                    )
-                    if not data:
-                        # EOF — writer closed
-                        await asyncio.sleep(0.1)
-                        continue
-                    if self._audio_bus:
-                        self._audio_bus.feed_pcm(data)
-                except BlockingIOError:
-                    # No data available yet (non-blocking)
-                    await asyncio.sleep(0.02)
-                except OSError:
-                    # Pipe broken or removed
-                    break
+                data = await loop.run_in_executor(None, os.read, fd, CHUNK_SIZE)
+                if not data:
+                    await asyncio.sleep(0.05)
+                    continue
+                if self._audio_bus:
+                    self._audio_bus.feed_pcm(data)
         except asyncio.CancelledError:
             return
+        except OSError as exc:
+            log.debug("Guild %d: pipe reader OSError: %s", self.guild_id, exc)
         except Exception:
             log.debug(
                 "Guild %d: pipe reader error", self.guild_id, exc_info=True

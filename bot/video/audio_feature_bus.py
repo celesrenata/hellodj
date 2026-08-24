@@ -113,11 +113,12 @@ class AudioFeatureBus:
                 await self._stop_processing()
 
     def feed_pcm(self, pcm_data: bytes) -> None:
-        """Feed raw PCM data (16-bit signed LE, mono, 48kHz) into the bus.
+        """Feed raw PCM data (16-bit signed LE, 48kHz) into the bus.
 
-        Called from voice_recv worker thread via run_coroutine_threadsafe or
-        directly if already on the event loop. Non-blocking — drops data if
-        the queue is full (backpressure).
+        Accepts mono or interleaved stereo — the FFT analysis treats all
+        samples uniformly for frequency/beat detection regardless of channel
+        layout. Called from the pipe reader task or voice_recv worker thread.
+        Non-blocking — drops data if the queue is full (backpressure).
         """
         if not self._running:
             return
