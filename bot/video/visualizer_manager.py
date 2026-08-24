@@ -726,63 +726,64 @@ class VisualizerManager:
             )
 
         # 2. Audio pipe: Lavalink PCM → visualizer HLS audio mux.
-        # The FIFO is "primed" with O_RDWR so FFmpeg won't block on open.
-        # If Lavalink has no active player, we still create the pipe (video-only
-        # until a track starts), and enable_pipe is called after FFmpeg starts.
+        # We attempt to enable the Lavalink pipe BEFORE starting FFmpeg.
+        # Only if it succeeds do we include the audio input in FFmpeg's command.
+        # This avoids FFmpeg stalling when it has a mapped audio input with no data.
         audio_pipe_path: str | None = None
+        pipe_enabled = False
+
         self._pipe_session = AudioPipeSession(self.guild_id, "viz")
         pipe_ok = await self._pipe_session.start()
         if pipe_ok:
-            audio_pipe_path = self._pipe_session.ffmpeg_input_path
-            log.info(
-                "Guild %d: audio pipe created for visualizer: %s",
-                self.guild_id,
-                audio_pipe_path,
-            )
-        else:
-            log.warning(
-                "Guild %d: audio pipe creation failed — visualizer will have no audio",
-                self.guild_id,
-            )
-            self._pipe_session = None
-
-        # 3. Create HLS pipeline in visualizer mode (with audio pipe if available)
-        self._pipeline = HLSTranscodePipeline(
-            guild_id=self.guild_id,
-            session_id="viz",  # Overridden by start_visualizer()
-        )
-        await self._pipeline.start_visualizer(audio_pipe_path=audio_pipe_path)
-        log.debug(
-            "Guild %d: HLS visualizer pipeline started", self.guild_id
-        )
-
-        # 4. Enable Lavalink audio pipe (best effort).
-        # FFmpeg won't block because the FIFO is primed with O_RDWR.
-        # If no player is active, enable_pipe fails gracefully and the
-        # visualizer runs with silence on the audio track until a track starts.
-        if audio_pipe_path and self._pipe_session:
+            # Try to enable the Lavalink pipe. The FIFO is primed with O_RDWR
+            # so Lavalink's open(O_WRONLY) won't block.
             player_active = await self._pipe_client.is_player_active(self.guild_id)
             if player_active:
                 pipe_enabled = await self._pipe_client.enable_pipe(
-                    self.guild_id, audio_pipe_path
+                    self.guild_id, self._pipe_session.ffmpeg_input_path
                 )
                 if pipe_enabled:
+                    audio_pipe_path = self._pipe_session.ffmpeg_input_path
                     log.info(
-                        "Guild %d: Lavalink audio pipe enabled for visualizer",
+                        "Guild %d: audio pipe enabled for visualizer: %s",
                         self.guild_id,
+                        audio_pipe_path,
                     )
                 else:
-                    log.warning(
-                        "Guild %d: Lavalink audio pipe enable failed — "
-                        "visualizer audio will be silent until next track",
+                    log.info(
+                        "Guild %d: audio pipe enable failed — video-only visualizer",
                         self.guild_id,
                     )
             else:
                 log.info(
-                    "Guild %d: no active Lavalink player — "
-                    "visualizer audio will activate when music starts",
+                    "Guild %d: no active player — video-only visualizer",
                     self.guild_id,
                 )
+        else:
+            log.warning(
+                "Guild %d: audio pipe creation failed — video-only visualizer",
+                self.guild_id,
+            )
+            self._pipe_session = None
+
+        # If pipe wasn't enabled, clean up the session (no point keeping FIFO open)
+        if not pipe_enabled and self._pipe_session:
+            await self._pipe_session.stop()
+            self._pipe_session = None
+
+        # 3. Create HLS pipeline in visualizer mode
+        self._pipeline = HLSTranscodePipeline(
+            guild_id=self.guild_id,
+            session_id="viz",
+        )
+        await self._pipeline.start_visualizer(audio_pipe_path=audio_pipe_path)
+        log.debug(
+            "Guild %d: HLS visualizer pipeline started (audio=%s)",
+            self.guild_id,
+            bool(audio_pipe_path),
+        )
+
+        # 4. (Lavalink pipe already enabled in step 2 if applicable)
 
         # 5. Start the render loop task
         self._render_task = asyncio.create_task(
