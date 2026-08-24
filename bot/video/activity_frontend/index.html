@@ -7,12 +7,17 @@
     <title>HelloDJ Video</title>
     <link rel="stylesheet" href="static/style.css?v=29">
     <link rel="stylesheet" href="static/search_panel.css?v=1">
+    <link rel="stylesheet" href="static/menu_styles.css?v=1">
     <script src="static/hls.min.js"></script>
     <script src="static/whiteboard-bundle.js?v=13"></script>
     <script src="static/search_panel.js?v=1"></script>
+    <script type="module" src="static/menu_panel.js?v=1"></script>
     <script type="module" src="static/app.js?v=67"></script>
 </head>
 <body>
+    <!-- Visualizer menu panel container (positioned fixed, rendered by menu_panel.js) -->
+    <div id="visualizer-menu-container"></div>
+
     <div id="app">
         <!-- Whiteboard HUD — above video as a flow element -->
         <div class="whiteboard-hud" id="whiteboard-hud">
@@ -144,6 +149,19 @@
                         <button class="ctrl-btn" id="btn-lyrics" title="Toggle lyrics" data-active="false">🎤</button>
                         <button class="ctrl-btn" id="btn-whiteboard" title="Whiteboard" data-active="false">🖌️</button>
                         <button class="ctrl-btn" id="btn-search" title="Search" data-active="false">🔍</button>
+                        <button class="ctrl-btn menu-toggle" id="menu-toggle" aria-label="Open visualizer menu" title="Visualizer Menu" data-active="false">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <line x1="4" y1="21" x2="4" y2="14"/>
+                                <line x1="4" y1="10" x2="4" y2="3"/>
+                                <line x1="12" y1="21" x2="12" y2="12"/>
+                                <line x1="12" y1="8" x2="12" y2="3"/>
+                                <line x1="20" y1="21" x2="20" y2="16"/>
+                                <line x1="20" y1="12" x2="20" y2="3"/>
+                                <line x1="1" y1="14" x2="7" y2="14"/>
+                                <line x1="9" y1="8" x2="15" y2="8"/>
+                                <line x1="17" y1="16" x2="23" y2="16"/>
+                            </svg>
+                        </button>
                         <div class="volume-group">
                             <button class="ctrl-btn" id="btn-mute" title="Mute">🔊</button>
                             <input type="range" id="volume-slider" class="volume-slider" min="0" max="100" value="80">

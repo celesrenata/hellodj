@@ -42,6 +42,11 @@ _MODULES_DIR = Path(__file__).parent / "activity"
 _ALLOWED_STATIC_FILES = {
     "app.js", "style.css", "discord-sdk.js", "hls.min.js",
     "whiteboard-bundle.js",
+    # Search panel
+    "search_panel.js", "search_panel.css",
+    # Visualizer menu system
+    "menu_styles.css", "menu_panel.js", "engine_selector.js",
+    "preset_browser.js", "settings_panel.js", "save_preset_modal.js",
     # Individual whiteboard modules (kept for direct access/debugging)
     "canvas_resize.js", "color_picker.js", "controls_passthrough.js",
     "coords.js", "eraser_tool.js", "hittest.js", "line_tool.js",

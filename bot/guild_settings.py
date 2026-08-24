@@ -12,6 +12,7 @@ Shape of data/guild_settings.json:
 import json
 import logging
 import os
+import re
 
 log = logging.getLogger(__name__)
 
@@ -286,6 +287,114 @@ def load_visualizer_preset(guild_id: int, name: str) -> dict | None:
 
     # Fall back to factory presets
     return get_factory_preset(name)
+
+
+# ---------------------------------------------------------------------------
+# User preset management (engine-filtered, name-validated)
+# ---------------------------------------------------------------------------
+
+# Regex pattern for valid preset names: 1-50 chars, alphanumeric + hyphens + spaces
+_PRESET_NAME_PATTERN = re.compile(r"^[a-zA-Z0-9 -]{1,50}$")
+
+
+def validate_preset_name(name: str) -> bool:
+    """Validate a preset name against the allowed pattern.
+
+    Valid names are 1–50 characters containing only alphanumeric
+    characters, hyphens, and spaces.
+
+    Args:
+        name: The preset name to validate.
+
+    Returns:
+        True if the name matches the pattern, False otherwise.
+    """
+    if not isinstance(name, str):
+        return False
+    return _PRESET_NAME_PATTERN.match(name) is not None
+
+
+def get_user_presets(guild_id: int, engine: str) -> dict:
+    """Return user-saved presets for a guild filtered by engine.
+
+    Only returns presets where the stored ``engine`` field matches the
+    requested engine.
+
+    Args:
+        guild_id: The guild to retrieve presets for.
+        engine: Engine name to filter by (e.g. "audiovis", "varda").
+
+    Returns:
+        Dict mapping preset names to their preset data for the given engine.
+    """
+    all_presets = get_visualizer_presets(guild_id)
+    return {
+        name: data
+        for name, data in all_presets.items()
+        if isinstance(data, dict) and data.get("engine") == engine
+    }
+
+
+def save_user_preset(guild_id: int, name: str, engine: str, config: dict) -> None:
+    """Save a named user preset with name validation.
+
+    Validates the preset name format before persisting. The stored
+    preset data includes ``engine``, ``config``, and ``factory: False``.
+
+    Args:
+        guild_id: The guild to save in.
+        name: Preset name (must match ``^[a-zA-Z0-9 -]{1,50}$``).
+        engine: Engine identifier (e.g. "audiovis").
+        config: Engine configuration dict.
+
+    Raises:
+        ValueError: If the preset name is invalid.
+    """
+    if not validate_preset_name(name):
+        raise ValueError(
+            f"Invalid preset name '{name}'. "
+            "Preset name must be 1-50 characters (alphanumeric, hyphens, spaces)."
+        )
+
+    preset_data = {
+        "engine": engine,
+        "config": dict(config) if config else {},
+        "factory": False,
+    }
+    save_visualizer_preset(guild_id, name, preset_data)
+
+
+def delete_user_preset(guild_id: int, name: str) -> None:
+    """Delete a user preset with factory-preset protection.
+
+    Prevents deletion of factory presets and raises if the preset does
+    not exist in the guild's user presets.
+
+    Args:
+        guild_id: The guild to delete from.
+        name: Preset name to remove.
+
+    Raises:
+        ValueError: If the preset is a factory preset or does not exist.
+    """
+    from video.visualizer_engines.factory_presets import is_factory_preset
+
+    if is_factory_preset(name):
+        raise ValueError(
+            f"Cannot delete factory preset '{name}'. "
+            "Factory presets are immutable."
+        )
+
+    guild_data = _settings.get(guild_id)
+    if guild_data is None:
+        raise ValueError(f"Preset '{name}' not found")
+
+    presets = guild_data.get("visualizer_presets")
+    if presets is None or name not in presets:
+        raise ValueError(f"Preset '{name}' not found")
+
+    del presets[name]
+    save()
 
 
 # ---------------------------------------------------------------------------

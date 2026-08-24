@@ -5,6 +5,7 @@
  * scrubber with drag-to-seek, WebSocket sync, and auto-hiding UI.
  */
 import { DiscordSDK } from './discord-sdk.js';
+import { VisualizerMenu } from './menu_panel.js';
 
 /**
  * ClockSync — Manages the monotonic clock sync handshake with the server.
@@ -757,6 +758,7 @@ function stopDriftChecker() {
   let _wsIntentionalClose = false;
   let _whiteboardSync = null; // Whiteboard WebSocket sync handler
   let _searchPanel = null; // Search panel instance
+  let _visualizerMenu = null; // Visualizer menu panel instance
 
   // --- Clock Sync State (module-scope within IIFE) ---
   let clockSync = null;          // Current ClockSync instance
@@ -842,6 +844,14 @@ function stopDriftChecker() {
       }, 5000);
 
       _hasConnectedBefore = true;
+
+      // Re-enable menu on reconnect and re-sync if menu is open
+      if (_visualizerMenu) {
+        _visualizerMenu.setDisconnected(false);
+        if (_visualizerMenu.isOpen) {
+          wsSend({ type: 'menu_init' });
+        }
+      }
     });
 
     ws.addEventListener('message', (event) => {
@@ -867,7 +877,11 @@ function stopDriftChecker() {
       if (clockSync && !clockSync.synced && _syncTimeout) {
         const timeCritical = ['countdown', 'start', 'session_end', 'session_change',
                              'visualizer', 'track_change', 'lyrics_data', 'lyrics_unavailable',
-                             'lyrics_overlay_enable', 'lyrics_overlay_disable'];
+                             'lyrics_overlay_enable', 'lyrics_overlay_disable',
+                             'menu_init_response', 'presets_list_response', 'settings_schema_response',
+                             'engine_switch_ack', 'preset_apply_ack', 'setting_change_ack',
+                             'preset_save_ack', 'preset_delete_ack', 'visualizer_state',
+                             'preset_added', 'preset_removed'];
         if (!timeCritical.includes(data.type)) {
           // Queue state/play/pause/seek messages until sync completes
           _syncQueue.push(data);
@@ -882,6 +896,8 @@ function stopDriftChecker() {
       console.log('[HelloDJ] WebSocket closed');
       // Stop drift checker on disconnect (will restart after reconnect + sync)
       stopDriftChecker();
+      // Notify menu of disconnection
+      if (_visualizerMenu) _visualizerMenu.setDisconnected(true);
       if (!_wsIntentionalClose) {
         // Reconnect after 3s — preserve video element and HLS session
         _wsReconnectTimer = setTimeout(connectWebSocket, 3000);
@@ -924,6 +940,11 @@ function stopDriftChecker() {
 
     // Forward search-related messages to search panel
     if (_searchPanel && _searchPanel.handleMessage(data)) {
+      return;
+    }
+
+    // Forward menu-related messages to visualizer menu panel
+    if (_visualizerMenu && _visualizerMenu.handleMessage(data)) {
       return;
     }
 
@@ -1505,6 +1526,19 @@ function stopDriftChecker() {
   document.addEventListener('keydown', (e) => {
     // Don't handle keys when typing in an input
     if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+
+    // When menu is open, let the menu handle its own keys (Escape, Tab, arrows)
+    // and suppress app-level shortcuts that could conflict with focus trap
+    if (_visualizerMenu && _visualizerMenu.isOpen) {
+      // Escape closes menu and returns focus to toggle button
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        _visualizerMenu.close();
+        const menuToggle = document.getElementById('menu-toggle');
+        if (menuToggle) menuToggle.focus();
+      }
+      return;
+    }
 
     switch (e.key) {
       case ' ':
@@ -2157,6 +2191,30 @@ function stopDriftChecker() {
     btnSearch.addEventListener('click', () => {
       _searchPanel.toggle();
       btnSearch.dataset.active = _searchPanel.active ? 'true' : 'false';
+    });
+  }
+
+  // --- Visualizer Menu Initialization ---
+  const menuContainer = document.getElementById('visualizer-menu-container');
+  const menuToggle = document.getElementById('menu-toggle');
+
+  if (menuContainer && menuToggle) {
+    _visualizerMenu = new VisualizerMenu(
+      menuContainer,
+      (msg) => wsSend(msg),
+      () => {
+        // onClose callback — update toggle button state and return focus
+        menuToggle.dataset.active = 'false';
+        menuToggle.setAttribute('aria-label', 'Open visualizer menu');
+        menuToggle.focus();
+      }
+    );
+
+    menuToggle.addEventListener('click', () => {
+      _visualizerMenu.toggle();
+      const isOpen = _visualizerMenu.isOpen;
+      menuToggle.dataset.active = isOpen ? 'true' : 'false';
+      menuToggle.setAttribute('aria-label', isOpen ? 'Close visualizer menu' : 'Open visualizer menu');
     });
   }
 })();

@@ -368,3 +368,175 @@ class TestExistingSettingsUnaffected:
         assert guild_settings.get_guild_mode(guild_id) == "allow_all"
         presets = guild_settings.get_visualizer_presets(guild_id)
         assert "test" in presets
+
+
+# ---------------------------------------------------------------------------
+# validate_preset_name
+# ---------------------------------------------------------------------------
+
+
+class TestValidatePresetName:
+    """Test validate_preset_name regex validation."""
+
+    def test_valid_simple_name(self):
+        assert guild_settings.validate_preset_name("my-preset") is True
+
+    def test_valid_with_spaces(self):
+        assert guild_settings.validate_preset_name("my cool preset") is True
+
+    def test_valid_alphanumeric(self):
+        assert guild_settings.validate_preset_name("Preset123") is True
+
+    def test_valid_single_char(self):
+        assert guild_settings.validate_preset_name("a") is True
+
+    def test_valid_50_chars(self):
+        assert guild_settings.validate_preset_name("a" * 50) is True
+
+    def test_invalid_empty_string(self):
+        assert guild_settings.validate_preset_name("") is False
+
+    def test_invalid_51_chars(self):
+        assert guild_settings.validate_preset_name("a" * 51) is False
+
+    def test_invalid_special_chars(self):
+        assert guild_settings.validate_preset_name("hello@world") is False
+
+    def test_invalid_underscore(self):
+        assert guild_settings.validate_preset_name("under_score") is False
+
+    def test_invalid_newline(self):
+        assert guild_settings.validate_preset_name("line\nbreak") is False
+
+    def test_invalid_non_string(self):
+        assert guild_settings.validate_preset_name(123) is False  # type: ignore
+        assert guild_settings.validate_preset_name(None) is False  # type: ignore
+
+    def test_valid_hyphens_and_spaces_mixed(self):
+        assert guild_settings.validate_preset_name("Chill Bars - v2") is True
+
+
+# ---------------------------------------------------------------------------
+# get_user_presets
+# ---------------------------------------------------------------------------
+
+
+class TestGetUserPresets:
+    """Test get_user_presets filters by engine."""
+
+    def test_returns_empty_when_no_presets(self, guild_id):
+        result = guild_settings.get_user_presets(guild_id, "audiovis")
+        assert result == {}
+
+    def test_filters_by_engine(self, guild_id):
+        guild_settings.save_visualizer_preset(
+            guild_id, "bars-glow", {"engine": "audiovis", "config": {"style": "bars"}, "factory": False}
+        )
+        guild_settings.save_visualizer_preset(
+            guild_id, "plasma-fast", {"engine": "varda", "config": {"speed": 2.0}, "factory": False}
+        )
+
+        audiovis_presets = guild_settings.get_user_presets(guild_id, "audiovis")
+        assert "bars-glow" in audiovis_presets
+        assert "plasma-fast" not in audiovis_presets
+
+        varda_presets = guild_settings.get_user_presets(guild_id, "varda")
+        assert "plasma-fast" in varda_presets
+        assert "bars-glow" not in varda_presets
+
+    def test_returns_empty_for_engine_with_no_presets(self, guild_id):
+        guild_settings.save_visualizer_preset(
+            guild_id, "test", {"engine": "dvd", "config": {}, "factory": False}
+        )
+        result = guild_settings.get_user_presets(guild_id, "fosfora")
+        assert result == {}
+
+    def test_returns_empty_for_unknown_guild(self):
+        result = guild_settings.get_user_presets(999999, "audiovis")
+        assert result == {}
+
+
+# ---------------------------------------------------------------------------
+# save_user_preset
+# ---------------------------------------------------------------------------
+
+
+class TestSaveUserPreset:
+    """Test save_user_preset with name validation."""
+
+    def test_saves_valid_preset(self, guild_id):
+        guild_settings.save_user_preset(
+            guild_id, "chill-bars", "audiovis", {"style": "bars", "glow_intensity": 0.3}
+        )
+        presets = guild_settings.get_visualizer_presets(guild_id)
+        assert "chill-bars" in presets
+        assert presets["chill-bars"]["engine"] == "audiovis"
+        assert presets["chill-bars"]["config"]["style"] == "bars"
+        assert presets["chill-bars"]["factory"] is False
+
+    def test_invalid_name_raises_valueerror(self, guild_id):
+        with pytest.raises(ValueError, match="Invalid preset name"):
+            guild_settings.save_user_preset(guild_id, "bad@name!", "audiovis", {})
+
+    def test_empty_name_raises_valueerror(self, guild_id):
+        with pytest.raises(ValueError, match="Invalid preset name"):
+            guild_settings.save_user_preset(guild_id, "", "audiovis", {})
+
+    def test_too_long_name_raises_valueerror(self, guild_id):
+        with pytest.raises(ValueError, match="Invalid preset name"):
+            guild_settings.save_user_preset(guild_id, "x" * 51, "audiovis", {})
+
+    def test_stores_factory_false(self, guild_id):
+        guild_settings.save_user_preset(guild_id, "test", "dvd", {"speed": 2.0})
+        presets = guild_settings.get_visualizer_presets(guild_id)
+        assert presets["test"]["factory"] is False
+
+    def test_config_is_copied(self, guild_id):
+        original_config = {"style": "bars"}
+        guild_settings.save_user_preset(guild_id, "test", "audiovis", original_config)
+        # Mutating original shouldn't affect stored
+        original_config["injected"] = True
+        presets = guild_settings.get_visualizer_presets(guild_id)
+        assert "injected" not in presets["test"]["config"]
+
+    def test_persists_to_disk(self, guild_id, tmp_path):
+        guild_settings.save_user_preset(guild_id, "saved", "varda", {"speed": 1.0})
+        guild_settings.load()
+        presets = guild_settings.get_visualizer_presets(guild_id)
+        assert "saved" in presets
+
+
+# ---------------------------------------------------------------------------
+# delete_user_preset
+# ---------------------------------------------------------------------------
+
+
+class TestDeleteUserPreset:
+    """Test delete_user_preset with factory protection."""
+
+    def test_deletes_existing_user_preset(self, guild_id):
+        guild_settings.save_user_preset(guild_id, "temp", "dvd", {"speed": 1.0})
+        guild_settings.delete_user_preset(guild_id, "temp")
+        presets = guild_settings.get_visualizer_presets(guild_id)
+        assert "temp" not in presets
+
+    def test_factory_preset_raises_valueerror(self, guild_id):
+        with pytest.raises(ValueError, match="Cannot delete factory preset"):
+            guild_settings.delete_user_preset(guild_id, "neon-city")
+
+    def test_nonexistent_preset_raises_valueerror(self, guild_id):
+        with pytest.raises(ValueError, match="not found"):
+            guild_settings.delete_user_preset(guild_id, "ghost")
+
+    def test_no_guild_data_raises_valueerror(self):
+        with pytest.raises(ValueError, match="not found"):
+            guild_settings.delete_user_preset(999999, "anything")
+
+    def test_other_presets_unaffected(self, guild_id):
+        guild_settings.save_user_preset(guild_id, "keep", "audiovis", {"style": "bars"})
+        guild_settings.save_user_preset(guild_id, "remove", "varda", {"speed": 1.0})
+        guild_settings.delete_user_preset(guild_id, "remove")
+
+        presets = guild_settings.get_visualizer_presets(guild_id)
+        assert "keep" in presets
+        assert "remove" not in presets

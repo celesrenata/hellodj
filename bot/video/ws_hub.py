@@ -502,6 +502,32 @@ class WebSocketHub:
             asyncio.ensure_future(self._handle_search_enqueue(guild_id, sender, data))
             return
 
+        # Menu system message dispatch
+        if msg_type == "menu_init":
+            asyncio.ensure_future(self._handle_menu_init(guild_id, sender, data))
+            return
+        if msg_type == "presets_list":
+            asyncio.ensure_future(self._handle_presets_list(guild_id, sender, data))
+            return
+        if msg_type == "settings_schema":
+            asyncio.ensure_future(self._handle_settings_schema(guild_id, sender, data))
+            return
+        if msg_type == "engine_switch":
+            asyncio.ensure_future(self._handle_engine_switch(guild_id, sender, data))
+            return
+        if msg_type == "preset_apply":
+            asyncio.ensure_future(self._handle_preset_apply(guild_id, sender, data))
+            return
+        if msg_type == "setting_change":
+            asyncio.ensure_future(self._handle_setting_change(guild_id, sender, data))
+            return
+        if msg_type == "preset_save":
+            asyncio.ensure_future(self._handle_preset_save(guild_id, sender, data))
+            return
+        if msg_type == "preset_delete":
+            asyncio.ensure_future(self._handle_preset_delete(guild_id, sender, data))
+            return
+
         if msg_type not in ("play", "pause", "seek", "subtitle_change", "audio_change"):
             return
 
@@ -803,6 +829,88 @@ class WebSocketHub:
                 log.info("WS seek: seeked audio to %.1fs for guild %d", position, guild_id)
         except Exception as exc:
             log.warning("WS audio seek failed for guild %d: %s", guild_id, exc)
+
+    # ------------------------------------------------------------------
+    # Menu protocol handlers
+    # ------------------------------------------------------------------
+
+    async def _handle_menu_init(
+        self, guild_id: int, ws: web.WebSocketResponse, data: dict
+    ) -> None:
+        """Respond with engine list, metadata, and current active state.
+
+        Returns a menu_init_response containing all available engines from
+        ENGINE_METADATA, the guild's active engine, and the active preset
+        name (if any).
+
+        Requirements: 5.1, 10.1
+        """
+        from video.visualizer_engines.engine_metadata import ENGINE_METADATA
+        import guild_settings
+
+        # Build engine list with id included
+        engines = []
+        for engine_id, meta in ENGINE_METADATA.items():
+            engines.append({"id": engine_id, **meta})
+
+        # Get active engine from guild settings
+        active_engine = guild_settings.get_visualizer_engine(guild_id)
+
+        # Get active preset name (stored in guild settings if any)
+        active_preset = guild_settings.get_setting(guild_id, "active_preset")
+
+        response = {
+            "type": "menu_init_response",
+            "engines": engines,
+            "active_engine": active_engine,
+            "active_preset": active_preset,
+        }
+
+        try:
+            await ws.send_json(response)
+        except (ConnectionResetError, RuntimeError):
+            pass
+
+    async def _handle_settings_schema(
+        self, guild_id: int, ws: web.WebSocketResponse, data: dict
+    ) -> None:
+        """Respond with engine config schema + current values.
+
+        Validates the requested engine exists, then builds an enriched schema
+        using build_settings_schema merged with the guild's current config.
+
+        Requirements: 4.1, 4.2, 4.6, 10.3
+        """
+        from video.visualizer_engines.engine_metadata import ENGINE_METADATA, build_settings_schema
+        import guild_settings
+
+        engine = data.get("engine")
+        if not engine or engine not in ENGINE_METADATA:
+            valid = ", ".join(ENGINE_METADATA.keys())
+            try:
+                await ws.send_json({
+                    "type": "settings_schema_response",
+                    "success": False,
+                    "error": f"Unknown engine '{engine}'. Valid: {valid}",
+                })
+            except (ConnectionResetError, RuntimeError):
+                pass
+            return
+
+        # Get the guild's current config for this engine
+        guild_config = guild_settings.get_visualizer_config(guild_id, engine)
+
+        # Build enriched schema with current values
+        settings = build_settings_schema(engine, guild_config)
+
+        try:
+            await ws.send_json({
+                "type": "settings_schema_response",
+                "engine": engine,
+                "settings": settings,
+            })
+        except (ConnectionResetError, RuntimeError):
+            pass
 
     # ------------------------------------------------------------------
     # Search protocol handlers
@@ -1137,3 +1245,488 @@ class WebSocketHub:
             "fallback": "dvd",
         }
         await self.broadcast(guild_id, error_msg)
+
+    # ------------------------------------------------------------------
+    # Menu system handlers
+    # ------------------------------------------------------------------
+
+    async def _handle_presets_list(
+        self, guild_id: int, ws: web.WebSocketResponse, data: dict
+    ) -> None:
+        """Respond with factory + user presets for requested engine.
+
+        Validates the engine exists, then returns all factory presets filtered
+        by engine plus user presets from guild settings. Each preset includes
+        generated metadata tags.
+
+        Requirements: 3.1, 10.2
+        """
+        from video.visualizer_engines.engine_metadata import (
+            ENGINE_METADATA,
+            generate_preset_tags,
+        )
+        from video.visualizer_engines.factory_presets import list_factory_presets
+        import guild_settings
+
+        engine = data.get("engine")
+        if not engine or engine not in ENGINE_METADATA:
+            valid = ", ".join(ENGINE_METADATA.keys())
+            try:
+                await ws.send_json({
+                    "type": "presets_list_response",
+                    "success": False,
+                    "error": f"Unknown engine '{engine}'. Valid: {valid}",
+                })
+            except (ConnectionResetError, RuntimeError):
+                pass
+            return
+
+        # Get factory presets filtered by engine
+        factory_raw = list_factory_presets(engine)
+        factory_presets = []
+        for name, preset_data in factory_raw.items():
+            config = preset_data.get("config", {})
+            tags = generate_preset_tags(config)
+            factory_presets.append({
+                "name": name,
+                "engine": engine,
+                "factory": True,
+                "config": config,
+                "tags": tags,
+            })
+
+        # Get user presets filtered by engine
+        user_raw = guild_settings.get_user_presets(guild_id, engine)
+        user_presets = []
+        for name, preset_data in user_raw.items():
+            config = preset_data.get("config", {})
+            tags = generate_preset_tags(config)
+            user_presets.append({
+                "name": name,
+                "engine": engine,
+                "factory": False,
+                "config": config,
+                "tags": tags,
+            })
+
+        try:
+            await ws.send_json({
+                "type": "presets_list_response",
+                "engine": engine,
+                "factory_presets": factory_presets,
+                "user_presets": user_presets,
+            })
+        except (ConnectionResetError, RuntimeError):
+            pass
+
+    async def _handle_settings_schema(
+        self, guild_id: int, ws: web.WebSocketResponse, data: dict
+    ) -> None:
+        """Respond with engine config schema + current values."""
+        try:
+            pass  # Implementation in task 2.3
+        except (ValueError, KeyError) as e:
+            await self._send_menu_error(ws, "settings_schema", data, e)
+
+    async def _handle_engine_switch(
+        self, guild_id: int, ws: web.WebSocketResponse, data: dict
+    ) -> None:
+        """Validate engine, delegate to VisualizerManager, broadcast result.
+
+        Accepts {engine: string, request_id: string}, validates the engine
+        exists in ENGINE_METADATA, persists the choice via guild_settings,
+        clears the active preset, and broadcasts the new visualizer_state
+        to all connected clients.
+
+        Requirements: 2.4, 2.5, 5.3, 10.4
+        """
+        from video.visualizer_engines.engine_metadata import ENGINE_METADATA
+        import guild_settings
+
+        engine = data.get("engine")
+        request_id = data.get("request_id")
+
+        if not engine or engine not in ENGINE_METADATA:
+            valid = ", ".join(ENGINE_METADATA.keys())
+            try:
+                await ws.send_json({
+                    "type": "engine_switch_ack",
+                    "request_id": request_id,
+                    "success": False,
+                    "error": f"Unknown engine '{engine}'. Valid: {valid}",
+                })
+            except (ConnectionResetError, RuntimeError):
+                pass
+            return
+
+        try:
+            # Persist engine choice in guild settings
+            guild_settings.set_visualizer_engine(guild_id, engine)
+
+            # Clear active preset (presets are engine-specific)
+            guild_settings.set_setting(guild_id, "active_preset", None)
+
+            # Send ack to requesting client
+            await ws.send_json({
+                "type": "engine_switch_ack",
+                "request_id": request_id,
+                "success": True,
+                "engine": engine,
+            })
+
+            # Broadcast visualizer_state to all connected clients
+            guild_config = guild_settings.get_visualizer_config(guild_id, engine)
+            await self.broadcast(guild_id, {
+                "type": "visualizer_state",
+                "engine": engine,
+                "preset": None,
+                "config": guild_config,
+            })
+
+        except Exception as e:
+            try:
+                await ws.send_json({
+                    "type": "engine_switch_ack",
+                    "request_id": request_id,
+                    "success": False,
+                    "error": str(e),
+                })
+            except (ConnectionResetError, RuntimeError):
+                pass
+
+    async def _handle_preset_apply(
+        self, guild_id: int, ws: web.WebSocketResponse, data: dict
+    ) -> None:
+        """Validate preset, apply config via guild_settings, broadcast."""
+        import guild_settings
+
+        preset_name = data.get("preset_name")
+        request_id = data.get("request_id")
+
+        if not preset_name:
+            try:
+                await ws.send_json({
+                    "type": "preset_apply_ack",
+                    "request_id": request_id,
+                    "success": False,
+                    "error": "Missing preset_name",
+                })
+            except (ConnectionResetError, RuntimeError):
+                pass
+            return
+
+        # Resolve preset (checks user presets first, then factory)
+        preset_data = guild_settings.load_visualizer_preset(guild_id, preset_name)
+        if preset_data is None:
+            try:
+                await ws.send_json({
+                    "type": "preset_apply_ack",
+                    "request_id": request_id,
+                    "success": False,
+                    "error": f"Preset '{preset_name}' not found",
+                })
+            except (ConnectionResetError, RuntimeError):
+                pass
+            return
+
+        try:
+            engine = preset_data.get("engine")
+            config = preset_data.get("config", {})
+
+            # Apply each setting from the preset config
+            for setting, value in config.items():
+                guild_settings.set_visualizer_config(guild_id, engine, setting, value)
+
+            # Switch engine if the preset targets a different one
+            current_engine = guild_settings.get_visualizer_engine(guild_id)
+            if engine and engine != current_engine:
+                guild_settings.set_visualizer_engine(guild_id, engine)
+
+            # Store the active preset name
+            guild_settings.set_setting(guild_id, "active_preset", preset_name)
+
+            # Send ack to requesting client
+            await ws.send_json({
+                "type": "preset_apply_ack",
+                "request_id": request_id,
+                "success": True,
+                "preset_name": preset_name,
+            })
+
+            # Broadcast visualizer_state to all connected clients
+            full_config = guild_settings.get_visualizer_config(guild_id, engine)
+            await self.broadcast(guild_id, {
+                "type": "visualizer_state",
+                "engine": engine,
+                "preset": preset_name,
+                "config": full_config,
+            })
+
+        except Exception as e:
+            try:
+                await ws.send_json({
+                    "type": "preset_apply_ack",
+                    "request_id": request_id,
+                    "success": False,
+                    "error": str(e),
+                })
+            except (ConnectionResetError, RuntimeError):
+                pass
+
+    async def _handle_setting_change(
+        self, guild_id: int, ws: web.WebSocketResponse, data: dict
+    ) -> None:
+        """Validate value against schema, persist, broadcast.
+
+        Accepts {setting: string, value: any, request_id: string}.
+        Validates the value against the engine's config schema (type, min/max),
+        persists via guild_settings, responds with setting_change_ack, and
+        broadcasts visualizer_state to all connected clients.
+
+        Requirements: 4.3, 4.4, 4.5, 5.3, 10.4
+        """
+        from video.visualizer_engines.config_schema import validate_config_value
+        import guild_settings
+
+        setting = data.get("setting")
+        value = data.get("value")
+        request_id = data.get("request_id")
+
+        if not setting:
+            try:
+                await ws.send_json({
+                    "type": "setting_change_ack",
+                    "request_id": request_id,
+                    "success": False,
+                    "error": "Missing setting name",
+                })
+            except (ConnectionResetError, RuntimeError):
+                pass
+            return
+
+        # Get the current engine for this guild
+        engine = guild_settings.get_visualizer_engine(guild_id)
+
+        try:
+            # Validate the value against the engine's config schema
+            # Raises ValueError for unknown engine/setting, out-of-range, etc.
+            validated_value = validate_config_value(engine, setting, value)
+
+            # Persist the setting
+            guild_settings.set_visualizer_config(guild_id, engine, setting, validated_value)
+
+            # Clear active_preset since manual changes invalidate preset match
+            guild_settings.set_setting(guild_id, "active_preset", None)
+
+            # Send ack to requesting client
+            await ws.send_json({
+                "type": "setting_change_ack",
+                "request_id": request_id,
+                "success": True,
+                "setting": setting,
+                "value": validated_value,
+            })
+
+            # Broadcast visualizer_state to all connected clients
+            full_config = guild_settings.get_visualizer_config(guild_id, engine)
+            await self.broadcast(guild_id, {
+                "type": "visualizer_state",
+                "engine": engine,
+                "preset": None,
+                "config": full_config,
+            })
+
+        except ValueError as e:
+            try:
+                await ws.send_json({
+                    "type": "setting_change_ack",
+                    "request_id": request_id,
+                    "success": False,
+                    "error": str(e),
+                })
+            except (ConnectionResetError, RuntimeError):
+                pass
+        except Exception as e:
+            try:
+                await ws.send_json({
+                    "type": "setting_change_ack",
+                    "request_id": request_id,
+                    "success": False,
+                    "error": str(e),
+                })
+            except (ConnectionResetError, RuntimeError):
+                pass
+
+    async def _handle_preset_save(
+        self, guild_id: int, ws: web.WebSocketResponse, data: dict
+    ) -> None:
+        """Validate name, save current config as user preset, broadcast."""
+        import guild_settings
+        from video.visualizer_engines.engine_metadata import generate_preset_tags
+
+        name = data.get("name")
+        request_id = data.get("request_id")
+
+        if not name:
+            try:
+                await ws.send_json({
+                    "type": "preset_save_ack",
+                    "request_id": request_id,
+                    "success": False,
+                    "error": "Missing preset name",
+                })
+            except (ConnectionResetError, RuntimeError):
+                pass
+            return
+
+        try:
+            # Get current engine and config
+            engine = guild_settings.get_visualizer_engine(guild_id)
+            config = guild_settings.get_visualizer_config(guild_id, engine)
+
+            # save_user_preset validates name format (raises ValueError if invalid)
+            guild_settings.save_user_preset(guild_id, name, engine, config)
+
+            # Store active_preset as the newly saved name
+            guild_settings.set_setting(guild_id, "active_preset", name)
+
+            # Build the preset object for the response
+            tags = generate_preset_tags(config)
+            preset_obj = {
+                "name": name,
+                "engine": engine,
+                "factory": False,
+                "config": config,
+                "tags": tags,
+            }
+
+            # Send ack to requesting client
+            await ws.send_json({
+                "type": "preset_save_ack",
+                "request_id": request_id,
+                "success": True,
+                "preset": preset_obj,
+            })
+
+            # Broadcast preset_added to all clients
+            await self.broadcast(guild_id, {
+                "type": "preset_added",
+                "engine": engine,
+                "preset": preset_obj,
+            })
+
+        except ValueError as e:
+            try:
+                await ws.send_json({
+                    "type": "preset_save_ack",
+                    "request_id": request_id,
+                    "success": False,
+                    "error": str(e),
+                })
+            except (ConnectionResetError, RuntimeError):
+                pass
+        except Exception as e:
+            try:
+                await ws.send_json({
+                    "type": "preset_save_ack",
+                    "request_id": request_id,
+                    "success": False,
+                    "error": str(e),
+                })
+            except (ConnectionResetError, RuntimeError):
+                pass
+
+    async def _handle_preset_delete(
+        self, guild_id: int, ws: web.WebSocketResponse, data: dict
+    ) -> None:
+        """Validate ownership (not factory), delete, broadcast."""
+        import guild_settings
+
+        name = data.get("name")
+        request_id = data.get("request_id")
+
+        if not name:
+            try:
+                await ws.send_json({
+                    "type": "preset_delete_ack",
+                    "request_id": request_id,
+                    "success": False,
+                    "error": "Missing preset name",
+                })
+            except (ConnectionResetError, RuntimeError):
+                pass
+            return
+
+        try:
+            # Get current engine for the broadcast
+            engine = guild_settings.get_visualizer_engine(guild_id)
+
+            # delete_user_preset raises ValueError for factory presets
+            # or if the preset doesn't exist
+            guild_settings.delete_user_preset(guild_id, name)
+
+            # If the deleted preset was the active one, clear it
+            active_preset = guild_settings.get_setting(guild_id, "active_preset")
+            if active_preset == name:
+                guild_settings.set_setting(guild_id, "active_preset", None)
+
+            # Send ack to requesting client
+            await ws.send_json({
+                "type": "preset_delete_ack",
+                "request_id": request_id,
+                "success": True,
+                "name": name,
+            })
+
+            # Broadcast preset_removed to all clients
+            await self.broadcast(guild_id, {
+                "type": "preset_removed",
+                "engine": engine,
+                "name": name,
+            })
+
+        except (ValueError, KeyError) as e:
+            try:
+                await ws.send_json({
+                    "type": "preset_delete_ack",
+                    "request_id": request_id,
+                    "success": False,
+                    "error": str(e),
+                })
+            except (ConnectionResetError, RuntimeError):
+                pass
+        except Exception as e:
+            try:
+                await ws.send_json({
+                    "type": "preset_delete_ack",
+                    "request_id": request_id,
+                    "success": False,
+                    "error": str(e),
+                })
+            except (ConnectionResetError, RuntimeError):
+                pass
+
+    async def _send_menu_error(
+        self,
+        ws: web.WebSocketResponse,
+        msg_type: str,
+        data: dict,
+        error: Exception,
+    ) -> None:
+        """Send a standardized error response for menu system messages.
+
+        Returns a response with success=false and the error description,
+        correlating with the request_id if present.
+        """
+        response = {
+            "type": f"{msg_type}_response",
+            "success": False,
+            "error": str(error),
+        }
+        request_id = data.get("request_id")
+        if request_id:
+            response["request_id"] = request_id
+        try:
+            await ws.send_json(response)
+        except (ConnectionResetError, RuntimeError):
+            pass
