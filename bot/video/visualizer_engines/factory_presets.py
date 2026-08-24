@@ -184,12 +184,12 @@ FACTORY_PRESETS: dict[str, dict[str, Any]] = {
     # --- varda presets (GLSL shaders) ---
     "fractal-zoom": {
         "engine": "varda",
-        "config": {"shader_name": "fractal-zoom", "speed": 0.5, "complexity": "high"},
+        "config": {"shader_name": "varda_kaleidoscope", "speed": 0.5, "complexity": "high"},
         "factory": True,
     },
     "tunnel": {
         "engine": "varda",
-        "config": {"shader_name": "tunnel", "speed": 1.5, "complexity": "medium"},
+        "config": {"shader_name": "varda_tunnel", "speed": 1.5, "complexity": "medium"},
         "factory": True,
     },
     "plasma": {
@@ -199,37 +199,37 @@ FACTORY_PRESETS: dict[str, dict[str, Any]] = {
     },
     "voronoi-pulse": {
         "engine": "varda",
-        "config": {"shader_name": "voronoi-pulse", "complexity": "high"},
+        "config": {"shader_name": "varda_voronoi", "complexity": "high"},
         "factory": True,
     },
     "raymarched-orbs": {
         "engine": "varda",
-        "config": {"shader_name": "raymarched-orbs", "speed": 0.75, "complexity": "high"},
+        "config": {"shader_name": "varda_rayorbs", "speed": 0.75, "complexity": "high"},
         "factory": True,
     },
     "kaleidoscope": {
         "engine": "varda",
-        "config": {"shader_name": "kaleidoscope", "speed": 1.5, "color_intensity": 1.5},
+        "config": {"shader_name": "varda_kaleidoscope", "speed": 1.5, "color_intensity": 1.5},
         "factory": True,
     },
     "neon-grid": {
         "engine": "varda",
-        "config": {"shader_name": "neon-grid", "speed": 1.0, "color_intensity": 1.3},
+        "config": {"shader_name": "varda_neon_grid", "speed": 1.0, "color_intensity": 1.3},
         "factory": True,
     },
     "star-field": {
         "engine": "varda",
-        "config": {"shader_name": "star-field", "speed": 2.0},
+        "config": {"shader_name": "varda_nebula", "speed": 2.0},
         "factory": True,
     },
     "liquid-metal": {
         "engine": "varda",
-        "config": {"shader_name": "liquid-metal", "speed": 0.5, "complexity": "high"},
+        "config": {"shader_name": "varda_liquid", "speed": 0.5, "complexity": "high"},
         "factory": True,
     },
     "cosmic-web": {
         "engine": "varda",
-        "config": {"shader_name": "cosmic-web", "complexity": "medium", "color_intensity": 1.1},
+        "config": {"shader_name": "varda_nebula", "complexity": "medium", "color_intensity": 1.1},
         "factory": True,
     },
     # --- dvd presets (client-side bounce) ---

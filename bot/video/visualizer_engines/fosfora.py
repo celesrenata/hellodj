@@ -387,7 +387,7 @@ class FosforaEngine(GPUEngineBase):
         self._set_uniform_float("u_time", elapsed, self._transform_program)
         self._set_uniform_int("u_emit_count", emit_count, self._transform_program)
         self._set_uniform_float(
-            "u_emit_speed", 2.0 + self._beat_pulse * 3.0, self._transform_program
+            "u_emit_speed", 3.0 + self._beat_pulse * 4.0, self._transform_program
         )
 
         # Set band energy uniform array
@@ -450,7 +450,7 @@ class FosforaEngine(GPUEngineBase):
         # Simple orthographic projection: map [-5, 5] to [-1, 1]
         # For simplicity, pass an identity-like projection
         self._set_uniform_mat4("u_projection", self._ortho_matrix())
-        self._set_uniform_float("u_point_size_base", 8.0, self._render_program)
+        self._set_uniform_float("u_point_size_base", 16.0, self._render_program)
         self._set_uniform_float(
             "u_trail_length", self._trail_length, self._render_program
         )
@@ -472,12 +472,21 @@ class FosforaEngine(GPUEngineBase):
     def _compute_emission_count(
         self, features: AudioFeatures | None, dt: float
     ) -> int:
-        """Compute how many particles to emit this frame."""
+        """Compute how many particles to emit this frame.
+
+        Always emits a baseline stream so the visualization is never fully
+        black — even before audio features arrive or between beats.
+        """
         emit = 0
         particle_count = min(self._particle_count, self.MAX_PARTICLES)
 
+        # Baseline emission: always emit a trickle so the viz is never blank.
+        # ~50 particles/sec regardless of audio state.
+        baseline_rate = 50.0
+        emit += int(baseline_rate * dt)
+
         if features is None:
-            return 0
+            return min(emit, particle_count)
 
         # Beat burst emission
         if self._emission_style in ("burst", "both"):
@@ -492,6 +501,12 @@ class FosforaEngine(GPUEngineBase):
             avg_energy = sum(features.band_energy) / 7.0
             # Base rate: ~100 particles/sec scaled by energy
             rate = 100.0 * (0.2 + avg_energy * 2.0)
+            emit += int(rate * dt)
+        elif self._emission_style == "burst":
+            # Even in burst mode, add energy-proportional emission so the
+            # viz isn't dead between beats. Lower rate than "continuous".
+            avg_energy = sum(features.band_energy) / 7.0
+            rate = 40.0 * (0.1 + avg_energy * 1.5)
             emit += int(rate * dt)
 
         # Cap to particle count

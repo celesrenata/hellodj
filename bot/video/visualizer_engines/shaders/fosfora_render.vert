@@ -28,8 +28,11 @@ void main() {
     gl_Position = u_projection * vec4(in_position, 1.0);
 
     // Point size scales with lifetime (bigger when fresh, shrinks as it dies)
-    float size_factor = smoothstep(0.0, 1.0, in_lifetime / 3.0);
-    gl_PointSize = u_point_size_base * (0.5 + size_factor * 1.5);
+    // Also scale with velocity for a sense of energy
+    float speed = length(in_velocity);
+    float size_factor = smoothstep(0.0, 1.0, in_lifetime / 3.5);
+    float speed_boost = 1.0 + clamp(speed * 0.1, 0.0, 1.0);
+    gl_PointSize = u_point_size_base * (0.5 + size_factor * 1.5) * speed_boost;
 
     v_color = in_color;
     v_lifetime = in_lifetime;

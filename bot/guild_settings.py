@@ -109,7 +109,7 @@ def set_guild_mode(guild_id: int, mode: str) -> None:
 # ---------------------------------------------------------------------------
 
 VALID_VISUALIZER_ENGINES: set[str] = {
-    "dvd", "projectm", "varda", "fosfora", "audiovis", "native", "random", "off",
+    "drift", "dvd", "projectm", "varda", "fosfora", "audiovis", "native", "random", "off",
 }
 
 DEFAULT_VISUALIZER_ENGINE: str = "dvd"

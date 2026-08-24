@@ -13,6 +13,7 @@ from typing import TYPE_CHECKING
 
 from .audiovis import AudioVisEngine
 from .base import AudioFeatures, TrackMetadata, VisualizerRenderer
+from .drift import DriftEngine
 from .dvd import DVDEngine
 from .fosfora import FosforaEngine
 from .native import NativeEngine
@@ -27,6 +28,7 @@ log = logging.getLogger(__name__)
 __all__ = [
     "AudioFeatures",
     "AudioVisEngine",
+    "DriftEngine",
     "DVDEngine",
     "FosforaEngine",
     "NativeEngine",
@@ -45,6 +47,7 @@ __all__ = [
 # to determine rendering strategy.
 ENGINE_REGISTRY: dict[str, type[VisualizerRenderer]] = {
     "audiovis": AudioVisEngine,
+    "drift": DriftEngine,
     "dvd": DVDEngine,
     "fosfora": FosforaEngine,
     "native": NativeEngine,
@@ -53,11 +56,11 @@ ENGINE_REGISTRY: dict[str, type[VisualizerRenderer]] = {
 }
 
 # Engines eligible for "random" mode selection (all GPU-accelerated engines).
-_RANDOM_POOL_ENGINES: list[str] = ["projectm", "audiovis", "fosfora", "varda"]
+_RANDOM_POOL_ENGINES: list[str] = ["drift", "projectm", "audiovis", "fosfora", "varda"]
 
 # Engines that require a GPU (server-rendered). When no GPU is detected,
 # these are excluded from the available set.
-_GPU_REQUIRED_ENGINES: set[str] = {"projectm", "audiovis", "fosfora", "varda", "native"}
+_GPU_REQUIRED_ENGINES: set[str] = {"drift", "projectm", "audiovis", "fosfora", "varda", "native"}
 
 
 def get_available_engines(*, gpu_available: bool | None = None) -> list[str]:

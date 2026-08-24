@@ -76,7 +76,7 @@ class VisualizerManager:
     # Engines eligible for "random" mode selection. Only includes engines that
     # are fully implemented (not stubs). Expand this list as new engines become
     # production-ready.
-    _RANDOM_POOL_ENGINES: list[str] = ["projectm", "audiovis", "fosfora", "varda"]
+    _RANDOM_POOL_ENGINES: list[str] = ["drift", "projectm", "audiovis", "fosfora", "varda"]
 
     def __init__(
         self,

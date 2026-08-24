@@ -137,13 +137,13 @@ def engine():
 
 @pytest.fixture
 def shader_dir(tmp_path):
-    """Create a temp shader directory with vertex and plasma shaders."""
+    """Create a temp shader directory with vertex and varda fragment shaders."""
     shader_path = tmp_path / "shaders"
     shader_path.mkdir()
     (shader_path / "varda_vertex.glsl").write_text(VERTEX_SHADER_SRC)
     (shader_path / "plasma.glsl").write_text(FRAGMENT_SHADER_SRC)
-    (shader_path / "tunnel.glsl").write_text(FRAGMENT_SHADER_SRC)
-    (shader_path / "star_field.glsl").write_text(FRAGMENT_SHADER_SRC)
+    (shader_path / "varda_tunnel.glsl").write_text(FRAGMENT_SHADER_SRC)
+    (shader_path / "varda_star_field.glsl").write_text(FRAGMENT_SHADER_SRC)
     return shader_path
 
 
@@ -195,10 +195,10 @@ class TestShaderLoading:
         engine._egl_ctx = mock_egl
         with patch("video.visualizer_engines.varda.SHADER_DIR", shader_dir):
             await engine._on_gl_ready(None)
-        # Should find plasma, tunnel, star_field (vertex excluded)
+        # Should find plasma, varda_tunnel, varda_star_field (vertex excluded)
         assert "plasma" in engine._shader_pool
-        assert "tunnel" in engine._shader_pool
-        assert "star_field" in engine._shader_pool
+        assert "varda_tunnel" in engine._shader_pool
+        assert "varda_star_field" in engine._shader_pool
         assert "varda_vertex" not in engine._shader_pool
 
     @pytest.mark.asyncio

@@ -437,8 +437,18 @@ class TestBeatEmission:
         engine = FosforaEngine(emission_style="burst")
         features = _make_features(beat=False, energy=0.8)
         emit = engine._compute_emission_count(features, 1.0 / 30)
-        # No beat + burst-only = no emission
-        assert emit == 0
+        # No beat in burst-only mode: still emits baseline + energy-proportional
+        # trickle so the visualization is never fully black
+        assert emit > 0
+
+    def test_burst_beat_emits_more_than_no_beat(self):
+        engine = FosforaEngine(emission_style="burst")
+        features_beat = _make_features(beat=True, energy=0.8)
+        features_no_beat = _make_features(beat=False, energy=0.8)
+        emit_beat = engine._compute_emission_count(features_beat, 1.0 / 30)
+        emit_no_beat = engine._compute_emission_count(features_no_beat, 1.0 / 30)
+        # Beat should produce significantly more emission than no-beat
+        assert emit_beat > emit_no_beat
 
     def test_continuous_only_style_no_burst(self):
         engine = FosforaEngine(emission_style="continuous")
@@ -481,10 +491,11 @@ class TestBandEnergyEmission:
         emit = engine._compute_emission_count(features, 10.0)
         assert emit <= 100
 
-    def test_none_features_zero_emission(self):
+    def test_none_features_baseline_emission(self):
         engine = FosforaEngine()
         emit = engine._compute_emission_count(None, 1.0 / 30)
-        assert emit == 0
+        # Even without features, baseline emission keeps viz alive
+        assert emit >= 1
 
 
 # ---------------------------------------------------------------------------

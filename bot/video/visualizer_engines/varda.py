@@ -186,13 +186,23 @@ class VardaEngine(GPUEngineBase):
     # ------------------------------------------------------------------
 
     def _discover_shaders(self) -> list[str]:
-        """List available .glsl fragment shaders (excluding vertex shader)."""
+        """List available Varda fragment shaders (varda_* prefix only).
+
+        Excludes AudioVis shaders to maintain visual distinction between engines.
+        Excludes vertex shaders (contain 'vert' in name).
+        """
         shaders = []
         shader_dir = SHADER_DIR
         if shader_dir.is_dir():
             for f in sorted(shader_dir.iterdir()):
-                if f.suffix == ".glsl" and "vertex" not in f.stem and "vert" not in f.stem:
+                if (f.suffix == ".glsl"
+                        and f.stem.startswith("varda_")
+                        and "vert" not in f.stem):
                     shaders.append(f.stem)
+        # Also include plasma.glsl as a Varda shader (it's the default)
+        plasma_path = shader_dir / "plasma.glsl"
+        if plasma_path.exists() and "plasma" not in shaders:
+            shaders.append("plasma")
         # Also check the data presets directory
         data_dir = Path("/app/data/presets/varda")
         if data_dir.is_dir():

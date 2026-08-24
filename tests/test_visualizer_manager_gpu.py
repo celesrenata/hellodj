@@ -239,11 +239,14 @@ class TestGPUReleaseOnSuspension:
         _gpu_scheduler.allocate(100, "projectm")
         mock_ws_hub.viewer_count.return_value = 0
 
+        # Shorten debounce for test speed
+        manager.SUSPENSION_DEBOUNCE_SECONDS = 0.2
+
         await manager.on_viewer_leave(viewer_count=0)
         assert manager.state == VisualizerState.SUSPENDING
 
-        # Wait for the 2s debounce timer to complete
-        await asyncio.sleep(2.2)
+        # Wait for the debounce timer to complete
+        await asyncio.sleep(0.5)
 
         assert manager.state == VisualizerState.IDLE_NO_VIEWERS
         assert not _gpu_scheduler.is_allocated(100)
@@ -281,11 +284,11 @@ class TestEngineRegistryChanges:
     def test_random_pool_engines_updated(self):
         from video.visualizer_engines import _RANDOM_POOL_ENGINES
 
-        assert _RANDOM_POOL_ENGINES == ["projectm", "audiovis", "fosfora", "varda"]
+        assert _RANDOM_POOL_ENGINES == ["drift", "projectm", "audiovis", "fosfora", "varda"]
 
     def test_random_pool_in_manager_updated(self):
         assert VisualizerManager._RANDOM_POOL_ENGINES == [
-            "projectm", "audiovis", "fosfora", "varda"
+            "drift", "projectm", "audiovis", "fosfora", "varda"
         ]
 
 
@@ -385,12 +388,15 @@ class TestFullLifecycle:
         manager.state = VisualizerState.ACTIVE
         mock_ws_hub.viewer_count.return_value = 0
 
+        # Shorten debounce for test speed
+        manager.SUSPENSION_DEBOUNCE_SECONDS = 0.2
+
         # Last viewer leaves
         await manager.on_viewer_leave(viewer_count=0)
         assert manager.state == VisualizerState.SUSPENDING
 
         # Wait for debounce
-        await asyncio.sleep(2.2)
+        await asyncio.sleep(0.5)
 
         assert manager.state == VisualizerState.IDLE_NO_VIEWERS
         assert not _gpu_scheduler.is_allocated(100)

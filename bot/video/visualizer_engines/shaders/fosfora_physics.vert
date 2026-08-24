@@ -28,7 +28,11 @@ uniform float u_band_energy[7]; // 7-band energy levels
 // Emission uniforms
 uniform int   u_emit_count;   // Number of new particles to emit this frame
 uniform float u_emit_speed;   // Base emission speed
-uniform int   u_particle_id;  // gl_VertexID offset for emission seeding
+
+// Simple pseudo-random hash for variety
+float hash(float n) {
+    return fract(sin(n) * 43758.5453123);
+}
 
 void main() {
     float lifetime = in_lifetime - u_dt;
@@ -37,24 +41,30 @@ void main() {
         // Dead particle — check if we should re-emit
         int vid = gl_VertexID;
         if (vid < u_emit_count) {
-            // Re-emit from center with random-ish velocity
-            // Use vertex ID + time for pseudo-random direction
-            float angle = float(vid) * 2.39996323 + u_time * 3.14159;
-            float z_angle = float(vid) * 1.61803398 + u_time * 2.71828;
-            float speed = u_emit_speed * (0.5 + 0.5 * u_beat);
+            // Re-emit from center with pseudo-random velocity.
+            // Use time + vid for unique direction each emission frame.
+            float seed = float(vid) + u_time * 17.31;
+            float angle = hash(seed) * 6.28318;
+            float z_angle = hash(seed + 42.7) * 3.14159 - 1.5708;
+            float speed = u_emit_speed * (0.5 + 0.5 * hash(seed + 13.1));
+
+            // Boost speed on beat
+            speed *= (1.0 + u_beat * 2.0);
 
             out_position = vec3(0.0, 0.0, 0.0);
             out_velocity = vec3(
                 cos(angle) * cos(z_angle) * speed,
-                sin(angle) * cos(z_angle) * speed,
-                sin(z_angle) * speed * 0.5
+                sin(angle) * cos(z_angle) * speed + 0.5,  // slight upward bias
+                sin(z_angle) * speed * 0.3
             );
-            out_lifetime = 2.0 + sin(float(vid) * 0.7) * 1.0;
+            out_lifetime = 2.5 + hash(seed + 7.3) * 2.0;  // 2.5-4.5s
 
-            // Color cycling driven by BPM
-            float hue = fract(u_time * u_bpm / 120.0 + float(vid) * 0.1);
+            // Color cycling driven by BPM and vertex ID
+            float hue = fract(u_time * u_bpm / 240.0 + hash(seed + 99.0));
             // HSV to RGB approximation
             vec3 rgb = clamp(abs(mod(hue * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0);
+            // Boost saturation and brightness
+            rgb = mix(vec3(1.0), rgb, 0.85);
             out_color = vec4(rgb, 1.0);
         } else {
             // Stay dead
@@ -67,24 +77,33 @@ void main() {
         // Alive — simulate physics
         vec3 vel = in_velocity;
 
-        // Apply gravity (negative Y)
-        vel.y -= u_gravity * u_dt;
+        // Apply gravity (negative Y) — scaled down for floatier feel
+        vel.y -= u_gravity * 0.3 * u_dt;
 
-        // Apply drag
-        float drag = pow(1.0 - u_drag, u_dt);
+        // Apply drag (gentle)
+        float drag = pow(1.0 - u_drag * 0.5, u_dt);
         vel *= drag;
 
         // Beat impulse — push outward from center on beat
-        if (u_beat > 0.5) {
+        if (u_beat > 0.3) {
             vec3 dir = normalize(in_position + vec3(0.001));
-            vel += dir * u_beat * 0.3 * u_dt;
+            vel += dir * u_beat * 0.5 * u_dt;
         }
 
         // Update position
         vec3 pos = in_position + vel * u_dt;
 
-        // Fade alpha as lifetime decreases
-        float alpha = smoothstep(0.0, 0.5, lifetime);
+        // Soft boundary wrap — keep particles loosely in view
+        // If too far from center, gently curve back
+        float dist = length(pos.xy);
+        if (dist > 4.5) {
+            vel.xy -= normalize(pos.xy) * 0.5 * u_dt;
+        }
+
+        // Fade alpha as lifetime decreases (smooth fade-out in last 30%)
+        float max_life = 3.5;  // approximate max
+        float life_frac = lifetime / max_life;
+        float alpha = smoothstep(0.0, 0.3, life_frac);
 
         out_position = pos;
         out_velocity = vel;
