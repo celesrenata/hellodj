@@ -52,7 +52,9 @@ class ProjectMEngine(GPUEngineBase):
     def __init__(self, **kwargs) -> None:
         super().__init__()
         self._pm_handle: ctypes.c_void_p | None = None
+        self._playlist_handle: ctypes.c_void_p | None = None
         self._lib: ctypes.CDLL | None = None
+        self._playlist_lib: ctypes.CDLL | None = None
         self._metadata: TrackMetadata | None = None
 
         # Configurable parameters (defaults from config_schema)
@@ -112,17 +114,17 @@ class ProjectMEngine(GPUEngineBase):
         Uses BLEND_DURATION (3s) for a soft cut transition (Req 5 AC 4).
         """
         self._metadata = metadata
-        if self._pm_handle is not None and self._lib is not None:
+        if self._pm_handle is not None and self._lib is not None and self._playlist_handle is not None:
             # Set soft cut duration to BLEND_DURATION for smooth transition
             self._lib.projectm_set_soft_cut_duration(
                 self._pm_handle, ctypes.c_double(self._blend_duration)
             )
-            # Select random preset with hard_cut=False for smooth blend
-            self._lib.projectm_select_random_preset(
-                self._pm_handle, ctypes.c_bool(False)
+            # Advance to next random preset with soft cut (hard_cut=False)
+            self._playlist_lib.projectm_playlist_play_next(
+                self._playlist_handle, ctypes.c_bool(False)
             )
             log.debug(
-                "projectM: track change → random preset with %.1fs blend",
+                "projectM: track change → next preset with %.1fs blend",
                 self._blend_duration,
             )
 
@@ -205,16 +207,35 @@ class ProjectMEngine(GPUEngineBase):
     # ------------------------------------------------------------------
 
     def _load_library(self) -> None:
-        """Load the libprojectM shared library via ctypes."""
-        try:
-            self._lib = ctypes.CDLL("libprojectM-4.so")
-        except OSError:
-            # Try alternate naming conventions
+        """Load the libprojectM shared library and playlist library via ctypes."""
+        # Load core library
+        lib_names = ["libprojectM-4.so", "libprojectM.so.4", "libprojectM.so"]
+        last_error: OSError | None = None
+        for name in lib_names:
             try:
-                self._lib = ctypes.CDLL("libprojectM.so.4")
+                self._lib = ctypes.CDLL(name)
+                log.debug("Loaded libprojectM from: %s", name)
+                break
             except OSError as e:
-                log.error("Failed to load libprojectM: %s", e)
-                raise
+                last_error = e
+                continue
+        else:
+            log.error("Failed to load libprojectM (tried %s): %s", lib_names, last_error)
+            raise last_error  # type: ignore[misc]
+
+        # Load playlist library (separate .so in projectM 4.x)
+        playlist_names = ["libprojectM-4-playlist.so", "libprojectM-playlist.so.4"]
+        for name in playlist_names:
+            try:
+                self._playlist_lib = ctypes.CDLL(name)
+                log.debug("Loaded libprojectM playlist from: %s", name)
+                break
+            except OSError as e:
+                last_error = e
+                continue
+        else:
+            log.error("Failed to load libprojectM playlist (tried %s): %s", playlist_names, last_error)
+            raise last_error  # type: ignore[misc]
 
         # Set up function signatures for type safety
         self._setup_function_signatures()
@@ -222,6 +243,9 @@ class ProjectMEngine(GPUEngineBase):
     def _setup_function_signatures(self) -> None:
         """Configure ctypes function argument and return types."""
         lib = self._lib
+        plib = self._playlist_lib
+
+        # --- Core library (libprojectM-4.so) ---
 
         # projectm_create() → handle (void*)
         lib.projectm_create.restype = ctypes.c_void_p
@@ -255,18 +279,6 @@ class ProjectMEngine(GPUEngineBase):
             ctypes.c_void_p, ctypes.c_float
         ]
 
-        # projectm_set_preset_path(handle, path)
-        lib.projectm_set_preset_path.restype = None
-        lib.projectm_set_preset_path.argtypes = [
-            ctypes.c_void_p, ctypes.c_char_p
-        ]
-
-        # projectm_set_shuffle_enabled(handle, enabled)
-        lib.projectm_set_shuffle_enabled.restype = None
-        lib.projectm_set_shuffle_enabled.argtypes = [
-            ctypes.c_void_p, ctypes.c_bool
-        ]
-
         # projectm_pcm_add_float(handle, data, num_samples, channels)
         lib.projectm_pcm_add_float.restype = None
         lib.projectm_pcm_add_float.argtypes = [
@@ -280,18 +292,50 @@ class ProjectMEngine(GPUEngineBase):
         lib.projectm_opengl_render_frame.restype = None
         lib.projectm_opengl_render_frame.argtypes = [ctypes.c_void_p]
 
-        # projectm_select_random_preset(handle, hard_cut)
-        lib.projectm_select_random_preset.restype = None
-        lib.projectm_select_random_preset.argtypes = [
-            ctypes.c_void_p, ctypes.c_bool
-        ]
-
         # projectm_set_texture_search_paths(handle, paths, count)
         lib.projectm_set_texture_search_paths.restype = None
         lib.projectm_set_texture_search_paths.argtypes = [
             ctypes.c_void_p,
             ctypes.POINTER(ctypes.c_char_p),
             ctypes.c_size_t,
+        ]
+
+        # --- Playlist library (libprojectM-4-playlist.so) ---
+
+        # projectm_playlist_create(projectm_handle) → playlist_handle
+        plib.projectm_playlist_create.restype = ctypes.c_void_p
+        plib.projectm_playlist_create.argtypes = [ctypes.c_void_p]
+
+        # projectm_playlist_destroy(playlist_handle)
+        plib.projectm_playlist_destroy.restype = None
+        plib.projectm_playlist_destroy.argtypes = [ctypes.c_void_p]
+
+        # projectm_playlist_add_path(playlist_handle, path, recurse)
+        plib.projectm_playlist_add_path.restype = ctypes.c_uint
+        plib.projectm_playlist_add_path.argtypes = [
+            ctypes.c_void_p, ctypes.c_char_p, ctypes.c_bool
+        ]
+
+        # projectm_playlist_set_shuffle(playlist_handle, shuffle)
+        plib.projectm_playlist_set_shuffle.restype = None
+        plib.projectm_playlist_set_shuffle.argtypes = [
+            ctypes.c_void_p, ctypes.c_bool
+        ]
+
+        # projectm_playlist_play_next(playlist_handle, hard_cut) → position
+        plib.projectm_playlist_play_next.restype = ctypes.c_uint
+        plib.projectm_playlist_play_next.argtypes = [
+            ctypes.c_void_p, ctypes.c_bool
+        ]
+
+        # projectm_playlist_size(playlist_handle) → count
+        plib.projectm_playlist_size.restype = ctypes.c_uint
+        plib.projectm_playlist_size.argtypes = [ctypes.c_void_p]
+
+        # projectm_playlist_set_retry_count(playlist_handle, count)
+        plib.projectm_playlist_set_retry_count.restype = None
+        plib.projectm_playlist_set_retry_count.argtypes = [
+            ctypes.c_void_p, ctypes.c_uint
         ]
 
     def _create_instance(self) -> None:
@@ -304,6 +348,7 @@ class ProjectMEngine(GPUEngineBase):
     def _configure_instance(self) -> None:
         """Apply all configuration to the projectM instance."""
         lib = self._lib
+        plib = self._playlist_lib
         handle = self._pm_handle
 
         # Set window size to match our FBO
@@ -322,27 +367,43 @@ class ProjectMEngine(GPUEngineBase):
             handle, ctypes.c_float(self._sensitivity)
         )
 
-        # Preset path (resolved from category)
-        preset_path = self._resolve_preset_path()
-        lib.projectm_set_preset_path(handle, preset_path.encode("utf-8"))
-
-        # Enable shuffle for variety
-        lib.projectm_set_shuffle_enabled(handle, ctypes.c_bool(True))
-
         # Suppress logo overlay by redirecting texture search paths
         self._suppress_logo()
+
+        # Create playlist, add presets, enable shuffle
+        preset_path = self._resolve_preset_path()
+        self._playlist_handle = plib.projectm_playlist_create(handle)
+        if not self._playlist_handle:
+            raise RuntimeError("projectm_playlist_create() returned NULL")
+
+        # Add preset directory (recursive scan for .milk files)
+        added = plib.projectm_playlist_add_path(
+            self._playlist_handle, preset_path.encode("utf-8"), ctypes.c_bool(True)
+        )
+        log.debug("projectM playlist: added %d presets from %s", added, preset_path)
+
+        # Enable shuffle for variety
+        plib.projectm_playlist_set_shuffle(self._playlist_handle, ctypes.c_bool(True))
+
+        # Set retry count for failed presets
+        plib.projectm_playlist_set_retry_count(self._playlist_handle, ctypes.c_uint(500))
+
+        # Start playing the first preset (soft cut)
+        if added > 0:
+            plib.projectm_playlist_play_next(self._playlist_handle, ctypes.c_bool(False))
 
         # Suppress preset title toast overlay if API supports it
         self._suppress_toast()
 
         log.info(
             "projectM configured: category=%s, preset_duration=%.0fs, "
-            "blend=%.1fs, sensitivity=%.1f, path=%s",
+            "blend=%.1fs, sensitivity=%.1f, path=%s, presets=%d",
             self._preset_category,
             self._preset_duration,
             self._blend_duration,
             self._sensitivity,
             preset_path,
+            added,
         )
 
     def _suppress_logo(self) -> None:
@@ -380,7 +441,16 @@ class ProjectMEngine(GPUEngineBase):
             log.debug("projectM: projectm_set_toast_message symbol not found (expected for 4.x)")
 
     def _destroy_projectm(self) -> None:
-        """Destroy the projectM instance if active."""
+        """Destroy the projectM instance and playlist if active."""
+        if self._playlist_handle is not None and self._playlist_lib is not None:
+            try:
+                self._playlist_lib.projectm_playlist_destroy(self._playlist_handle)
+                log.debug("projectM playlist destroyed")
+            except Exception as e:
+                log.warning("Error destroying projectM playlist: %s", e)
+            finally:
+                self._playlist_handle = None
+
         if self._pm_handle is not None and self._lib is not None:
             try:
                 self._lib.projectm_destroy(self._pm_handle)

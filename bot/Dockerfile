@@ -43,20 +43,38 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libvpl-dev \
     libva-dev \
     vainfo \
-    # libprojectM for Milkdrop preset rendering
-    libprojectm-dev \
     # Audio file support (needed by librosa/soundfile)
     libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
+# ── libprojectM 4.1.7 from source (Ubuntu only ships 2.x) ───────────────────
+# The 4.x C API (projectm_create, projectm_opengl_render_frame, etc.) is
+# required for our ctypes bindings. Build deps: cmake, GL headers (already above).
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        cmake \
+        build-essential \
+        wget \
+        ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && wget -q https://github.com/projectM-visualizer/projectm/releases/download/v4.1.7/libprojectM-4.1.7.tar.gz \
+    && tar xf libprojectM-4.1.7.tar.gz \
+    && cd libprojectM-4.1.7 \
+    && cmake -B build \
+        -DCMAKE_BUILD_TYPE=Release \
+        -DCMAKE_INSTALL_PREFIX=/usr \
+        -DBUILD_SHARED_LIBS=ON \
+        -DENABLE_PLAYLIST=ON \
+    && cmake --build build -j$(nproc) \
+    && cmake --install build \
+    && cd / \
+    && rm -rf libprojectM-4.1.7 libprojectM-4.1.7.tar.gz \
+    && ldconfig
+
 # Req 2.5: Remove any projectM logo/branding textures from the image.
-# libprojectm-dev may install texture files that render as an overlay.
-# Even if not present in Ubuntu 26.04's package, this ensures no logo
-# appears regardless of future package updates.
+# The source build doesn't install logo textures, but this ensures none
+# appear regardless of future changes.
 RUN rm -f /usr/share/projectM/textures/projectM.png \
           /usr/share/projectM/textures/texture_projectM.png \
-          /usr/share/projectm/textures/projectM.png \
-          /usr/share/projectm/textures/texture_projectM.png \
           /usr/local/share/projectM/textures/projectM.png \
     2>/dev/null || true
 
