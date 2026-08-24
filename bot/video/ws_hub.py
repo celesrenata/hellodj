@@ -114,6 +114,9 @@ class WebSocketHub:
         # Visualizer late-joiner state: returns the current WS activation message
         # (dict) for a guild's active visualizer engine, or None if none active.
         self._visualizer_state_getter: Callable[[int], dict | None] | None = None
+        # Visualizer engine switcher: async callable(guild_id, engine_type) that
+        # delegates to VisualizerManager.set_engine() for actual GPU hot-swap.
+        self._visualizer_engine_switcher: Callable[[int, str], Awaitable[None]] | None = None
         # Search: shared engine + active in-flight search tasks per guild
         self._search_engine: object | None = None  # lazy-initialized UnifiedSearchEngine
         self._active_searches: dict[int, dict[str, asyncio.Task]] = {}  # guild_id → {request_id → task}
@@ -170,6 +173,20 @@ class WebSocketHub:
             getter: Callable(guild_id) -> dict | None.
         """
         self._visualizer_state_getter = getter
+
+    def set_visualizer_engine_switcher(
+        self, switcher: Callable[[int, str], Awaitable[None]]
+    ) -> None:
+        """Register an async callable for switching visualizer engines at runtime.
+
+        The switcher accepts (guild_id, engine_type) and should delegate to
+        VisualizerManager.set_engine() which handles GPU engine hot-swap,
+        HLS pipeline restart, and state transitions.
+
+        Args:
+            switcher: Async callable(guild_id, engine_type).
+        """
+        self._visualizer_engine_switcher = switcher
 
     def viewer_count(self, guild_id: int) -> int:
         """Return the number of connected viewers for a guild."""
@@ -1360,8 +1377,12 @@ class WebSocketHub:
             return
 
         try:
-            # Persist engine choice in guild settings
-            guild_settings.set_visualizer_engine(guild_id, engine)
+            # Delegate to VisualizerManager for actual GPU engine hot-swap
+            if self._visualizer_engine_switcher is not None:
+                await self._visualizer_engine_switcher(guild_id, engine)
+            else:
+                # Fallback: just persist (no live engine available)
+                guild_settings.set_visualizer_engine(guild_id, engine)
 
             # Clear active preset (presets are engine-specific)
             guild_settings.set_setting(guild_id, "active_preset", None)

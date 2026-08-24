@@ -50,6 +50,10 @@ class VisualizerRegistry:
         # the correct engine state (HLS URL if active, not always DVD)
         ws_hub.set_visualizer_state_getter(self._get_visualizer_state_for_guild)
 
+        # Wire the engine switcher so menu engine_switch messages
+        # trigger actual GPU engine hot-swap via VisualizerManager
+        ws_hub.set_visualizer_engine_switcher(self._switch_engine_for_guild)
+
         log.info("VisualizerRegistry initialized and wired to WebSocketHub")
 
     def get_or_create(self, guild_id: int) -> VisualizerManager:
@@ -124,6 +128,20 @@ class VisualizerRegistry:
         if manager is None:
             return None
         return manager.get_current_state_message()
+
+    async def _switch_engine_for_guild(self, guild_id: int, engine_type: str) -> None:
+        """Switch the visualizer engine for a guild via VisualizerManager.
+
+        Called by ws_hub._handle_engine_switch to trigger actual GPU engine
+        hot-swap (not just persisting the setting). Creates the manager if
+        it doesn't exist yet.
+
+        Args:
+            guild_id: The guild to switch engines for.
+            engine_type: The new engine type (e.g., "audiovis", "projectm").
+        """
+        manager = self.get_or_create(guild_id)
+        await manager.set_engine(engine_type)
 
     # ------------------------------------------------------------------
     # WebSocketHub viewer count callback
