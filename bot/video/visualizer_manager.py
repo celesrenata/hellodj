@@ -192,6 +192,7 @@ class VisualizerManager:
         """Handle a video session ending for the guild.
 
         If engine is not "off" → IDLE_NO_VIEWERS (ready for viewers).
+        If viewers are already connected, start the engine immediately.
         """
         if self._engine_type == "off":
             self.state = VisualizerState.DISABLED
@@ -207,6 +208,15 @@ class VisualizerManager:
             self.guild_id,
             self._engine_type,
         )
+
+        # If viewers are already connected, start the engine immediately
+        # rather than waiting for a new on_viewer_join event.
+        if self._ws_hub.viewer_count(self.guild_id) > 0:
+            log.info(
+                "Guild %d: viewers already present after video ended — starting engine",
+                self.guild_id,
+            )
+            await self._start_engine()
 
     async def on_track_change(self, metadata: dict) -> None:
         """Handle a track change event.
@@ -297,8 +307,15 @@ class VisualizerManager:
 
         # Engine set to something valid (not "off")
         if self.state == VisualizerState.DISABLED:
-            # Transition to IDLE_NO_VIEWERS — ready for viewers
+            # Transition to IDLE_NO_VIEWERS — ready for viewers.
+            # If viewers are already connected, start immediately.
             self.state = VisualizerState.IDLE_NO_VIEWERS
+            if self._ws_hub.viewer_count(self.guild_id) > 0:
+                log.info(
+                    "Guild %d: viewers already present after engine set — starting engine",
+                    self.guild_id,
+                )
+                await self._start_engine()
         elif self.state in (
             VisualizerState.ACTIVE,
             VisualizerState.STARTING,
