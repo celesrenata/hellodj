@@ -18,8 +18,8 @@ from .gpu_engine_base import GPUEngineBase
 
 log = logging.getLogger(__name__)
 
-# Default preset directory (bundled in Docker image)
-PRESET_DIR = "/app/data/presets/projectm"
+# Default preset directory (bundled in Docker image, NOT under /app/data which is a PVC mount)
+PRESET_DIR = "/app/presets/projectm"
 
 # Blend duration for track changes (Req 5 AC 4)
 BLEND_DURATION = 3.0

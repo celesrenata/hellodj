@@ -159,9 +159,9 @@ COPY search/ ./search/
 # Copy curated sticker pack (manifest + assets) for whiteboard sticker catalog
 COPY stickers/ ./stickers/
 
-# Copy bundled presets for GPU visualizer engines
-COPY data/presets/projectm/ ./data/presets/projectm/
-COPY data/presets/varda/ ./data/presets/varda/
+# Copy bundled presets for GPU visualizer engines (NOT under /app/data/ which is a PVC mount)
+COPY data/presets/projectm/ ./presets/projectm/
+COPY data/presets/varda/ ./presets/varda/
 
 # Copy GLSL shader files for visualizer engines
 COPY video/visualizer_engines/shaders/ ./video/visualizer_engines/shaders/

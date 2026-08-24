@@ -204,7 +204,7 @@ class VardaEngine(GPUEngineBase):
         if plasma_path.exists() and "plasma" not in shaders:
             shaders.append("plasma")
         # Also check the data presets directory
-        data_dir = Path("/app/data/presets/varda")
+        data_dir = Path("/app/presets/varda")
         if data_dir.is_dir():
             for f in sorted(data_dir.iterdir()):
                 if f.suffix == ".glsl":
@@ -320,7 +320,7 @@ class VardaEngine(GPUEngineBase):
             return local_path.read_text()
 
         # Check data presets directory
-        data_path = Path("/app/data/presets/varda") / f"{name}.glsl"
+        data_path = Path("/app/presets/varda") / f"{name}.glsl"
         if data_path.is_file():
             return data_path.read_text()
 

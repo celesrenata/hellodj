@@ -33,8 +33,8 @@ from video.visualizer_engines.factory_presets import (
 
 log = logging.getLogger(__name__)
 
-# projectM preset directory (bundled in Docker image)
-PROJECTM_PRESET_DIR = Path("/app/data/presets/projectm")
+# projectM preset directory (bundled in Docker image, NOT under /app/data which is a PVC mount)
+PROJECTM_PRESET_DIR = Path("/app/presets/projectm")
 
 
 # ---------------------------------------------------------------------------
