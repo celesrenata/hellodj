@@ -98,16 +98,17 @@ class LavalinkPipeClient:
             log.error("Error disabling audio pipe for guild %d: %s", guild_id, exc)
             return False
 
-    async def get_pipe_status(self, guild_id: int) -> dict | None:
-        """Get current audio pipe status for a guild's player.
+    async def is_player_active(self, guild_id: int) -> bool:
+        """Check if Lavalink has an active (playing) player for a guild.
 
-        Returns the status dict or None on failure.
+        Queries the standard Lavalink player REST endpoint. Returns True
+        if a player exists and has a track loaded, False otherwise.
         """
         session_id = self._get_session_id()
         if not session_id:
-            return None
+            return False
 
-        url = f"{self._base_url}/v4/sessions/{session_id}/players/{guild_id}/audiopipe"
+        url = f"{self._base_url}/v4/sessions/{session_id}/players/{guild_id}"
         try:
             async with aiohttp.ClientSession() as session:
                 async with session.get(
@@ -116,7 +117,10 @@ class LavalinkPipeClient:
                     timeout=aiohttp.ClientTimeout(total=5),
                 ) as resp:
                     if resp.status == 200:
-                        return await resp.json()
-                    return None
+                        data = await resp.json()
+                        # Player exists — check if it has a track
+                        track = data.get("track")
+                        return track is not None and track.get("encoded") is not None
+                    return False
         except Exception:
-            return None
+            return False

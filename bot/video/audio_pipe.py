@@ -35,6 +35,7 @@ class AudioPipeSession:
         self.session_id = session_id or str(uuid.uuid4())
         self._pipe_path = _HLS_BASE_DIR / str(guild_id) / self.session_id / "audio.pipe"
         self._active = False
+        self._primer_fd: int | None = None  # Keeps FIFO "primed" so readers don't block
 
     @property
     def pipe_path(self) -> Path:
@@ -52,10 +53,13 @@ class AudioPipeSession:
         return self._active
 
     async def start(self) -> bool:
-        """Create the named FIFO.
+        """Create the named FIFO and prime it for non-blocking reads.
 
         Ensures the parent directory exists, removes any stale pipe at the
-        same path, and creates a fresh FIFO.
+        same path, creates a fresh FIFO, and opens it with O_RDWR to prevent
+        FFmpeg from blocking on open(). The primer fd acts as both a reader
+        and writer, satisfying the FIFO open semantics so that subsequent
+        open() calls from FFmpeg (reader) and Lavalink (writer) don't block.
 
         Returns:
             True on success, False if the FIFO could not be created.
@@ -68,6 +72,13 @@ class AudioPipeSession:
                 self._pipe_path.unlink()
 
             os.mkfifo(self._pipe_path)
+
+            # Open O_RDWR | O_NONBLOCK to "prime" the FIFO. This never blocks
+            # because O_RDWR on a FIFO satisfies both reader/writer requirements.
+            # FFmpeg can then open for reading without blocking, and Lavalink
+            # can open for writing without blocking.
+            self._primer_fd = os.open(str(self._pipe_path), os.O_RDWR | os.O_NONBLOCK)
+
             self._active = True
             log.info("Audio pipe created: %s", self._pipe_path)
             return True
@@ -79,6 +90,15 @@ class AudioPipeSession:
     async def stop(self) -> None:
         """Remove the FIFO and clean up the session directory if empty."""
         self._active = False
+
+        # Close primer fd first
+        if self._primer_fd is not None:
+            try:
+                os.close(self._primer_fd)
+            except OSError:
+                pass
+            self._primer_fd = None
+
         try:
             if self._pipe_path.exists():
                 self._pipe_path.unlink()

@@ -725,14 +725,26 @@ class VisualizerManager:
                 "Guild %d: subscribed engine to AudioFeatureBus", self.guild_id
             )
 
-        # 2. Audio pipe integration (Lavalink PCM → visualizer HLS)
-        # Currently disabled: the FIFO open semantics create a chicken-and-egg
-        # problem — FFmpeg blocks on opening the FIFO for reading until a writer
-        # connects, but Lavalink's enable_pipe also requires the FIFO to exist
-        # and may fail if no player is active. Until Lavalink's pipe implementation
-        # uses non-blocking or threaded FIFO opens, the visualizer runs video-only.
-        # Audio still plays through Discord VC via the normal Lavalink path.
+        # 2. Audio pipe: Lavalink PCM → visualizer HLS audio mux.
+        # The FIFO is "primed" with O_RDWR so FFmpeg won't block on open.
+        # If Lavalink has no active player, we still create the pipe (video-only
+        # until a track starts), and enable_pipe is called after FFmpeg starts.
         audio_pipe_path: str | None = None
+        self._pipe_session = AudioPipeSession(self.guild_id, "viz")
+        pipe_ok = await self._pipe_session.start()
+        if pipe_ok:
+            audio_pipe_path = self._pipe_session.ffmpeg_input_path
+            log.info(
+                "Guild %d: audio pipe created for visualizer: %s",
+                self.guild_id,
+                audio_pipe_path,
+            )
+        else:
+            log.warning(
+                "Guild %d: audio pipe creation failed — visualizer will have no audio",
+                self.guild_id,
+            )
+            self._pipe_session = None
 
         # 3. Create HLS pipeline in visualizer mode (with audio pipe if available)
         self._pipeline = HLSTranscodePipeline(
@@ -744,7 +756,33 @@ class VisualizerManager:
             "Guild %d: HLS visualizer pipeline started", self.guild_id
         )
 
-        # 4. (Audio pipe disabled — see note in step 2)
+        # 4. Enable Lavalink audio pipe (best effort).
+        # FFmpeg won't block because the FIFO is primed with O_RDWR.
+        # If no player is active, enable_pipe fails gracefully and the
+        # visualizer runs with silence on the audio track until a track starts.
+        if audio_pipe_path and self._pipe_session:
+            player_active = await self._pipe_client.is_player_active(self.guild_id)
+            if player_active:
+                pipe_enabled = await self._pipe_client.enable_pipe(
+                    self.guild_id, audio_pipe_path
+                )
+                if pipe_enabled:
+                    log.info(
+                        "Guild %d: Lavalink audio pipe enabled for visualizer",
+                        self.guild_id,
+                    )
+                else:
+                    log.warning(
+                        "Guild %d: Lavalink audio pipe enable failed — "
+                        "visualizer audio will be silent until next track",
+                        self.guild_id,
+                    )
+            else:
+                log.info(
+                    "Guild %d: no active Lavalink player — "
+                    "visualizer audio will activate when music starts",
+                    self.guild_id,
+                )
 
         # 5. Start the render loop task
         self._render_task = asyncio.create_task(
