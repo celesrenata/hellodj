@@ -563,7 +563,7 @@ class VisualizerManager:
 
     # Debounce duration (seconds) before suspending engine after last viewer leaves.
     # 10 seconds handles transient disconnects (Req 12 AC 3).
-    SUSPENSION_DEBOUNCE_SECONDS: float = 10.0
+    SUSPENSION_DEBOUNCE_SECONDS: float = 5.0
 
     async def _begin_suspension(self) -> None:
         """Start 10-second debounce before suspending the engine.
@@ -999,46 +999,78 @@ class VisualizerManager:
     async def _pipe_reader_loop(self, pipe_path: str) -> None:
         """Read PCM from the Lavalink audio pipe and feed AudioFeatureBus.
 
-        Opens the FIFO for reading and continuously reads s16le stereo 48kHz
-        PCM chunks. Feeds raw bytes directly to AudioFeatureBus — the FFT
-        analysis works on interleaved stereo just fine for visualization.
+        Resilient to track changes: when Lavalink closes the pipe (track end),
+        the reader re-creates the FIFO and re-enables the pipe for the next
+        track. This keeps the visualizer running across track transitions
+        without tearing down the entire rendering pipeline.
 
-        The FIFO is primed with O_RDWR so this open won't block.
-        Runs until cancelled or the pipe is closed.
+        Runs until cancelled (visualizer shutdown).
         """
         import os
 
         CHUNK_SIZE = 3840  # 20ms @ 48kHz stereo s16le
-        fd = -1
-        try:
-            fd = os.open(pipe_path, os.O_RDONLY)
-            log.info(
-                "Guild %d: pipe reader started — feeding AudioFeatureBus",
-                self.guild_id,
-            )
+        RECONNECT_INTERVAL = 0.5  # Wait before attempting reconnect
 
-            loop = asyncio.get_event_loop()
-            while True:
-                data = await loop.run_in_executor(None, os.read, fd, CHUNK_SIZE)
-                if not data:
-                    await asyncio.sleep(0.05)
-                    continue
-                if self._audio_bus:
-                    self._audio_bus.feed_pcm(data)
-        except asyncio.CancelledError:
-            return
-        except OSError as exc:
-            log.debug("Guild %d: pipe reader OSError: %s", self.guild_id, exc)
-        except Exception:
-            log.debug(
-                "Guild %d: pipe reader error", self.guild_id, exc_info=True
-            )
-        finally:
-            if fd >= 0:
-                try:
-                    os.close(fd)
-                except OSError:
-                    pass
+        while True:
+            fd = -1
+            try:
+                # Ensure FIFO exists (re-create if cleaned up between tracks)
+                if not os.path.exists(pipe_path):
+                    os.makedirs(os.path.dirname(pipe_path), exist_ok=True)
+                    os.mkfifo(pipe_path)
+                    # Prime it so Lavalink's open(O_WRONLY) won't block
+                    primer = os.open(pipe_path, os.O_RDWR | os.O_NONBLOCK)
+                    # Try to re-enable pipe on Lavalink
+                    enabled = await self._pipe_client.enable_pipe(
+                        self.guild_id, pipe_path
+                    )
+                    if enabled:
+                        os.close(primer)  # Close primer so reader gets the data
+                        log.info(
+                            "Guild %d: pipe reader reconnected to Lavalink",
+                            self.guild_id,
+                        )
+                    else:
+                        # Keep primer open (no writer yet), wait and retry
+                        os.close(primer)
+                        await asyncio.sleep(RECONNECT_INTERVAL)
+                        continue
+
+                fd = os.open(pipe_path, os.O_RDONLY)
+                log.info(
+                    "Guild %d: pipe reader started — feeding AudioFeatureBus",
+                    self.guild_id,
+                )
+
+                loop = asyncio.get_event_loop()
+                while True:
+                    data = await loop.run_in_executor(None, os.read, fd, CHUNK_SIZE)
+                    if not data:
+                        # EOF — Lavalink closed (track ended). Reconnect.
+                        break
+                    if self._audio_bus:
+                        self._audio_bus.feed_pcm(data)
+
+            except asyncio.CancelledError:
+                return
+            except OSError as exc:
+                log.debug("Guild %d: pipe reader OSError: %s", self.guild_id, exc)
+            except Exception:
+                log.debug(
+                    "Guild %d: pipe reader error", self.guild_id, exc_info=True
+                )
+            finally:
+                if fd >= 0:
+                    try:
+                        os.close(fd)
+                    except OSError:
+                        pass
+
+            # Wait before reconnecting (debounce rapid track changes)
+            try:
+                await asyncio.sleep(RECONNECT_INTERVAL)
+            except asyncio.CancelledError:
+                return
 
     async def _handle_render_error(self) -> None:
         """Handle a render loop or pipeline error.
