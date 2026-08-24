@@ -157,6 +157,45 @@ class VisualizerCog(commands.Cog, name="Visualizer"):
 
         return choices[:25]
 
+    async def _value_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> list[app_commands.Choice[str]]:
+        """Return value choices for the current engine + setting.
+
+        Special handling for audiovis style: shows styles grouped by category
+        with labels like ``[psychedelic] kaleidoscope``.
+        """
+        engine = interaction.namespace.engine
+        setting = interaction.namespace.setting
+        current_lower = current.casefold()
+
+        # Special case: audiovis style — grouped by category
+        if engine == "audiovis" and setting == "style":
+            from video.visualizer_engines.audiovis import get_styles_by_category
+
+            grouped = get_styles_by_category()
+            choices: list[app_commands.Choice[str]] = []
+            for category, styles in sorted(grouped.items()):
+                for style in sorted(styles):
+                    label = f"[{category}] {style}"
+                    if not current_lower or current_lower in style or current_lower in category:
+                        choices.append(app_commands.Choice(name=label, value=style))
+            return choices[:25]
+
+        # Generic fallback: show schema choices if available
+        if engine and engine in ENGINE_CONFIG_SCHEMAS and setting:
+            schema = ENGINE_CONFIG_SCHEMAS[engine]
+            if setting in schema:
+                setting_schema = schema[setting]
+                if "choices" in setting_schema:
+                    return [
+                        app_commands.Choice(name=str(c), value=str(c))
+                        for c in setting_schema["choices"]
+                        if not current_lower or current_lower in str(c).casefold()
+                    ][:25]
+
+        return []
+
     async def _category_autocomplete(
         self, interaction: discord.Interaction, current: str
     ) -> list[app_commands.Choice[str]]:
@@ -236,7 +275,7 @@ class VisualizerCog(commands.Cog, name="Visualizer"):
         setting="Setting name",
         value="New value for the setting",
     )
-    @app_commands.autocomplete(engine=_config_engine_autocomplete, setting=_setting_autocomplete)
+    @app_commands.autocomplete(engine=_config_engine_autocomplete, setting=_setting_autocomplete, value=_value_autocomplete)
     async def config(
         self, interaction: discord.Interaction, engine: str, setting: str, value: str
     ) -> None:

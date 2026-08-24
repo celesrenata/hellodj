@@ -370,17 +370,20 @@ class TestViewerDisconnectSuspension:
     async def test_debounce_completes_releases_gpu(
         self, manager, mock_ws_hub, fake_engine
     ):
-        """After 2s debounce with zero viewers, GPU VF is released."""
+        """After debounce with zero viewers, GPU VF is released."""
         manager._engine = fake_engine
         manager.state = VisualizerState.ACTIVE
         _gpu_scheduler.allocate(100, "varda")
         mock_ws_hub.viewer_count.return_value = 0
 
+        # Shorten debounce for test speed
+        manager.SUSPENSION_DEBOUNCE_SECONDS = 0.2
+
         await manager.on_viewer_leave(viewer_count=0)
         assert manager.state == VisualizerState.SUSPENDING
 
-        # Wait for debounce (2s) + margin
-        await asyncio.sleep(2.3)
+        # Wait for debounce + margin
+        await asyncio.sleep(0.5)
 
         # After debounce: suspended, GPU released
         assert manager.state == VisualizerState.IDLE_NO_VIEWERS
@@ -396,12 +399,15 @@ class TestViewerDisconnectSuspension:
         _gpu_scheduler.allocate(100, "varda")
         mock_ws_hub.viewer_count.return_value = 0
 
+        # Shorten debounce for test speed
+        manager.SUSPENSION_DEBOUNCE_SECONDS = 1.0
+
         # Last viewer leaves
         await manager.on_viewer_leave(viewer_count=0)
         assert manager.state == VisualizerState.SUSPENDING
 
-        # Viewer reconnects within 2s
-        await asyncio.sleep(0.5)
+        # Viewer reconnects within debounce window
+        await asyncio.sleep(0.2)
         await manager.on_viewer_join()
 
         # Should cancel suspension and return to ACTIVE
@@ -410,7 +416,7 @@ class TestViewerDisconnectSuspension:
         assert _gpu_scheduler.is_allocated(100)
 
         # Wait past the debounce window — should NOT transition
-        await asyncio.sleep(2.0)
+        await asyncio.sleep(1.5)
         assert manager.state == VisualizerState.ACTIVE
         assert _gpu_scheduler.is_allocated(100)
 
@@ -624,6 +630,9 @@ class TestFullE2ELifecycle:
         engine = FakeEngine(frame_count=50)  # Enough frames for the full test
         manager.state = VisualizerState.IDLE_NO_VIEWERS
 
+        # Shorten debounce for test speed
+        manager.SUSPENSION_DEBOUNCE_SECONDS = 0.2
+
         with patch(
             "video.visualizer_manager.VisualizerManager._create_engine_instance",
             return_value=engine,
@@ -652,8 +661,8 @@ class TestFullE2ELifecycle:
             await manager.on_viewer_leave(viewer_count=0)
             assert manager.state == VisualizerState.SUSPENDING
 
-            # Phase 4: After 2s debounce → IDLE, GPU released
-            await asyncio.sleep(2.3)
+            # Phase 4: After debounce → IDLE, GPU released
+            await asyncio.sleep(0.5)
 
         assert manager.state == VisualizerState.IDLE_NO_VIEWERS
         assert not _gpu_scheduler.is_allocated(100)

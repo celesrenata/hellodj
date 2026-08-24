@@ -314,7 +314,7 @@ class TestGetSettingSchema:
         schema = get_setting_schema("audiovis", "style")
         assert schema["type"] == "choice"
         assert "bars" in schema["choices"]
-        assert len(schema["choices"]) == 4
+        assert len(schema["choices"]) == 18
 
     def test_bool_schema(self):
         schema = get_setting_schema("dvd", "hue_shift")

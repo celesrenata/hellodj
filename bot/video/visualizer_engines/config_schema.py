@@ -53,7 +53,18 @@ ENGINE_CONFIG_SCHEMAS: dict[str, dict[str, dict[str, Any]]] = {
         "style": {
             "type": "choice",
             "default": "bars",
-            "choices": ["bars", "waveform", "waterfall", "circular"],
+            "choices": [
+                # Classic
+                "bars", "waveform", "waterfall", "circular",
+                # Psychedelic
+                "kaleidoscope", "plasma", "fractal", "hypnotic",
+                # Aggressive
+                "glitch", "storm", "shatter",
+                # Ambient
+                "aurora", "nebula", "ocean", "fireflies",
+                # Retro
+                "synthwave", "retrowave", "cyber",
+            ],
         },
         "color_scheme": {
             "type": "string",

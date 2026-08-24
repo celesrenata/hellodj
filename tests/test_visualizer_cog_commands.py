@@ -508,8 +508,9 @@ class TestAutocomplete:
 
         interaction = _make_interaction()
 
-        with patch("cogs.visualizer.guild_settings") as mock_gs:
-            mock_gs.VALID_VISUALIZER_ENGINES = {"dvd", "projectm", "audiovis", "off"}
+        with patch("cogs.visualizer.get_available_engines", return_value=[
+            "audiovis", "dvd", "fosfora", "native", "off", "projectm", "random", "varda"
+        ]):
             result = await cog._engine_autocomplete(interaction, "pro")
 
         assert len(result) == 1

@@ -9,13 +9,15 @@ Requirements: Req 6 (AC 1-5)
 
 from __future__ import annotations
 
+import asyncio
 import ctypes
 import logging
 import time
 from pathlib import Path
+from typing import AsyncIterator
 
 from video.visualizer_engines.base import AudioFeatures, TrackMetadata
-from video.visualizer_engines.gpu_engine_base import GPUEngineBase
+from video.visualizer_engines.gpu_engine_base import GPUEngineBase, GPURenderError
 
 log = logging.getLogger(__name__)
 
@@ -47,8 +49,46 @@ GL_STATIC_DRAW = 0x88E4
 # Beat pulse decay: 200ms at 30fps → decay rate per frame = 1/30 / 0.2 = 1/6
 BEAT_DECAY_PER_FRAME = (1.0 / 30.0) / 0.2  # ~0.1667 per frame
 
-# Valid visualization styles
-STYLES = ("bars", "waveform", "waterfall", "circular")
+# Style registry: maps style name → {category, shader file} (Req 11 AC 1-2)
+STYLE_REGISTRY: dict[str, dict[str, str]] = {
+    # Classic (existing)
+    "bars":         {"category": "classic",     "file": "audiovis_bars.glsl"},
+    "waveform":     {"category": "classic",     "file": "audiovis_waveform.glsl"},
+    "waterfall":    {"category": "classic",     "file": "audiovis_waterfall.glsl"},
+    "circular":     {"category": "classic",     "file": "audiovis_circular.glsl"},
+    # Psychedelic (Req 3)
+    "kaleidoscope": {"category": "psychedelic", "file": "audiovis_kaleidoscope.glsl"},
+    "plasma":       {"category": "psychedelic", "file": "audiovis_plasma.glsl"},
+    "fractal":      {"category": "psychedelic", "file": "audiovis_fractal.glsl"},
+    "hypnotic":     {"category": "psychedelic", "file": "audiovis_hypnotic.glsl"},
+    # Aggressive (Req 4)
+    "glitch":       {"category": "aggressive",  "file": "audiovis_glitch.glsl"},
+    "storm":        {"category": "aggressive",  "file": "audiovis_storm.glsl"},
+    "shatter":      {"category": "aggressive",  "file": "audiovis_shatter.glsl"},
+    # Ambient (Req 5)
+    "aurora":       {"category": "ambient",     "file": "audiovis_aurora.glsl"},
+    "nebula":       {"category": "ambient",     "file": "audiovis_nebula.glsl"},
+    "ocean":        {"category": "ambient",     "file": "audiovis_ocean.glsl"},
+    "fireflies":    {"category": "ambient",     "file": "audiovis_fireflies.glsl"},
+    # Retro (Req 6)
+    "synthwave":    {"category": "retro",       "file": "audiovis_synthwave.glsl"},
+    "retrowave":    {"category": "retro",       "file": "audiovis_retrowave.glsl"},
+    "cyber":        {"category": "retro",       "file": "audiovis_cyber.glsl"},
+}
+
+
+def get_valid_styles() -> list[str]:
+    """Return all style names from the registry."""
+    return list(STYLE_REGISTRY.keys())
+
+
+def get_styles_by_category() -> dict[str, list[str]]:
+    """Return styles grouped by category for autocomplete display."""
+    grouped: dict[str, list[str]] = {}
+    for style, meta in STYLE_REGISTRY.items():
+        grouped.setdefault(meta["category"], []).append(style)
+    return grouped
+
 
 # Default configuration
 DEFAULT_STYLE = "bars"
@@ -82,7 +122,7 @@ class AudioVisEngine(GPUEngineBase):
         background_opacity: float = DEFAULT_BG_OPACITY,
     ) -> None:
         super().__init__()
-        self._style: str = style if style in STYLES else DEFAULT_STYLE
+        self._style: str = style if style in STYLE_REGISTRY else DEFAULT_STYLE
         self._color_scheme: str = color_scheme
         self._fft_bins: int = fft_bins
         self._glow_intensity: float = glow_intensity
@@ -94,6 +134,9 @@ class AudioVisEngine(GPUEngineBase):
         self._fft_texture: int = 0
         self._start_time: float = 0.0
         self._beat_pulse: float = 0.0
+
+        # Performance monitoring (Req 9 AC 3)
+        self._slow_frame_count: int = 0
 
         # Track metadata for text overlay
         self._track_title: str = ""
@@ -149,12 +192,35 @@ class AudioVisEngine(GPUEngineBase):
 
         gl = self._egl_ctx._gl
 
-        # Load and compile shaders
+        # Load vertex shader (shared by all styles)
         vert_src = self._load_shader_source("audiovis_vert.glsl")
-        frag_file = f"audiovis_{self._style}.glsl"
+
+        # Check shader file exists before compilation (Req 10 AC 2-3)
+        frag_file = STYLE_REGISTRY.get(self._style, {}).get("file")
+        frag_path = SHADER_DIR / frag_file if frag_file else None
+
+        if not frag_path or not frag_path.exists():
+            log.warning(
+                "Shader file missing for style '%s' (expected %s), falling back to 'bars'",
+                self._style, frag_file,
+            )
+            self._style = "bars"
+            frag_file = STYLE_REGISTRY["bars"]["file"]
+            frag_path = SHADER_DIR / frag_file
+
         frag_src = self._load_shader_source(frag_file)
 
-        self._shader_program = self._compile_program(gl, vert_src, frag_src)
+        # Wrap compilation in try/except for graceful fallback (Req 10 AC 1)
+        try:
+            self._shader_program = self._compile_program(gl, vert_src, frag_src)
+        except RuntimeError as exc:
+            log.error(
+                "Shader compilation failed for style '%s': %s — falling back to 'bars'",
+                self._style, exc,
+            )
+            self._style = "bars"
+            frag_src = self._load_shader_source(STYLE_REGISTRY["bars"]["file"])
+            self._shader_program = self._compile_program(gl, vert_src, frag_src)
 
         # Cache uniform locations
         self._cache_uniform_locations(gl)
@@ -249,6 +315,51 @@ class AudioVisEngine(GPUEngineBase):
 
         # TODO: Render track title/artist as text overlay (bitmap font)
         # self._render_text_overlay(gl)
+
+    # ------------------------------------------------------------------
+    # Performance-monitored render loop (Req 9 AC 3)
+    # ------------------------------------------------------------------
+
+    async def render_frames(self) -> AsyncIterator[bytes]:
+        """Yield RGBA frames at 30fps with performance monitoring.
+
+        Overrides GPUEngineBase.render_frames() to add slow-frame tracking.
+        Logs a warning when 3+ consecutive frames exceed the frame budget.
+        """
+        FRAME_BUDGET = 1.0 / 30.0  # 33.3ms
+
+        while self._running:
+            t0 = time.monotonic()
+            try:
+                self._egl_ctx.make_current()
+                self._render_gl_frame(self._latest_features)
+                frame = self._egl_ctx.read_pixels()
+            except Exception as exc:
+                log.error(
+                    "GPU render error in %s: %s",
+                    type(self).__name__,
+                    exc,
+                )
+                self._running = False
+                raise GPURenderError(
+                    f"GPU rendering failed in {type(self).__name__}: {exc}"
+                ) from exc
+            yield frame
+
+            elapsed = time.monotonic() - t0
+            if elapsed > FRAME_BUDGET:
+                self._slow_frame_count += 1
+                if self._slow_frame_count >= 3:
+                    log.warning(
+                        "AudioVis '%s': %d consecutive slow frames (%.1fms avg)",
+                        self._style, self._slow_frame_count, elapsed * 1000,
+                    )
+            else:
+                self._slow_frame_count = 0
+
+            sleep_time = self.FRAME_INTERVAL - elapsed
+            if sleep_time > 0:
+                await asyncio.sleep(sleep_time)
 
     # ------------------------------------------------------------------
     # Shader compilation helpers

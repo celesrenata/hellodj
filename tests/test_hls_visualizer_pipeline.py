@@ -152,26 +152,27 @@ class TestBuildVisualizerFfmpegArgs:
         assert args[cv_idx + 1] == "h264_qsv"
 
     def test_main_profile(self, pipeline):
-        """Uses H.264 main profile."""
+        """Uses H.264 high profile for quality."""
         args = pipeline._build_visualizer_ffmpeg_args()
         pv_idx = args.index("-profile:v")
-        assert args[pv_idx + 1] == "main"
+        assert args[pv_idx + 1] == "high"
 
     def test_fast_preset(self, pipeline):
-        """Uses fast preset (not veryfast) for quality/speed balance."""
+        """Uses medium preset for quality/speed balance."""
         args = pipeline._build_visualizer_ffmpeg_args()
         p_idx = args.index("-preset")
-        assert args[p_idx + 1] == "fast"
+        assert args[p_idx + 1] == "medium"
 
     def test_bitrate_2500k_constrained_vbr(self, pipeline):
-        """Bitrate is 2500k with 3750k maxrate and 5000k bufsize."""
+        """Uses ICQ mode with global_quality 28, maxrate 3000k, and bufsize 5000k."""
         args = pipeline._build_visualizer_ffmpeg_args()
 
-        bv_idx = args.index("-b:v")
-        assert args[bv_idx + 1] == "2500k"
+        # ICQ mode uses -global_quality instead of -b:v
+        gq_idx = args.index("-global_quality")
+        assert args[gq_idx + 1] == "28"
 
         mr_idx = args.index("-maxrate")
-        assert args[mr_idx + 1] == "3750k"
+        assert args[mr_idx + 1] == "3000k"
 
         bs_idx = args.index("-bufsize")
         assert args[bs_idx + 1] == "5000k"
