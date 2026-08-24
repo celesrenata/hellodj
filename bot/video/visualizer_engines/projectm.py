@@ -286,6 +286,14 @@ class ProjectMEngine(GPUEngineBase):
             ctypes.c_void_p, ctypes.c_bool
         ]
 
+        # projectm_set_texture_search_paths(handle, paths, count)
+        lib.projectm_set_texture_search_paths.restype = None
+        lib.projectm_set_texture_search_paths.argtypes = [
+            ctypes.c_void_p,
+            ctypes.POINTER(ctypes.c_char_p),
+            ctypes.c_size_t,
+        ]
+
     def _create_instance(self) -> None:
         """Create a new projectM instance."""
         self._pm_handle = self._lib.projectm_create()
@@ -321,6 +329,12 @@ class ProjectMEngine(GPUEngineBase):
         # Enable shuffle for variety
         lib.projectm_set_shuffle_enabled(handle, ctypes.c_bool(True))
 
+        # Suppress logo overlay by redirecting texture search paths
+        self._suppress_logo()
+
+        # Suppress preset title toast overlay if API supports it
+        self._suppress_toast()
+
         log.info(
             "projectM configured: category=%s, preset_duration=%.0fs, "
             "blend=%.1fs, sensitivity=%.1f, path=%s",
@@ -330,6 +344,40 @@ class ProjectMEngine(GPUEngineBase):
             self._sensitivity,
             preset_path,
         )
+
+    def _suppress_logo(self) -> None:
+        """Prevent libprojectM from loading logo texture by setting search paths to /dev/null."""
+        try:
+            empty_path = ctypes.c_char_p(b"/dev/null")
+            paths_array = (ctypes.c_char_p * 1)(empty_path)
+            self._lib.projectm_set_texture_search_paths(
+                self._pm_handle,
+                paths_array,
+                ctypes.c_size_t(1),
+            )
+            log.debug("projectM: texture search paths set to /dev/null (logo suppressed)")
+        except AttributeError:
+            log.warning(
+                "projectM: projectm_set_texture_search_paths not available, logo suppression skipped"
+            )
+
+    def _suppress_toast(self) -> None:
+        """Suppress preset title toast overlay if the API supports it.
+
+        Note: projectm_set_toast_message does not exist in libprojectM 4.x.
+        This check exists for forward/backward compatibility.
+        """
+        try:
+            toast_fn = getattr(self._lib, "projectm_set_toast_message", None)
+            if toast_fn is not None:
+                toast_fn.restype = None
+                toast_fn.argtypes = [ctypes.c_void_p, ctypes.c_char_p]
+                toast_fn(self._pm_handle, b"")
+                log.debug("projectM: toast message suppressed")
+            else:
+                log.debug("projectM: projectm_set_toast_message not available (expected for 4.x)")
+        except (AttributeError, OSError):
+            log.debug("projectM: projectm_set_toast_message symbol not found (expected for 4.x)")
 
     def _destroy_projectm(self) -> None:
         """Destroy the projectM instance if active."""

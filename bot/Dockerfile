@@ -49,6 +49,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libsndfile1 \
     && rm -rf /var/lib/apt/lists/*
 
+# Req 2.5: Remove any projectM logo/branding textures from the image.
+# libprojectm-dev may install texture files that render as an overlay.
+# Even if not present in Ubuntu 26.04's package, this ensures no logo
+# appears regardless of future package updates.
+RUN rm -f /usr/share/projectM/textures/projectM.png \
+          /usr/share/projectM/textures/texture_projectM.png \
+          /usr/share/projectm/textures/projectM.png \
+          /usr/share/projectm/textures/texture_projectM.png \
+          /usr/local/share/projectM/textures/projectM.png \
+    2>/dev/null || true
+
 # ── FFmpeg 9 source build (QSV/VPL + VA-API + common codecs + TLS) ───────────
 # Debian trixie's stock ffmpeg is 7.1.x which has an HLS muxer bug causing
 # audio starvation in the first segment when combined with QSV hardware encode.
