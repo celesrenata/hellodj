@@ -173,11 +173,23 @@ class VisualizerCog(commands.Cog, name="Visualizer"):
         if engine == "audiovis" and setting == "style":
             from video.visualizer_engines.audiovis import get_styles_by_category
 
+            # Color indicators for custom preset categories
+            _CATEGORY_COLORS = {
+                "psychedelic": "🟣",
+                "aggressive": "🔴",
+                "ambient": "🔵",
+                "retro": "🟡",
+            }
+
             grouped = get_styles_by_category()
             choices: list[app_commands.Choice[str]] = []
             for category, styles in sorted(grouped.items()):
+                color = _CATEGORY_COLORS.get(category, "")
                 for style in sorted(styles):
-                    label = f"[{category}] {style}"
+                    if color:
+                        label = f"{color} {style}"
+                    else:
+                        label = style
                     if not current_lower or current_lower in style or current_lower in category:
                         choices.append(app_commands.Choice(name=label, value=style))
             return choices[:25]
