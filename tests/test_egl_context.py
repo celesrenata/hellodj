@@ -44,7 +44,6 @@ from video.visualizer_engines.egl_context import (
     EGL_OPENGL_API,
     EGL_OPENGL_BIT,
     EGL_PBUFFER_BIT,
-    EGL_PLATFORM_SURFACELESS_MESA,
     EGL_RENDERABLE_TYPE,
     EGL_SURFACE_TYPE,
     EGLContextError,
@@ -116,21 +115,35 @@ def _make_mock_gl() -> MagicMock:
     return mock
 
 
+def _make_mock_gbm() -> MagicMock:
+    """Create a mock libgbm with successful default returns."""
+    mock = MagicMock()
+    mock.gbm_create_device.return_value = 0xDEAD0003
+    mock.gbm_create_device.restype = ctypes.c_void_p
+    mock.gbm_device_destroy.return_value = None
+    return mock
+
+
 @pytest.fixture
 def mock_libs():
-    """Patch ctypes.CDLL to return mock EGL and GL libraries."""
+    """Patch ctypes.CDLL and os.open to return mock EGL, GL, and GBM libraries."""
     mock_egl = _make_mock_egl()
     mock_gl = _make_mock_gl()
+    mock_gbm = _make_mock_gbm()
 
     def cdll_factory(name):
         if "EGL" in name:
             return mock_egl
+        elif "gbm" in name:
+            return mock_gbm
         elif "GL" in name:
             return mock_gl
         raise OSError(f"Unexpected library: {name}")
 
-    with patch("ctypes.CDLL", side_effect=cdll_factory) as mock_cdll:
-        yield {"egl": mock_egl, "gl": mock_gl, "cdll": mock_cdll}
+    with patch("ctypes.CDLL", side_effect=cdll_factory) as mock_cdll, \
+         patch("os.open", return_value=42), \
+         patch("os.close"):
+        yield {"egl": mock_egl, "gl": mock_gl, "gbm": mock_gbm, "cdll": mock_cdll}
 
 
 @pytest.fixture
@@ -159,9 +172,6 @@ class TestConstants:
         assert FRAME_SIZE == 1280 * 720 * 4
         assert FRAME_SIZE == 3_686_400
 
-    def test_egl_platform_surfaceless(self):
-        assert EGL_PLATFORM_SURFACELESS_MESA == 0x31DD
-
     def test_egl_opengl_api(self):
         assert EGL_OPENGL_API == 0x30A2
 
@@ -178,13 +188,13 @@ class TestLifecycle:
         """After create(), is_valid should be True."""
         assert ctx.is_valid is True
 
-    def test_create_uses_surfaceless_platform(self, mock_libs):
-        """create() calls eglGetPlatformDisplay with SURFACELESS."""
+    def test_create_uses_gbm_platform(self, mock_libs):
+        """create() calls eglGetPlatformDisplay with GBM platform."""
         context = EGLHeadlessContext()
         context.create()
         mock_libs["egl"].eglGetPlatformDisplay.assert_called_once()
         args = mock_libs["egl"].eglGetPlatformDisplay.call_args[0]
-        assert args[0] == EGL_PLATFORM_SURFACELESS_MESA
+        assert args[0] == 0x31D7  # EGL_PLATFORM_GBM_KHR
 
     def test_create_binds_opengl_api(self, mock_libs):
         """create() calls eglBindAPI with EGL_OPENGL_API."""
@@ -257,7 +267,9 @@ class TestErrorHandling:
 
     def test_failed_egl_load(self):
         """Should raise EGLContextError if libEGL.so.1 cannot be loaded."""
-        with patch("ctypes.CDLL", side_effect=OSError("not found")):
+        with patch("ctypes.CDLL", side_effect=OSError("not found")), \
+             patch("os.open", return_value=42), \
+             patch("os.close"):
             ctx = EGLHeadlessContext()
             with pytest.raises(EGLContextError, match="Failed to load libEGL"):
                 ctx.create()
@@ -271,7 +283,9 @@ class TestErrorHandling:
                 return mock_egl
             raise OSError("not found")
 
-        with patch("ctypes.CDLL", side_effect=cdll_factory):
+        with patch("ctypes.CDLL", side_effect=cdll_factory), \
+             patch("os.open", return_value=42), \
+             patch("os.close"):
             ctx = EGLHeadlessContext()
             with pytest.raises(EGLContextError, match="Failed to load libGL"):
                 ctx.create()

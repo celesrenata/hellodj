@@ -1,29 +1,60 @@
-FROM python:3.11-slim
+# Ubuntu 26.04 ships Mesa 25.x with properly-integrated libglvnd that correctly
+# routes eglGetPlatformDisplay to Mesa for GBM platform dispatch — no workarounds
+# needed. We install Python 3.12 (not system 3.13) because kokoro TTS requires <3.13.
+FROM ubuntu:26.04
+
+ENV DEBIAN_FRONTEND=noninteractive
 
 WORKDIR /app
 
-# ── System dependencies: FFmpeg 9 (compiled with QSV/VPL) + Intel VA-API driver ───
-# Debian trixie's stock ffmpeg is 7.1.x which has an HLS muxer bug causing
-# audio starvation in the first segment when combined with QSV hardware encode.
-# We build ffmpeg 9 from source with libvpl (QSV) support to get the April 2026
-# HLS interleave fix (commit 45cb56c520).
+# ── Python 3.12 (kokoro TTS requires <3.13) ──────────────────────────────────
+# Ubuntu 26.04's system Python is 3.13 but kokoro/misaki pin to <3.13.
+# Install python3.12 from deadsnakes PPA and create a venv to isolate from
+# the system setuptools/pip incompatibilities.
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    intel-media-va-driver \
-    libmfx-gen1.2 \
-    libvpl-dev \
-    libva-dev \
-    vainfo \
-    libsndfile1 \
+    software-properties-common \
+    && add-apt-repository -y ppa:deadsnakes/ppa \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+        python3.12 \
+        python3.12-venv \
+        python3.12-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+# Create a venv with Python 3.12 — all pip installs happen here
+RUN python3.12 -m venv /opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel
+
+# ── System dependencies: Mesa/EGL, Intel GPU, libprojectm ────────────────────
+# Ubuntu 26.04's Mesa packages include proper /usr/share/glvnd/egl_vendor.d/50_mesa.json
+# for GBM platform dispatch — eglGetPlatformDisplay works directly.
+RUN apt-get update && apt-get install -y --no-install-recommends \
     # EGL/OpenGL for GPU visualizer engines (headless rendering via GBM)
     libegl1-mesa-dev \
     libgl1-mesa-dev \
     libgles2-mesa-dev \
     libgbm-dev \
     libdrm-dev \
-    mesa-utils-extra \
+    mesa-utils \
+    # Intel VA-API/QSV for hardware-accelerated video transcoding
+    intel-media-va-driver \
+    libmfx-gen1.2 \
+    libvpl-dev \
+    libva-dev \
+    vainfo \
     # libprojectM for Milkdrop preset rendering
     libprojectm-dev \
-    # Build deps for ffmpeg
+    # Audio file support (needed by librosa/soundfile)
+    libsndfile1 \
+    && rm -rf /var/lib/apt/lists/*
+
+# ── FFmpeg 9 source build (QSV/VPL + VA-API + common codecs + TLS) ───────────
+# Debian trixie's stock ffmpeg is 7.1.x which has an HLS muxer bug causing
+# audio starvation in the first segment when combined with QSV hardware encode.
+# We build ffmpeg 9 from source with libvpl (QSV) support to get the April 2026
+# HLS interleave fix (commit 45cb56c520).
+RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     nasm \
     pkg-config \
@@ -36,11 +67,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-# EGL platform dispatch: Debian trixie's libglvnd 1.7.0 doesn't route
-# eglGetPlatformDisplay to Mesa for GBM platform. The egl_context.py code
-# uses eglGetProcAddress to get eglGetPlatformDisplayEXT as a workaround.
-
-# Build ffmpeg 9 from release tarball with QSV + common codecs + TLS (HTTPS)
 RUN wget -q https://ffmpeg.org/releases/ffmpeg-9.0.tar.xz \
     && tar xf ffmpeg-9.0.tar.xz \
     && cd ffmpeg-9.0 \

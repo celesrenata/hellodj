@@ -275,10 +275,10 @@ class TestProperty5DefaultAudioClassification:
 # Feature: unified-playback, Property 6: Unknown URL defaults to video
 
 
-class TestProperty6UnknownUrlDefaultsToVideo:
+class TestProperty6UnknownUrlDefaultsToAudio:
     """For any URL that does not match a recognized audio domain (YouTube,
     Spotify, SoundCloud, Tidal) and does not end in a recognized video extension,
-    the ContentClassifier SHALL return content_type=VIDEO with confidence="default".
+    the ContentClassifier SHALL return content_type=AUDIO with confidence="default".
 
     **Validates: Requirements 3.10**
     """
@@ -289,7 +289,7 @@ class TestProperty6UnknownUrlDefaultsToVideo:
         path=_safe_paths,
     )
     def test_unrecognized_url_no_video_extension(self, domain: str, path: str) -> None:
-        """Unrecognized domain + no video extension → VIDEO (default)."""
+        """Unrecognized domain + no video extension → AUDIO (default)."""
         # Ensure path doesn't accidentally end with a video extension
         url = f"https://{domain}{path}"
         # Double-check our generator didn't produce a video extension ending
@@ -300,5 +300,5 @@ class TestProperty6UnknownUrlDefaultsToVideo:
             assume(ext not in {"mp4", "webm", "mkv", "avi", "mov", "m4v"})
 
         result = classify(url)
-        assert result.content_type == ContentType.VIDEO
+        assert result.content_type == ContentType.AUDIO
         assert result.confidence == "default"

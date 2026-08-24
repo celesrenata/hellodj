@@ -1,12 +1,14 @@
 """EGL headless rendering context for GPU-accelerated visualizer engines.
 
 Creates an OpenGL 3.3 Core context on a DRM render node using the
-EGL surfaceless platform. No X11/Wayland required.
+EGL GBM platform via standard eglGetPlatformDisplay on Ubuntu 26.04.
+No X11/Wayland required.
 
 Platform requirements:
 - Render node: /dev/dri/renderD128 (discovered by GPUProbe)
 - Mesa iris driver for OpenGL 3.3 Core on Intel Meteor Lake
-- EGL extensions: EGL_MESA_platform_surfaceless, EGL_KHR_create_context
+- Ubuntu 26.04 with libglvnd correctly routing GBM platform dispatch
+- EGL extensions: EGL_KHR_create_context
 """
 
 from __future__ import annotations
@@ -22,7 +24,6 @@ FRAME_HEIGHT = 720
 FRAME_SIZE = FRAME_WIDTH * FRAME_HEIGHT * 4  # RGBA = 3,686,400 bytes
 
 # EGL constants
-EGL_PLATFORM_SURFACELESS_MESA = 0x31DD
 EGL_OPENGL_API = 0x30A2
 EGL_CONTEXT_MAJOR_VERSION = 0x3098
 EGL_CONTEXT_MINOR_VERSION = 0x30FB
@@ -60,7 +61,8 @@ class EGLHeadlessContext:
         frame = ctx.read_pixels()  # RGBA bytes, 1280x720
         ctx.destroy()
 
-    Uses EGL_MESA_platform_surfaceless — no X11/Wayland dependency.
+    Uses eglGetPlatformDisplay with EGL_PLATFORM_GBM_KHR on Ubuntu 26.04.
+    No X11/Wayland dependency.
     """
 
     def __init__(self, render_device: str = "/dev/dri/renderD128") -> None:
@@ -96,14 +98,8 @@ class EGLHeadlessContext:
         self.width = width
         self.height = height
 
-        # Force Mesa as the EGL vendor (bypasses libglvnd dispatch issues
-        # in containers without /usr/share/glvnd/egl_vendor.d/ config).
-        import os
-        os.environ.setdefault(
-            "__EGL_VENDOR_LIBRARY_FILENAMES",
-            "/usr/lib/x86_64-linux-gnu/libEGL_mesa.so.0",
-        )
         # Hint Mesa to use the iris driver for our Intel Meteor Lake iGPU
+        import os
         os.environ.setdefault("MESA_LOADER_DRIVER_OVERRIDE", "iris")
 
         # Load shared libraries
@@ -118,8 +114,6 @@ class EGLHeadlessContext:
 
         # Open the DRM render node and create a GBM device for headless EGL.
         # GBM platform binds EGL to a specific GPU device (the SR-IOV VF).
-        import os
-
         try:
             self._gbm = ctypes.CDLL("libgbm.so.1")
         except OSError as exc:
@@ -140,30 +134,18 @@ class EGLHeadlessContext:
                 f"gbm_create_device failed on {self.render_device}"
             )
 
-        # Get eglGetPlatformDisplayEXT via eglGetProcAddress.
-        # Debian trixie's libglvnd 1.7.0 doesn't route eglGetPlatformDisplay
-        # for GBM platform correctly, but eglGetProcAddress works through the
-        # glvnd dispatch table to reach Mesa's implementation.
-        self._egl.eglGetProcAddress.restype = ctypes.c_void_p
-        self._egl.eglGetProcAddress.argtypes = [ctypes.c_char_p]
-        _fn = self._egl.eglGetProcAddress(b"eglGetPlatformDisplayEXT")
-        if not _fn:
-            self._gbm.gbm_device_destroy(ctypes.c_void_p(self._gbm_device))
-            os.close(self._drm_fd)
-            raise EGLContextError("eglGetProcAddress(eglGetPlatformDisplayEXT) returned NULL")
-
-        _get_platform_display_ext = ctypes.cast(
-            _fn,
-            ctypes.CFUNCTYPE(
-                ctypes.c_void_p,   # return EGLDisplay
-                ctypes.c_uint,     # platform
-                ctypes.c_void_p,   # native_display
-                ctypes.POINTER(ctypes.c_int),  # attrib_list
-            ),
-        )
+        # Get EGL display via standard eglGetPlatformDisplay (GBM platform).
+        # Ubuntu 26.04's libglvnd correctly routes GBM platform dispatch
+        # to Mesa without any workaround.
+        self._egl.eglGetPlatformDisplay.argtypes = [
+            ctypes.c_uint,                   # platform
+            ctypes.c_void_p,                 # native_display
+            ctypes.POINTER(ctypes.c_int),    # attrib_list
+        ]
+        self._egl.eglGetPlatformDisplay.restype = ctypes.c_void_p
 
         EGL_PLATFORM_GBM_KHR = 0x31D7
-        self._display = _get_platform_display_ext(
+        self._display = self._egl.eglGetPlatformDisplay(
             EGL_PLATFORM_GBM_KHR,
             ctypes.c_void_p(self._gbm_device),
             None,
@@ -171,7 +153,7 @@ class EGLHeadlessContext:
         if not self._display:
             self._gbm.gbm_device_destroy(ctypes.c_void_p(self._gbm_device))
             os.close(self._drm_fd)
-            raise EGLContextError("eglGetPlatformDisplayEXT failed (GBM)")
+            raise EGLContextError("eglGetPlatformDisplay failed (GBM)")
 
         # Initialize EGL
         major, minor = ctypes.c_int(), ctypes.c_int()

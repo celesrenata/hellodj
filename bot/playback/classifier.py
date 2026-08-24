@@ -26,6 +26,36 @@ _TIDAL_VIDEO_PATH_RE = re.compile(r"^/(browse/)?video/\d+", re.IGNORECASE)
 # Pattern to detect URLs (has a scheme with ://)
 _URL_SCHEME_RE = re.compile(r"^[a-zA-Z][a-zA-Z0-9+\-.]*://")
 
+# Exact YouTube hostnames matched by Rule 9
+_YOUTUBE_EXACT_HOSTS = frozenset({
+    "youtube.com",
+    "www.youtube.com",
+    "m.youtube.com",
+    "youtu.be",
+    "www.youtu.be",
+    "youtube-nocookie.com",
+    "www.youtube-nocookie.com",
+})
+
+
+def _is_youtube_domain(hostname: str) -> bool:
+    """Return True if *hostname* is a YouTube domain variant.
+
+    Matches:
+    - Exact hosts: youtube.com, www.youtube.com, m.youtube.com, youtu.be,
+      www.youtu.be, youtube-nocookie.com, www.youtube-nocookie.com
+    - Suffix: any hostname ending in .youtube.com (catches gaming.youtube.com,
+      consent.youtube.com, future subdomains)
+
+    Note: music.youtube.com is handled by Rule 3 (higher priority) so it
+    never reaches Rule 9.
+    """
+    if hostname in _YOUTUBE_EXACT_HOSTS:
+        return True
+    if hostname.endswith(".youtube.com"):
+        return True
+    return False
+
 
 class ContentType(Enum):
     """Playback content type."""
@@ -60,8 +90,10 @@ def classify(
     6. Tidal URL (tidal.com) without /video/ path or tdsearch: prefix → AUDIO (definite).
     7. SoundCloud URL (soundcloud.com) → AUDIO (definite).
     8. URL ending in video extension (.mp4, .webm, .mkv, .avi, .mov, .m4v) → VIDEO (definite).
-    9. YouTube video URL (youtube.com/watch, youtu.be) → AUDIO (default).
-    10. Unrecognized URL (has scheme, no known audio domain, no video ext) → VIDEO (default).
+    9. YouTube domain URL (youtube.com, youtu.be, youtube-nocookie.com, *.youtube.com) → AUDIO (default).
+    10. Unrecognized URL (has scheme, no known audio domain, no video ext) → AUDIO (default).
+        Defaults to AUDIO since /play's primary intent is audio playback;
+        explicit mode:video exists for video requests.
     11. Plain text query (no URL detected) → AUDIO (default).
     """
     # Rule 1: Explicit mode override
@@ -184,23 +216,18 @@ def classify(
                 confidence="definite",
             )
 
-    # Rule 9: YouTube video URL
-    if hostname in (
-        "youtube.com",
-        "www.youtube.com",
-        "m.youtube.com",
-        "youtu.be",
-        "www.youtu.be",
-    ):
+    # Rule 9: YouTube video URL (broad hostname matching)
+    if _is_youtube_domain(hostname):
         return ClassificationResult(
             content_type=ContentType.AUDIO,
             source_hint="youtube",
             confidence="default",
         )
 
-    # Rule 10: Unrecognized URL
+    # Rule 10: Unrecognized URL — defaults to AUDIO since /play's primary
+    # intent is audio playback; explicit mode:video exists for video requests.
     return ClassificationResult(
-        content_type=ContentType.VIDEO,
+        content_type=ContentType.AUDIO,
         source_hint="unknown_url",
         confidence="default",
     )
