@@ -230,25 +230,36 @@ export class VisualizerMenu {
   _buildDOM() {
     // Main panel container
     this._panelEl = document.createElement('div');
-    this._panelEl.className = 'viz-menu-panel';
+    this._panelEl.className = 'visualizer-menu';
     this._panelEl.setAttribute('role', 'dialog');
     this._panelEl.setAttribute('aria-label', 'Visualizer Menu');
     this._panelEl.setAttribute('tabindex', '-1');
 
     // Header with navigation tabs
     const header = document.createElement('div');
-    header.className = 'viz-menu-header';
+    header.className = 'menu-header';
+
+    // Header title row with close button
+    const titleRow = document.createElement('div');
+    titleRow.className = 'menu-header-title';
+
+    const title = document.createElement('h2');
+    title.textContent = 'Visualizer';
+    titleRow.appendChild(title);
 
     // Close button
     const closeBtn = document.createElement('button');
-    closeBtn.className = 'viz-menu-close';
+    closeBtn.className = 'menu-close-btn';
     closeBtn.setAttribute('aria-label', 'Close visualizer menu');
     closeBtn.textContent = '✕';
     closeBtn.addEventListener('click', () => this.close());
+    titleRow.appendChild(closeBtn);
+
+    header.appendChild(titleRow);
 
     // Navigation tabs
     const nav = document.createElement('nav');
-    nav.className = 'viz-menu-nav';
+    nav.className = 'menu-tabs';
     nav.setAttribute('role', 'tablist');
     nav.setAttribute('aria-label', 'Menu navigation');
 
@@ -261,41 +272,34 @@ export class VisualizerMenu {
     nav.appendChild(this._tabSettings);
 
     header.appendChild(nav);
-    header.appendChild(closeBtn);
 
     // Content viewport (clips slides)
     const viewport = document.createElement('div');
-    viewport.className = 'viz-menu-viewport';
-
-    // Sliding content track (holds all 3 views side-by-side)
-    this._trackEl = document.createElement('div');
-    this._trackEl.className = 'viz-menu-track';
+    viewport.className = 'menu-content';
 
     // Individual view containers
     this._viewEnginesEl = document.createElement('div');
-    this._viewEnginesEl.className = 'viz-menu-view viz-menu-view-engines';
+    this._viewEnginesEl.className = 'menu-view active';
     this._viewEnginesEl.setAttribute('role', 'tabpanel');
     this._viewEnginesEl.setAttribute('aria-labelledby', 'viz-tab-engines');
 
     this._viewPresetsEl = document.createElement('div');
-    this._viewPresetsEl.className = 'viz-menu-view viz-menu-view-presets';
+    this._viewPresetsEl.className = 'menu-view slide-right';
     this._viewPresetsEl.setAttribute('role', 'tabpanel');
     this._viewPresetsEl.setAttribute('aria-labelledby', 'viz-tab-presets');
 
     this._viewSettingsEl = document.createElement('div');
-    this._viewSettingsEl.className = 'viz-menu-view viz-menu-view-settings';
+    this._viewSettingsEl.className = 'menu-view slide-right';
     this._viewSettingsEl.setAttribute('role', 'tabpanel');
     this._viewSettingsEl.setAttribute('aria-labelledby', 'viz-tab-settings');
 
-    this._trackEl.appendChild(this._viewEnginesEl);
-    this._trackEl.appendChild(this._viewPresetsEl);
-    this._trackEl.appendChild(this._viewSettingsEl);
-
-    viewport.appendChild(this._trackEl);
+    viewport.appendChild(this._viewEnginesEl);
+    viewport.appendChild(this._viewPresetsEl);
+    viewport.appendChild(this._viewSettingsEl);
 
     // Connection status indicator
     this._statusEl = document.createElement('div');
-    this._statusEl.className = 'viz-menu-status';
+    this._statusEl.className = 'menu-disconnected';
     this._statusEl.style.display = 'none';
     this._statusEl.setAttribute('aria-live', 'polite');
 
@@ -309,7 +313,7 @@ export class VisualizerMenu {
 
   _createTab(id, label, active) {
     const tab = document.createElement('button');
-    tab.className = 'viz-menu-tab';
+    tab.className = 'menu-tab';
     tab.id = `viz-tab-${id}`;
     tab.setAttribute('role', 'tab');
     tab.setAttribute('aria-selected', active ? 'true' : 'false');
@@ -344,19 +348,18 @@ export class VisualizerMenu {
       tab.setAttribute('aria-selected', isActive ? 'true' : 'false');
     });
 
-    // Slide the track to show the correct view
-    const translateX = -(index * 100);
-    if (animate) {
-      this._trackEl.style.transition = 'transform 250ms ease-in-out';
-    } else {
-      this._trackEl.style.transition = 'none';
-    }
-    this._trackEl.style.transform = `translateX(${translateX}%)`;
-
-    // Respect reduced motion
-    if (window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
-      this._trackEl.style.transition = 'none';
-    }
+    // Update view visibility using CSS classes
+    const viewEls = [this._viewEnginesEl, this._viewPresetsEl, this._viewSettingsEl];
+    viewEls.forEach((el, i) => {
+      el.classList.remove('active', 'slide-left', 'slide-right');
+      if (i === index) {
+        el.classList.add('active');
+      } else if (i < index) {
+        el.classList.add('slide-left');
+      } else {
+        el.classList.add('slide-right');
+      }
+    });
   }
 
   // --- Private: Keyboard ---
@@ -585,7 +588,7 @@ export class VisualizerMenu {
 
   _showStatus(message, level = 'info') {
     this._statusEl.textContent = message;
-    this._statusEl.className = `viz-menu-status viz-menu-status-${level}`;
+    this._statusEl.className = `menu-disconnected`;
     this._statusEl.style.display = '';
   }
 
