@@ -79,7 +79,10 @@ class GPUEngineBase(VisualizerRenderer):
         """Create EGL headless context and call subclass _on_gl_ready hook."""
         import glob as _glob
         render_devices = sorted(_glob.glob("/dev/dri/renderD*"))
-        render_device = render_devices[0] if render_devices else "/dev/dri/renderD128"
+        # Prefer VF render nodes (renderD129+) over PF (renderD128) because
+        # the PF doesn't support EGL context creation when SR-IOV VFs are active.
+        vf_devices = [d for d in render_devices if d != "/dev/dri/renderD128"]
+        render_device = vf_devices[0] if vf_devices else (render_devices[0] if render_devices else "/dev/dri/renderD128")
         self._egl_ctx = EGLHeadlessContext(render_device=render_device)
         self._egl_ctx.create()
         self._running = True
