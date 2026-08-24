@@ -15,7 +15,7 @@ Sources
 * **The Lot Radio** — public HLS stream (verified).
 * **Nightwave Plaza** — 24/7 vaporwave radio via radio.plaza.one/mp3.
 * **Nightride FM** — Icecast streams: synthwave, chillsynth, darksynth channels.
-* **313.FM** — Detroit electronic music via Icecast (icecast.ofdoom.com).
+* **313.FM** — Detroit electronic music via Icecast (icecast.313.fm:8000).
 """
 
 import asyncio
@@ -53,10 +53,11 @@ _STREAMTHEWORLD_REDIRECT = "https://playerservices.streamtheworld.com/api/livest
 PRESETS = {
     "thelot": {
         "name": "The Lot Radio",
-        "url": "https://playback.livepeer.studio/hls/68b9ebup9ajleurk/index.m3u8",
+        "url": "https://playback.livepeer.studio/hls/85c28sa2o8wppm58/index.m3u8",
         "note": (
-            "Public HLS stream (verified live 2026-08-18: livepeercdn.studio "
-            "307 → playback.livepeer.studio → nyc-prod-catalyst LP playback)."
+            "Public HLS stream (verified live 2026-08-24: livepeercdn.studio "
+            "307 → playback.livepeer.studio → nyc-prod-catalyst LP playback). "
+            "Stream key updated from 68b9ebup9ajleurk to 85c28sa2o8wppm58."
         ),
     },
     "nightwave": {
@@ -93,10 +94,11 @@ PRESETS = {
     },
     "313fm": {
         "name": "313.FM",
-        "url": "http://icecast.ofdoom.com/313fm",
+        "url": "http://icecast.313.fm:8000/burst.mp3",
         "note": (
             "Detroit electronic music radio. Icecast server at "
-            "icecast.ofdoom.com, mountpoint /313fm."
+            "icecast.313.fm:8000, mountpoint /burst.mp3 (icecast.ofdoom.com "
+            "redirects here with 301). Verified live 2026-08-24."
         ),
     },
 }
@@ -112,6 +114,96 @@ class Radio(commands.Cog):
 
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        # Per-guild radio state: {guild_id: {"url": str, "title": str, "text_channel": Channel}}
+        self._radio_sessions: dict[int, dict] = {}
+
+    # ── ICY Metadata Fetching ──────────────────────────────────────────────
+
+    async def _fetch_icy_metadata(self, stream_url: str) -> str | None:
+        """Fetch the current ICY (Icecast/Shoutcast) metadata from a stream.
+
+        Connects to the stream with Icy-MetaData: 1 header, reads just enough
+        bytes to extract the first metadata block, then disconnects.
+        Falls back to Icecast JSON status API for OGG streams (e.g. Nightride FM).
+        Returns the StreamTitle string or None if unavailable.
+        """
+        # HLS streams (.m3u8) don't support ICY metadata
+        if ".m3u8" in stream_url or "livepeer" in stream_url:
+            return None
+
+        # For Nightride FM OGG streams, use the Icecast status-json.xsl API
+        if "stream.nightride.fm" in stream_url:
+            return await self._fetch_nightride_metadata(stream_url)
+
+        try:
+            headers = {"Icy-MetaData": "1", "User-Agent": _USER_AGENT}
+            timeout = aiohttp.ClientTimeout(total=5, sock_read=4)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.get(stream_url, headers=headers) as resp:
+                    # Check if server supports ICY metadata
+                    metaint_str = resp.headers.get("icy-metaint")
+                    if not metaint_str:
+                        return None
+                    metaint = int(metaint_str)
+
+                    # Read past the first audio chunk to reach metadata
+                    await resp.content.readexactly(metaint)
+
+                    # Read the metadata length byte (length * 16 = actual size)
+                    length_byte = await resp.content.readexactly(1)
+                    meta_length = length_byte[0] * 16
+                    if meta_length == 0:
+                        return None
+
+                    # Read and decode the metadata block
+                    meta_data = await resp.content.readexactly(meta_length)
+                    meta_str = meta_data.decode("utf-8", errors="replace").rstrip("\x00")
+
+                    # Parse StreamTitle='...' from the metadata
+                    if "StreamTitle='" in meta_str:
+                        start = meta_str.index("StreamTitle='") + len("StreamTitle='")
+                        end = meta_str.index("';", start)
+                        title = meta_str[start:end].strip()
+                        return title if title else None
+                    return None
+        except (asyncio.TimeoutError, aiohttp.ClientError, ValueError, Exception) as exc:
+            dbg("ICY metadata fetch failed for %s: %s", stream_url, exc)
+            return None
+
+    async def _fetch_nightride_metadata(self, stream_url: str) -> str | None:
+        """Fetch now-playing info from Nightride FM's Icecast status JSON API.
+
+        Maps the stream URL mountpoint to the status API's source list and
+        extracts the display-title.
+        """
+        try:
+            # Extract mountpoint from URL (e.g. /nightride.ogg → nightride.ogg)
+            from urllib.parse import urlparse
+            path = urlparse(stream_url).path.lstrip("/")
+
+            status_url = "https://stream.nightride.fm/status-json.xsl"
+            async with aiohttp.ClientSession() as session:
+                async with session.get(
+                    status_url,
+                    headers={"User-Agent": _USER_AGENT},
+                    timeout=5,
+                ) as resp:
+                    data = await resp.json(content_type=None)
+
+            sources = data.get("icestats", {}).get("source", [])
+            if isinstance(sources, dict):
+                sources = [sources]
+
+            for source in sources:
+                listen_url = source.get("listenurl", "")
+                if path in listen_url:
+                    display_title = source.get("display-title") or source.get("title")
+                    if display_title:
+                        return display_title
+            return None
+        except Exception as exc:
+            dbg("Nightride metadata fetch failed: %s", exc)
+            return None
 
     # ── Shared helpers ─────────────────────────────────────────────────────
 
@@ -192,6 +284,16 @@ class Radio(commands.Cog):
             await player_obj.play(track)
             state["current"] = player._track_entry(track, "radio")
 
+            # Track the radio session for now-playing lookups
+            self._radio_sessions[interaction.guild.id] = {
+                "url": stream_url,
+                "title": title,
+                "text_channel": interaction.channel,
+            }
+
+            # Try to fetch current ICY metadata (what song is playing)
+            now_playing = await self._fetch_icy_metadata(stream_url)
+
             embed = discord.Embed(
                 title="📻 HelloDJ — Radio",
                 description=f"Now streaming **{title}**",
@@ -199,6 +301,8 @@ class Radio(commands.Cog):
             )
             embed.add_field(name="Station", value=title, inline=True)
             embed.add_field(name="Status", value="Live", inline=True)
+            if now_playing:
+                embed.add_field(name="Now Playing", value=now_playing, inline=False)
             await interaction.followup.send(embed=embed)
 
         except (wavelink.LavalinkLoadException, wavelink.NodeException) as exc:
@@ -295,6 +399,35 @@ class Radio(commands.Cog):
             )
             return
         await self._play_stream(interaction, entry["url"], entry["name"])
+
+    # ── /radio nowplaying ──────────────────────────────────────────────────
+
+    @radio_group.command(name="nowplaying", description="Show what song is currently playing on the radio")
+    async def radio_nowplaying(self, interaction: discord.Interaction):
+        session = self._radio_sessions.get(interaction.guild.id)
+        if not session:
+            await interaction.response.send_message(
+                "No radio station is currently playing in this server.", ephemeral=True
+            )
+            return
+
+        await interaction.response.defer()
+        now_playing = await self._fetch_icy_metadata(session["url"])
+
+        embed = discord.Embed(
+            title="📻 Now Playing — Radio",
+            colour=discord.Colour.blurple(),
+        )
+        embed.add_field(name="Station", value=session["title"], inline=True)
+        if now_playing:
+            embed.add_field(name="Track", value=now_playing, inline=False)
+        else:
+            embed.add_field(
+                name="Track",
+                value="*Metadata unavailable for this station*",
+                inline=False,
+            )
+        await interaction.followup.send(embed=embed)
 
 
 async def setup(bot: commands.Bot) -> None:

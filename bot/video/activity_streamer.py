@@ -676,6 +676,9 @@ class ActivityStreamer:
 
         await self._cancel_background_tasks()
 
+        # Stop Lavalink audio playback for this video
+        await self._stop_lavalink_audio()
+
         if self.pipeline is not None:
             try:
                 await self.pipeline.stop()
@@ -798,6 +801,12 @@ class ActivityStreamer:
         # Enter WAITING phase: countdown hasn't fired yet (reset CSM for new track)
         self._csm.reset()
 
+        # ── Lavalink audio routing ────────────────────────────────────────
+        # Play the audio through Lavalink so filters (nightcore, vaporwave, etc.)
+        # apply. The Activity frontend mutes its HLS audio and listens via
+        # Discord voice channel instead.
+        await self._start_lavalink_audio(source)
+
         log.info(
             "Activity now streaming for guild=%d session=%s title='%s'",
             self.guild_id,
@@ -821,6 +830,107 @@ class ActivityStreamer:
             self._max_duration_timer(),
             name=f"activity-duration-{self.guild_id}",
         )
+
+    async def _start_lavalink_audio(self, source: VideoSource) -> None:
+        """Play the video's audio through Lavalink for filter support.
+
+        Routes the audio from the video source URL through the guild's
+        wavelink player so Lavalink filters (nightcore, vaporwave, 8D, etc.)
+        apply. The Activity frontend mutes its own HLS audio; users hear
+        filtered audio through the Discord voice channel.
+
+        Falls back gracefully — if Lavalink can't play the audio URL, the
+        HLS audio in the Activity remains available as an unmuted fallback.
+        """
+        try:
+            import player
+            from wavelink import Playable, TrackSource
+
+            player_obj = player.get_player(self.guild_id)
+            if not player_obj or not player_obj.connected:
+                log.info(
+                    "Lavalink audio routing skipped — no connected player "
+                    "for guild=%d",
+                    self.guild_id,
+                )
+                return
+
+            # Determine audio source URL:
+            # 1. Separate audio_url (DASH/YouTube sources)
+            # 2. stream_url (combined video+audio — Lavalink extracts audio)
+            # 3. file_path (local file — less common)
+            audio_source = source.audio_url or source.stream_url or source.file_path
+            if not audio_source:
+                log.info(
+                    "Lavalink audio routing skipped — no audio URL available "
+                    "for guild=%d title=%r",
+                    self.guild_id,
+                    source.title,
+                )
+                return
+
+            # Search/load the audio through Lavalink
+            tracks = await Playable.search(audio_source)
+            if not tracks:
+                log.warning(
+                    "Lavalink could not load audio URL for video: guild=%d url=%s",
+                    self.guild_id,
+                    audio_source[:100],
+                )
+                return
+
+            track = tracks[0] if isinstance(tracks, list) else tracks
+
+            # Inject video metadata into the track for display purposes
+            try:
+                object.__setattr__(track, "_title", source.title)
+            except Exception:
+                pass
+
+            # Play through Lavalink — this sends audio to Discord voice channel
+            await player_obj.play(track)
+
+            # Mark the player state so the unified queue knows video audio is active
+            state = player.get_state(self.guild_id)
+            state["current"] = player._track_entry(track, "video")
+            state["current"]["type"] = "music_video"
+            state["current"]["title"] = source.title
+            if source.duration_seconds:
+                state["current"]["duration"] = int(source.duration_seconds * 1000)
+
+            log.info(
+                "Lavalink audio routed for video: guild=%d title=%r",
+                self.guild_id,
+                source.title,
+            )
+
+            # Broadcast lavalink_audio_active to Activity clients so they mute HLS audio
+            if self._ws_hub:
+                await self._ws_hub.broadcast_from_bot(self.guild_id, {
+                    "type": "lavalink_audio",
+                    "active": True,
+                    "timescale": 1.0,
+                })
+
+        except Exception as exc:
+            # Non-fatal: video still works with HLS audio if Lavalink fails
+            log.warning(
+                "Lavalink audio routing failed for guild=%d: %s — "
+                "HLS audio will remain active in Activity",
+                self.guild_id,
+                exc,
+            )
+
+    async def _stop_lavalink_audio(self) -> None:
+        """Stop Lavalink audio playback when video session ends."""
+        try:
+            import player
+            player_obj = player.get_player(self.guild_id)
+            if player_obj and player_obj.connected and player_obj.playing:
+                await player_obj.stop()
+                log.info("Stopped Lavalink audio for video: guild=%d", self.guild_id)
+        except Exception as exc:
+            log.debug("_stop_lavalink_audio failed: %s", exc)
 
     async def _auto_advance(self) -> None:
         """Wait for pipeline completion and advance to the next queue item.

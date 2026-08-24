@@ -153,6 +153,28 @@ async def _apply_tune(player_obj: wavelink.Player) -> None:
     await player_obj.set_filters(filters)
 
 
+async def _broadcast_timescale_to_activity(bot: commands.Bot, guild_id: int, speed: float = 1.0) -> None:
+    """Broadcast the current timescale speed to Activity clients.
+
+    When video audio is routed through Lavalink, the Activity frontend needs
+    to adjust its video playbackRate to match the Lavalink timescale speed.
+    This keeps video and audio in sync when filters like nightcore (1.25x)
+    or vaporwave (0.85x) are applied.
+    """
+    try:
+        video_cog = bot.get_cog("Video")
+        if video_cog is None or not hasattr(video_cog, "_backend"):
+            return
+        ws_hub = video_cog._backend.ws_hub
+        await ws_hub.broadcast_from_bot(guild_id, {
+            "type": "filter_sync",
+            "timescale": speed,
+        })
+        log.debug("Broadcast timescale=%.3f to Activity for guild=%d", speed, guild_id)
+    except Exception as exc:
+        log.debug("_broadcast_timescale_to_activity failed: %s", exc)
+
+
 class Filters(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
@@ -226,6 +248,9 @@ class Filters(commands.Cog):
         state = player.get_state(interaction.guild.id)
         state["filters"]["nightcore"] = {"speed": 1.25, "pitch": 1.25}
         player.persist(interaction.guild.id)
+
+        # Sync timescale to Activity video playback rate
+        await _broadcast_timescale_to_activity(self.bot, interaction.guild.id, speed=1.25)
 
         verified, _ = await _verify_filter(player_obj, interaction.guild.id, "timescale")
         if verified:
@@ -309,6 +334,9 @@ class Filters(commands.Cog):
             "speed": 0.85, "pitch": 0.9, "rate": 0.85, "gains": gains,
         }
         player.persist(interaction.guild.id)
+
+        # Sync timescale to Activity video playback rate
+        await _broadcast_timescale_to_activity(self.bot, interaction.guild.id, speed=0.85)
 
         verified, _ = await _verify_filter(player_obj, interaction.guild.id, "timescale")
         if verified:
@@ -747,6 +775,9 @@ class Filters(commands.Cog):
         state["filters"] = {}
         player.persist(interaction.guild.id)
 
+        # Reset Activity video playback rate to normal
+        await _broadcast_timescale_to_activity(self.bot, interaction.guild.id, speed=1.0)
+
         # Verify the reset took effect server-side (no filters should remain).
         server_filters = await _get_server_filters(player_obj, interaction.guild.id)
         if server_filters is None:
@@ -783,6 +814,9 @@ class Filters(commands.Cog):
         state = player.get_state(interaction.guild.id)
         state["filters"] = {}
         player.persist(interaction.guild.id)
+
+        # Reset Activity video playback rate to normal
+        await _broadcast_timescale_to_activity(self.bot, interaction.guild.id, speed=1.0)
 
         # Verify the reset took effect server-side (no filters should remain).
         server_filters = await _get_server_filters(player_obj, interaction.guild.id)
