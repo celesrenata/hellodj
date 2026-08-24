@@ -652,8 +652,27 @@ class VisualizerManager:
         if self._engine is None:
             return
 
+        message = self.get_current_state_message()
+        if message is not None:
+            await self._ws_hub.broadcast(self.guild_id, message)
+
+    def get_current_state_message(self) -> dict | None:
+        """Return the current visualizer state as a WS message dict.
+
+        Used by ws_hub for late-joiner sync so reconnecting clients get
+        the correct engine state (including HLS URL if active).
+
+        Returns:
+            A dict ready to send as a WebSocket message, or None if no
+            engine is active.
+        """
+        if self._engine is None:
+            return None
+        if self.state not in (VisualizerState.ACTIVE, VisualizerState.STARTING):
+            return None
+
         if self._engine.is_client_side:
-            message = {
+            return {
                 "type": "visualizer",
                 "state": "active",
                 "engine": self._engine_type,
@@ -662,7 +681,7 @@ class VisualizerManager:
         else:
             # Server-rendered engine — include HLS readiness and playlist URL
             hls_ready = self._pipeline is not None and self._pipeline.ready.is_set()
-            message = {
+            message: dict = {
                 "type": "visualizer",
                 "state": "active",
                 "engine": self._engine_type,
@@ -672,8 +691,7 @@ class VisualizerManager:
                 message["playlist_url"] = (
                     f"/activity/stream/{self.guild_id}/viz/playlist.m3u8"
                 )
-
-        await self._ws_hub.broadcast(self.guild_id, message)
+            return message
 
     # ------------------------------------------------------------------
     # Server-rendered engine lifecycle

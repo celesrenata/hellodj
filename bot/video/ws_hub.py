@@ -111,6 +111,9 @@ class WebSocketHub:
         self._viewer_count_callback: Callable[[int, int, int], Awaitable[None]] | None = None
         self._streamers: dict[int, ActivityStreamer] = {}  # guild_id → streamer
         self._lyrics_state_getter: Callable[[int], object | None] | None = None
+        # Visualizer late-joiner state: returns the current WS activation message
+        # (dict) for a guild's active visualizer engine, or None if none active.
+        self._visualizer_state_getter: Callable[[int], dict | None] | None = None
         # Search: shared engine + active in-flight search tasks per guild
         self._search_engine: object | None = None  # lazy-initialized UnifiedSearchEngine
         self._active_searches: dict[int, dict[str, asyncio.Task]] = {}  # guild_id → {request_id → task}
@@ -148,6 +151,25 @@ class WebSocketHub:
             getter: Callable(guild_id) -> LyricsState | None.
         """
         self._lyrics_state_getter = getter
+
+    def set_visualizer_state_getter(
+        self, getter: Callable[[int], dict | None]
+    ) -> None:
+        """Register a getter for per-guild visualizer activation state.
+
+        Used for late-joiner sync: when a new client connects and no video
+        streamer is active, the hub asks the VisualizerManager for the
+        current activation message (which includes HLS URL if the engine is
+        active) instead of hardcoding DVD mode.
+
+        The getter accepts a guild_id and returns a dict ready to send as
+        a WebSocket message (type: "visualizer", engine, hls_ready, etc.),
+        or None if no active visualizer state exists.
+
+        Args:
+            getter: Callable(guild_id) -> dict | None.
+        """
+        self._visualizer_state_getter = getter
 
     def viewer_count(self, guild_id: int) -> int:
         """Return the number of connected viewers for a guild."""
@@ -335,31 +357,36 @@ class WebSocketHub:
                 return ws
 
         # If no video streamer is active but a visualizer engine is configured,
-        # send a visualizer activation message to the late-joiner so it enters
-        # the correct mode (e.g. DVD screensaver).
+        # send the current visualizer state to the late-joiner. If the engine
+        # is active with HLS, this includes the playlist URL.
         if streamer is None and not countdown_sent:
             try:
-                import guild_settings
-                engine = guild_settings.get_visualizer_engine(guild_id)
-                if engine and engine != "off":
-                    # Get guild icon URL (prefer guild icon for DVD screensaver)
-                    icon_url = getattr(self, 'bot_avatar_url', '') or ""
-                    if hasattr(self, '_bot_ref') and self._bot_ref is not None:
-                        guild = self._bot_ref.get_guild(guild_id)
-                        if guild and guild.icon:
-                            icon_url = guild.icon.url
-                    # For non-client-side engines (projectm, audiovis, etc.),
-                    # the VisualizerManager sends hls_ready when the pipeline
-                    # is active. If it's not active, fall back to DVD mode so
-                    # the client shows something visual rather than a blank screen.
-                    viz_msg = {
-                        "type": "visualizer",
-                        "engine": "dvd",
-                        "state": "active",
-                        "config": {
-                            "avatar_url": icon_url,
-                        },
-                    }
+                # First, ask the VisualizerManager for its current state
+                # (includes hls_ready + playlist_url if engine is running)
+                viz_msg = None
+                if self._visualizer_state_getter is not None:
+                    viz_msg = self._visualizer_state_getter(guild_id)
+
+                if viz_msg is None:
+                    # No active engine state — fall back to DVD screensaver
+                    import guild_settings
+                    engine = guild_settings.get_visualizer_engine(guild_id)
+                    if engine and engine != "off":
+                        icon_url = getattr(self, 'bot_avatar_url', '') or ""
+                        if hasattr(self, '_bot_ref') and self._bot_ref is not None:
+                            guild = self._bot_ref.get_guild(guild_id)
+                            if guild and guild.icon:
+                                icon_url = guild.icon.url
+                        viz_msg = {
+                            "type": "visualizer",
+                            "engine": "dvd",
+                            "state": "active",
+                            "config": {
+                                "avatar_url": icon_url,
+                            },
+                        }
+
+                if viz_msg is not None:
                     await ws.send_json(viz_msg)
             except Exception:
                 pass  # Non-fatal — visualizer info is best-effort

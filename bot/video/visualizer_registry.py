@@ -46,6 +46,10 @@ class VisualizerRegistry:
         # Wire the viewer count callback into WebSocketHub
         ws_hub.set_viewer_count_callback(self._on_viewer_count_change)
 
+        # Wire the visualizer state getter so late-joining clients get
+        # the correct engine state (HLS URL if active, not always DVD)
+        ws_hub.set_visualizer_state_getter(self._get_visualizer_state_for_guild)
+
         log.info("VisualizerRegistry initialized and wired to WebSocketHub")
 
     def get_or_create(self, guild_id: int) -> VisualizerManager:
@@ -105,6 +109,21 @@ class VisualizerRegistry:
         if manager is not None:
             await manager.shutdown()
             log.debug("Removed VisualizerManager for guild %d", guild_id)
+
+    def _get_visualizer_state_for_guild(self, guild_id: int) -> dict | None:
+        """Return the current visualizer WS message for late-joiner sync.
+
+        Called by ws_hub when a client connects and no video streamer is active.
+        Delegates to the guild's VisualizerManager.get_current_state_message().
+
+        Returns:
+            A dict ready to send as a WebSocket message, or None if no engine
+            is active (caller should fall back to DVD or idle).
+        """
+        manager = self._managers.get(guild_id)
+        if manager is None:
+            return None
+        return manager.get_current_state_message()
 
     # ------------------------------------------------------------------
     # WebSocketHub viewer count callback
