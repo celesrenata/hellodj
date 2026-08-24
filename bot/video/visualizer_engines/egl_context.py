@@ -320,3 +320,7 @@ class EGLHeadlessContext:
         status = self._gl.glCheckFramebufferStatus(GL_FRAMEBUFFER)
         if status != GL_FRAMEBUFFER_COMPLETE:
             raise EGLContextError(f"FBO incomplete: status=0x{status:04X}")
+
+        # Set viewport to match FBO dimensions — required for fragment
+        # rasterization on headless EGL (no default viewport without a surface)
+        self._gl.glViewport(0, 0, self.width, self.height)

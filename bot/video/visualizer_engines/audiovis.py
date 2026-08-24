@@ -359,15 +359,13 @@ class AudioVisEngine(GPUEngineBase):
         gl.glBindBuffer(GL_ARRAY_BUFFER, vbo)
         gl.glBufferData(GL_ARRAY_BUFFER, ctypes.sizeof(positions), positions, GL_STATIC_DRAW)
 
-        # Enable attribute 0 (position) — even though the shader ignores it,
-        # having an enabled attribute makes Mesa iris emit primitives.
+        # Enable attribute 0 (position) — vertex shader reads from this.
         gl.glEnableVertexAttribArray(0)
-        gl.glVertexAttribPointer = gl.glVertexAttribPointer
         gl.glVertexAttribPointer.argtypes = [
             ctypes.c_uint, ctypes.c_int, ctypes.c_uint,
             ctypes.c_ubyte, ctypes.c_int, ctypes.c_void_p,
         ]
-        gl.glVertexAttribPointer(0, 2, GL_FLOAT, 0, 0, None)
+        gl.glVertexAttribPointer(0, 2, GL_FLOAT, 0, 0, ctypes.c_void_p(0))
 
         gl.glBindVertexArray(0)
         return vao.value
