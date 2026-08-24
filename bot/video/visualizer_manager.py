@@ -440,6 +440,9 @@ class VisualizerManager:
     def _create_engine_instance(self) -> VisualizerRenderer:
         """Instantiate the configured engine from the registry.
 
+        Reads per-guild engine config from guild_settings and passes it
+        as constructor kwargs.
+
         Returns:
             A configured VisualizerRenderer instance.
 
@@ -452,10 +455,15 @@ class VisualizerManager:
         if engine_type == "random":
             engine_type = self._select_next_random_engine()
 
-        # Build kwargs based on engine type
+        # Build kwargs from guild settings config for this engine
         kwargs: dict = {}
         if engine_type == "dvd":
             kwargs["bot_avatar_url"] = self._bot_avatar_url
+        else:
+            # Load per-guild engine config (e.g., style, fft_bins, glow_intensity)
+            config = guild_settings.get_visualizer_config(self.guild_id, engine_type)
+            if config:
+                kwargs.update(config)
 
         return create_engine(engine_type, **kwargs)
 

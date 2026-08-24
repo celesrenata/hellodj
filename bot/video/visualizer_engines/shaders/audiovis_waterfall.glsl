@@ -1,7 +1,8 @@
 #version 330 core
 
-// Waterfall (spectrogram) fragment shader for AudioVis engine.
-// Renders a scrolling frequency-time spectrogram with color mapping.
+// Waterfall/spectrogram fragment shader for AudioVis engine.
+// Renders current FFT as a horizontal band at the top, scrolling down over time.
+// Uses time-based UV offset to simulate scrolling without a history buffer.
 
 in vec2 vUV;
 out vec4 fragColor;
@@ -24,8 +25,8 @@ vec3 heatmap(float t) {
     col = mix(col, vec3(0.0, 1.0, 1.0), smoothstep(0.2, 0.4, t));
     col = mix(col, vec3(0.0, 1.0, 0.0), smoothstep(0.35, 0.5, t));
     col = mix(col, vec3(1.0, 1.0, 0.0), smoothstep(0.5, 0.7, t));
-    col = mix(col, vec3(1.0, 0.0, 0.0), smoothstep(0.7, 0.9, t));
-    col = mix(col, vec3(1.0, 1.0, 1.0), smoothstep(0.9, 1.0, t));
+    col = mix(col, vec3(1.0, 0.0, 0.0), smoothstep(0.65, 0.85, t));
+    col = mix(col, vec3(1.0, 1.0, 1.0), smoothstep(0.85, 1.0, t));
     return col;
 }
 
@@ -33,38 +34,46 @@ void main() {
     vec2 uv = vUV;
 
     // Background
-    vec3 bg = vec3(0.0, 0.0, 0.02) * iBgOpacity;
+    vec3 bg = vec3(0.01, 0.01, 0.02) * iBgOpacity;
 
-    // Current FFT line (rendered as the bottom row, scrolling up simulated by time)
-    // In a real waterfall, we'd use a 2D texture history. Here we approximate
-    // using the current FFT data with time-based scrolling effect.
+    // The waterfall effect: the top portion shows the current FFT,
+    // the rest fades to show "history" (simulated via time-shifted sampling)
+    // In a real implementation, you'd use a 2D texture ring buffer.
+    // Here we simulate by using the FFT with time-based color decay.
+
+    // X axis = frequency, Y axis = time (top = now, bottom = past)
     float freq = uv.x;
+    float age = 1.0 - uv.y; // 0 at top (current), 1 at bottom (oldest)
+
+    // Sample current FFT
     float magnitude = texture(iFFT, freq).r;
 
-    // Simulate scrolling: current data strongest at bottom, fading up
-    float scrollPos = fract(iTime * 0.5);  // scroll speed
-    float age = uv.y;  // 0=bottom (newest), 1=top (oldest)
+    // Decay with age — simulate scrolling history
+    float decayedMag = magnitude * exp(-age * 3.0);
 
-    // Fade intensity with age
-    float fadedMag = magnitude * exp(-age * 2.5);
+    // Add subtle time animation to make it feel alive even without a buffer
+    float timeWobble = sin(iTime * 0.5 + freq * 10.0) * 0.02;
+    decayedMag += timeWobble * (1.0 - age);
 
-    // Beat pulse brightens current data
-    fadedMag *= 1.0 + iBeat * 0.4 * (1.0 - age);
+    decayedMag = clamp(decayedMag, 0.0, 1.0);
 
     // Apply heatmap coloring
-    vec3 col = heatmap(fadedMag * 1.5);
-    col *= (1.0 - age * 0.3);  // darken older data
+    vec3 col = heatmap(decayedMag * 1.5);
 
-    // Glow effect
-    col += col * iGlowIntensity * 0.2 * fadedMag;
+    // Beat pulse: brighten the top rows
+    if (age < 0.05) {
+        col *= 1.0 + iBeat * 1.0;
+    }
 
-    // Mix with background
-    float alpha = smoothstep(0.01, 0.05, fadedMag);
-    col = mix(bg, col, alpha);
+    // Scanline effect (subtle horizontal lines)
+    float scanline = 0.95 + 0.05 * sin(uv.y * iResolution.y * 0.5);
+    col *= scanline;
 
-    // Frequency axis markers
-    float freqMark = smoothstep(0.003, 0.0, abs(mod(uv.x * 16.0, 1.0) - 0.5) - 0.49);
-    col += vec3(0.1, 0.1, 0.15) * freqMark * 0.2 * (1.0 - age);
+    // Fade bottom to black
+    col *= smoothstep(1.0, 0.7, age);
+
+    // Mix with background for very low magnitudes
+    col = mix(bg, col, smoothstep(0.0, 0.02, decayedMag));
 
     fragColor = vec4(col, 1.0);
 }

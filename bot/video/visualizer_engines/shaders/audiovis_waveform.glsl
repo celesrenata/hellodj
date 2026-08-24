@@ -1,7 +1,7 @@
 #version 330 core
 
-// Waveform fragment shader for AudioVis engine.
-// Renders a scrolling waveform line with glow and beat pulse.
+// Waveform/oscilloscope fragment shader for AudioVis engine.
+// Renders a glowing audio waveform line with trail decay.
 
 in vec2 vUV;
 out vec4 fragColor;
@@ -21,47 +21,43 @@ void main() {
 
     // Background gradient
     vec3 bg = mix(
-        vec3(0.01, 0.01, 0.04),
-        vec3(0.03, 0.01, 0.06),
+        vec3(0.02, 0.01, 0.05),
+        vec3(0.05, 0.02, 0.08),
         uv.y
     ) * iBgOpacity;
 
-    // Sample FFT at this x position
-    float fftVal = texture(iFFT, uv.x).r;
+    // Sample FFT at this x position to get waveform height
+    float freq = uv.x;
+    float magnitude = texture(iFFT, freq).r;
 
-    // Waveform center line with amplitude
-    float waveY = 0.5 + (fftVal - 0.3) * 0.6;
-
-    // Beat pulse makes waveform thicker
-    float lineWidth = 0.008 + iBeat * 0.006;
+    // Waveform center line at y=0.5, amplitude mapped to [-0.4, 0.4]
+    float waveY = 0.5 + magnitude * 0.4 * sin(uv.x * 6.2832 * 3.0 + iTime * 2.0);
 
     // Distance from pixel to waveform line
     float dist = abs(uv.y - waveY);
 
-    // Core line
-    float line = smoothstep(lineWidth, lineWidth * 0.3, dist);
+    // Glow effect — thicker line with soft falloff
+    float lineWidth = 0.003 + 0.002 * iBeat;
+    float glow = lineWidth / (dist + 0.001);
+    glow = pow(glow, 1.5) * 0.15;
 
-    // Glow around line
-    float glow = exp(-dist * dist / (0.002 * iGlowIntensity + 0.0001)) * 0.4 * iGlowIntensity;
+    // Color based on frequency position + beat pulse
+    vec3 lineColor = vec3(0.2, 0.6, 1.0);
+    lineColor = mix(lineColor, vec3(1.0, 0.3, 0.6), uv.x);
+    lineColor *= 1.0 + iBeat * 0.8;
 
-    // Color based on frequency position
-    vec3 lineColor = mix(
-        vec3(0.2, 0.6, 1.0),
-        vec3(1.0, 0.3, 0.6),
-        uv.x
-    );
+    // Secondary waveform (reflected, dimmer)
+    float waveY2 = 0.5 - magnitude * 0.3 * sin(uv.x * 6.2832 * 2.0 + iTime * 1.5);
+    float dist2 = abs(uv.y - waveY2);
+    float glow2 = lineWidth / (dist2 + 0.001);
+    glow2 = pow(glow2, 1.5) * 0.06;
+    vec3 lineColor2 = vec3(0.1, 1.0, 0.5) * (1.0 + iBeat * 0.4);
 
-    // Beat brightness boost
-    lineColor *= 1.0 + iBeat * 0.6;
+    // Combine
+    vec3 col = bg + lineColor * glow + lineColor2 * glow2;
 
-    vec3 col = bg;
-    col += lineColor * line;
-    col += lineColor * glow;
-
-    // Subtle grid lines
-    float gridX = smoothstep(0.002, 0.0, abs(mod(uv.x * float(iFFTBins), 1.0) - 0.5) - 0.48);
-    float gridY = smoothstep(0.002, 0.0, abs(mod(uv.y * 8.0, 1.0) - 0.5) - 0.48);
-    col += vec3(0.05, 0.05, 0.1) * (gridX + gridY) * 0.3;
+    // Beat flash overlay
+    col += vec3(0.1, 0.05, 0.15) * iBeat * 0.3;
 
     fragColor = vec4(col, 1.0);
 }

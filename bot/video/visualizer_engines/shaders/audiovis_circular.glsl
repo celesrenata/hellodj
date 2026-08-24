@@ -1,7 +1,7 @@
 #version 330 core
 
-// Circular spectrum fragment shader for AudioVis engine.
-// Renders FFT data as a radial bar/ring visualization.
+// Circular/radial spectrum fragment shader for AudioVis engine.
+// Renders FFT as radial bars emanating from center with glow.
 
 in vec2 vUV;
 out vec4 fragColor;
@@ -17,68 +17,69 @@ uniform float     iGlowIntensity;
 uniform float     iBgOpacity;
 
 #define PI 3.14159265359
-#define TWO_PI 6.28318530718
+#define TAU 6.28318530718
 
 void main() {
-    // Center UV coordinates
-    vec2 uv = vUV * 2.0 - 1.0;
-    uv.x *= iResolution.x / iResolution.y;  // aspect correction
+    vec2 uv = vUV;
+
+    // Center coordinates [-1, 1] with aspect correction
+    vec2 center = (uv - 0.5) * 2.0;
+    center.x *= iResolution.x / iResolution.y;
 
     // Polar coordinates
-    float r = length(uv);
-    float angle = atan(uv.y, uv.x);  // -PI to PI
-    float normAngle = (angle + PI) / TWO_PI;  // 0 to 1
+    float radius = length(center);
+    float angle = atan(center.y, center.x); // [-PI, PI]
+    float normAngle = (angle + PI) / TAU;   // [0, 1]
 
-    // Background
-    vec3 bg = vec3(0.02, 0.01, 0.04) * iBgOpacity;
+    // Background — dark with subtle radial gradient
+    vec3 bg = vec3(0.02, 0.02, 0.04) * iBgOpacity;
+    bg += vec3(0.01, 0.005, 0.02) * (1.0 - radius * 0.5);
 
-    // Ring parameters
-    float innerRadius = 0.25 + iBeat * 0.03;
-    float maxBarHeight = 0.35;
+    // Inner ring radius (where bars start)
+    float innerRadius = 0.2 + iBeat * 0.03;
 
     // Sample FFT at this angle
-    float fftVal = texture(iFFT, normAngle).r;
+    float magnitude = texture(iFFT, normAngle).r;
 
-    // Beat pulse expands bars
-    float barHeight = fftVal * maxBarHeight * (1.0 + iBeat * 0.3);
-    float outerRadius = innerRadius + barHeight;
+    // Bar extends from innerRadius outward by magnitude
+    float barLength = magnitude * 0.6;
+    float outerRadius = innerRadius + barLength;
+
+    // Check if pixel is within a bar
+    float barAngleWidth = TAU / float(iFFTBins);
+    float barAngle = mod(normAngle * TAU, barAngleWidth);
+    float barGap = barAngleWidth * 0.2;
+    bool inBarAngle = barAngle > barGap && barAngle < barAngleWidth - barGap;
+    bool inBarRadius = radius > innerRadius && radius < outerRadius;
 
     vec3 col = bg;
 
-    // Draw circular bars
-    if (r > innerRadius && r < outerRadius) {
-        float intensity = (r - innerRadius) / barHeight;
-
-        // Color rotates with time
-        float hueShift = iTime * 0.1;
-        vec3 barCol = vec3(
-            0.5 + 0.5 * sin(normAngle * TWO_PI + hueShift),
-            0.5 + 0.5 * sin(normAngle * TWO_PI + hueShift + 2.094),
-            0.5 + 0.5 * sin(normAngle * TWO_PI + hueShift + 4.189)
+    if (inBarAngle && inBarRadius) {
+        // Color gradient along the bar (inner=blue, outer=pink)
+        float barPos = (radius - innerRadius) / max(barLength, 0.001);
+        vec3 barCol = mix(
+            vec3(0.1, 0.3, 1.0),
+            vec3(1.0, 0.2, 0.6),
+            barPos
         );
+        barCol *= 1.0 + iBeat * 0.5;
 
-        // Boost brightness with beat
-        barCol *= 0.8 + iBeat * 0.5;
-        barCol *= 1.0 - intensity * 0.3;
+        // Brightness boost at tip
+        float tipGlow = smoothstep(0.8, 1.0, barPos) * iGlowIntensity;
+        barCol += vec3(0.5, 0.3, 0.8) * tipGlow;
 
         col = barCol;
-
-        // Glow at outer edge
-        float edgeDist = outerRadius - r;
-        if (edgeDist < 0.02 * iGlowIntensity) {
-            col += vec3(0.3, 0.5, 1.0) * (1.0 - edgeDist / (0.02 * iGlowIntensity)) * iGlowIntensity * 0.5;
-        }
     }
 
-    // Inner ring glow
-    float innerGlow = exp(-(r - innerRadius) * (r - innerRadius) / (0.001 * iGlowIntensity + 0.0001));
-    col += vec3(0.2, 0.4, 0.8) * innerGlow * 0.3 * iGlowIntensity;
+    // Inner circle glow (pulsing with beat)
+    float innerGlow = smoothstep(innerRadius, innerRadius - 0.05, radius);
+    vec3 centerColor = vec3(0.15, 0.1, 0.3) * (1.0 + iBeat * 1.5);
+    col += centerColor * innerGlow;
 
-    // Center circle (dark with subtle pulse)
-    if (r < innerRadius - 0.01) {
-        float centerGlow = iBeat * 0.1 * (1.0 - r / innerRadius);
-        col = bg + vec3(0.05, 0.1, 0.2) * centerGlow;
-    }
+    // Outer ring glow
+    float ringDist = abs(radius - innerRadius);
+    float ringGlow = 0.005 / (ringDist + 0.005);
+    col += vec3(0.2, 0.1, 0.4) * ringGlow * 0.3;
 
     fragColor = vec4(col, 1.0);
 }
