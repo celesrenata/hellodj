@@ -407,7 +407,17 @@ class ProjectMEngine(GPUEngineBase):
         )
 
     def _suppress_logo(self) -> None:
-        """Prevent libprojectM from loading logo texture by setting search paths to /dev/null."""
+        """Prevent libprojectM from rendering the floating M logo overlay."""
+        # Method 1: Disable the "easter egg" (the logo overlay)
+        try:
+            self._lib.projectm_set_easter_egg.restype = None
+            self._lib.projectm_set_easter_egg.argtypes = [ctypes.c_void_p, ctypes.c_float]
+            self._lib.projectm_set_easter_egg(self._pm_handle, ctypes.c_float(0.0))
+            log.debug("projectM: easter egg (logo) disabled")
+        except (AttributeError, OSError) as e:
+            log.warning("projectM: projectm_set_easter_egg not available: %s", e)
+
+        # Method 2: Set texture search paths to /dev/null (belt and suspenders)
         try:
             empty_path = ctypes.c_char_p(b"/dev/null")
             paths_array = (ctypes.c_char_p * 1)(empty_path)
@@ -416,10 +426,10 @@ class ProjectMEngine(GPUEngineBase):
                 paths_array,
                 ctypes.c_size_t(1),
             )
-            log.debug("projectM: texture search paths set to /dev/null (logo suppressed)")
-        except AttributeError:
+            log.debug("projectM: texture search paths set to /dev/null")
+        except (AttributeError, OSError):
             log.warning(
-                "projectM: projectm_set_texture_search_paths not available, logo suppression skipped"
+                "projectM: projectm_set_texture_search_paths not available, skipped"
             )
 
     def _suppress_toast(self) -> None:
