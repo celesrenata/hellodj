@@ -14,10 +14,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     libva-dev \
     vainfo \
     libsndfile1 \
-    # EGL/OpenGL for GPU visualizer engines (headless rendering)
+    # EGL/OpenGL for GPU visualizer engines (headless rendering via GBM)
     libegl1-mesa-dev \
     libgl1-mesa-dev \
     libgles2-mesa-dev \
+    libgbm-dev \
+    libdrm-dev \
+    mesa-utils-extra \
     # libprojectM for Milkdrop preset rendering
     libprojectm-dev \
     # Build deps for ffmpeg
@@ -32,6 +35,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     wget \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+# EGL platform dispatch: Debian trixie's libglvnd 1.7.0 doesn't route
+# eglGetPlatformDisplay to Mesa for GBM platform. The egl_context.py code
+# uses eglGetProcAddress to get eglGetPlatformDisplayEXT as a workaround.
 
 # Build ffmpeg 9 from release tarball with QSV + common codecs + TLS (HTTPS)
 RUN wget -q https://ffmpeg.org/releases/ffmpeg-9.0.tar.xz \
@@ -54,7 +61,7 @@ RUN wget -q https://ffmpeg.org/releases/ffmpeg-9.0.tar.xz \
     && make install \
     && cd / \
     && rm -rf ffmpeg-9.0 ffmpeg-9.0.tar.xz \
-    # Remove build tools only (keep runtime libs and -dev since they're small)
+    # Remove build tools (keep runtime libs)
     && apt-get purge -y build-essential nasm wget \
     && apt-get autoremove -y \
     && apt-get clean \
