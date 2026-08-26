@@ -164,6 +164,8 @@ export const NIX_CACHE_S3_URI = 's3://hellodj-nix-cache';
  */
 export function getInstallCommands(): string[] {
   return [
+    // Install Node.js 22 (aws-cdk-lib requires >= 20, CodeBuild default is 18).
+    'curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs',
     // Install Nix (Determinate Systems installer — same as GHA workflow).
     'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
     // Source nix-daemon env for the rest of the build.
@@ -230,52 +232,16 @@ export function getBuildCommands(extraCommands: string[] = []): string[] {
     // Source Nix env (installed by installCommands).
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
     // CDK synth: run from platform/infra/ where cdk.json + package.json live.
-    'cd platform/infra && npm ci',
-    // SYNTH-TIME FOUNDATION-SINGLETON GATE (R1.8). `npx cdk synth` executes
-    // `bin/hellodj.ts`, which calls `assertFoundationSingleton(app)` immediately
-    // before `app.synth()`. That helper synthesizes the app and counts every
-    // foundation resource type (VPC, EKS control plane, DAX, NAT gateway, each
-    // node-group name, ALB, NLB) across ALL templates; if any is duplicated it
-    // THROWS — failing this build step with an error naming the duplicated type
-    // and producing no deployable app. Because this synth is the pipeline's
-    // build stage and CDK Pipelines runs the build stage to completion before
-    // any deploy stage, a duplicated Shared_Foundation resource is caught here
-    // and can NEVER reach a Beta/Staging/Production deploy (R1.8, R10.1). The
-    // gate is realized by `cdk synth` invoking `assertFoundationSingleton`; the
-    // assertion logic itself lives once in `lib/foundation.ts` and is NOT
-    // duplicated here.
-    'cd platform/infra && npx cdk synth',
-    // Metadata-only: RESOLVE + VERIFY the prebuilt GPU AMI (built and published
-    // by the GitHub Actions Nix Build_Trigger) is retrievable rather than
-    // compiling it on CodeBuild, so no build compute is billed for the AMI
-    // (R6.3, R6.4, R10.2). A missing artifact halts and surfaces its store path
-    // (R7.4).
-    'cd platform && python3 tools/resolve_closure.py --ami --verify',
-    // --- GATE HOOK POINT (tasks 18.2, 18.3) — append repo-wide gate commands here ---
+    // Use $CODEBUILD_SRC_DIR for absolute pathing since each command in the
+    // CodeBuild script may not preserve CWD from prior `cd` commands.
+    'cd $CODEBUILD_SRC_DIR/platform/infra && npm ci',
+    'cd $CODEBUILD_SRC_DIR/platform/infra && npx cdk synth',
+    // Metadata-only: RESOLVE + VERIFY the prebuilt GPU AMI.
+    'cd $CODEBUILD_SRC_DIR/platform && python3 tools/resolve_closure.py --ami --verify',
     `echo "${GATE_HOOK_MARKER}: repo-wide base-image (18.2) + PEP8/line-count (18.3) gates run here"`,
-    // task 18.2 — Nix base-image gate: reject any non-Nix (ubuntu/debian) base
-    // image and FAIL THE BUILD on non-PASS (R5.1, R5.4, R5.7). Runs the shared,
-    // property-tested `base_image_gate.check_base` logic over every component's
-    // image build definition via the tools/gate_base_image.py runner. This gate
-    // step is retained in the build stage so build/synth precedes stage deploys
-    // and a non-PASS blocks promotion (R5.7, R10.1).
-    'cd platform && python3 tools/gate_base_image.py',
-    // task 18.3 — PEP 8 / line-count gate: run `ruff` (PEP 8 style) plus the
-    // 500-line-max hook and fail the build on any style or line-count
-    // violation (R13.2, R13.3, R13.4). The tools/gate_style.py runner invokes
-    // both checks so one build surfaces every violation; it reads the ruff and
-    // max-line-count config from pyproject.toml, the single source of truth.
-    'cd platform && python3 tools/gate_style.py',
-    // task 18.1 — pin-time verification gate: verify EVERY enumerated flake
-    // input (Lavalink, lavaplayer, LavaSrc, youtube-source, Temurin/JDK == 25
-    // LTS, nixpkgs, nixos-generators, Karpenter, EKS k8s version) pins via
-    // github:owner/repo/branch and its pinned identifier equals the identifier
-    // resolved from upstream at pin time (R11.1-R11.3). The tools/gate_pins.py
-    // runner runs the shared, property-tested `pinning.verify_pin` logic over
-    // pins.toml; a mismatched pin is rejected (named, prior revision retained,
-    // R11.5) and an unresolved upstream fails (named, prior revision retained,
-    // R11.6), failing the build so no bad pin is adopted.
-    'cd platform && python3 tools/gate_pins.py',
+    'cd $CODEBUILD_SRC_DIR/platform && python3 tools/gate_base_image.py',
+    'cd $CODEBUILD_SRC_DIR/platform && python3 tools/gate_style.py',
+    'cd $CODEBUILD_SRC_DIR/platform && python3 tools/gate_pins.py',
     ...extraCommands,
   ];
 }
@@ -328,7 +294,7 @@ export function getComponentBuildCommands(
     // and surfaces its store path rather than substituting a non-cache artifact
     // (R7.4), mirroring the pure `resolve_closure` decision function.
     `echo "resolving + verifying prebuilt closure/image for component: ${component} (no build compute — R6.3/R6.4)"`,
-    `cd platform && python3 tools/resolve_closure.py --component ${component} --verify && python3 tools/gate_dependencies.py --component ${component}`,
+    `cd $CODEBUILD_SRC_DIR/platform && python3 tools/resolve_closure.py --component ${component} --verify && python3 tools/gate_dependencies.py --component ${component}`,
     ...extraCommands,
   ];
 }
