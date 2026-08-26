@@ -1,0 +1,20 @@
+{% import "components/macros.html" as ui %}
+<form class="config-form" hx-post="{{ url_for('pages.config_save') }}"
+      hx-swap="outerHTML" hx-indicator="#save-spinner">
+  {% if saved %}
+    <p class="notice notice--success" role="status">Configuration saved.</p>
+  {% endif %}
+
+  {{ ui.form_field('bot_name', 'Bot display name', config.get('bot_name', ''),
+      hint='Shown in Discord and the Activity.') }}
+  {{ ui.form_field('default_source', 'Default source', config.get('default_source', ''),
+      hint='youtube, spotify, tidal, or soundcloud.') }}
+  {{ ui.form_field('max_queue', 'Max queue length', config.get('max_queue', ''), 'number') }}
+
+  <div class="config-form__actions">
+    <button type="submit" class="btn btn-primary">
+      <span id="save-spinner" class="htmx-indicator">Saving…</span>
+      Save configuration
+    </button>
+  </div>
+</form>

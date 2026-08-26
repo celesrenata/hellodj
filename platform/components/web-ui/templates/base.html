@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="view-transition" content="same-origin">
+  <title>{% block title %}HelloDJ{% endblock %} · HelloDJ</title>
+
+  <link rel="stylesheet" href="{{ static_hash('css/app.css') }}">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+
+  <!-- HTMX + Alpine.js (served locally in prod; see static/js). -->
+  <script defer src="{{ static_hash('js/htmx.min.js') }}"></script>
+  <script defer src="{{ static_hash('js/alpine.min.js') }}"></script>
+  <script defer src="{{ static_hash('js/app.js') }}"></script>
+</head>
+<body class="bg-surface-0 text-text-secondary">
+  <canvas id="bg-shader" class="fixed inset-0 -z-10 w-full h-full pointer-events-none" aria-hidden="true"></canvas>
+
+  <div class="app-shell" x-data="{ collapsed: false }">
+    <aside class="sidebar glass-panel" :class="collapsed && 'sidebar--collapsed'" aria-label="Primary">
+      <div class="sidebar__brand">
+        <span class="sidebar__logo" aria-hidden="true">◆</span>
+        <span class="sidebar__title" x-show="!collapsed">HelloDJ</span>
+        <button type="button" class="sidebar__toggle" @click="collapsed = !collapsed"
+                aria-label="Toggle navigation">☰</button>
+      </div>
+
+      <nav class="sidebar__nav">
+        {% for item in nav_items %}
+          <a class="nav-item {% if item.key == active %}active{% endif %}"
+             href="{{ url_for(item.endpoint) }}"
+             hx-get="{{ url_for(item.endpoint) }}"
+             hx-target="#main-content" hx-push-url="true"
+             {% if item.key == active %}aria-current="page"{% endif %}>
+            <span class="nav-item__icon" aria-hidden="true">●</span>
+            <span class="nav-item__label" x-show="!collapsed">{{ item.label }}</span>
+          </a>
+        {% endfor %}
+      </nav>
+
+      <div class="sidebar__footer">
+        <form action="{{ url_for('auth.logout') }}" method="post">
+          <button type="submit" class="nav-item nav-item--button">
+            <span class="nav-item__icon" aria-hidden="true">⏻</span>
+            <span class="nav-item__label" x-show="!collapsed">Logout</span>
+          </button>
+        </form>
+      </div>
+    </aside>
+
+    <main class="content" role="main">
+      <header class="content__header">
+        <h1 class="content__title">{% block heading %}{% endblock %}</h1>
+      </header>
+      <section id="main-content" class="content__body">
+        {% block content %}{% endblock %}
+      </section>
+    </main>
+  </div>
+
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+</body>
+</html>

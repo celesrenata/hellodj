@@ -1,0 +1,60 @@
+[project]
+name = "hellodj-playback-orchestrator"
+version = "0.1.0"
+description = "HelloDJ playback-orchestrator component: routing, classification, content filtering, user bans, and unified queue/session persistence (single writer to hellodj-session)."
+requires-python = ">=3.11"
+readme = "README.md"
+
+# Runtime dependencies. boto3 supplies the injected DynamoDB/DAX resource
+# `Table` objects consumed by persistence via the shared data-access layer.
+# The shared pure-logic package is consumed as a path/namespace reference
+# (see [tool.setuptools] below) so IaC and runtime share one source of truth.
+dependencies = [
+    "boto3>=1.34",
+    # Shared pure-logic + data-access layer. Installed editable from the
+    # monorepo (`pip install -e ../hellodj_platform_logic`) or made importable
+    # via PYTHONPATH=components. Pinned here as a namespace reference (R15).
+    "hellodj-platform-logic",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "hypothesis>=6.100",
+    "moto[dynamodb]>=5.0",
+]
+dev = [
+    "ruff>=0.6",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["playback_orchestrator*"]
+
+# ---------------------------------------------------------------------------
+# ruff — PEP 8 style enforcement (Requirement 13.2), aligned with the
+# monorepo-root pyproject.toml so this independently deployable component
+# (R15.1) lints identically in isolation.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["B011"]
+"**/test_*.py" = ["B011"]
+
+[tool.hellodj.line_count]
+max-line-count = 500
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+addopts = "-ra"

@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+*.egg-info/
+
+# CDK / Node
+infra/node_modules/
+infra/cdk.out/
+infra/*.js
+infra/*.d.ts
+!infra/jest.config.js

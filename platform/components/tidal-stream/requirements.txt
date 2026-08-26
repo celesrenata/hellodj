@@ -1,0 +1,8 @@
+# Runtime dependencies for the tidal-stream component (R15.1: independently
+# deployable). The shared pure decision logic (tidal_refresh) is referenced by
+# path from the monorepo so IaC and runtime share one source of truth; install
+# it editable alongside these pins:
+#     pip install -e ../hellodj_platform_logic
+# or make it importable via PYTHONPATH=components.
+aiohttp>=3.9
+boto3>=1.34

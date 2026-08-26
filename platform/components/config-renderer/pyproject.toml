@@ -1,0 +1,31 @@
+[project]
+name = "hellodj-config-renderer"
+version = "0.1.0"
+description = "Renders the complete Lavalink application.yml from AWS Secrets Manager + DynamoDB (no SQLite)."
+requires-python = ">=3.11"
+readme = "README.md"
+
+# Runtime dependencies:
+#   boto3  — AWS Secrets Manager client + DynamoDB resource for the config source.
+#   PyYAML — safe, deterministic YAML serialization of the rendered config.
+dependencies = [
+    "boto3>=1.34",
+    "PyYAML>=6.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "moto[dynamodb,secretsmanager]>=5.0",
+]
+
+[project.scripts]
+# Entry point suitable for an init container / pre-deploy Job.
+hellodj-render-lavalink-config = "config_renderer.__main__:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["config_renderer*"]

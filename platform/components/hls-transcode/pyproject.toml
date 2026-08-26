@@ -1,0 +1,67 @@
+[project]
+name = "hellodj-hls-transcode"
+version = "0.1.0"
+description = "HelloDJ hls-transcode component: hybrid CPU/GPU HLS transcoder (libx264 on Graviton by default, NVENC when the hybrid GPU controller reports the GPU Ready), co-located visualizer rendering, HLS written to S3 (CloudFront origin), and CPU/GPU pressure metrics published to CloudWatch for the Autoscaler."
+requires-python = ">=3.11"
+readme = "README.md"
+
+# Runtime dependencies:
+#   aiohttp — async HTTP server exposing /v1/transcode start/stop for the
+#             activity-backend to call.
+#   boto3   — AWS SDK for writing HLS output to S3 and publishing CloudWatch
+#             pressure metrics.
+# Both are imported lazily where used so the modules import for tests /
+# py_compile without them installed. The shared hybrid gas/electric controller
+# is consumed from the monorepo's hellodj_platform_logic package (install
+# editable or via PYTHONPATH=components), giving IaC and runtime one source of
+# truth (R15).
+dependencies = [
+    "aiohttp>=3.9",
+    "boto3>=1.34",
+    "hellodj-platform-logic",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+dev = [
+    "ruff>=0.6",
+]
+
+[project.scripts]
+hellodj-hls-transcode = "hls_transcode.server:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["hls_transcode*"]
+
+# ---------------------------------------------------------------------------
+# ruff — PEP 8 style enforcement (Requirement 13.2), aligned with the
+# monorepo-root pyproject.toml so this independently deployable component
+# (R15.1) lints identically in isolation.
+# ---------------------------------------------------------------------------
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "W", "F", "I", "N", "UP", "B"]
+
+[tool.ruff.lint.per-file-ignores]
+"**/tests/**" = ["B011"]
+"**/test_*.py" = ["B011"]
+
+[tool.hellodj.line_count]
+max-line-count = 500
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+asyncio_mode = "auto"
+addopts = "-ra"

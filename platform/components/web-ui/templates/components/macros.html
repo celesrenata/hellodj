@@ -1,0 +1,40 @@
+{# Reusable Jinja macros for the web-ui (modern-web-ui component patterns). #}
+
+{% macro stat_card(label, value) %}
+<div class="glass-panel stat-card">
+  <div class="stat-card__icon" aria-hidden="true">
+    <span class="stat-card__glyph">♪</span>
+  </div>
+  <div class="stat-card__body">
+    <p class="stat-card__label">{{ label }}</p>
+    <p class="stat-card__value">{{ value }}</p>
+  </div>
+</div>
+{% endmacro %}
+
+{% macro form_field(name, label, value='', type='text', hint='') %}
+<div class="field">
+  <label class="field__label" for="f-{{ name }}">{{ label }}</label>
+  <input class="field__input" id="f-{{ name }}" name="{{ name }}"
+         type="{{ type }}" value="{{ value }}"
+         {% if hint %}aria-describedby="hint-{{ name }}"{% endif %}>
+  {% if hint %}<p class="field__hint" id="hint-{{ name }}">{{ hint }}</p>{% endif %}
+</div>
+{% endmacro %}
+
+{% macro table(headers, rows) %}
+<div class="glass-panel data-table__wrap">
+  <table class="data-table">
+    <thead>
+      <tr>{% for h in headers %}<th scope="col">{{ h }}</th>{% endfor %}</tr>
+    </thead>
+    <tbody>
+      {% for row in rows %}
+        <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+      {% else %}
+        <tr><td class="data-table__empty" colspan="{{ headers|length }}">No records.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endmacro %}

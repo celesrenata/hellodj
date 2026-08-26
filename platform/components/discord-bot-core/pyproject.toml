@@ -1,0 +1,32 @@
+[project]
+name = "hellodj-discord-bot-core"
+version = "0.1.0"
+description = "HelloDJ discord-bot-core component: Discord gateway, cog/command registration, guild policy, and background watchdogs. Delegates all playback to the playback-orchestrator."
+requires-python = ">=3.11"
+readme = "README.md"
+
+# Runtime dependencies. discord.py drives the gateway/command layer, wavelink is
+# the audio client contract shared with the orchestrator/lavalink path, and
+# boto3 reads the Discord bot token from AWS Secrets Manager. The shared pure
+# decision logic is consumed from the monorepo's hellodj_platform_logic package.
+dependencies = [
+    "discord.py>=2.4",
+    "wavelink>=3.4",
+    "boto3>=1.34",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["discord_bot_core*"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

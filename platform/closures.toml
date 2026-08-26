@@ -1,0 +1,119 @@
+# Build-once / deploy-thrice closure manifest (Requirement 7 —
+# hellodj-nix-native-delivery).
+#
+# This manifest is the single, declarative source of truth the DEPLOY path
+# (`tools/resolve_closure.py`) consults to pull each artifact's prebuilt closure
+# by its Nix STORE-PATH HASH. It is written by the `publish-cache` job of the
+# GitHub Actions Nix build workflow (.github/workflows/nix-build.yml, task 16.1)
+# after a closure has been pushed to the S3-backed Nix binary cache AND its
+# retrievability confirmed via a `narinfo` read-back (R7.7). Only then is the
+# artifact recorded here and thereby "marked available for stage deployment".
+#
+# Build-once/deploy-thrice (R7.2/7.3):
+#   * The `store_path_hash` recorded here is the ONE build-once identity for the
+#     artifact. Beta, Staging, and Production ALL resolve this SAME hash, so an
+#     identical closure is pulled and reused across all three stages and is
+#     never rebuilt for any stage.
+#   * `tools/resolve_closure.py --component <c> --verify` (and `--ami --verify`)
+#     match on this hash against the cache contents and, with `--verify`, do a
+#     `narinfo` read-back from the S3 cache to confirm retrievability. The pure,
+#     property-tested `hellodj_platform_logic.binary_cache.resolve_closure`
+#     decides reuse-vs-halt purely on the hash.
+#
+# Missing-closure halt (R7.4):
+#   * If a required artifact is ABSENT here (or its narinfo is not retrievable
+#     from the cache under `--verify`), the deploy step HALTS for that stage,
+#     surfaces the missing closure BY ITS STORE PATH, and never substitutes an
+#     artifact obtained from any source other than the Nix binary cache.
+#
+# The recorded values below are placeholders replaced in-place by the workflow's
+# `publish-cache` job (it rewrites each `store_path`/`store_path_hash` with the
+# real `/nix/store/<hash>-<name>` it pushed + verified). They exist so the
+# manifest is well-formed and the deploy tool + tests have a stable schema.
+
+# The S3-backed Nix binary cache the deploy path pulls from (R7.1). The concrete
+# bucket/region is injected at deploy time from the same NIX_CACHE_S3_URI the
+# build workflow publishes to; recorded here for documentation/traceability.
+[cache]
+backend = "s3"                 # selected backend (design §7 — lowest idle cost)
+uri = "s3://hellodj-nix-cache" # e.g. s3://hellodj-nix-cache?region=us-east-1
+
+# ---------------------------------------------------------------------------
+# The four JVM fork jar/image closures (built by the GitHub Actions Nix build).
+# Each `store_path_hash` is the build-once identity reused across all stages.
+# ---------------------------------------------------------------------------
+
+[closures.lavaplayer]
+store_path = "/nix/store/0000000000000000000000000000000000000000-lavaplayer.jar"
+store_path_hash = "0000000000000000000000000000000000000000"
+
+[closures.lavasrc]
+store_path = "/nix/store/0000000000000000000000000000000000000000-lavasrc-plugin.jar"
+store_path_hash = "0000000000000000000000000000000000000000"
+
+[closures.youtube-source]
+store_path = "/nix/store/0000000000000000000000000000000000000000-youtube-plugin-sabr.jar"
+store_path_hash = "0000000000000000000000000000000000000000"
+
+[closures.lavalink]
+store_path = "/nix/store/0000000000000000000000000000000000000000-lavalink-image.tar.gz"
+store_path_hash = "0000000000000000000000000000000000000000"
+
+# ---------------------------------------------------------------------------
+# Platform component OCI-image closures (dockerTools.buildLayeredImage, R5.1).
+# One entry per independently deployable Component (design decomposition). Their
+# hashes are reused unchanged across Beta/Staging/Production.
+# ---------------------------------------------------------------------------
+
+[closures.discord-bot-core]
+store_path = "/nix/store/0000000000000000000000000000000000000000-discord-bot-core-image.tar.gz"
+store_path_hash = "0000000000000000000000000000000000000000"
+
+[closures.playback-orchestrator]
+store_path = "/nix/store/0000000000000000000000000000000000000000-playback-orchestrator-image.tar.gz"
+store_path_hash = "0000000000000000000000000000000000000000"
+
+[closures.tidal-stream]
+store_path = "/nix/store/0000000000000000000000000000000000000000-tidal-stream-image.tar.gz"
+store_path_hash = "0000000000000000000000000000000000000000"
+
+[closures.spotify-stream]
+store_path = "/nix/store/0000000000000000000000000000000000000000-spotify-stream-image.tar.gz"
+store_path_hash = "0000000000000000000000000000000000000000"
+
+[closures.yt-cipher]
+store_path = "/nix/store/0000000000000000000000000000000000000000-yt-cipher-image.tar.gz"
+store_path_hash = "0000000000000000000000000000000000000000"
+
+[closures.potoken-server]
+store_path = "/nix/store/0000000000000000000000000000000000000000-potoken-server-image.tar.gz"
+store_path_hash = "0000000000000000000000000000000000000000"
+
+[closures.activity-backend]
+store_path = "/nix/store/0000000000000000000000000000000000000000-activity-backend-image.tar.gz"
+store_path_hash = "0000000000000000000000000000000000000000"
+
+[closures.hls-transcode]
+store_path = "/nix/store/0000000000000000000000000000000000000000-hls-transcode-image.tar.gz"
+store_path_hash = "0000000000000000000000000000000000000000"
+
+[closures.voice-pipeline]
+store_path = "/nix/store/0000000000000000000000000000000000000000-voice-pipeline-image.tar.gz"
+store_path_hash = "0000000000000000000000000000000000000000"
+
+[closures.web-ui]
+store_path = "/nix/store/0000000000000000000000000000000000000000-web-ui-image.tar.gz"
+store_path_hash = "0000000000000000000000000000000000000000"
+
+[closures.config-renderer]
+store_path = "/nix/store/0000000000000000000000000000000000000000-config-renderer-image.tar.gz"
+store_path_hash = "0000000000000000000000000000000000000000"
+
+# ---------------------------------------------------------------------------
+# The single shared GPU AMI closure (nixos-generators amazon-image, R5.2/8.4).
+# One image across all three stages; its hash is the build-once identity too.
+# ---------------------------------------------------------------------------
+
+[closures.gpu-ami]
+store_path = "/nix/store/0000000000000000000000000000000000000000-nixos-amazon-image.vhd"
+store_path_hash = "0000000000000000000000000000000000000000"

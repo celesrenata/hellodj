@@ -1,0 +1,6 @@
+{# Out-of-band toast fragment; server injects via HTMX hx-swap-oob. #}
+<div id="toast-container" hx-swap-oob="beforeend">
+  <div class="toast toast--{{ level|default('info') }}" role="alert">
+    <span class="toast__message">{{ message }}</span>
+  </div>
+</div>

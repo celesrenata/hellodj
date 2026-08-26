@@ -1,0 +1,105 @@
+# Upstream version pin manifest (Requirement 11 — hellodj-nix-native-delivery).
+#
+# This manifest is the single, declarative source of truth the pinning workflow
+# (`tools/gate_pins.py`) verifies. It enumerates EVERY pinned upstream/base
+# version the spec calls out (R11.1):
+#
+#   Lavalink, lavaplayer, LavaSrc, youtube-source,
+#   Temurin/JDK (== 25 LTS), nixpkgs, nixos-generators, Karpenter,
+#   and the EKS Kubernetes version.
+#
+# Each input pins upstream via `github:owner/repo/branch` (R11.3) so that
+# `nix flake update <input>` synchronizes future upstream merges (R11.4). The
+# `github:` form is mandatory — a `path:` input is forbidden by the NixOS
+# steering (it ties the build to a machine's filesystem layout) and is rejected
+# by the workflow.
+#
+# `pinned_identifier` is the revision/tag/version captured in `flake.lock` (or,
+# for the CDK-managed inputs Karpenter/EKS, the version literal in the infra
+# code) at pin time. At pin time each pinned identifier MUST equal the
+# identifier resolved from that input's upstream (R11.1/R11.2). The workflow
+# resolves the upstream identifier and:
+#   * accepts iff the pinned identifier equals upstream (R11.1);
+#   * rejects a mismatched pin, naming the input, retaining the prior revision
+#     (R11.5);
+#   * fails on an unresolved upstream, naming the input, retaining the prior
+#     revision (R11.6).
+#
+# The Temurin pin MUST equal Temurin 25 and the latest LTS release published by
+# Eclipse Adoptium at pin time (R11.2); its `feature_version` is asserted == 25.
+
+# ---------------------------------------------------------------------------
+# The four JVM forks (github:hellodj/<repo>/<branch>) — R1.5 / R11.1 / R11.3
+# ---------------------------------------------------------------------------
+
+[inputs.lavalink]
+owner = "hellodj"
+repo = "Lavalink"
+branch = "dev"                 # R1.3 — the designated build branch
+pinned_identifier = "fmp4-hls"
+
+[inputs.lavaplayer]
+owner = "hellodj"
+repo = "lavaplayer"
+branch = "main"
+pinned_identifier = "8488449d733355ee54cd7c868d3fc2edc50b6fa9"
+
+[inputs.lavasrc]
+owner = "hellodj"
+repo = "LavaSrc"
+branch = "tidal-v2-api"
+pinned_identifier = "4.8.3"
+
+[inputs.youtube-source]
+owner = "hellodj"
+repo = "youtube-source"
+branch = "main"
+pinned_identifier = "sabr"
+
+# ---------------------------------------------------------------------------
+# Temurin / JDK — MUST equal Temurin 25 (LTS), latest Adoptium LTS at pin time
+# (R11.2). Pinned via the nixpkgs `temurin-bin-25` attribute; upstream identity
+# is the Adoptium temurin25-binaries release tag.
+# ---------------------------------------------------------------------------
+
+[inputs.temurin]
+owner = "adoptium"
+repo = "temurin25-binaries"
+branch = "main"
+pinned_identifier = "jdk-25+36"
+feature_version = 25           # asserted == 25 (R3.7 / R11.2)
+
+# ---------------------------------------------------------------------------
+# Nix toolchain inputs — nixpkgs + nixos-generators (github:owner/repo/branch)
+# ---------------------------------------------------------------------------
+
+[inputs.nixpkgs]
+owner = "NixOS"
+repo = "nixpkgs"
+branch = "nixos-unstable"
+pinned_identifier = "nixos-unstable"
+
+[inputs.nixos-generators]
+owner = "nix-community"
+repo = "nixos-generators"
+branch = "master"
+pinned_identifier = "8946737ff703382fda7623b9fab071d037e897d5"
+
+# ---------------------------------------------------------------------------
+# Cluster inputs — Karpenter (Helm/OCI, pinned in eks-stack.ts) and the EKS
+# Kubernetes control-plane version (KubernetesVersion.V1_33). These are the
+# upstream cluster versions Requirement 11 enumerates; their upstream identity
+# is the project's released version/tag.
+# ---------------------------------------------------------------------------
+
+[inputs.karpenter]
+owner = "aws"
+repo = "karpenter-provider-aws"
+branch = "main"
+pinned_identifier = "1.0.6"
+
+[inputs.eks-kubernetes]
+owner = "kubernetes"
+repo = "kubernetes"
+branch = "master"
+pinned_identifier = "1.33"

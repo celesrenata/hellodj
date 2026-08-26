@@ -1,0 +1,7 @@
+# Runtime dependencies for the hls-transcode component.
+# aiohttp serves the /v1/transcode start/stop endpoints the activity-backend
+# calls; boto3 writes HLS output to S3 (the CloudFront origin) and publishes
+# CPU/GPU pressure metrics to CloudWatch. Both are imported lazily so the
+# package imports without them for tests / py_compile.
+aiohttp>=3.9
+boto3>=1.34

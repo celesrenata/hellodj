@@ -1,0 +1,33 @@
+# Resolved-at-pin-time upstream identifiers (Requirement 11).
+#
+# The pinning workflow (`tools/gate_pins.py`) verifies each pinned identifier in
+# `pins.toml` against the identifier resolved from that input's upstream AT PIN
+# TIME (R11.1/R11.2). The pure decision function
+# `hellodj_platform_logic.pinning.verify_pin` performs NO network or git calls;
+# the upstream identifier is resolved by the workflow and injected. This file is
+# that recorded resolution — the identifiers observed from each input's upstream
+# source when the pins were captured.
+#
+# Semantics consumed by the workflow:
+#   * a value present here == the upstream identifier resolved at pin time.
+#     verify_pin ACCEPTS iff it equals the pinned identifier (R11.1); a
+#     different value causes a REJECT naming the input, prior revision retained
+#     (R11.5).
+#   * an input MISSING from this file (or set to the empty string) models an
+#     UNRESOLVED upstream: verify_pin FAILS for that input, naming it, prior
+#     revision retained (R11.6).
+#
+# Refreshing pins: run `nix flake update <input>` (R11.4), re-resolve the
+# upstream identifier, update BOTH `pins.toml` (the new pinned identifier) and
+# this file (the newly-resolved upstream identifier), then re-run the workflow.
+
+[upstream]
+lavalink = "fmp4-hls"
+lavaplayer = "8488449d733355ee54cd7c868d3fc2edc50b6fa9"
+lavasrc = "4.8.3"
+youtube-source = "sabr"
+temurin = "jdk-25+36"
+nixpkgs = "nixos-unstable"
+nixos-generators = "8946737ff703382fda7623b9fab071d037e897d5"
+karpenter = "1.0.6"
+eks-kubernetes = "1.33"

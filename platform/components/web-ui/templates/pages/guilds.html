@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+
+{% block title %}Guilds{% endblock %}
+{% block heading %}Guilds{% endblock %}
+
+{% block content %}
+<div class="glass-panel panel-section">
+  <label class="field__label" for="guild-search">Search guilds</label>
+  <input type="search" id="guild-search" name="q" class="field__input"
+         placeholder="Search guilds…"
+         hx-get="{{ url_for('pages.guilds_search') }}"
+         hx-trigger="input changed delay:300ms"
+         hx-target="#guild-list"
+         aria-label="Search guilds">
+
+  <div id="guild-list" class="guild-list">
+    {% include "partials/guild_list.html" %}
+  </div>
+</div>
+{% endblock %}

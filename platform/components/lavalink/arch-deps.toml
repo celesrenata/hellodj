@@ -1,0 +1,17 @@
+# Per-component ARM64 (Graviton) dependency-compatibility manifest (task 18.4).
+#
+# Consumed by tools/gate_dependencies.py -> hellodj_platform_logic.dependency_gate.gate()
+# to decide ARM64-only vs an x86-64 fallback for this component (Requirement 4).
+# Set a dependency false + add a [notes] entry to force x86-64 and document why
+# (R4.3, R4.4).
+#
+# lavalink is the JVM audio service: the custom Lavalink.jar (fMP4 HLS + SABR +
+# LavaSrc) on Temurin JVM 21. The aarch64 Temurin JRE and the LavaSrc/youtube
+# source plugins run on ARM64, so the jvm_audio_services and streaming source
+# client dependencies are ARM64-compatible (design component table: JVM 21
+# temurin aarch64, Graviton).
+
+[dependencies]
+jvm_audio_services = true
+audio_libraries = true
+streaming_source_clients = true

@@ -1,0 +1,22 @@
+# Per-component ARM64 (Graviton) dependency-compatibility manifest (task 18.4).
+#
+# Consumed by tools/gate_dependencies.py, which runs these entries through the
+# shared, property-tested hellodj_platform_logic.dependency_gate.gate() to
+# decide ARM64-only vs an x86-64 fallback for this component (Requirement 4).
+#
+# Each key maps a runtime dependency to whether it is available and functional
+# on Graviton_Architecture (true) or not (false). Set a dependency to false and
+# add a [notes] entry to force this component onto x86-64 and have the gate
+# document exactly which dependency required it (R4.3, R4.4).
+#
+# voice-pipeline runs only the local wake-word ONNX model on-box; STT, intent
+# and TTS are delegated to Amazon Bedrock (and Transcribe/Polly), so the heavy
+# self-hosted STT/AI runtimes are gone from this component. Its remaining
+# runtime AI dependency is the tiny wake-word onnxruntime, which builds and runs
+# on ARM64 (design Decision D4). The stt_engine class here refers to the managed
+# AWS-SDK client path (arch-agnostic), which is ARM64-compatible.
+
+[dependencies]
+wakeword_onnx_runtime = true
+stt_engine = true
+audio_libraries = true

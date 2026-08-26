@@ -1,0 +1,7 @@
+# Runtime dependencies for the playback-orchestrator component (R15.1:
+# independently deployable). The shared pure-logic + data-access package is
+# referenced by path from the monorepo so IaC and runtime share one source of
+# truth; install it editable alongside these pins:
+#     pip install -e ../hellodj_platform_logic
+# or make it importable via PYTHONPATH=components.
+boto3>=1.34

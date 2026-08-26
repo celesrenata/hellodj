@@ -1,0 +1,4 @@
+# HelloDJ web-ui runtime dependencies.
+Flask>=3.0
+gunicorn>=22.0
+boto3>=1.34

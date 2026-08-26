@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% import "components/macros.html" as ui %}
+
+{% block title %}Dashboard{% endblock %}
+{% block heading %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="dashboard-grid">
+  {% for stat in stats %}
+    {{ ui.stat_card(stat.label, stat.value) }}
+  {% endfor %}
+</div>
+
+<div class="glass-panel panel-section">
+  <h2 class="panel-section__title">Now Playing</h2>
+  <p class="panel-section__muted">No active playback session.</p>
+</div>
+{% endblock %}

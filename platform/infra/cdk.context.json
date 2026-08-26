@@ -1,0 +1,20 @@
+{
+  "availability-zones:account=776053071238:region=us-west-2": [
+    "us-west-2a",
+    "us-west-2b",
+    "us-west-2c",
+    "us-west-2d"
+  ],
+  "availability-zones:account=874927898283:region=us-east-1": [
+    "us-east-1a",
+    "us-east-1b",
+    "us-east-1c",
+    "us-east-1d",
+    "us-east-1e",
+    "us-east-1f"
+  ],
+  "hosted-zone:account=874927898283:domainName=hellodj.bot:region=us-east-1": {
+    "Id": "/hostedzone/Z0624252883VKFQ4E14Q",
+    "Name": "hellodj.bot."
+  }
+}

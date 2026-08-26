@@ -1,0 +1,6 @@
+# Runtime dependencies for the activity-backend component.
+# aiohttp serves the /activity/ HTTP endpoints and the WebSocket hub; boto3 is
+# available for AWS SDK access (S3/CloudFront metadata). Both are imported
+# lazily so the package imports without them for tests / py_compile.
+aiohttp>=3.9
+boto3>=1.34

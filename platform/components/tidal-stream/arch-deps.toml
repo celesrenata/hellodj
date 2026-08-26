@@ -1,0 +1,15 @@
+# Per-component ARM64 (Graviton) dependency-compatibility manifest (task 18.4).
+#
+# Consumed by tools/gate_dependencies.py -> hellodj_platform_logic.dependency_gate.gate()
+# to decide ARM64-only vs an x86-64 fallback for this component (Requirement 4).
+# Set a dependency false + add a [notes] entry to force x86-64 and document why
+# (R4.3, R4.4).
+#
+# tidal-stream is a streaming source client: a Python 3.11 (tidalapi) direct
+# Tidal streaming sidecar with first-party OAuth. Its runtime deps are pure
+# Python plus audio handling libraries, all ARM64-compatible (design component
+# table: Graviton).
+
+[dependencies]
+streaming_source_clients = true
+audio_libraries = true
