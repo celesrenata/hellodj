@@ -328,17 +328,7 @@ export function getComponentBuildCommands(
     // and surfaces its store path rather than substituting a non-cache artifact
     // (R7.4), mirroring the pure `resolve_closure` decision function.
     `echo "resolving + verifying prebuilt closure/image for component: ${component} (no build compute — R6.3/R6.4)"`,
-    `cd platform && python3 tools/resolve_closure.py --component ${component} --verify`,
-    // --- GATE HOOK POINT (task 18.4) — append per-component dependency gate here ---
-    `echo "${GATE_HOOK_MARKER}: per-component dependency-compat gate (18.4) for ${component}"`,
-    // task 18.4 — per-component dependency-compatibility gate: run
-    // `dependency_gate.py` (via the tools/gate_dependencies.py runner) for this
-    // Component to decide ARM64-only vs an x86-64 fallback from its
-    // `arch-deps.toml` manifest, and document any dependency that forces x86-64
-    // (R4.1-R4.5). The gate is informational/documenting: it records the chosen
-    // architecture and reason but only fails the build on a missing/malformed
-    // manifest, not for a documented x86-64 choice.
-    `cd platform && python3 tools/gate_dependencies.py --component ${component}`,
+    `cd platform && python3 tools/resolve_closure.py --component ${component} --verify && python3 tools/gate_dependencies.py --component ${component}`,
     ...extraCommands,
   ];
 }
