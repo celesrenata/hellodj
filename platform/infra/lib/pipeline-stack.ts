@@ -557,6 +557,29 @@ export class PipelineStack extends cdk.Stack {
     );
     const source = CodePipelineSource.codeCommit(repo, branch);
 
+    // ---------------------------------------------------------------------------
+    // Additional source triggers: the four JVM fork repos (R2.1/R3.1).
+    // A push to ANY of these repos (on their designated build branch) triggers
+    // the pipeline, so a fork change (lavaplayer patch, LavaSrc update, etc.)
+    // flows through the same build/gate/promote pipeline as a hellodj push.
+    // These are wired as additionalInputs to the synth step; CDK Pipelines
+    // creates a CodePipeline source action per input, and ANY source action
+    // change triggers the pipeline execution.
+    // ---------------------------------------------------------------------------
+    const forkSources: Record<string, ReturnType<typeof CodePipelineSource.codeCommit>> = {};
+    const forkRepos: Array<{ name: string; branch: string }> = [
+      { name: 'Lavalink', branch: 'dev' },
+      { name: 'lavaplayer', branch: 'main' },
+      { name: 'LavaSrc', branch: 'tidal-v2-api' },
+      { name: 'youtube-source', branch: 'main' },
+    ];
+    for (const fork of forkRepos) {
+      const forkRepo = codecommit.Repository.fromRepositoryName(
+        this, `ForkRepo-${fork.name}`, fork.name,
+      );
+      forkSources[fork.name] = CodePipelineSource.codeCommit(forkRepo, fork.branch);
+    }
+
     // Per-component build paths (R15.2). One CodeBuild step per Component gives
     // each Component an isolated build/deploy path so a single Component can be
     // promoted without rebuilding the others. Each step exposes the task-18.4
@@ -580,12 +603,25 @@ export class PipelineStack extends cdk.Stack {
     //
     // Uses CodeBuildStep (not ShellStep) for `installCommands` support: the
     // install phase provisions Nix + ruff before the build commands run.
+    //
+    // The four fork repos are wired as additionalInputs so a push to any
+    // fork's build branch also triggers the pipeline (R2.1). The fork sources
+    // are mounted at their repo name so the synth step can access them if
+    // needed (e.g. for cross-repo flake checks).
     const synth = new CodeBuildStep('synth', {
       input: source,
       // The CDK cloud assembly lives at platform/infra/cdk.out after synth.
       primaryOutputDirectory: 'platform/infra/cdk.out',
       installCommands: getInstallCommands(),
       commands: getBuildCommands(),
+      additionalInputs: {
+        // Mount fork sources — makes their code available AND triggers the
+        // pipeline on push to their build branches.
+        'forks/Lavalink': forkSources['Lavalink'],
+        'forks/lavaplayer': forkSources['lavaplayer'],
+        'forks/LavaSrc': forkSources['LavaSrc'],
+        'forks/youtube-source': forkSources['youtube-source'],
+      },
     });
     // Wire each per-component build path as a prerequisite of the synth step so
     // every Component's isolated build (and its task-18.4 dependency-gate hook)
