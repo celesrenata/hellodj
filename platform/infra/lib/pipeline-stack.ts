@@ -164,9 +164,8 @@ export const NIX_CACHE_S3_URI = 's3://hellodj-nix-cache';
  */
 export function getInstallCommands(): string[] {
   return [
-    // Install Node.js 22 (aws-cdk-lib requires >= 20, CodeBuild default is 18).
-    'curl -fsSL https://deb.nodesource.com/setup_22.x | bash - && apt-get install -y nodejs',
     // Install Nix (Determinate Systems installer — same as GHA workflow).
+    // Ubuntu 24.04 standard:8.0 already has Node 22, Python 3.14, git, AWS CLI.
     'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
     // Source nix-daemon env for the rest of the build.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
@@ -596,11 +595,14 @@ export class PipelineStack extends cdk.Stack {
       selfMutation: true,
       // Use MEDIUM compute (4 vCPU, 7 GB) for all CodeBuild projects. The
       // default SMALL (2 vCPU, 3 GB) is too slow for the Nix install + npm ci
-      // + cdk synth cycle. Standard:7.0 image includes Python 3.11+, git, and
-      // AWS CLI; we install Node 22 + Nix in installCommands.
+      // + cdk synth cycle. Ubuntu 24.04 standard:8.0 ships with Node 22/24,
+      // Python 3.14, and modern tooling — no need to install Node separately.
       codeBuildDefaults: {
         buildEnvironment: {
           computeType: cdk.aws_codebuild.ComputeType.MEDIUM,
+          buildImage: cdk.aws_codebuild.LinuxBuildImage.fromCodeBuildImageId(
+            'aws/codebuild/standard:8.0',
+          ),
         },
       },
     });
