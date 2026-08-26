@@ -594,6 +594,15 @@ export class PipelineStack extends cdk.Stack {
       // per-component paths) as components are added — supporting independent
       // component evolution (R15.2, R15.3).
       selfMutation: true,
+      // Use MEDIUM compute (4 vCPU, 7 GB) for all CodeBuild projects. The
+      // default SMALL (2 vCPU, 3 GB) is too slow for the Nix install + npm ci
+      // + cdk synth cycle. Standard:7.0 image includes Python 3.11+, git, and
+      // AWS CLI; we install Node 22 + Nix in installCommands.
+      codeBuildDefaults: {
+        buildEnvironment: {
+          computeType: cdk.aws_codebuild.ComputeType.MEDIUM,
+        },
+      },
     });
 
     // Add one deployment stage per entry in the fixed promotion order
