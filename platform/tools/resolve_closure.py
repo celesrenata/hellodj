@@ -100,6 +100,14 @@ AMI_KEY = "gpu-ami"
 #: from the binary cache (the ``narinfo`` read-back set). Injected in tests.
 CacheContentsProvider = Callable[[str], set[str]]
 
+#: The all-zero placeholder hash that indicates a closure has not been published
+#: yet (the GHA Nix build has not completed its publish-cache job for this
+#: artifact). When ALL closures being resolved carry this placeholder hash, the
+#: deploy is in "bootstrap mode" and resolve_closure exits with a warning (exit
+#: code 0) rather than halting — so the pipeline can self-mutate and complete
+#: its first run before any real artifacts are published.
+PLACEHOLDER_HASH = "0000000000000000000000000000000000000000"
+
 
 class ClosureManifestError(Exception):
     """Raised when the closure manifest is missing or malformed.
@@ -275,6 +283,14 @@ def resolve_targets(
     retrievable closure is reused; without ``verify`` the manifest presence is
     taken as the recorded availability (the publish job already verified it).
 
+    **Bootstrap mode:** When ALL requested closures carry the all-zero placeholder
+    hash (the GHA Nix build has never run ``publish-cache`` for these artifacts),
+    the deploy is in bootstrap mode. In this mode the tool prints a warning and
+    exits successfully (code 0) rather than halting the pipeline — so the pipeline
+    can self-mutate and complete its first run before real artifacts are published.
+    Once ANY non-placeholder hash appears, bootstrap mode is disabled and the tool
+    enforces full verification.
+
     Args:
         names: The artifact/component names to resolve.
         manifest: Path to ``closures.toml``.
@@ -286,13 +302,39 @@ def resolve_targets(
 
     Returns:
         A ``(exit_code, results)`` tuple: ``0`` when every closure is present and
-        reused, ``1`` when any closure halts (missing/not retrievable), ``2`` on
-        an operational manifest error.
+        reused (or in bootstrap mode), ``1`` when any closure halts
+        (missing/not retrievable), ``2`` on an operational manifest error.
     """
     cache_uri, closures = load_manifest(manifest)
 
     targets = list(names)
     stage_note = f" for stage {stage}" if stage else ""
+
+    # ── Bootstrap mode detection ─────────────────────────────────────────────
+    # If ALL requested closures carry the all-zero placeholder hash, the GHA Nix
+    # build has never published real artifacts yet. In this mode the pipeline is
+    # bootstrapping (first run / self-mutation) and hasn't had a chance to build
+    # + publish closures. Exit cleanly with a warning so the pipeline can
+    # complete its first run.
+    target_refs = [closures.get(name) for name in targets]
+    all_placeholder = all(
+        ref is not None and ref.store_path_hash == PLACEHOLDER_HASH
+        for ref in target_refs
+        if ref is not None
+    )
+    # Also check if we have at least one ref to examine (avoid vacuous truth).
+    has_refs = any(ref is not None for ref in target_refs)
+    if has_refs and all_placeholder:
+        print(
+            f"resolve-closure{stage_note}: BOOTSTRAP MODE — all {len(targets)} "
+            "requested closure(s) carry placeholder hashes (GHA Nix build has "
+            "not yet published real artifacts). Skipping verification so the "
+            "pipeline can self-mutate on its first run. Once real artifacts are "
+            "published (by the nix-build GHA workflow's publish-cache job), this "
+            "gate will enforce full verification."
+        )
+        return 0, []
+
     print(
         f"resolve-closure{stage_note}: resolving {len(targets)} artifact(s) by "
         f"store-path hash from {cache_uri} (build-once/deploy-thrice — R7.2/7.3)"

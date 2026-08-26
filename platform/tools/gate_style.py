@@ -56,7 +56,7 @@ PLATFORM_ROOT = Path(__file__).resolve().parent.parent
 CHECK_LINE_COUNT = PLATFORM_ROOT / "tools" / "check_line_count.py"
 
 #: The ruff version the pipeline pins via ``uvx`` so CI and local runs agree.
-RUFF_PIN = "0.6.9"
+RUFF_PIN = "0.16.4"
 
 
 def _ruff_command() -> list[str] | None:

@@ -58,6 +58,7 @@
  * _Requirements: 11.1, 11.2, 11.3, 11.4, 15.2, 3.2, 3.3, 2.2, 1.8_
  */
 import * as cdk from 'aws-cdk-lib';
+import * as codecommit from 'aws-cdk-lib/aws-codecommit';
 import * as eks from 'aws-cdk-lib/aws-eks';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -65,7 +66,6 @@ import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import {
   CodePipeline,
   CodePipelineSource,
-  ShellStep,
   CodeBuildStep,
 } from 'aws-cdk-lib/pipelines';
 import { Construct } from 'constructs';
@@ -140,8 +140,54 @@ export type PlatformComponent = (typeof PLATFORM_COMPONENTS)[number];
 /** Marker string tagging every build-stage gate extension point (tasks 18.2-18.4). */
 export const GATE_HOOK_MARKER = 'HELLODJ_BUILD_GATE_HOOK';
 
+// ---------------------------------------------------------------------------
+// Nix + tooling install commands for CodeBuild (runs before the synth/gate cmds)
+// ---------------------------------------------------------------------------
+//
+// The synth step runs on the default CDK Pipelines CodeBuild image which lacks
+// Nix. The platform requires Nix for closure resolution (R7.2/7.3/7.7) and
+// ruff for style gating (R13.2-13.4). These install commands configure:
+//   * Nix (multi-user, flakes enabled) wired to the S3 binary cache as a
+//     substituter so `nix path-info --store` can verify closures (R7.7).
+//   * ruff for PEP 8 / style gate (R13.2).
+//   * AWS git credential helper for CodeCommit source resolution (R2.2).
+
+/** S3-backed Nix binary cache URI (matches closures.toml [cache].uri). */
+export const NIX_CACHE_S3_URI = 's3://hellodj-nix-cache';
+
+/**
+ * Install commands that provision Nix + Python tooling in the CodeBuild env.
+ * These run once before any build/gate command and configure:
+ *   - Nix with flakes + the S3 binary cache as a substituter
+ *   - ruff (PEP 8 linter)
+ *   - AWS git credential helper for CodeCommit
+ */
+export function getInstallCommands(): string[] {
+  return [
+    // Install Nix (Determinate Systems installer — same as GHA workflow).
+    'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
+    // Source nix-daemon env for the rest of the build.
+    '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
+    // Configure Nix: enable flakes + wire the S3 binary cache as a substituter
+    // so `nix path-info --store` can verify closure retrievability (R7.7).
+    `mkdir -p ~/.config/nix && echo 'experimental-features = nix-command flakes' > ~/.config/nix/nix.conf`,
+    `echo 'extra-substituters = ${NIX_CACHE_S3_URI}' >> ~/.config/nix/nix.conf`,
+    // AWS git credential helper for CodeCommit (R2.2/R2.3).
+    'git config --global credential.helper "!aws codecommit credential-helper $@"',
+    'git config --global credential.UseHttpPath true',
+    // Install ruff for the PEP 8 / style gate (R13.2).
+    'pip install ruff==0.16.4',
+  ];
+}
+
 /**
  * Assemble the synth/build-stage command list for the whole-repo build.
+ *
+ * **Working directory:** The CodePipeline sources the repo root from CodeCommit.
+ * CDK commands run from `platform/infra/` (where `cdk.json` + `package.json`
+ * live). Python gate commands run from `platform/` (where `tools/` lives and
+ * the scripts self-resolve `PLATFORM_ROOT`). Every command is prefixed with the
+ * correct `cd` so paths resolve regardless of CodeBuild's CWD.
  *
  * **No-build (metadata-only synth/gate) step (R6.3, R6.4, R10.1, R10.2).** The
  * selected `Build_Trigger` is **GitHub Actions with Nix**, which compiles every
@@ -181,7 +227,10 @@ export const GATE_HOOK_MARKER = 'HELLODJ_BUILD_GATE_HOOK';
  */
 export function getBuildCommands(extraCommands: string[] = []): string[] {
   return [
-    'npm ci',
+    // Source Nix env (installed by installCommands).
+    '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
+    // CDK synth: run from platform/infra/ where cdk.json + package.json live.
+    'cd platform/infra && npm ci',
     // SYNTH-TIME FOUNDATION-SINGLETON GATE (R1.8). `npx cdk synth` executes
     // `bin/hellodj.ts`, which calls `assertFoundationSingleton(app)` immediately
     // before `app.synth()`. That helper synthesizes the app and counts every
@@ -195,13 +244,13 @@ export function getBuildCommands(extraCommands: string[] = []): string[] {
     // gate is realized by `cdk synth` invoking `assertFoundationSingleton`; the
     // assertion logic itself lives once in `lib/foundation.ts` and is NOT
     // duplicated here.
-    'npx cdk synth',
+    'cd platform/infra && npx cdk synth',
     // Metadata-only: RESOLVE + VERIFY the prebuilt GPU AMI (built and published
     // by the GitHub Actions Nix Build_Trigger) is retrievable rather than
     // compiling it on CodeBuild, so no build compute is billed for the AMI
     // (R6.3, R6.4, R10.2). A missing artifact halts and surfaces its store path
     // (R7.4).
-    'python3 tools/resolve_closure.py --ami --verify',
+    'cd platform && python3 tools/resolve_closure.py --ami --verify',
     // --- GATE HOOK POINT (tasks 18.2, 18.3) — append repo-wide gate commands here ---
     `echo "${GATE_HOOK_MARKER}: repo-wide base-image (18.2) + PEP8/line-count (18.3) gates run here"`,
     // task 18.2 — Nix base-image gate: reject any non-Nix (ubuntu/debian) base
@@ -210,13 +259,13 @@ export function getBuildCommands(extraCommands: string[] = []): string[] {
     // image build definition via the tools/gate_base_image.py runner. This gate
     // step is retained in the build stage so build/synth precedes stage deploys
     // and a non-PASS blocks promotion (R5.7, R10.1).
-    'python3 tools/gate_base_image.py',
+    'cd platform && python3 tools/gate_base_image.py',
     // task 18.3 — PEP 8 / line-count gate: run `ruff` (PEP 8 style) plus the
     // 500-line-max hook and fail the build on any style or line-count
     // violation (R13.2, R13.3, R13.4). The tools/gate_style.py runner invokes
     // both checks so one build surfaces every violation; it reads the ruff and
     // max-line-count config from pyproject.toml, the single source of truth.
-    'python3 tools/gate_style.py',
+    'cd platform && python3 tools/gate_style.py',
     // task 18.1 — pin-time verification gate: verify EVERY enumerated flake
     // input (Lavalink, lavaplayer, LavaSrc, youtube-source, Temurin/JDK == 25
     // LTS, nixpkgs, nixos-generators, Karpenter, EKS k8s version) pins via
@@ -226,13 +275,17 @@ export function getBuildCommands(extraCommands: string[] = []): string[] {
     // pins.toml; a mismatched pin is rejected (named, prior revision retained,
     // R11.5) and an unresolved upstream fails (named, prior revision retained,
     // R11.6), failing the build so no bad pin is adopted.
-    'python3 tools/gate_pins.py',
+    'cd platform && python3 tools/gate_pins.py',
     ...extraCommands,
   ];
 }
 
 /**
  * Assemble the per-component build command list for one Component.
+ *
+ * **Working directory:** Commands run from the repo root (CodeBuild CWD after
+ * checkout). Python tools are under `platform/tools/`, so every invocation is
+ * prefixed with `cd platform &&`.
  *
  * **No-build (resolve/verify-closure) step (R6.3, R6.4, R10.1, R10.2).** Under
  * the `hellodj-nix-native-delivery` reconciliation the selected `Build_Trigger`
@@ -263,6 +316,10 @@ export function getComponentBuildCommands(
   extraCommands: string[] = [],
 ): string[] {
   return [
+    // Source Nix env (installed by installCommands on the synth step; component
+    // steps share the same CodeBuild project when running as part of the synth
+    // wave, but source it defensively in case of isolation).
+    '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh || true',
     // Metadata-only: RESOLVE this single Component's prebuilt closure by its Nix
     // store-path hash and VERIFY it is retrievable from the S3-backed
     // Nix_Binary_Cache / ECR. No image or AMI is compiled on CodeBuild — the
@@ -271,7 +328,7 @@ export function getComponentBuildCommands(
     // and surfaces its store path rather than substituting a non-cache artifact
     // (R7.4), mirroring the pure `resolve_closure` decision function.
     `echo "resolving + verifying prebuilt closure/image for component: ${component} (no build compute — R6.3/R6.4)"`,
-    `python3 tools/resolve_closure.py --component ${component} --verify`,
+    `cd platform && python3 tools/resolve_closure.py --component ${component} --verify`,
     // --- GATE HOOK POINT (task 18.4) — append per-component dependency gate here ---
     `echo "${GATE_HOOK_MARKER}: per-component dependency-compat gate (18.4) for ${component}"`,
     // task 18.4 — per-component dependency-compatibility gate: run
@@ -281,7 +338,7 @@ export function getComponentBuildCommands(
     // (R4.1-R4.5). The gate is informational/documenting: it records the chosen
     // architecture and reason but only fails the build on a missing/malformed
     // manifest, not for a documented x86-64 choice.
-    `python3 tools/gate_dependencies.py --component ${component}`,
+    `cd platform && python3 tools/gate_dependencies.py --component ${component}`,
     ...extraCommands,
   ];
 }
@@ -390,6 +447,14 @@ export interface PipelineStackProps extends cdk.StackProps {
    * 7.2/7.3; task 7.1 threads these handles into the software-only stages.
    */
   readonly foundation?: FoundationRefs;
+
+  /**
+   * ARN of the CodeConnections (GitHub v2) connection the pipeline sources
+   * from. When set, the token-less connection source is used; the connection
+   * must be authorized once in the AWS console before the pipeline can run.
+   * When unset, the OAuth-token `gitHub()` source is used.
+   */
+  readonly connectionArn?: string;
 }
 
 /** Placeholder source repo used when no real repository is wired in yet. */
@@ -483,10 +548,14 @@ export class PipelineStack extends cdk.Stack {
     super(scope, id, props);
 
     const branch = props.branch ?? 'main';
-    const source = CodePipelineSource.gitHub(
-      props.repoString ?? PLACEHOLDER_REPO,
-      branch,
+    // Source from the private CodeCommit `hellodj` repository (R2.1/R3.1).
+    // The source of truth has moved off public GitHub into CodeCommit; the
+    // pipeline uses the native CodeCommit source action which authenticates
+    // via the pipeline's service role (IAM-based, no OAuth token needed).
+    const repo = codecommit.Repository.fromRepositoryName(
+      this, 'SourceRepo', props.repoString ?? 'hellodj',
     );
+    const source = CodePipelineSource.codeCommit(repo, branch);
 
     // Per-component build paths (R15.2). One CodeBuild step per Component gives
     // each Component an isolated build/deploy path so a single Component can be
@@ -496,6 +565,8 @@ export class PipelineStack extends cdk.Stack {
     const componentInputs: CodeBuildStep[] = [];
     for (const component of PLATFORM_COMPONENTS) {
       const step = new CodeBuildStep(`build-${component}`, {
+        input: source,
+        installCommands: getInstallCommands(),
         commands: getComponentBuildCommands(component),
       });
       this.componentBuildSteps[component] = step;
@@ -506,8 +577,14 @@ export class PipelineStack extends cdk.Stack {
     // commands plus the repo-wide gate hook point (tasks 18.2/18.3). The
     // per-component build steps are wired in as additional inputs so their
     // isolated paths run as part of the build stage (R15.2).
-    const synth = new ShellStep('synth', {
+    //
+    // Uses CodeBuildStep (not ShellStep) for `installCommands` support: the
+    // install phase provisions Nix + ruff before the build commands run.
+    const synth = new CodeBuildStep('synth', {
       input: source,
+      // The CDK cloud assembly lives at platform/infra/cdk.out after synth.
+      primaryOutputDirectory: 'platform/infra/cdk.out',
+      installCommands: getInstallCommands(),
       commands: getBuildCommands(),
     });
     // Wire each per-component build path as a prerequisite of the synth step so

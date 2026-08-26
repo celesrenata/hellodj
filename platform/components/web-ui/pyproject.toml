@@ -2,7 +2,7 @@
 name = "hellodj-web-ui"
 version = "0.1.0"
 description = "HelloDJ web-ui component: Flask + HTMX + Alpine + Tailwind v4 dark-glassmorphism admin UI (Cognito/Discord/Tidal auth, DynamoDB config, Secrets Manager)."
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 readme = "README.md"
 
 # Runtime dependencies:
@@ -37,7 +37,7 @@ build-backend = "setuptools.build_meta"
 # (R15.1) lints identically in isolation.
 # ---------------------------------------------------------------------------
 [tool.ruff]
-target-version = "py311"
+target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]

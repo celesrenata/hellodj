@@ -2,7 +2,7 @@
 name = "hellodj-voice-pipeline"
 version = "0.1.0"
 description = "HelloDJ voice-pipeline component: local ONNX wake word detection (the only on-box AI) with STT, intent, and TTS delegated to Amazon Bedrock (+ Transcribe/Polly) over an IAM task role. Consumes Discord voice (opus) via bot-core and dispatches actions to the playback-orchestrator."
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 readme = "README.md"
 
 # Runtime dependencies. onnxruntime runs the tiny local wake word model — the
@@ -39,7 +39,7 @@ include = ["voice_pipeline*"]
 # (R15.1) lints identically in isolation.
 # ---------------------------------------------------------------------------
 [tool.ruff]
-target-version = "py311"
+target-version = "py314"
 line-length = 100
 
 [tool.ruff.lint]

@@ -36,7 +36,6 @@ import json
 from typing import Any
 
 import pytest
-
 from hellodj_platform_logic.types import LegacyRecord, LegacyRecordType
 from migration_job import (
     CognitoAdminSeeder,
@@ -46,13 +45,12 @@ from migration_job import (
 )
 from migration_job.cognito_seeder import DEFAULT_ADMIN_GROUP
 
-
 # --------------------------------------------------------------------------- #
 # Fakes
 # --------------------------------------------------------------------------- #
 
 
-class NotAuthorizedException(Exception):
+class NotAuthorizedError(Exception):
     """Fake equivalent of the boto3 Cognito ``NotAuthorizedException``.
 
     Carries a boto3-shaped ``response`` so callers can inspect the error code
@@ -100,7 +98,7 @@ class FakeCognitoClient:
         group = kwargs["GroupName"]
         if username not in self.users:
             # Cognito would reject adding a non-existent user to a group.
-            raise NotAuthorizedException(f"user {username!r} does not exist")
+            raise NotAuthorizedError(f"user {username!r} does not exist")
         self.group_members.setdefault(group, set()).add(username)
         return {}
 
@@ -111,7 +109,7 @@ class FakeCognitoClient:
         self.calls.append(("admin_set_user_password", kwargs))
         username = kwargs["Username"]
         if username not in self.users:
-            raise NotAuthorizedException(f"user {username!r} does not exist")
+            raise NotAuthorizedError(f"user {username!r} does not exist")
         self.users[username]["password"] = kwargs["Password"]
         return {}
 
@@ -129,9 +127,9 @@ class FakeCognitoClient:
 
         user = self.users.get(username)
         if user is None:
-            raise NotAuthorizedException("Incorrect username or password.")
+            raise NotAuthorizedError("Incorrect username or password.")
         if user["password"] is None or user["password"] != password:
-            raise NotAuthorizedException("Incorrect username or password.")
+            raise NotAuthorizedError("Incorrect username or password.")
 
         return {
             "AuthenticationResult": {
@@ -303,7 +301,7 @@ def test_login_rejected_for_non_seeded_user(
     migration_result, fake_cognito: FakeCognitoClient
 ) -> None:
     """Only the seeded bootstrap admin can log in; unknown users are rejected."""
-    with pytest.raises(NotAuthorizedException):
+    with pytest.raises(NotAuthorizedError):
         fake_cognito.admin_initiate_auth(
             UserPoolId=USER_POOL_ID,
             ClientId="test-app-client",
@@ -325,7 +323,7 @@ def test_login_rejected_for_wrong_password(
         Password=FIRST_LOGIN_PASSWORD,
         Permanent=True,
     )
-    with pytest.raises(NotAuthorizedException):
+    with pytest.raises(NotAuthorizedError):
         fake_cognito.admin_initiate_auth(
             UserPoolId=USER_POOL_ID,
             ClientId="test-app-client",

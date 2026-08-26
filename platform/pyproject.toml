@@ -47,6 +47,7 @@ line-length = 100
 # Only lint the platform's own Python sources.
 extend-exclude = [
     "infra/cdk.out",
+    "infra/cdk-out-deploy",
     "infra/node_modules",
     ".venv",
     "**/__pycache__",
