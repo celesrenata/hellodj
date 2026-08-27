@@ -154,6 +154,19 @@ export class NetworkStack extends cdk.Stack {
       },
     );
 
+    // Default HTTP listener on port 80 — CloudFront connects here. Returns a
+    // 503 until the EKS workloads register targets via the AWS LB Controller
+    // or CDK target groups. This prevents CloudFront 504 (gateway timeout)
+    // when the ALB has no listener at all.
+    this.applicationLoadBalancer.addListener('HttpListener', {
+      port: 80,
+      protocol: elbv2.ApplicationProtocol.HTTP,
+      defaultAction: elbv2.ListenerAction.fixedResponse(503, {
+        contentType: 'text/plain',
+        messageBody: 'HelloDJ beta — workloads deploying',
+      }),
+    });
+
     // ----- Network Load Balancer (Discord gateway sockets) ----------------
     //
     // The Discord gateway is a long-lived WSS/TCP socket path. An NLB gives
