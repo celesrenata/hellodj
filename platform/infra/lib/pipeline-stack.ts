@@ -560,10 +560,10 @@ export class PipelineStack extends cdk.Stack {
         ec2.Port.tcp(2049),
         'NFS from VPC (CodeBuild)',
       );
-      nixStoreFs = new efs.FileSystem(this, 'NixStoreMaxIoEfs', {
+      nixStoreFs = new efs.FileSystem(this, 'NixStoreGpEfs', {
         vpc: props.vpc,
-        performanceMode: efs.PerformanceMode.MAX_IO,
-        throughputMode: efs.ThroughputMode.BURSTING,
+        performanceMode: efs.PerformanceMode.GENERAL_PURPOSE,
+        throughputMode: efs.ThroughputMode.ELASTIC,
         removalPolicy: cdk.RemovalPolicy.DESTROY,
         lifecyclePolicy: efs.LifecyclePolicy.AFTER_30_DAYS,
         securityGroup: efsSg,
