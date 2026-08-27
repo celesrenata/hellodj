@@ -9,7 +9,7 @@
  * app and its resolved environment (task 1.1).
  */
 import * as cdk from 'aws-cdk-lib';
-import { resolveConfig, deriveEnvName, apexAliasTarget, DeploymentStage } from '../lib/config';
+import { resolveConfig, deriveEnvName, apexAliasTarget } from '../lib/config';
 import { EksStack } from '../lib/eks-stack';
 import { assertFoundationSingleton } from '../lib/foundation';
 import { AuthStack } from '../lib/auth-stack';
@@ -19,7 +19,7 @@ import { NetworkStack } from '../lib/network-stack';
 import { AnalyticsStack } from '../lib/analytics-stack';
 import { ObservabilityStack } from '../lib/observability-stack';
 import { PipelineStack } from '../lib/pipeline-stack';
-import { WorkloadsStack } from '../lib/workloads-stack';
+import { SourceStack } from '../lib/source-stack';
 
 const app = new cdk.App();
 
@@ -137,42 +137,8 @@ const analytics = new AnalyticsStack(app, 'hellodj-analytics', {
 // 18.2-18.4 are left in `pipeline-stack.ts`.
 const pipeline = new PipelineStack(app, 'hellodj-pipeline', {
   env,
-});
-
-// Component workloads stack (task 20.1, Decision D1/D2). This is the
-// end-to-end wiring layer: it composes the 12 independently deployable
-// components (design "Component Decomposition") into EKS
-// Deployments/Services/HPAs on the EksStack cluster, wires each component's
-// DynamoDB table names, DAX endpoint, Secrets Manager ARNs, and (for
-// voice-pipeline) the keyless Bedrock/Transcribe/Polly AI task role via
-// IRSA/EKS Pod Identity (no static keys), and adds a single ALB Ingress
-// routing web-ui (`/`) and activity-backend (`/activity/`) consistent with the
-// CloudFront/edge routing (R18.4). Instantiating it here means one
-// `cdk deploy` provisions the whole platform with no manual console steps
-// (Requirements 1.2, 1.3, 1.4, 6.1-6.5, 15.1, 15.2, 18.4). Real image tags are
-// injected by the pipeline (task 18.1); until then a clearly-marked
-// placeholder tag is used.
-//
-// All three software stages are always modeled on the ONE shared foundation
-// (Requirements 2.1, 2.4, 2.5, 1.7): one `WorkloadsStack` per stage, every
-// instance sharing the SAME `eks.cluster`, `data.*`, and `auth.*` (secrets +
-// `aiTaskRole`) references and differing only by `stage`/`region` — which in
-// turn selects a distinct `hellodj-<stage>` namespace and a distinct
-// `<stage>.<region>.hellodj.bot` Ingress host. Nothing in `WorkloadsStack`
-// provisions foundation hardware, so three instances add three namespaces'
-// worth of software onto one foundation.
-const STAGES = [
-  DeploymentStage.Beta,
-  DeploymentStage.Staging,
-  DeploymentStage.Production,
-];
-
-const workloads = STAGES.map((stage) => {
-  const w = new WorkloadsStack(app, `hellodj-workloads-${stage}`, {
-    env,
-    stage, // → namespace hellodj-<stage> + hostname <stage>.<region>.hellodj.bot
-    region: config.region,
-    cluster: eks.cluster, // the ONE shared cluster
+  foundation: {
+    cluster: eks.cluster,
     data: {
       coreTable: data.coreTable,
       searchCacheTable: data.searchCacheTable,
@@ -186,14 +152,32 @@ const workloads = STAGES.map((stage) => {
       ytCipher: auth.ytCipherSecret,
     },
     aiTaskRole: auth.aiTaskRole,
-  });
-  // The workloads land on the EKS cluster and read the data/auth resources, so
-  // they must deploy after those stacks (single `cdk deploy` orders them).
-  w.addStackDependency(eks);
-  w.addStackDependency(data);
-  w.addStackDependency(auth);
-  return w;
+  },
 });
+
+// Private CodeCommit source stack (task 11.1, hellodj-private-source-and-toolchain
+// R1). Provisions the five private Source_Repos (`hellodj`, `Lavalink`,
+// `lavaplayer`, `LavaSrc`, `youtube-source`) that relocate the source of truth
+// off public GitHub, with a resource policy granting read/pull access only to
+// the platform build IAM roles (GHA-runner + EKS/Karpenter builder), so each
+// repo is private and not readable without an authorized IAM principal (R1.1,
+// R1.3, R1.7). Instantiated once as a stage-independent singleton
+// (`hellodj-source`) — the source of truth is shared across all stages. The
+// build-role ARNs are read from app context when available; absent them the
+// repos remain private with no allowing principal (still R1.7-compliant).
+const sourceBuildRoleArns = app.node.tryGetContext('hellodj:buildRoleArns') as
+  | string[]
+  | undefined;
+const source = new SourceStack(app, 'hellodj-source', {
+  env,
+  buildRoleArns: sourceBuildRoleArns,
+});
+
+// Workloads are deployed through the pipeline stages (beta → staging →
+// production). The pipeline stack's `HelloDjStage` creates a `WorkloadsStack`
+// per stage, each referencing the shared foundation (cluster, data, auth).
+// There are NO standalone workload stacks outside the pipeline — a single
+// ownership path prevents construct-tree ID collisions on the shared cluster.
 
 // Remaining stacks are instantiated by subsequent tasks.
 void env;
@@ -205,7 +189,7 @@ void eks;
 void analytics;
 void observability;
 void pipeline;
-void workloads;
+void source;
 
 // Enforce the Foundation_Singleton_Invariant (R1.7/R1.8) immediately before
 // synth: synthesize-and-count every foundation resource type across all

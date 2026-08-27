@@ -590,10 +590,13 @@ export class PipelineStack extends cdk.Stack {
     this.pipeline = new CodePipeline(this, 'pipeline', {
       pipelineName: 'hellodj-pipeline',
       synth,
-      // Self-mutation lets the pipeline update its own definition (and the
-      // per-component paths) as components are added — supporting independent
-      // component evolution (R15.2, R15.3).
-      selfMutation: true,
+      // Self-mutation is DISABLED. The pipeline stack includes stage stacks that
+      // apply Kubernetes manifests via the EKS stack's kubectl handler Lambda.
+      // Self-mutation tries to deploy the pipeline stack (which references those
+      // stage stacks), triggering cross-stack custom resource invocations that
+      // fail because the kubectl handler is scoped to the EKS stack. Pipeline
+      // definition changes are deployed manually with `cdk deploy hellodj-pipeline`.
+      selfMutation: false,
       // Use MEDIUM compute (4 vCPU, 7 GB) for all CodeBuild projects. The
       // default SMALL (2 vCPU, 3 GB) is too slow for the Nix install + npm ci
       // + cdk synth cycle. Ubuntu 24.04 standard:8.0 ships with Node 22/24,
