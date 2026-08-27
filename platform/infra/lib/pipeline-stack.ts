@@ -165,10 +165,8 @@ export const NIX_CACHE_S3_URI = 's3://hellodj-nix-cache';
  */
 export function getInstallCommands(): string[] {
   return [
-    // Install Node 22 (the AL2 ARM64 image ships Node 18; CDK needs >= 20).
-    'n 22 || (curl -fsSL https://raw.githubusercontent.com/tj/n/master/bin/n -o /tmp/n && bash /tmp/n 22)',
     // Install Nix (Determinate Systems installer).
-    // ARM64 CodeBuild image (Graviton) — native aarch64 builds, no QEMU.
+    // ARM64 CodeBuild on AL2023 (Graviton) — native aarch64 builds, Node 20+.
     'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
     // Source nix-daemon env for the rest of the build.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
@@ -611,14 +609,14 @@ export class PipelineStack extends cdk.Stack {
       selfMutation: false,
       // Use MEDIUM compute on ARM64 (Graviton) for all CodeBuild projects.
       // Native aarch64 builds — no QEMU cross-compilation needed since the
-      // target EKS nodes are also ARM64. Ubuntu 24.04 standard:3.0 (ARM) ships
-      // with Node 22, Python 3.14, and modern tooling.
+      // target EKS nodes are also ARM64. AL2023 ARM64 standard:1.0 ships
+      // Node 20+, Python 3.11+, and modern tooling.
       // Privileged mode is required for docker daemon (image build + push).
       codeBuildDefaults: {
         buildEnvironment: {
           computeType: cdk.aws_codebuild.ComputeType.MEDIUM,
           buildImage: cdk.aws_codebuild.LinuxArmBuildImage.fromCodeBuildImageId(
-            'aws/codebuild/amazonlinux2-aarch64-standard:3.0',
+            'aws/codebuild/amazonlinux2023-aarch64-standard:1.0',
           ),
           privileged: true,
         },
