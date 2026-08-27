@@ -833,11 +833,9 @@ export class WorkloadsStack extends cdk.Stack {
           'kubernetes.io/ingress.class': 'alb',
           'alb.ingress.kubernetes.io/scheme': 'internet-facing',
           'alb.ingress.kubernetes.io/target-type': 'ip',
-          'alb.ingress.kubernetes.io/listen-ports':
-            '[{"HTTP":80},{"HTTPS":443}]',
-          // Redirect HTTP to HTTPS at the ALB; CloudFront fronts the ALB for
-          // cached content (edge stack), so the platform is HTTPS end to end.
-          'alb.ingress.kubernetes.io/ssl-redirect': '443',
+          // HTTP only — CloudFront terminates TLS (the edge stack has the ACM
+          // cert). The ALB sits behind CloudFront and receives HTTP from it.
+          'alb.ingress.kubernetes.io/listen-ports': '[{"HTTP":80}]',
           // Merge all three per-stage Ingresses onto the SINGLE shared ALB
           // (R1.5): a stage-independent group name means one ALB, not one per
           // stage. The ALB is a foundation singleton.
