@@ -608,13 +608,13 @@ export class PipelineStack extends cdk.Stack {
       // definition changes are deployed manually with `cdk deploy hellodj-pipeline`.
       selfMutation: false,
       // Use LARGE compute on ARM64 (Graviton) for all CodeBuild projects.
-      // Native aarch64 builds — no QEMU. AL2023 ARM64 requires LARGE compute.
+      // Native aarch64 builds — no QEMU. AL2023 ARM64 image (3.0) has Node 20+.
       // Privileged mode is required for docker daemon (image build + push).
       codeBuildDefaults: {
         buildEnvironment: {
           computeType: cdk.aws_codebuild.ComputeType.LARGE,
           buildImage: cdk.aws_codebuild.LinuxArmBuildImage.fromCodeBuildImageId(
-            'aws/codebuild/amazonlinux2023-aarch64-standard:1.0',
+            'aws/codebuild/amazonlinux-aarch64-standard:3.0',
           ),
           privileged: true,
         },
