@@ -165,14 +165,14 @@ export const NIX_CACHE_S3_URI = 's3://hellodj-nix-cache';
  */
 export function getInstallCommands(): string[] {
   return [
+    // AL2023 ARM64 ships Node 18; CDK needs >= 20. Install Node 22 via nvm.
+    '. ~/.nvm/nvm.sh && nvm install 22 && nvm use 22',
     // Install Nix (Determinate Systems installer).
-    // ARM64 CodeBuild on AL2023 (Graviton) — native aarch64 builds, Node 20+.
+    // ARM64 CodeBuild on AL2023 (Graviton) — native aarch64 builds.
     'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
     // Source nix-daemon env for the rest of the build.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
-    // Configure Nix daemon: enable flakes, wire the S3 binary cache as both
-    // a substituter (read) and trusted-substituter (accept unsigned narinfos
-    // from our own cache). The daemon reads /etc/nix/nix.conf.
+    // Configure Nix daemon: wire the S3 binary cache as a substituter + trusted.
     `echo 'extra-substituters = ${NIX_CACHE_S3_URI}' >> /etc/nix/nix.conf`,
     `echo 'extra-trusted-substituters = ${NIX_CACHE_S3_URI}' >> /etc/nix/nix.conf`,
     `echo 'extra-trusted-users = root' >> /etc/nix/nix.conf`,
