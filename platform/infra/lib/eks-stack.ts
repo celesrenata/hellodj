@@ -497,24 +497,30 @@ export class EksStack extends cdk.Stack {
 
     // -----------------------------------------------------------------------
     // AWS Load Balancer Controller — reconciles Kubernetes Ingress resources
-    // into ALB listeners/target groups. Needs an IRSA role with permissions to
-    // create/manage ELBv2 resources, target groups, security groups, etc.
+    // into ALB listeners/target groups. Create an IAM role for the controller's
+    // ServiceAccount (IRSA) and let the Helm chart create/annotate the SA.
     // -----------------------------------------------------------------------
-    const lbControllerSa = this.cluster.addServiceAccount('AwsLbControllerSa', {
-      name: 'aws-load-balancer-controller',
-      namespace: 'kube-system',
-    });
-    lbControllerSa.role.addManagedPolicy(
-      cdk.aws_iam.ManagedPolicy.fromAwsManagedPolicyName(
-        'ElasticLoadBalancingFullAccess',
+    const lbControllerRole = new cdk.aws_iam.Role(this, 'AwsLbControllerRole', {
+      assumedBy: new cdk.aws_iam.FederatedPrincipal(
+        this.cluster.openIdConnectProvider.openIdConnectProviderArn,
+        {
+          StringEquals: {
+            [`${this.cluster.clusterOpenIdConnectIssuer}:sub`]:
+              'system:serviceaccount:kube-system:aws-load-balancer-controller',
+            [`${this.cluster.clusterOpenIdConnectIssuer}:aud`]: 'sts.amazonaws.com',
+          },
+        },
+        'sts:AssumeRoleWithWebIdentity',
       ),
+    });
+    lbControllerRole.addManagedPolicy(
+      cdk.aws_iam.ManagedPolicy.fromAwsManagedPolicyName('ElasticLoadBalancingFullAccess'),
     );
-    // The controller also needs EC2 describe (for subnets/SGs/VPC discovery).
-    lbControllerSa.role.addManagedPolicy(
+    lbControllerRole.addManagedPolicy(
       cdk.aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonEC2ReadOnlyAccess'),
     );
 
-    const lbControllerChart = this.cluster.addHelmChart('AwsLoadBalancerController', {
+    this.cluster.addHelmChart('AwsLoadBalancerController', {
       chart: 'aws-load-balancer-controller',
       release: 'aws-load-balancer-controller',
       repository: 'https://aws.github.io/eks-charts',
@@ -523,15 +529,17 @@ export class EksStack extends cdk.Stack {
       values: {
         clusterName: this.cluster.clusterName,
         serviceAccount: {
-          create: false,
+          create: true,
           name: 'aws-load-balancer-controller',
+          annotations: {
+            'eks.amazonaws.com/role-arn': lbControllerRole.roleArn,
+          },
         },
         nodeSelector: { workload: 'app' },
         region: cdk.Stack.of(this).region,
         vpcId: props.vpc.vpcId,
       },
     });
-    lbControllerChart.node.addDependency(lbControllerSa);
 
     // -----------------------------------------------------------------------
     // Hybrid GPU "gas engine" — Karpenter + baked-AMI g5g Spot + time-slicing
