@@ -69,6 +69,7 @@ import {
   CodeBuildStep,
 } from 'aws-cdk-lib/pipelines';
 import { Construct } from 'constructs';
+import { KubectlV36Layer } from '@aws-cdk/lambda-layer-kubectl-v36';
 import { FoundationRefs } from './foundation';
 import { WorkloadsStack } from './workloads-stack';
 import {
@@ -719,6 +720,7 @@ export class PipelineStack extends cdk.Stack {
         resource: 'role',
         resourceName: SHARED_KUBECTL_ROLE_NAME,
       }),
+      kubectlLayer: new KubectlV36Layer(this, 'KubectlLayer'),
       openIdConnectProvider: oidcProvider,
     });
 
