@@ -12,6 +12,28 @@ image builds and deployments. The correct workflow is:
 3. The pipeline builds Nix OCI images on ARM64 CodeBuild, pushes to ECR, and deploys to EKS
 4. If the pipeline stack itself needs updating: `cd platform/infra && npx cdk deploy hellodj-pipeline --profile hellodj --require-approval never`
 
+### CRITICAL: Self-mutation is DISABLED
+
+Because `selfMutation: false` in the pipeline, **the CodeBuild buildspecs are
+frozen at `cdk deploy` time.** Changes to `pipeline-stack.ts` (install commands,
+component build commands, nix.conf setup, cache config, etc.) DO NOT take effect
+by pushing to CodeCommit alone.
+
+The workflow for ANY change to `pipeline-stack.ts`:
+
+1. Edit `pipeline-stack.ts`
+2. Commit + push to CodeCommit (so source matches)
+3. **`cd platform/infra && npx cdk deploy hellodj-pipeline`** ← updates the CodeBuild buildspecs
+4. **`aws codepipeline start-pipeline-execution --name hellodj-pipeline`** ← runs a fresh execution with the new buildspecs
+
+If you skip step 3, the pipeline keeps running the OLD buildspec even though
+CodeCommit has your new code. This is the #1 gotcha — the source in CodeCommit
+and the buildspec baked into CodeBuild are TWO SEPARATE THINGS when self-mutation
+is off.
+
+Changes to component source (bot code, web-ui app.py, flake.nix, etc.) DO take
+effect on a plain push — only `pipeline-stack.ts` changes need the `cdk deploy`.
+
 **DO NOT use `docker build`, `docker push`, `docker buildx`, or any manual
 image push to ECR.** The pipeline is the only path to production images.
 
