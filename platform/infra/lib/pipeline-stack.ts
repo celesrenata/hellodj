@@ -59,7 +59,9 @@
  */
 import * as cdk from 'aws-cdk-lib';
 import * as codecommit from 'aws-cdk-lib/aws-codecommit';
+import * as codebuild from 'aws-cdk-lib/aws-codebuild';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as efs from 'aws-cdk-lib/aws-efs';
 import * as eks from 'aws-cdk-lib/aws-eks';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -178,6 +180,9 @@ export function getInstallCommands(): string[] {
     'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
     // Source nix-daemon env for the rest of the build.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
+    // Symlink /nix/store to the EFS-backed /mnt/nix-store so the store persists.
+    // The installer created /nix/store (empty); replace it with the EFS mount.
+    'if [ -d /mnt/nix-store ]; then rm -rf /nix/store && ln -s /mnt/nix-store /nix/store && systemctl restart nix-daemon 2>/dev/null || true; fi',
     // Configure Nix daemon: wire the S3 binary cache as a substituter + trusted.
     // `trusted-substituters` means Nix accepts unsigned narinfos from this cache.
     `echo 'extra-substituters = ${NIX_CACHE_S3_URI}' >> /etc/nix/nix.conf`,
@@ -317,6 +322,7 @@ export function getComponentBuildCommands(
         `docker push "$REPO:latest"; ` +
         `echo "pushed $REPO:$CODEBUILD_RESOLVED_SOURCE_VERSION"; ` +
         `nix copy --to '${NIX_CACHE_S3_URI}' --secret-key-files /tmp/nix-cache-key.sec "$IMAGE_PATH" 2>/dev/null || true; ` +
+        `nix-collect-garbage --delete-older-than 7d 2>/dev/null || true; ` +
       `else echo "image path not a file: $IMAGE_PATH"; cat /tmp/${component}-image-path.txt; exit 1; fi; ` +
     `else echo "no image built for ${component}"; cat /tmp/${component}-image-path.txt 2>/dev/null; exit 1; fi`,
     ...extraCommands,
@@ -534,10 +540,31 @@ export class PipelineStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: PipelineStackProps = {}) {
     super(scope, id, props);
 
-    // Persistent Nix store cache is handled via S3 (hellodj-nix-cache bucket).
-    // EFS mounting at /nix conflicts with the Nix installer; revisit with a
-    // custom AMI or mount at /nix/store with pre-created mount point later.
-    void props.vpc; // Reserved for future EFS or VPC-only builds.
+    // -----------------------------------------------------------------------
+    // Persistent /nix/store on EFS — mounted at /mnt/nix-store, then symlinked
+    // to /nix/store AFTER Nix installs (so the installer doesn't conflict).
+    // -----------------------------------------------------------------------
+    let nixStoreFs: efs.FileSystem | undefined;
+    if (props.vpc) {
+      const efsSg = new ec2.SecurityGroup(this, 'NixStoreEfsSg', {
+        vpc: props.vpc,
+        description: 'NFS access for CodeBuild Nix store EFS',
+        allowAllOutbound: true,
+      });
+      efsSg.addIngressRule(
+        ec2.Peer.ipv4(props.vpc.vpcCidrBlock),
+        ec2.Port.tcp(2049),
+        'NFS from VPC (CodeBuild)',
+      );
+      nixStoreFs = new efs.FileSystem(this, 'NixStoreEfs', {
+        vpc: props.vpc,
+        performanceMode: efs.PerformanceMode.GENERAL_PURPOSE,
+        throughputMode: efs.ThroughputMode.ELASTIC,
+        removalPolicy: cdk.RemovalPolicy.RETAIN,
+        lifecyclePolicy: efs.LifecyclePolicy.AFTER_30_DAYS,
+        securityGroup: efsSg,
+      });
+    }
 
     const branch = props.branch ?? 'main';
     // Source from the private CodeCommit `hellodj` repository (R2.1/R3.1).
@@ -639,6 +666,17 @@ export class PipelineStack extends cdk.Stack {
       // When VPC is supplied, CodeBuild runs in-VPC with a persistent EFS-backed
       // /nix/store so subsequent builds skip all downloads.
       codeBuildDefaults: {
+        ...(props.vpc && nixStoreFs ? {
+          vpc: props.vpc,
+          subnetSelection: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+          fileSystemLocations: [
+            codebuild.FileSystemLocation.efs({
+              identifier: 'nix_store',
+              location: `${nixStoreFs.fileSystemId}.efs.${this.region}.amazonaws.com:/`,
+              mountPoint: '/mnt/nix-store',
+            }),
+          ],
+        } : {}),
         buildEnvironment: {
           computeType: cdk.aws_codebuild.ComputeType.LARGE,
           buildImage: cdk.aws_codebuild.LinuxArmBuildImage.fromCodeBuildImageId(
