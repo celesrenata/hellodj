@@ -522,6 +522,28 @@ export class EksStack extends cdk.Stack {
     lbControllerSa.role.addManagedPolicy(
       cdk.aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonEC2ReadOnlyAccess'),
     );
+    // ACM, WAF, Shield, Cognito permissions the LB controller needs for
+    // HTTPS listeners, certificate discovery, and WAF integration.
+    lbControllerSa.role.addToPrincipalPolicy(new cdk.aws_iam.PolicyStatement({
+      effect: cdk.aws_iam.Effect.ALLOW,
+      actions: [
+        'acm:ListCertificates',
+        'acm:DescribeCertificate',
+        'acm:GetCertificate',
+        'wafv2:GetWebACL',
+        'wafv2:GetWebACLForResource',
+        'wafv2:AssociateWebACL',
+        'wafv2:DisassociateWebACL',
+        'shield:GetSubscriptionState',
+        'shield:DescribeProtection',
+        'shield:CreateProtection',
+        'shield:DeleteProtection',
+        'cognito-idp:DescribeUserPoolClient',
+        'tag:GetResources',
+        'tag:TagResources',
+      ],
+      resources: ['*'],
+    }));
 
     const lbControllerChart = this.cluster.addHelmChart('AwsLoadBalancerController', {
       chart: 'aws-load-balancer-controller',
