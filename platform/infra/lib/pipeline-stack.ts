@@ -182,7 +182,7 @@ export function getInstallCommands(): string[] {
     // everything to EFS; next run it's already there.
     'mkdir -p /nix && if [ -d /mnt/nix-store ]; then mount --bind /mnt/nix-store /nix; fi',
     // If Nix was already installed (EFS has previous run's data), skip install.
-    'if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then echo "Nix already on EFS, skipping install"; else curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm; fi',
+    'if [ -x /nix/var/nix/profiles/default/bin/nix ]; then echo "Nix on EFS — starting daemon"; /nix/nix-installer repair --no-confirm 2>/dev/null || nix daemon & sleep 2; else curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm; fi',
     // Source nix-daemon env for the rest of the build.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
     // Configure Nix daemon: wire the S3 binary cache as a substituter + trusted.
@@ -542,10 +542,9 @@ export class PipelineStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: PipelineStackProps = {}) {
     super(scope, id, props);
 
-    // -----------------------------------------------------------------------
-    // Persistent /nix/store on EFS — mounted at /mnt/nix-store, then symlinked
-    // to /nix/store AFTER Nix installs (so the installer doesn't conflict).
-    // -----------------------------------------------------------------------
+    // Persistent Nix store cache on EFS. A SINGLE build project (not 12
+    // parallel) mounts EFS at /mnt/nix-store, bind-mounts it over /nix, and
+    // builds all 12 components sequentially. No race. Second run is instant.
     let nixStoreFs: efs.FileSystem | undefined;
     if (props.vpc) {
       const efsSg = new ec2.SecurityGroup(this, 'NixStoreEfsSg', {
@@ -601,56 +600,30 @@ export class PipelineStack extends cdk.Stack {
       forkSources[fork.name] = CodePipelineSource.codeCommit(forkRepo, fork.branch);
     }
 
-    // Per-component build paths (R15.2). One CodeBuild step per Component gives
-    // each Component an isolated build/deploy path so a single Component can be
-    // promoted without rebuilding the others. Each step exposes the task-18.4
-    // dependency-gate hook via `getComponentBuildCommands`.
+    // ALL component builds run in the SINGLE synth step (sequentially) so they
+    // share one Nix install and one EFS mount. No per-component parallel projects.
     this.componentBuildSteps = {};
-    const componentInputs: CodeBuildStep[] = [];
+
+    // Build all components as part of the synth step commands.
+    const allComponentBuildCommands: string[] = [];
     for (const component of PLATFORM_COMPONENTS) {
-      const step = new CodeBuildStep(`build-${component}`, {
-        input: source,
-        installCommands: getInstallCommands(),
-        commands: getComponentBuildCommands(component),
-      });
-      this.componentBuildSteps[component] = step;
-      componentInputs.push(step);
+      allComponentBuildCommands.push(...getComponentBuildCommands(component));
     }
 
-    // The synth/build stage. `getBuildCommands()` supplies the CDK synth
-    // commands plus the repo-wide gate hook point (tasks 18.2/18.3). The
-    // per-component build steps are wired in as additional inputs so their
-    // isolated paths run as part of the build stage (R15.2).
-    //
-    // Uses CodeBuildStep (not ShellStep) for `installCommands` support: the
-    // install phase provisions Nix + ruff before the build commands run.
-    //
-    // The four fork repos are wired as additionalInputs so a push to any
-    // fork's build branch also triggers the pipeline (R2.1). The fork sources
-    // are mounted at their repo name so the synth step can access them if
-    // needed (e.g. for cross-repo flake checks).
+    // The synth/build stage. Installs Nix (or reuses from EFS), runs CDK synth,
+    // then builds all 12 component images sequentially and pushes to ECR.
     const synth = new CodeBuildStep('synth', {
       input: source,
-      // The CDK cloud assembly lives at platform/infra/cdk.out after synth.
       primaryOutputDirectory: 'platform/infra/cdk.out',
       installCommands: getInstallCommands(),
-      commands: getBuildCommands(),
+      commands: [...getBuildCommands(), ...allComponentBuildCommands],
       additionalInputs: {
-        // Mount fork sources — makes their code available AND triggers the
-        // pipeline on push to their build branches.
         'forks/Lavalink': forkSources['Lavalink'],
         'forks/lavaplayer': forkSources['lavaplayer'],
         'forks/LavaSrc': forkSources['LavaSrc'],
         'forks/youtube-source': forkSources['youtube-source'],
       },
     });
-    // Wire each per-component build path as a prerequisite of the synth step so
-    // every Component's isolated build (and its task-18.4 dependency-gate hook)
-    // runs as part of the build stage while remaining an independent path
-    // (R15.2).
-    for (const step of componentInputs) {
-      synth.addStepDependency(step);
-    }
 
     this.pipeline = new CodePipeline(this, 'pipeline', {
       pipelineName: 'hellodj-pipeline',
