@@ -69,8 +69,8 @@
           cp ${htmxJs} $out/app/static/js/htmx.min.js
           cp ${alpineJs} $out/app/static/js/alpine.min.js
           # Shared platform logic package (copied into source tree by pipeline)
-          if [ -d $src/hellodj_platform_logic ]; then
-            cp -r $src/hellodj_platform_logic $out/app/hellodj_platform_logic
+          if [ -d "$src/hellodj_platform_logic" ]; then
+            cp -r "$src/hellodj_platform_logic" $out/app/hellodj_platform_logic
           fi
         '';
 

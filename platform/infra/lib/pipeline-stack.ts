@@ -307,7 +307,9 @@ export function getComponentBuildCommands(
         `git add -f hellodj_platform_logic 2>/dev/null || true; ` +
       `fi`,
     // Build the Nix OCI image for aarch64-linux natively (CodeBuild is ARM64).
-    `cd $CODEBUILD_SRC_DIR/platform/components/${component} && nix build .#packages.aarch64-linux.image --no-link --print-out-paths > /tmp/${component}-image-path.txt || echo "SKIP: nix build failed for ${component}"`,
+    // --impure is needed because the platform_logic copy above introduces
+    // paths that aren't in the flake's original git history.
+    `cd $CODEBUILD_SRC_DIR/platform/components/${component} && nix build .#packages.aarch64-linux.image --impure --no-link --print-out-paths > /tmp/${component}-image-path.txt || echo "SKIP: nix build failed for ${component}"`,
     // Load + tag + push to ECR, then push closure to S3 Nix cache.
     // Use the Nix-built image name (hellodj-<component>:nix) to avoid picking
     // up stale images from other components in docker images.
