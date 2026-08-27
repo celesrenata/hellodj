@@ -520,7 +520,7 @@ export class EksStack extends cdk.Stack {
       cdk.aws_iam.ManagedPolicy.fromAwsManagedPolicyName('ElasticLoadBalancingFullAccess'),
     );
     lbControllerSa.role.addManagedPolicy(
-      cdk.aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonEC2ReadOnlyAccess'),
+      cdk.aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonEC2FullAccess'),
     );
     // ACM, WAF, Shield, Cognito permissions the LB controller needs for
     // HTTPS listeners, certificate discovery, and WAF integration.
