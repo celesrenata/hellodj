@@ -165,19 +165,14 @@ export const NIX_CACHE_S3_URI = 's3://hellodj-nix-cache';
  */
 export function getInstallCommands(): string[] {
   return [
-    // Install Nix (Determinate Systems installer — same as GHA workflow).
-    // Ubuntu 24.04 standard:8.0 already has Node 22, Python 3.14, git, AWS CLI.
+    // Install Nix (Determinate Systems installer).
+    // ARM64 CodeBuild image (Graviton) — native aarch64 builds, no QEMU.
     'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
     // Source nix-daemon env for the rest of the build.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
-    // Configure Nix: enable flakes, wire the S3 binary cache, and enable
-    // aarch64-linux cross-builds via QEMU binfmt (the CodeBuild x86_64 host
-    // builds ARM64 OCI images for Graviton nodes).
+    // Configure Nix: enable flakes + wire the S3 binary cache as a substituter.
     `mkdir -p ~/.config/nix && echo 'experimental-features = nix-command flakes' > ~/.config/nix/nix.conf`,
     `echo 'extra-substituters = ${NIX_CACHE_S3_URI}' >> ~/.config/nix/nix.conf`,
-    `echo 'extra-platforms = aarch64-linux' >> ~/.config/nix/nix.conf`,
-    // Register QEMU binfmt for aarch64 so Nix can cross-build ARM64 derivations.
-    'docker run --rm --privileged multiarch/qemu-user-static --reset -p yes 2>/dev/null || true',
     // AWS git credential helper for CodeCommit (R2.2/R2.3).
     'git config --global credential.helper "!aws codecommit credential-helper $@"',
     'git config --global credential.UseHttpPath true',
@@ -612,16 +607,16 @@ export class PipelineStack extends cdk.Stack {
       // fail because the kubectl handler is scoped to the EKS stack. Pipeline
       // definition changes are deployed manually with `cdk deploy hellodj-pipeline`.
       selfMutation: false,
-      // Use MEDIUM compute (4 vCPU, 7 GB) for all CodeBuild projects. The
-      // default SMALL (2 vCPU, 3 GB) is too slow for the Nix install + npm ci
-      // + cdk synth cycle. Ubuntu 24.04 standard:8.0 ships with Node 22/24,
-      // Python 3.14, and modern tooling — no need to install Node separately.
+      // Use MEDIUM compute on ARM64 (Graviton) for all CodeBuild projects.
+      // Native aarch64 builds — no QEMU cross-compilation needed since the
+      // target EKS nodes are also ARM64. Ubuntu 24.04 standard:3.0 (ARM) ships
+      // with Node 22, Python 3.14, and modern tooling.
       // Privileged mode is required for docker daemon (image build + push).
       codeBuildDefaults: {
         buildEnvironment: {
           computeType: cdk.aws_codebuild.ComputeType.MEDIUM,
-          buildImage: cdk.aws_codebuild.LinuxBuildImage.fromCodeBuildImageId(
-            'aws/codebuild/standard:8.0',
+          buildImage: cdk.aws_codebuild.LinuxArmBuildImage.fromCodeBuildImageId(
+            'aws/codebuild/amazonlinux2-aarch64-standard:3.0',
           ),
           privileged: true,
         },
