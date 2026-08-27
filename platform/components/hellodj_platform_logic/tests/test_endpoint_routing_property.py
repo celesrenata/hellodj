@@ -57,7 +57,7 @@ def endpoints_with_distinct_hostnames(
         st.lists(_HOSTNAME, min_size=1, max_size=len(_STAGES), unique=True)
     )
     endpoints: list[StageEndpoint] = []
-    for stage, hostname in zip(_STAGES, hostnames):
+    for stage, hostname in zip(_STAGES, hostnames, strict=False):
         endpoints.append(
             StageEndpoint(
                 stage=stage,

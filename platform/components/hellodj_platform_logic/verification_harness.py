@@ -42,7 +42,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from pathlib import Path
 
 #: Case-insensitive substrings that, if present in a command's OUTPUT, indicate
@@ -63,7 +63,7 @@ FAILURE_MARKERS: tuple[str, ...] = (
 )
 
 
-class Outcome(str, Enum):
+class Outcome(StrEnum):
     """The classification of a single verification command's result (R12.7)."""
 
     PASS = "PASS"

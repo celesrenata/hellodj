@@ -16,7 +16,7 @@ from __future__ import annotations
 import json
 import logging
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 from typing import Any
 
 from .aws_clients import AwsClientFactory
@@ -27,7 +27,7 @@ log = logging.getLogger(__name__)
 __all__ = ["IntentCategory", "Intent", "IntentRecognizer"]
 
 
-class IntentCategory(str, Enum):
+class IntentCategory(StrEnum):
     """Top-level intent categories the pipeline can act on."""
 
     MUSIC = "music"

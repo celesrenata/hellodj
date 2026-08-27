@@ -39,8 +39,8 @@ include = ["hellodj_platform_logic*"]
 # ruff — PEP 8 style enforcement (Requirement 13.2)
 # ---------------------------------------------------------------------------
 [tool.ruff]
-# Target the platform Python baseline.
-target-version = "py311"
+# Target the platform Python baseline (3.14 on CodeBuild standard:8.0).
+target-version = "py314"
 # Hard cap on line length; the max-line-count hook enforces the per-file line
 # ceiling separately (Requirement 13.3).
 line-length = 100

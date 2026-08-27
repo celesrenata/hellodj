@@ -56,7 +56,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import StrEnum
 
 __all__ = [
     "PublishStep",
@@ -68,7 +68,7 @@ __all__ = [
 ]
 
 
-class PublishStep(str, Enum):
+class PublishStep(StrEnum):
     """The ordered steps a build's publish path performs per artifact (R7.7)."""
 
     SIGN = "sign"

@@ -46,7 +46,6 @@ _spec.loader.exec_module(gate_pins)
 
 from hellodj_platform_logic.types import FlakeInputPin  # noqa: E402
 
-
 # ---------------------------------------------------------------------------
 # The shipped manifest verifies clean at pin time
 # ---------------------------------------------------------------------------
@@ -195,7 +194,7 @@ def test_path_style_input_is_rejected(tmp_path: Path) -> None:
         'branch = "dev"\n'
         'pinned_identifier = "abc"\n',
     )
-    with pytest.raises(gate_pins.PinManifestError, match="github"):
+    with pytest.raises(gate_pins.PinManifestError, match="path:"):
         gate_pins.load_pins(manifest)
 
 
@@ -247,3 +246,104 @@ def test_unknown_only_input_is_operational_error() -> None:
 def test_self_test_passes() -> None:
     """The workflow's built-in --self-test smoke check passes."""
     assert gate_pins.main(["--self-test", "--manifest", str(gate_pins.DEFAULT_MANIFEST)]) == 0
+
+
+# ---------------------------------------------------------------------------
+# Task 10.3 — CodeCommit input acceptance + path rejection + enumeration
+# (hellodj-private-source-and-toolchain R3.2, R3.3, R3.4, R3.8, R6.6)
+# ---------------------------------------------------------------------------
+
+
+def test_valid_codecommit_input_is_accepted(tmp_path: Path) -> None:
+    """A valid codecommit entry is accepted by the pin gate (R3.2).
+
+    Validates: Requirements 3.2, 3.8
+    """
+    manifest = _write_manifest(
+        tmp_path,
+        # Include all required inputs so the enumeration assertion passes.
+        '[inputs.hellodj]\ntype = "codecommit"\nregion = "us-east-1"\n'
+        'repo = "hellodj"\nbranch = "main"\npinned_identifier = "main"\n\n'
+        '[inputs.lavalink]\ntype = "codecommit"\nregion = "us-east-1"\n'
+        'repo = "Lavalink"\nbranch = "dev"\npinned_identifier = "fmp4-hls"\n\n'
+        '[inputs.lavaplayer]\ntype = "codecommit"\nregion = "us-east-1"\n'
+        'repo = "lavaplayer"\nbranch = "main"\npinned_identifier = "abc123"\n\n'
+        '[inputs.lavasrc]\ntype = "codecommit"\nregion = "us-east-1"\n'
+        'repo = "LavaSrc"\nbranch = "tidal-v2-api"\npinned_identifier = "4.8.3"\n\n'
+        '[inputs.youtube-source]\ntype = "codecommit"\nregion = "us-east-1"\n'
+        'repo = "youtube-source"\nbranch = "main"\npinned_identifier = "sabr"\n\n'
+        '[inputs.temurin]\nowner = "adoptium"\nrepo = "temurin25-binaries"\n'
+        'branch = "main"\npinned_identifier = "jdk-25+36"\nfeature_version = 25\n\n'
+        '[inputs.nixpkgs]\nowner = "NixOS"\nrepo = "nixpkgs"\n'
+        'branch = "nixos-unstable"\npinned_identifier = "nixos-unstable"\n\n'
+        '[inputs.nixos-generators]\nowner = "nix-community"\nrepo = "nixos-generators"\n'
+        'branch = "master"\npinned_identifier = "abc"\n\n'
+        '[inputs.karpenter]\nowner = "aws"\nrepo = "karpenter-provider-aws"\n'
+        'branch = "main"\npinned_identifier = "1.0.6"\n\n'
+        '[inputs.eks-kubernetes]\nowner = "kubernetes"\nrepo = "kubernetes"\n'
+        'branch = "master"\npinned_identifier = "1.33"\n',
+    )
+    pins = gate_pins.load_pins(manifest)
+    # CodeCommit entries loaded successfully.
+    assert "hellodj" in pins
+    assert "lavalink" in pins
+    assert pins["lavalink"].repo == "Lavalink"
+    assert pins["lavalink"].branch == "dev"
+
+
+def test_path_type_codecommit_entry_is_rejected(tmp_path: Path) -> None:
+    """A path: entry is rejected naming the key (R3.3).
+
+    Validates: Requirements 3.3
+    """
+    manifest = _write_manifest(
+        tmp_path,
+        '[inputs.badrepo]\ntype = "path"\nregion = "us-east-1"\n'
+        'repo = "badrepo"\nbranch = "main"\npinned_identifier = "abc"\n',
+    )
+    with pytest.raises(gate_pins.PinManifestError, match="badrepo.*path:"):
+        gate_pins.load_pins(manifest)
+
+
+def test_codecommit_missing_field_is_rejected(tmp_path: Path) -> None:
+    """A codecommit entry missing a field is rejected naming the missing field (R3.4).
+
+    Validates: Requirements 3.4
+    """
+    manifest = _write_manifest(
+        tmp_path,
+        '[inputs.broken]\ntype = "codecommit"\nregion = "us-east-1"\n'
+        # repo omitted, branch omitted
+        'pinned_identifier = "abc"\n',
+    )
+    with pytest.raises(gate_pins.PinManifestError, match="repo"):
+        gate_pins.load_pins(manifest)
+
+
+def test_required_inputs_still_enforced_with_codecommit(tmp_path: Path) -> None:
+    """REQUIRED_INPUTS enumeration is enforced even with codecommit entries (R3.8).
+
+    Validates: Requirements 3.8
+    """
+    manifest = _write_manifest(
+        tmp_path,
+        # Only one input — missing the other 8 required.
+        '[inputs.lavalink]\ntype = "codecommit"\nregion = "us-east-1"\n'
+        'repo = "Lavalink"\nbranch = "dev"\npinned_identifier = "abc"\n',
+    )
+    with pytest.raises(gate_pins.PinManifestError, match="missing required"):
+        gate_pins.load_pins(manifest)
+
+
+def test_temurin_feature_version_25_enforced_with_mixed_inputs(tmp_path: Path) -> None:
+    """A bump moving Temurin off feature version 25 is rejected (R6.6).
+
+    Validates: Requirements 6.6
+    """
+    manifest = _write_manifest(
+        tmp_path,
+        '[inputs.temurin]\nowner = "adoptium"\nrepo = "temurin26-binaries"\n'
+        'branch = "main"\npinned_identifier = "jdk-26+1"\nfeature_version = 26\n',
+    )
+    with pytest.raises(gate_pins.PinManifestError, match="Temurin"):
+        gate_pins.load_pins(manifest)

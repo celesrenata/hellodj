@@ -17,7 +17,6 @@ import pytest
 
 from hellodj_platform_logic.types import DeploymentStage, GpuIdleConfig
 
-
 # ---------------------------------------------------------------------------
 # DeploymentStage reconciliation (Requirement 9.1)
 # ---------------------------------------------------------------------------
