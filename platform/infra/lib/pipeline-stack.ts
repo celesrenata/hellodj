@@ -587,8 +587,7 @@ export class PipelineStack extends cdk.Stack {
       componentInputs.push(step);
     }
 
-    // The synth step runs CDK synth. Per-component build steps are wired as
-    // prerequisites so they run in parallel during the build stage.
+    // The synth step runs CDK synth only.
     const synth = new CodeBuildStep('synth', {
       input: source,
       primaryOutputDirectory: 'platform/infra/cdk.out',
@@ -601,9 +600,6 @@ export class PipelineStack extends cdk.Stack {
         'forks/youtube-source': forkSources['youtube-source'],
       },
     });
-    for (const step of componentInputs) {
-      synth.addStepDependency(step);
-    }
 
     this.pipeline = new CodePipeline(this, 'pipeline', {
       pipelineName: 'hellodj-pipeline',
@@ -737,6 +733,14 @@ export class PipelineStack extends cdk.Stack {
 
     this.stages = [];
     this.stageNames = [];
+
+    // Add a build wave before the first deploy stage: all 12 component builds
+    // run in parallel AFTER synth, BEFORE beta deploy.
+    const buildWave = this.pipeline.addWave('ComponentBuilds', {
+      post: componentInputs,
+    });
+    void buildWave;
+
     for (const stageName of PROMOTION_ORDER) {
       const stage = new HelloDjStage(this, `hellodj-${stageName}-stage`, {
         promotionStage: stageName,
