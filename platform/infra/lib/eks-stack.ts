@@ -378,7 +378,17 @@ export class EksStack extends cdk.Stack {
       vpcSubnets: [{ subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS }],
       defaultCapacity: 0,
       endpointAccess: eks.EndpointAccess.PUBLIC_AND_PRIVATE,
+      authenticationMode: eks.AuthenticationMode.API_AND_CONFIG_MAP,
     });
+
+    // Grant the account root (all IAM users/roles in the account) cluster
+    // admin access via EKS access entries. This allows kubectl from any
+    // authorized IAM principal without needing aws-auth ConfigMap edits.
+    this.cluster.grantAccess('AdminAccess', `arn:aws:iam::${cdk.Stack.of(this).account}:root`, [
+      eks.AccessPolicy.fromAccessPolicyName('AmazonEKSClusterAdminPolicy', {
+        accessScopeType: eks.AccessScopeType.CLUSTER,
+      }),
+    ]);
 
     // Surface the autoscaling thresholds on the cluster so the Cluster
     // Autoscaler / HPA wiring added by later tasks reads a single source of
