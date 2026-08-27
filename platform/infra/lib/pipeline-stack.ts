@@ -170,9 +170,10 @@ export function getInstallCommands(): string[] {
     'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
     // Source nix-daemon env for the rest of the build.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
-    // Configure Nix: enable flakes + wire the S3 binary cache as a substituter.
-    `mkdir -p ~/.config/nix && echo 'experimental-features = nix-command flakes' > ~/.config/nix/nix.conf`,
-    `echo 'extra-substituters = ${NIX_CACHE_S3_URI}' >> ~/.config/nix/nix.conf`,
+    // Configure Nix: enable flakes + wire the S3 binary cache as a substituter
+    // (read) and post-build-hook target (write). Trusted so unsigned narinfos
+    // from our own cache are accepted.
+    `mkdir -p ~/.config/nix && cat > ~/.config/nix/nix.conf << 'EOF'\nexperimental-features = nix-command flakes\nextra-substituters = ${NIX_CACHE_S3_URI}\nextra-trusted-substituters = ${NIX_CACHE_S3_URI}\ntrusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=\nEOF`,
     // AWS git credential helper for CodeCommit (R2.2/R2.3).
     'git config --global credential.helper "!aws codecommit credential-helper $@"',
     'git config --global credential.UseHttpPath true',
@@ -287,7 +288,7 @@ export function getComponentBuildCommands(
     `cd $CODEBUILD_SRC_DIR/platform && python3 tools/gate_dependencies.py --component ${component}`,
     // Build the Nix OCI image for aarch64-linux natively (CodeBuild is ARM64).
     `cd $CODEBUILD_SRC_DIR/platform/components/${component} && nix build .#packages.aarch64-linux.image --no-link --print-out-paths > /tmp/${component}-image-path.txt || echo "SKIP: nix build failed for ${component}"`,
-    // Load + tag + push to ECR.
+    // Load + tag + push to ECR, then push closure to S3 Nix cache.
     `set +e; if [ -s /tmp/${component}-image-path.txt ]; then ` +
       `IMAGE_PATH=$(head -1 /tmp/${component}-image-path.txt); ` +
       `if [ -f "$IMAGE_PATH" ]; then ` +
@@ -301,6 +302,7 @@ export function getComponentBuildCommands(
         `docker push "$REPO:$CODEBUILD_RESOLVED_SOURCE_VERSION"; ` +
         `docker push "$REPO:latest"; ` +
         `echo "pushed $REPO:$CODEBUILD_RESOLVED_SOURCE_VERSION"; ` +
+        `nix copy --to '${NIX_CACHE_S3_URI}' "$IMAGE_PATH" 2>/dev/null || true; ` +
       `else echo "image path not a file: $IMAGE_PATH"; cat /tmp/${component}-image-path.txt; exit 1; fi; ` +
     `else echo "no image built for ${component}"; cat /tmp/${component}-image-path.txt 2>/dev/null; exit 1; fi`,
     ...extraCommands,
@@ -660,6 +662,19 @@ export class PipelineStack extends cdk.Stack {
               `arn:aws:codecommit:${this.region}:${this.account}:lavaplayer`,
               `arn:aws:codecommit:${this.region}:${this.account}:LavaSrc`,
               `arn:aws:codecommit:${this.region}:${this.account}:youtube-source`,
+            ],
+          }),
+          // S3 Nix binary cache — read (substituter) + write (push after build).
+          new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            actions: [
+              's3:GetObject',
+              's3:PutObject',
+              's3:ListBucket',
+            ],
+            resources: [
+              'arn:aws:s3:::hellodj-nix-cache',
+              'arn:aws:s3:::hellodj-nix-cache/*',
             ],
           }),
         ],
