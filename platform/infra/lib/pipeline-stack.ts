@@ -181,8 +181,11 @@ export function getInstallCommands(): string[] {
     // on the same filesystem (rename() requires same-fs). The installer writes
     // everything to EFS; next run it's already there.
     'mkdir -p /nix && if [ -d /mnt/nix-store ]; then mount --bind /mnt/nix-store /nix; fi',
-    // If Nix was already installed (EFS has previous run's data), skip install.
-    'if [ -x /nix/var/nix/profiles/default/bin/nix ]; then echo "Nix on EFS — starting daemon"; /nix/nix-installer repair --no-confirm 2>/dev/null || nix daemon & sleep 2; else curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm; fi',
+    // Clean corrupted EFS state: receipt exists but no actual Nix binary.
+    'if [ -f /nix/receipt.json ] && [ ! -x /nix/var/nix/profiles/default/bin/nix ]; then echo "Corrupted EFS state, wiping"; rm -rf /nix/*; fi',
+    // If Nix was already installed (EFS has previous run's data), start daemon.
+    // Otherwise fresh install.
+    'if [ -x /nix/var/nix/profiles/default/bin/nix ]; then echo "Nix on EFS"; /nix/var/nix/profiles/default/bin/nix daemon & sleep 2; else curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm; fi',
     // Source nix-daemon env for the rest of the build.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
     // Configure Nix daemon: wire the S3 binary cache as a substituter + trusted.
