@@ -496,6 +496,26 @@ export class EksStack extends cdk.Stack {
     });
 
     // -----------------------------------------------------------------------
+    // AWS Load Balancer Controller — reconciles Kubernetes Ingress resources
+    // into ALB listeners/target groups on the shared NetworkStack ALB.
+    // -----------------------------------------------------------------------
+    this.cluster.addHelmChart('AwsLoadBalancerController', {
+      chart: 'aws-load-balancer-controller',
+      release: 'aws-load-balancer-controller',
+      repository: 'https://aws.github.io/eks-charts',
+      namespace: 'kube-system',
+      version: '1.10.1',
+      values: {
+        clusterName: this.cluster.clusterName,
+        serviceAccount: {
+          create: true,
+          name: 'aws-load-balancer-controller',
+        },
+        nodeSelector: { workload: 'app' },
+      },
+    });
+
+    // -----------------------------------------------------------------------
     // Hybrid GPU "gas engine" — Karpenter + baked-AMI g5g Spot + time-slicing
     // -----------------------------------------------------------------------
     this.karpenterChart = this.installKarpenter(stage);
