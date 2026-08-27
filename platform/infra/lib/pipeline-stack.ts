@@ -165,8 +165,8 @@ export const NIX_CACHE_S3_URI = 's3://hellodj-nix-cache';
  */
 export function getInstallCommands(): string[] {
   return [
-    // AL2023 ARM64 ships Node 18; CDK needs >= 20. Install Node 22 via nvm.
-    '. ~/.nvm/nvm.sh && nvm install 22 && nvm use 22',
+    // AL2023 ARM64 ships Node 18; CDK needs >= 20. Install Node 22 binary.
+    'curl -fsSL https://nodejs.org/dist/v22.12.0/node-v22.12.0-linux-arm64.tar.xz | tar -xJ -C /usr/local --strip-components=1',
     // Install Nix (Determinate Systems installer).
     // ARM64 CodeBuild on AL2023 (Graviton) — native aarch64 builds.
     'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
