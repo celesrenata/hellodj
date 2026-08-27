@@ -175,11 +175,14 @@ export function getInstallCommands(): string[] {
     // AL2023 ARM64 ships Node 18 by default; CDK needs >= 20.
     // Node 22 is available as a namespaced package in AL2023.
     'dnf install -y nodejs22 && alternatives --set node /usr/bin/node22 || ln -sf /usr/bin/node22 /usr/local/bin/node',
-    // Install Nix with persistent EFS-backed /nix/store.
+    // Install Nix with persistent EFS-backed /nix.
     // EFS is mounted at /mnt/nix-store by CodeBuild. We bind-mount it over
-    // /nix/store (not symlink — rename() needs same-filesystem semantics).
-    'mkdir -p /nix/store && if [ -d /mnt/nix-store ]; then mount --bind /mnt/nix-store /nix/store; fi',
-    'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
+    // the entire /nix so the installer's temp-install-dir and /nix/store are
+    // on the same filesystem (rename() requires same-fs). The installer writes
+    // everything to EFS; next run it's already there.
+    'mkdir -p /nix && if [ -d /mnt/nix-store ]; then mount --bind /mnt/nix-store /nix; fi',
+    // If Nix was already installed (EFS has previous run's data), skip install.
+    'if [ -f /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh ]; then echo "Nix already on EFS, skipping install"; else curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm; fi',
     // Source nix-daemon env for the rest of the build.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
     // Configure Nix daemon: wire the S3 binary cache as a substituter + trusted.
