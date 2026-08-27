@@ -170,10 +170,13 @@ export function getInstallCommands(): string[] {
     'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
     // Source nix-daemon env for the rest of the build.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
-    // Configure Nix: enable flakes + wire the S3 binary cache as a substituter
-    // (read) and post-build-hook target (write). Trusted so unsigned narinfos
-    // from our own cache are accepted.
-    `mkdir -p ~/.config/nix && cat > ~/.config/nix/nix.conf << 'EOF'\nexperimental-features = nix-command flakes\nextra-substituters = ${NIX_CACHE_S3_URI}\nextra-trusted-substituters = ${NIX_CACHE_S3_URI}\ntrusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY=\nEOF`,
+    // Configure Nix daemon: enable flakes, wire the S3 binary cache as both
+    // a substituter (read) and trusted-substituter (accept unsigned narinfos
+    // from our own cache). The daemon reads /etc/nix/nix.conf.
+    `echo 'extra-substituters = ${NIX_CACHE_S3_URI}' >> /etc/nix/nix.conf`,
+    `echo 'extra-trusted-substituters = ${NIX_CACHE_S3_URI}' >> /etc/nix/nix.conf`,
+    `echo 'extra-trusted-users = root' >> /etc/nix/nix.conf`,
+    'systemctl restart nix-daemon 2>/dev/null || true',
     // AWS git credential helper for CodeCommit (R2.2/R2.3).
     'git config --global credential.helper "!aws codecommit credential-helper $@"',
     'git config --global credential.UseHttpPath true',
