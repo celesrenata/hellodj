@@ -661,7 +661,51 @@ export class EksStack extends cdk.Stack {
    * model depends on.
    */
   private installKarpenter(stage: string): eks.HelmChart {
-    return this.cluster.addHelmChart('Karpenter', {
+    // Karpenter needs AWS credentials to provision EC2 instances, describe
+    // instance types, manage launch templates, and observe Spot interruptions.
+    // Create a service account with IRSA so the pod gets credentials from the
+    // OIDC provider rather than falling through to IMDS (which returns 401 on
+    // EKS managed nodes with IMDSv2 hop limit = 1).
+    const karpenterSa = this.cluster.addServiceAccount('KarpenterSa', {
+      name: 'karpenter',
+      namespace: 'karpenter',
+    });
+    karpenterSa.role.addManagedPolicy(
+      cdk.aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonEC2FullAccess'),
+    );
+    karpenterSa.role.addManagedPolicy(
+      cdk.aws_iam.ManagedPolicy.fromAwsManagedPolicyName('AmazonSSMManagedInstanceCore'),
+    );
+    karpenterSa.role.addToPrincipalPolicy(new cdk.aws_iam.PolicyStatement({
+      effect: cdk.aws_iam.Effect.ALLOW,
+      actions: [
+        'eks:DescribeCluster',
+        'iam:PassRole',
+        'pricing:GetProducts',
+        'ec2:CreateFleet',
+        'ec2:CreateLaunchTemplate',
+        'ec2:CreateTags',
+        'ec2:DeleteLaunchTemplate',
+        'ec2:RunInstances',
+        'ec2:TerminateInstances',
+        'ec2:DescribeAvailabilityZones',
+        'ec2:DescribeImages',
+        'ec2:DescribeInstances',
+        'ec2:DescribeInstanceTypeOfferings',
+        'ec2:DescribeInstanceTypes',
+        'ec2:DescribeLaunchTemplates',
+        'ec2:DescribeSecurityGroups',
+        'ec2:DescribeSubnets',
+        'ec2:DescribeSpotPriceHistory',
+        'sqs:DeleteMessage',
+        'sqs:GetQueueAttributes',
+        'sqs:GetQueueUrl',
+        'sqs:ReceiveMessage',
+      ],
+      resources: ['*'],
+    }));
+
+    const chart = this.cluster.addHelmChart('Karpenter', {
       chart: 'karpenter',
       release: 'karpenter',
       repository: 'oci://public.ecr.aws/karpenter/karpenter',
@@ -681,6 +725,10 @@ export class EksStack extends cdk.Stack {
         // Karpenter itself runs on the always-on app fleet, never on the
         // ephemeral GPU nodes it manages.
         nodeSelector: { workload: 'app' },
+        serviceAccount: {
+          create: false,
+          name: 'karpenter',
+        },
         controller: {
           resources: {
             requests: { cpu: '0.25', memory: '256Mi' },
@@ -689,6 +737,8 @@ export class EksStack extends cdk.Stack {
         },
       },
     });
+    chart.node.addDependency(karpenterSa);
+    return chart;
   }
 
   /**

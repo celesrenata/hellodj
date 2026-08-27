@@ -188,8 +188,15 @@ export function stageEndpoint(stage: string, region: string): StageEndpoint {
  * placeholder is used so the stack synthesizes and type-checks. It is
  * intentionally obvious in the rendered manifest so a placeholder never
  * silently ships to a real environment.
+ *
+ * NOTE: The pipeline pushes `:latest` on every successful build, so `latest`
+ * is the operational default. The TODO placeholder was never injected at
+ * runtime — CDK Pipelines synthesizes templates BEFORE the build steps run,
+ * making dynamic tag injection impossible without a parameter store or
+ * post-synth mechanism. Using `latest` + `imagePullPolicy: Always` is the
+ * correct approach for a continuously-deployed pipeline.
  */
-export const PLACEHOLDER_IMAGE_TAG = 'TODO-pipeline-injected-tag';
+export const PLACEHOLDER_IMAGE_TAG = 'latest';
 
 /**
  * Data/DAX/secret resources the workloads wire to. Pass the sibling stacks'
@@ -642,7 +649,7 @@ export class WorkloadsStack extends cdk.Stack {
     const container: Record<string, unknown> = {
       name: spec.name,
       image: this.imageUri(spec),
-      imagePullPolicy: 'IfNotPresent',
+      imagePullPolicy: 'Always',
       env: this.containerEnv(spec),
       resources: {
         requests: {

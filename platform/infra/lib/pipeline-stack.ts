@@ -302,6 +302,8 @@ export function getComponentBuildCommands(
     // Build the Nix OCI image for aarch64-linux natively (CodeBuild is ARM64).
     `cd $CODEBUILD_SRC_DIR/platform/components/${component} && nix build .#packages.aarch64-linux.image --no-link --print-out-paths > /tmp/${component}-image-path.txt || echo "SKIP: nix build failed for ${component}"`,
     // Load + tag + push to ECR, then push closure to S3 Nix cache.
+    // Use the Nix-built image name (hellodj-<component>:nix) to avoid picking
+    // up stale images from other components in docker images.
     `set +e; if [ -s /tmp/${component}-image-path.txt ]; then ` +
       `IMAGE_PATH=$(head -1 /tmp/${component}-image-path.txt); ` +
       `if [ -f "$IMAGE_PATH" ]; then ` +
@@ -309,7 +311,8 @@ export function getComponentBuildCommands(
         `REPO="$ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com/hellodj/${component}"; ` +
         `aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin "$ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com"; ` +
         `docker load < "$IMAGE_PATH"; ` +
-        `BUILT_TAG=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -v "^$" | head -1); ` +
+        `BUILT_TAG=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep "hellodj-${component}" | head -1); ` +
+        `if [ -z "$BUILT_TAG" ]; then BUILT_TAG=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -v "^$" | head -1); fi; ` +
         `docker tag "$BUILT_TAG" "$REPO:$CODEBUILD_RESOLVED_SOURCE_VERSION"; ` +
         `docker tag "$BUILT_TAG" "$REPO:latest"; ` +
         `docker push "$REPO:$CODEBUILD_RESOLVED_SOURCE_VERSION"; ` +
