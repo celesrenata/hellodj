@@ -1,0 +1,5 @@
+# Runtime dependency for the Subject_Rewriter Lambda. boto3 is imported lazily
+# inside the SES client factory, so the package still imports without it for
+# unit tests / py_compile. hellodj_platform_logic is resolved from the monorepo
+# components/ directory (PYTHONPATH=components) or an editable install.
+boto3>=1.34

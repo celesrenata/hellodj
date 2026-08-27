@@ -1,0 +1,30 @@
+[project]
+name = "hellodj-subject-rewriter"
+version = "0.1.0"
+description = "Optional Subject_Rewriter AWS Lambda: prefixes alarm emails with 'HelloDJ:', fails open (delivers the original on error), all decisions delegated to hellodj_platform_logic.alarm_subject (R7.2/R7.3/R7.5)."
+requires-python = ">=3.11"
+readme = "README.md"
+
+# Runtime dependencies:
+#   boto3 — AWS SES client (SendEmail). Imported lazily inside the client
+#           factory so the package imports for tests / py_compile without AWS
+#           libraries present.
+# All decision logic (subject prefix, body preservation, fail-open) is consumed
+# from the monorepo's hellodj_platform_logic package (install editable or via
+# PYTHONPATH=components), giving IaC and runtime one source of truth.
+dependencies = [
+    "boto3>=1.34",
+    "hellodj-platform-logic",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=8.0",
+]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["subject_rewriter*"]
