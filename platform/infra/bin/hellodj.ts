@@ -141,6 +141,7 @@ const analytics = new AnalyticsStack(app, 'hellodj-analytics', {
 // 18.2-18.4 are left in `pipeline-stack.ts`.
 const pipeline = new PipelineStack(app, 'hellodj-pipeline', {
   env,
+  vpc: network.vpc,
   foundation: {
     cluster: eks.cluster,
     data: {

@@ -59,6 +59,9 @@
  */
 import * as cdk from 'aws-cdk-lib';
 import * as codecommit from 'aws-cdk-lib/aws-codecommit';
+import * as codebuild from 'aws-cdk-lib/aws-codebuild';
+import * as ec2 from 'aws-cdk-lib/aws-ec2';
+import * as efs from 'aws-cdk-lib/aws-efs';
 import * as eks from 'aws-cdk-lib/aws-eks';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -316,6 +319,7 @@ export function getComponentBuildCommands(
         `docker push "$REPO:latest"; ` +
         `echo "pushed $REPO:$CODEBUILD_RESOLVED_SOURCE_VERSION"; ` +
         `nix copy --to '${NIX_CACHE_S3_URI}' --secret-key-files /tmp/nix-cache-key.sec "$IMAGE_PATH" 2>/dev/null || true; ` +
+        `nix-collect-garbage --delete-older-than 7d 2>/dev/null || true; ` +
       `else echo "image path not a file: $IMAGE_PATH"; cat /tmp/${component}-image-path.txt; exit 1; fi; ` +
     `else echo "no image built for ${component}"; cat /tmp/${component}-image-path.txt 2>/dev/null; exit 1; fi`,
     ...extraCommands,
@@ -412,6 +416,13 @@ export interface PipelineStackProps extends cdk.StackProps {
    * @default 'main'
    */
   readonly branch?: string;
+
+  /**
+   * The platform VPC for CodeBuild to run in (required for EFS mount).
+   * When set, CodeBuild projects run in the VPC's private subnets with NAT
+   * egress, and the persistent /nix/store EFS is mounted.
+   */
+  readonly vpc?: ec2.IVpc;
 
   /**
    * The pre-provisioned {@link Shared_Foundation} handles the per-stage
@@ -526,6 +537,21 @@ export class PipelineStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: PipelineStackProps = {}) {
     super(scope, id, props);
 
+    // -----------------------------------------------------------------------
+    // Persistent /nix/store on EFS — survives across ephemeral CodeBuild runs.
+    // Eliminates re-downloading ~100 paths from cache.nixos.org each build.
+    // nix-collect-garbage --delete-older-than 7d runs post-build to keep trim.
+    // -----------------------------------------------------------------------
+    const nixStoreFs = props.vpc
+      ? new efs.FileSystem(this, 'NixStoreEfs', {
+          vpc: props.vpc,
+          performanceMode: efs.PerformanceMode.GENERAL_PURPOSE,
+          throughputMode: efs.ThroughputMode.ELASTIC,
+          removalPolicy: cdk.RemovalPolicy.RETAIN,
+          lifecyclePolicy: efs.LifecyclePolicy.AFTER_30_DAYS,
+        })
+      : undefined;
+
     const branch = props.branch ?? 'main';
     // Source from the private CodeCommit `hellodj` repository (R2.1/R3.1).
     // The source of truth has moved off public GitHub into CodeCommit; the
@@ -623,7 +649,20 @@ export class PipelineStack extends cdk.Stack {
       // Use LARGE compute on ARM64 (Graviton) for all CodeBuild projects.
       // Native aarch64 builds — no QEMU. AL2023 ARM64 image (3.0) has Node 20+.
       // Privileged mode is required for docker daemon (image build + push).
+      // When VPC is supplied, CodeBuild runs in-VPC with a persistent EFS-backed
+      // /nix/store so subsequent builds skip all downloads.
       codeBuildDefaults: {
+        ...(props.vpc ? {
+          vpc: props.vpc,
+          subnetSelection: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
+          fileSystemLocations: [
+            codebuild.FileSystemLocation.efs({
+              identifier: 'nix_store',
+              location: `${nixStoreFs!.fileSystemId}.efs.${this.region}.amazonaws.com:/`,
+              mountPoint: '/nix',
+            }),
+          ],
+        } : {}),
         buildEnvironment: {
           computeType: cdk.aws_codebuild.ComputeType.LARGE,
           buildImage: cdk.aws_codebuild.LinuxArmBuildImage.fromCodeBuildImageId(
