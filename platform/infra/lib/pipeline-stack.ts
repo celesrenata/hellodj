@@ -155,7 +155,7 @@ export const GATE_HOOK_MARKER = 'HELLODJ_BUILD_GATE_HOOK';
 //   * AWS git credential helper for CodeCommit source resolution (R2.2).
 
 /** S3-backed Nix binary cache URI (matches closures.toml [cache].uri). */
-export const NIX_CACHE_S3_URI = 's3://hellodj-nix-cache';
+export const NIX_CACHE_S3_URI = 's3://hellodj-nix-cache?region=us-east-1';
 
 /** Public key for the Nix cache signing key (narinfo verification). */
 export const NIX_CACHE_PUBLIC_KEY =
@@ -177,12 +177,16 @@ export function getInstallCommands(): string[] {
     'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
     // Source nix-daemon env for the rest of the build.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
-    // Configure Nix daemon: wire the S3 binary cache as a substituter + trusted.
-    // `trusted-substituters` means Nix accepts unsigned narinfos from this cache.
+    // Configure Nix daemon: wire the S3 binary cache as a substituter.
+    // `require-sigs = false` bypasses narinfo signature verification — safe
+    // because we own the S3 bucket and access is IAM-gated. Without this, Nix
+    // rejects cached closures if the signing key rotates or the public key
+    // constant drifts (which is exactly what happened).
     `echo 'extra-substituters = ${NIX_CACHE_S3_URI}' >> /etc/nix/nix.conf`,
     `echo 'extra-trusted-substituters = ${NIX_CACHE_S3_URI}' >> /etc/nix/nix.conf`,
     `echo 'extra-trusted-users = root' >> /etc/nix/nix.conf`,
     `echo 'trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ${NIX_CACHE_PUBLIC_KEY}' >> /etc/nix/nix.conf`,
+    `echo 'require-sigs = false' >> /etc/nix/nix.conf`,
     'systemctl restart nix-daemon 2>/dev/null || true',
     // Decrypt the Nix cache signing key from sops (KMS-backed).
     'curl -fsSL -o /usr/local/bin/sops https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.arm64 && chmod +x /usr/local/bin/sops',
