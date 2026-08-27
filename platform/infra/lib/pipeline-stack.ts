@@ -549,8 +549,23 @@ export class PipelineStack extends cdk.Stack {
           throughputMode: efs.ThroughputMode.ELASTIC,
           removalPolicy: cdk.RemovalPolicy.RETAIN,
           lifecyclePolicy: efs.LifecyclePolicy.AFTER_30_DAYS,
+          // Allow NFS from anywhere in the VPC (CodeBuild runs in private subnets).
+          securityGroup: new ec2.SecurityGroup(this, 'NixStoreEfsSg', {
+            vpc: props.vpc,
+            description: 'Allow NFS from VPC for CodeBuild EFS mount',
+            allowAllOutbound: true,
+          }),
         })
       : undefined;
+
+    // Allow NFS inbound from the entire VPC CIDR.
+    if (nixStoreFs && props.vpc) {
+      nixStoreFs.connections.allowFrom(
+        ec2.Peer.ipv4(props.vpc.vpcCidrBlock),
+        ec2.Port.tcp(2049),
+        'NFS from CodeBuild in VPC',
+      );
+    }
 
     const branch = props.branch ?? 'main';
     // Source from the private CodeCommit `hellodj` repository (R2.1/R3.1).
