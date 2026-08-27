@@ -23,7 +23,6 @@ import { Construct } from 'constructs';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
-import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import * as s3 from 'aws-cdk-lib/aws-s3';
@@ -47,7 +46,7 @@ export interface EdgeStackProps extends cdk.StackProps {
    * WebSocket upgrades. When unset, all traffic routes to the S3 web-static
    * bucket (static-only mode, no dynamic app).
    */
-  readonly applicationLoadBalancer?: elbv2.IApplicationLoadBalancer;
+  readonly applicationLoadBalancerDnsName?: string;
 }
 
 /**
@@ -140,9 +139,9 @@ export class EdgeStack extends cdk.Stack {
     // ALB origin for dynamic app traffic (Flask, activity WebSocket, API).
     // Uses HTTP (port 80) between CloudFront and the ALB; TLS terminates at
     // CloudFront (the ACM cert above). The ALB's listener handles HTTP → pods.
-    const alb = props.applicationLoadBalancer;
-    const defaultOrigin = alb
-      ? new origins.HttpOrigin(alb.loadBalancerDnsName, {
+    const albDnsName = props.applicationLoadBalancerDnsName;
+    const defaultOrigin = albDnsName
+      ? new origins.HttpOrigin(albDnsName, {
           protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
           httpPort: 80,
         })
@@ -165,13 +164,13 @@ export class EdgeStack extends cdk.Stack {
         // Dynamic content: forward all headers/cookies/query strings to the
         // ALB so Flask sessions, HTMX requests, and CSRF tokens work. No
         // caching at the edge for dynamic routes.
-        cachePolicy: alb
+        cachePolicy: albDnsName
           ? cloudfront.CachePolicy.CACHING_DISABLED
           : cloudfront.CachePolicy.CACHING_OPTIMIZED,
-        originRequestPolicy: alb
+        originRequestPolicy: albDnsName
           ? cloudfront.OriginRequestPolicy.ALL_VIEWER
           : undefined,
-        allowedMethods: alb
+        allowedMethods: albDnsName
           ? cloudfront.AllowedMethods.ALLOW_ALL
           : cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
       },

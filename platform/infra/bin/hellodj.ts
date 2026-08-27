@@ -66,7 +66,10 @@ const edge = new EdgeStack(app, 'hellodj-edge', {
   env,
   stage: config.stage,
   region: config.region,
-  applicationLoadBalancer: network.applicationLoadBalancer,
+  // The AWS Load Balancer Controller creates this ALB from the Kubernetes
+  // Ingress. Its DNS name is stable for the group 'hellodj'.
+  applicationLoadBalancerDnsName:
+    'k8s-hellodj-15947bf6df-1852676627.us-east-1.elb.amazonaws.com',
 });
 
 // DynamoDB + DAX data stack (task 10.1). DAX runs inside the platform VPC, so
