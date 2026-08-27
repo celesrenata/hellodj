@@ -14,14 +14,17 @@ Modules are added by later tasks in the ``aws-saas-replatform`` implementation
 plan; this package skeleton establishes the importable namespace (task 1.1).
 """
 
+from .alarm_subject import rewrite_body, rewrite_subject, rewriter_outcome
 from .auth_routing import route_auth
-from .binary_cache import cache_fetch_policy, resolve_closure
+from .binary_cache import cache_fetch_policy, resolve_closure, tiered_cache_lookup
 from .endpoint_routing import route_endpoint
 from .ephemeral_build import ephemeral_teardown
 from .gpu_idle import gpu_idle_decision
 from .jar_validation import JarDescriptor, is_real_jar
 from .migration import filter_legacy, migrate_forks
 from .pinning import verify_pin
+from .python_migration import python_migration_ready
+from .stale_pins import stale_pins
 
 __all__: list[str] = [
     "JarDescriptor",
@@ -31,9 +34,15 @@ __all__: list[str] = [
     "gpu_idle_decision",
     "is_real_jar",
     "migrate_forks",
+    "python_migration_ready",
     "resolve_closure",
+    "rewrite_body",
+    "rewrite_subject",
+    "rewriter_outcome",
     "route_auth",
     "route_endpoint",
+    "stale_pins",
+    "tiered_cache_lookup",
     "verify_pin",
 ]
 

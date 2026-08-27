@@ -25,6 +25,18 @@ Implemented here:
   did not respond within the 30 s budget or the 3 consecutive retry attempts
   were exhausted; a healthy cache never forces a rebuild.
 
+* :func:`tiered_cache_lookup` -- Property 3 / Property 4 / R4.2, R4.3, R4.4,
+  R4.5, R4.9 (``hellodj-private-source-and-toolchain``). The local analogue of
+  :func:`resolve_closure`: given whether a required closure is present in the
+  builder's local Nix cache tier, whether that local copy passes store-path
+  integrity verification, and whether the closure is present in the S3 binary
+  cache, decide whether it is reused locally (``LOCAL_HIT`` -- no rebuild, no S3
+  fetch), fetched from S3 and repopulated locally (``S3_HIT``), or built and
+  pushed to both tiers (``BUILD``). A local copy that fails integrity
+  verification is treated as absent (integrity fallthrough), so it never yields
+  a ``LOCAL_HIT``. The local tier sits *in front of* the S3 cache and never
+  replaces it as the shared build-once source.
+
 Design references:
     * Architecture -- "Store-path-hash identity is the build-once/deploy-thrice
       mechanism" (R7.2/7.3) and "A missing closure halts a stage" (R7.4).
@@ -44,6 +56,8 @@ from __future__ import annotations
 
 from hellodj_platform_logic.types import (
     CacheFetchOutcome,
+    CacheTier,
+    CacheTierResolution,
     ClosureRef,
     ClosureResolution,
 )
@@ -52,6 +66,7 @@ __all__ = [
     "CACHE_RETRY_LIMIT",
     "cache_fetch_policy",
     "resolve_closure",
+    "tiered_cache_lookup",
 ]
 
 #: The number of consecutive retry attempts that, once exhausted, permits a
@@ -160,5 +175,101 @@ def cache_fetch_policy(responded: bool, retries: int) -> CacheFetchOutcome:
         responded_within_timeout=responded,
         retries_exhausted=retries_exhausted,
         rebuilt_locally=rebuilt_locally,
+        reason=reason,
+    )
+
+
+def tiered_cache_lookup(
+    local_present: bool,
+    local_integrity_ok: bool,
+    s3_present: bool,
+) -> CacheTierResolution:
+    """Resolve a closure through the local-in-front-of-S3 cache tiers.
+
+    Implements Property 3 / Property 4 / R4.2, R4.3, R4.4, R4.5, R4.9. This is
+    the local analogue of :func:`resolve_closure`: it composes the per-builder
+    ``Local_Nix_Cache`` tier *in front of* the existing S3 binary cache and
+    decides, purely from the three presence/integrity facts, which tier serves
+    the closure:
+
+    * **LOCAL_HIT** -- ``local_present`` and ``local_integrity_ok``. The local
+      closure is reused; it is neither rebuilt nor fetched from S3
+      (``populated_local`` and ``pushed_s3`` are both ``False``) (R4.2/R4.4).
+    * **S3_HIT** -- not usable locally (either absent, or present but failing
+      integrity) yet present in S3. The closure is fetched from S3 and the local
+      tier is repopulated (``populated_local`` is ``True``); S3 is not written
+      (R4.3/R4.5).
+    * **BUILD** -- usable at neither tier. The closure is built, the local tier
+      is populated, and the closure is pushed to S3 consistent with the existing
+      binary-cache publish path (``populated_local`` and ``pushed_s3`` are both
+      ``True``) (R4.5 + R4.9).
+
+    The **integrity fallthrough** (R4.5) is expressed by only trusting the local
+    tier when ``local_present and local_integrity_ok``: a corrupt local closure
+    (present but failing integrity) is treated exactly as absent, so it never
+    yields a LOCAL_HIT and always falls through to the S3 tier (or a build).
+
+    Args:
+        local_present: Whether the closure's ``Store_Path_Hash`` is present in
+            the builder's local Nix cache tier.
+        local_integrity_ok: Whether the locally-present closure passes Nix
+            store-path integrity verification. Only consulted when
+            ``local_present`` is ``True``.
+        s3_present: Whether the closure's ``Store_Path_Hash`` is present in the
+            S3 binary cache.
+
+    Returns:
+        A :class:`~hellodj_platform_logic.types.CacheTierResolution` recording
+        the resolving tier, whether the local tier was (re)populated, whether the
+        closure was pushed to S3, and a human-readable reason.
+
+    Requirements: 4.2, 4.3, 4.4, 4.5, 4.9
+    """
+    # A local closure is only usable when it is present AND passes integrity
+    # verification. A present-but-corrupt closure is treated as absent, which is
+    # the integrity fallthrough (R4.5).
+    local_usable = local_present and local_integrity_ok
+
+    if local_usable:
+        return CacheTierResolution(
+            tier=CacheTier.LOCAL_HIT,
+            populated_local=False,
+            pushed_s3=False,
+            reason=(
+                "closure present and integrity-valid in the local Nix cache; "
+                "reused locally (no rebuild, no S3 fetch)"
+            ),
+        )
+
+    # Not usable locally: either absent, or present but failed integrity. In the
+    # corrupt-local case, note the fallthrough in the reason (R4.5).
+    fell_through = local_present and not local_integrity_ok
+
+    if s3_present:
+        reason = (
+            "local closure failed integrity verification (treated as absent); "
+            "fetched from S3 and repopulated the local tier"
+            if fell_through
+            else "closure absent from the local tier but present in S3; "
+            "fetched from S3 and populated the local tier"
+        )
+        return CacheTierResolution(
+            tier=CacheTier.S3_HIT,
+            populated_local=True,
+            pushed_s3=False,
+            reason=reason,
+        )
+
+    reason = (
+        "local closure failed integrity verification (treated as absent) and "
+        "closure absent from S3; built, populated the local tier, and pushed to S3"
+        if fell_through
+        else "closure absent from both the local tier and S3; built, populated "
+        "the local tier, and pushed to S3"
+    )
+    return CacheTierResolution(
+        tier=CacheTier.BUILD,
+        populated_local=True,
+        pushed_s3=True,
         reason=reason,
     )

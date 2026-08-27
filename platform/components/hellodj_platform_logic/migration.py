@@ -49,6 +49,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterable, Sequence
 
 from hellodj_platform_logic.types import (
+    CodeCommitRepo,
     ForkMigration,
     LegacyRecord,
     LegacyRecordType,
@@ -58,8 +59,10 @@ __all__ = [
     "EXCLUDED_LEGACY_RECORD_TYPES",
     "MIGRATED_LEGACY_RECORD_TYPE",
     "ForkOutcome",
+    "RepoOutcome",
     "filter_legacy",
     "migrate_forks",
+    "migrate_repos",
 ]
 
 #: A per-fork migration attempt outcome: ``(created, upstream_remote_ok)``.
@@ -71,6 +74,22 @@ __all__ = [
 #: :func:`migrate_forks` stays pure and directly testable -- it performs no git
 #: or network calls itself.
 ForkOutcome = tuple[bool, bool]
+
+#: A per-repo migration attempt outcome for the five-repo CodeCommit migration:
+#: ``(created, upstream_remote_ok, history_preserved)``.
+#:
+#: This extends :data:`ForkOutcome` with the history-preservation assertion
+#: (R1.4): ``created`` is whether the CodeCommit repository was created;
+#: ``upstream_remote_ok`` is whether its ``upstream`` remote was established and
+#: ``git fetch upstream`` succeeded (for the ``hellodj`` app repo, which has no
+#: upstream, the injected callback reports ``True``); ``history_preserved`` is
+#: whether the post-``git push --mirror`` verification confirmed that each
+#: branch tip SHA, the set of ancestor SHAs reachable from each tip, and the set
+#: of branch and tag names all equal the pre-migration source. A repo migrates
+#: successfully only when *all three* are ``True`` (R1.4). The outcome is
+#: injected via the ``attempt`` callback so :func:`migrate_repos` stays pure and
+#: directly testable -- it performs no git or network calls itself.
+RepoOutcome = tuple[bool, bool, bool]
 
 #: The single legacy record type carried forward by the clean-slate migration
 #: (R19.1): the admin bootstrap credential that seeds the Platform_Owner's first
@@ -229,4 +248,156 @@ def _migration_error(repo: str, created: bool, upstream_remote_ok: bool) -> str:
     return (
         f"fork {repo!r} upstream remote could not be established; "
         "migration halted, already-migrated forks left unchanged"
+    )
+
+
+def migrate_repos(
+    repos: Sequence[CodeCommitRepo],
+    attempt: Callable[[CodeCommitRepo], RepoOutcome],
+) -> list[ForkMigration]:
+    """Migrate the five Source_Repos into CodeCommit, halting on first failure.
+
+    Implements Property (migration) / R1.4, R1.5. This is the five-repo
+    CodeCommit extension of :func:`migrate_forks`: it shares the same "process
+    in order, halt on first failure, leave prior state untouched" transactional
+    shape, extended from the fork-only ``(created, upstream_remote_ok)`` outcome
+    to the full ``(created, upstream_remote_ok, history_preserved)`` outcome so
+    the post-``git push --mirror`` history-preservation assertion (R1.4) is part
+    of the per-repo success criterion.
+
+    The repos are processed in the given fixed order (the spec's order is
+    ``hellodj``, ``Lavalink``, ``lavaplayer``, ``LavaSrc``, ``youtube-source``).
+    For each repo the ``attempt`` callback is invoked to (attempt to) create the
+    CodeCommit repository, establish its ``upstream`` remote (verifying
+    ``git fetch upstream`` for the four forks; the ``hellodj`` app repo has no
+    upstream so the callback reports it satisfied), mirror-push the full history,
+    and verify preservation, returning
+    ``(created, upstream_remote_ok, history_preserved)``. A repo is considered
+    migrated only when all three are ``True`` (R1.4).
+
+    Processing follows the same transactional shape as :func:`migrate_forks`:
+
+    * **Prior repos unchanged.** Every repo before the first failure is recorded
+      as migrated (``created`` and ``upstream_remote_ok`` both ``True``, and its
+      history preserved) with no error, and nothing about those already-migrated
+      repos is altered (R1.5).
+    * **Halt at the first failure.** The first repo that cannot be created, whose
+      ``upstream`` remote cannot be established, or whose history-preservation
+      check fails is recorded with an ``error`` naming exactly that Source_Repo,
+      and migration of the remaining repos stops immediately (R1.5). Because the
+      mirror push is all-or-nothing per repo, a failed push leaves no partial ref
+      set on CodeCommit.
+    * **No repo processed after the failure.** Repos after the failing one are
+      never attempted and do not appear in the result, so the returned list ends
+      at the failing repo (R1.5).
+
+    Consequently the returned list is a prefix of ``repos``: on full success it
+    has one :class:`~hellodj_platform_logic.types.ForkMigration` per input repo,
+    all successful; on failure it contains the successful prefix followed by the
+    single failing repo and nothing more. The ``attempt`` callback is invoked at
+    most once per repo and is never invoked for any repo after the failure.
+
+    The result reuses :class:`~hellodj_platform_logic.types.ForkMigration` (its
+    ``repo``/``created``/``upstream_remote_ok``/``error`` fields carry over
+    unchanged); the history-preservation outcome contributes to the
+    success/failure decision and the failure message but is not a new result
+    field.
+
+    Args:
+        repos: The ordered :class:`~hellodj_platform_logic.types.CodeCommitRepo`
+            entries to migrate. The sequence is processed left to right and may
+            be empty (yielding an empty result).
+        attempt: A callback that, given a
+            :class:`~hellodj_platform_logic.types.CodeCommitRepo`, attempts its
+            migration and returns
+            ``(created, upstream_remote_ok, history_preserved)``. It is the
+            injection point for the git/CodeCommit side effects so this function
+            stays pure; it is called at most once per repo, in order, and not at
+            all once a failure has occurred.
+
+    Returns:
+        A list of :class:`~hellodj_platform_logic.types.ForkMigration` records, a
+        prefix of ``repos``: the migrated-and-unchanged repos in order, then
+        (if any) the single repo that failed with a populated ``error`` naming
+        it, and no records for repos after the failure.
+
+    Requirements: 1.4, 1.5
+    """
+    results: list[ForkMigration] = []
+
+    for repo in repos:
+        created, upstream_remote_ok, history_preserved = attempt(repo)
+
+        if created and upstream_remote_ok and history_preserved:
+            # Migrated successfully: recorded as-is, left unchanged (R1.5).
+            results.append(
+                ForkMigration(
+                    repo=repo.name,
+                    created=True,
+                    upstream_remote_ok=True,
+                )
+            )
+            continue
+
+        # First failure: record it with an error naming exactly this repo and
+        # stop -- no later repo is processed and prior repos are untouched
+        # (R1.5).
+        results.append(
+            ForkMigration(
+                repo=repo.name,
+                created=created,
+                upstream_remote_ok=upstream_remote_ok,
+                error=_repo_migration_error(
+                    repo.name,
+                    created,
+                    upstream_remote_ok,
+                    history_preserved,
+                ),
+            )
+        )
+        break
+
+    return results
+
+
+def _repo_migration_error(
+    repo: str,
+    created: bool,
+    upstream_remote_ok: bool,
+    history_preserved: bool,
+) -> str:
+    """Build the failure message naming exactly the affected Source_Repo (R1.5).
+
+    The three failure modes are checked in the same order the migration
+    procedure performs them -- create, establish/verify ``upstream``, then
+    mirror-push and verify history preservation -- so the message names the
+    earliest step that failed.
+
+    Args:
+        repo: The Source_Repo that failed to migrate.
+        created: Whether the CodeCommit repository was created.
+        upstream_remote_ok: Whether the ``upstream`` remote was established and
+            ``git fetch upstream`` succeeded.
+        history_preserved: Whether the post-mirror-push history-preservation
+            check confirmed the branch tips, ancestor SHA sets, and branch/tag
+            names all equal the pre-migration source (R1.4).
+
+    Returns:
+        A non-empty message identifying ``repo`` and the specific failure (the
+        repo could not be created, its ``upstream`` remote could not be
+        established, or its history was not preserved).
+    """
+    if not created:
+        return (
+            f"repo {repo!r} could not be created on CodeCommit; "
+            "migration halted, already-migrated repos left unchanged"
+        )
+    if not upstream_remote_ok:
+        return (
+            f"repo {repo!r} upstream remote could not be established; "
+            "migration halted, already-migrated repos left unchanged"
+        )
+    return (
+        f"repo {repo!r} history could not be preserved on mirror push; "
+        "migration halted, already-migrated repos left unchanged"
     )
