@@ -59,9 +59,7 @@
  */
 import * as cdk from 'aws-cdk-lib';
 import * as codecommit from 'aws-cdk-lib/aws-codecommit';
-import * as codebuild from 'aws-cdk-lib/aws-codebuild';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as efs from 'aws-cdk-lib/aws-efs';
 import * as eks from 'aws-cdk-lib/aws-eks';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -177,8 +175,6 @@ export function getInstallCommands(): string[] {
     'dnf install -y nodejs22 && alternatives --set node /usr/bin/node22 || ln -sf /usr/bin/node22 /usr/local/bin/node',
     // Install Nix (Determinate Systems installer).
     // ARM64 CodeBuild on AL2023 (Graviton) — native aarch64 builds.
-    // Remove stale receipt from EFS if present (from failed prior installs).
-    'rm -f /nix/receipt.json /nix/nix-installer 2>/dev/null || true',
     'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
     // Source nix-daemon env for the rest of the build.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
@@ -321,7 +317,6 @@ export function getComponentBuildCommands(
         `docker push "$REPO:latest"; ` +
         `echo "pushed $REPO:$CODEBUILD_RESOLVED_SOURCE_VERSION"; ` +
         `nix copy --to '${NIX_CACHE_S3_URI}' --secret-key-files /tmp/nix-cache-key.sec "$IMAGE_PATH" 2>/dev/null || true; ` +
-        `nix-collect-garbage --delete-older-than 7d 2>/dev/null || true; ` +
       `else echo "image path not a file: $IMAGE_PATH"; cat /tmp/${component}-image-path.txt; exit 1; fi; ` +
     `else echo "no image built for ${component}"; cat /tmp/${component}-image-path.txt 2>/dev/null; exit 1; fi`,
     ...extraCommands,
@@ -539,35 +534,10 @@ export class PipelineStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: PipelineStackProps = {}) {
     super(scope, id, props);
 
-    // -----------------------------------------------------------------------
-    // Persistent /nix/store on EFS — survives across ephemeral CodeBuild runs.
-    // Eliminates re-downloading ~100 paths from cache.nixos.org each build.
-    // nix-collect-garbage --delete-older-than 7d runs post-build to keep trim.
-    // -----------------------------------------------------------------------
-    const nixStoreFs = props.vpc
-      ? new efs.FileSystem(this, 'NixStoreEfs', {
-          vpc: props.vpc,
-          performanceMode: efs.PerformanceMode.GENERAL_PURPOSE,
-          throughputMode: efs.ThroughputMode.ELASTIC,
-          removalPolicy: cdk.RemovalPolicy.RETAIN,
-          lifecyclePolicy: efs.LifecyclePolicy.AFTER_30_DAYS,
-          // Allow NFS from anywhere in the VPC (CodeBuild runs in private subnets).
-          securityGroup: new ec2.SecurityGroup(this, 'NixStoreEfsSg', {
-            vpc: props.vpc,
-            description: 'Allow NFS from VPC for CodeBuild EFS mount',
-            allowAllOutbound: true,
-          }),
-        })
-      : undefined;
-
-    // Allow NFS inbound from the entire VPC CIDR.
-    if (nixStoreFs && props.vpc) {
-      nixStoreFs.connections.allowFrom(
-        ec2.Peer.ipv4(props.vpc.vpcCidrBlock),
-        ec2.Port.tcp(2049),
-        'NFS from CodeBuild in VPC',
-      );
-    }
+    // Persistent Nix store cache is handled via S3 (hellodj-nix-cache bucket).
+    // EFS mounting at /nix conflicts with the Nix installer; revisit with a
+    // custom AMI or mount at /nix/store with pre-created mount point later.
+    void props.vpc; // Reserved for future EFS or VPC-only builds.
 
     const branch = props.branch ?? 'main';
     // Source from the private CodeCommit `hellodj` repository (R2.1/R3.1).
@@ -669,17 +639,6 @@ export class PipelineStack extends cdk.Stack {
       // When VPC is supplied, CodeBuild runs in-VPC with a persistent EFS-backed
       // /nix/store so subsequent builds skip all downloads.
       codeBuildDefaults: {
-        ...(props.vpc ? {
-          vpc: props.vpc,
-          subnetSelection: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
-          fileSystemLocations: [
-            codebuild.FileSystemLocation.efs({
-              identifier: 'nix_store',
-              location: `${nixStoreFs!.fileSystemId}.efs.${this.region}.amazonaws.com:/`,
-              mountPoint: '/nix/store',
-            }),
-          ],
-        } : {}),
         buildEnvironment: {
           computeType: cdk.aws_codebuild.ComputeType.LARGE,
           buildImage: cdk.aws_codebuild.LinuxArmBuildImage.fromCodeBuildImageId(
