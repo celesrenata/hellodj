@@ -165,6 +165,8 @@ export const NIX_CACHE_S3_URI = 's3://hellodj-nix-cache';
  */
 export function getInstallCommands(): string[] {
   return [
+    // Install Node 22 (the AL2 ARM64 image ships Node 18; CDK needs >= 20).
+    'n 22 || (curl -fsSL https://raw.githubusercontent.com/tj/n/master/bin/n -o /tmp/n && bash /tmp/n 22)',
     // Install Nix (Determinate Systems installer).
     // ARM64 CodeBuild image (Graviton) — native aarch64 builds, no QEMU.
     'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
