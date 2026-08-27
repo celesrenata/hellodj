@@ -36,3 +36,19 @@
 2026-08-18 12:08:32 DEBUG app: REQ HEADERS GET /favicon.ico headers={'Host': '192.168.42.254:9876', 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36', 'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8', 'Referer': 'http://192.168.42.254:9876/config', 'Accept-Encoding': 'gzip, deflate', 'Accept-Language': 'en-US,en;q=0.9', 'Cookie': '[REDACTED]', 'Via': '1.1 playwright-egress (squid/7.6-VCS)', 'X-Forwarded-For': '172.21.0.4', 'Cache-Control': 'max-age=259200', 'Connection': 'keep-alive'}
 2026-08-18 12:08:32 DEBUG app: RES GET /favicon.ico status=200 dur=4.54ms body=None
 2026-08-18 12:08:32 INFO werkzeug: 172.18.0.11 - - [18/Aug/2026 12:08:32] "GET /favicon.ico HTTP/1.1" 200 -
+2026-08-24 13:30:48 DEBUG app: REQ GET /landing remote=127.0.0.1 ua=Werkzeug/3.1.8 args={}
+2026-08-24 13:30:48 DEBUG app: REQ HEADERS GET /landing headers={'User-Agent': 'Werkzeug/3.1.8', 'Host': 'localhost'}
+2026-08-24 13:30:48 DEBUG app: RES GET /landing status=200 dur=7.45ms body=None
+2026-08-24 13:31:00 DEBUG app: REQ GET /landing remote=127.0.0.1 ua=Werkzeug/3.1.8 args={}
+2026-08-24 13:31:00 DEBUG app: REQ HEADERS GET /landing headers={'User-Agent': 'Werkzeug/3.1.8', 'Host': 'localhost'}
+2026-08-24 13:31:00 DEBUG app: RES GET /landing status=200 dur=7.51ms body=None
+2026-08-24 13:31:25 DEBUG app: REQ GET /landing remote=127.0.0.1 ua=Werkzeug/3.1.8 args={}
+2026-08-24 13:31:25 DEBUG app: REQ HEADERS GET /landing headers={'User-Agent': 'Werkzeug/3.1.8', 'Host': 'localhost'}
+2026-08-24 13:31:25 DEBUG app: RES GET /landing status=200 dur=7.87ms body=None
+2026-08-24 13:31:34 DEBUG app: REQ GET / remote=127.0.0.1 ua=Werkzeug/3.1.8 args={}
+2026-08-24 13:31:34 DEBUG app: REQ HEADERS GET / headers={'User-Agent': 'Werkzeug/3.1.8', 'Host': 'localhost'}
+2026-08-24 13:31:34 DEBUG app: RES GET / status=302 dur=0.31ms body=None
+2026-08-24 13:31:34 DEBUG app: REQ GET /landing remote=127.0.0.1 ua=Werkzeug/3.1.8 args={}
+2026-08-24 13:31:34 DEBUG app: REQ HEADERS GET /landing headers={'User-Agent': 'Werkzeug/3.1.8', 'Host': 'localhost'}
+2026-08-24 13:31:34 DEBUG app: RES GET /landing status=200 dur=6.99ms body=None
+2026-08-24 15:37:13 WARNING app: OPERATOR_DISCORD_ID is unset or empty — operator/admin access is not configured. All admin API endpoints will be inaccessible until this is set.

@@ -1,0 +1,204 @@
+{
+ "Resources": {
+  "hellodjA013CD36": {
+   "Type": "AWS::CodeCommit::Repository",
+   "Properties": {
+    "RepositoryDescription": "HelloDJ private Source_Repo — HelloDJ application repository (no upstream); build branch: main.",
+    "RepositoryName": "hellodj"
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-source/hellodj/Resource"
+   }
+  },
+  "Lavalink12A7418D": {
+   "Type": "AWS::CodeCommit::Repository",
+   "Properties": {
+    "RepositoryDescription": "HelloDJ private Source_Repo — fork of https://github.com/lavalink-devs/Lavalink (upstream remote preserved on the working copy); build branch: dev.",
+    "RepositoryName": "Lavalink"
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-source/Lavalink/Resource"
+   }
+  },
+  "lavaplayerDF3C1892": {
+   "Type": "AWS::CodeCommit::Repository",
+   "Properties": {
+    "RepositoryDescription": "HelloDJ private Source_Repo — fork of https://github.com/lavalink-devs/lavaplayer (upstream remote preserved on the working copy); build branch: main.",
+    "RepositoryName": "lavaplayer"
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-source/lavaplayer/Resource"
+   }
+  },
+  "LavaSrcDF742D89": {
+   "Type": "AWS::CodeCommit::Repository",
+   "Properties": {
+    "RepositoryDescription": "HelloDJ private Source_Repo — fork of https://github.com/topi314/LavaSrc (upstream remote preserved on the working copy); build branch: tidal-v2-api.",
+    "RepositoryName": "LavaSrc"
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-source/LavaSrc/Resource"
+   }
+  },
+  "youtubesource3DC0730F": {
+   "Type": "AWS::CodeCommit::Repository",
+   "Properties": {
+    "RepositoryDescription": "HelloDJ private Source_Repo — fork of https://github.com/lavalink-devs/youtube-source (upstream remote preserved on the working copy); build branch: main.",
+    "RepositoryName": "youtube-source"
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-source/youtube-source/Resource"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/0WLQQ5AMBAA3+LeLlmJD3iAhAcIVcmireiWSOPviIPTZCYZBCwKyJLu8FINs1yoh9hwp2bxpFa5QStnDDHEWq/OE7vtFOVof7terQKvgS9hnwEmn+6IgDlgMnkiuQXLZDTUH2+HSoF6dQAAAA=="
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-source/CDKMetadata/Default"
+   }
+  }
+ },
+ "Outputs": {
+  "hellodjCloneUrlOutput": {
+   "Description": "git-remote-codecommit (GRC) clone URL for the hellodj Source_Repo.",
+   "Value": {
+    "Fn::Join": [
+     "",
+     [
+      "codecommit::us-east-1://",
+      {
+       "Fn::GetAtt": [
+        "hellodjA013CD36",
+        "Name"
+       ]
+      }
+     ]
+    ]
+   }
+  },
+  "hellodjBuildBranchOutput": {
+   "Description": "Designated build branch for the hellodj Source_Repo.",
+   "Value": "main"
+  },
+  "LavalinkCloneUrlOutput": {
+   "Description": "git-remote-codecommit (GRC) clone URL for the Lavalink Source_Repo.",
+   "Value": {
+    "Fn::Join": [
+     "",
+     [
+      "codecommit::us-east-1://",
+      {
+       "Fn::GetAtt": [
+        "Lavalink12A7418D",
+        "Name"
+       ]
+      }
+     ]
+    ]
+   }
+  },
+  "LavalinkBuildBranchOutput": {
+   "Description": "Designated build branch for the Lavalink Source_Repo.",
+   "Value": "dev"
+  },
+  "lavaplayerCloneUrlOutput": {
+   "Description": "git-remote-codecommit (GRC) clone URL for the lavaplayer Source_Repo.",
+   "Value": {
+    "Fn::Join": [
+     "",
+     [
+      "codecommit::us-east-1://",
+      {
+       "Fn::GetAtt": [
+        "lavaplayerDF3C1892",
+        "Name"
+       ]
+      }
+     ]
+    ]
+   }
+  },
+  "lavaplayerBuildBranchOutput": {
+   "Description": "Designated build branch for the lavaplayer Source_Repo.",
+   "Value": "main"
+  },
+  "LavaSrcCloneUrlOutput": {
+   "Description": "git-remote-codecommit (GRC) clone URL for the LavaSrc Source_Repo.",
+   "Value": {
+    "Fn::Join": [
+     "",
+     [
+      "codecommit::us-east-1://",
+      {
+       "Fn::GetAtt": [
+        "LavaSrcDF742D89",
+        "Name"
+       ]
+      }
+     ]
+    ]
+   }
+  },
+  "LavaSrcBuildBranchOutput": {
+   "Description": "Designated build branch for the LavaSrc Source_Repo.",
+   "Value": "tidal-v2-api"
+  },
+  "youtubesourceCloneUrlOutput": {
+   "Description": "git-remote-codecommit (GRC) clone URL for the youtube-source Source_Repo.",
+   "Value": {
+    "Fn::Join": [
+     "",
+     [
+      "codecommit::us-east-1://",
+      {
+       "Fn::GetAtt": [
+        "youtubesource3DC0730F",
+        "Name"
+       ]
+      }
+     ]
+    ]
+   }
+  },
+  "youtubesourceBuildBranchOutput": {
+   "Description": "Designated build branch for the youtube-source Source_Repo.",
+   "Value": "main"
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

@@ -1,0 +1,61 @@
+{
+ "Outputs": {
+  "WorkloadsNamespace": {
+   "Description": "Per-stage Kubernetes namespace hosting the staging HelloDJ workloads on the single shared GPU host (R8.2).",
+   "Value": "hellodj-staging"
+  },
+  "StageEndpointHostname": {
+   "Description": "Hostname routing only to the staging stage's namespace (hellodj-staging) on the shared host (R8.7).",
+   "Value": "staging.us-east-1.hellodj.bot"
+  },
+  "EcrRegistryBase": {
+   "Description": "ECR registry base for the Nix-built component images (<registry>/<component>:<tag>; tag injected by the pipeline, task 18.1).",
+   "Value": "874927898283.dkr.ecr.us-east-1.amazonaws.com/hellodj"
+  }
+ },
+ "Resources": {
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/zPSMzIz0zNQTCwv1k1OydbNyUzSqw4uSUzO1nFOy/MvLSkoLanVyctPSdXLKtYvMzLSMzLWM1LMKs7M1C0qzSvJzE3VC4LQAEevCLhLAAAA"
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-pipeline/hellodj-staging-stage/hellodj-workloads-staging/CDKMetadata/Default"
+   }
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

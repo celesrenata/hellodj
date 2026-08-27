@@ -212,7 +212,7 @@ class TestBuildVisualizerFfmpegArgs:
         assert args[fr_idx + 1] == "60"
 
     def test_qsv_encode_settings(self, pipeline):
-        """Should use h264_qsv encoder with fast preset."""
+        """Should use h264_qsv encoder with veryslow preset."""
         args = pipeline._build_visualizer_ffmpeg_args()
 
         assert "-c:v" in args
@@ -221,11 +221,11 @@ class TestBuildVisualizerFfmpegArgs:
 
         assert "-preset" in args
         p_idx = args.index("-preset")
-        assert args[p_idx + 1] == "fast"
+        assert args[p_idx + 1] == "veryslow"
 
         assert "-profile:v" in args
         pv_idx = args.index("-profile:v")
-        assert args[pv_idx + 1] == "main"
+        assert args[pv_idx + 1] == "high"
 
     def test_hwupload_filter(self, pipeline):
         """Should have format=nv12,hwupload filter for QSV upload."""
@@ -287,27 +287,27 @@ class TestBuildVisualizerFfmpegArgs:
         assert "/tmp/hellodj_hls/123456/viz/seg%05d.ts" in seg_pattern
 
     def test_bitrate_settings(self, pipeline):
-        """Should set 2500k bitrate with 3750k maxrate and 5000k bufsize."""
+        """Should set global_quality 20, maxrate 6000k, and bufsize 10000k."""
         args = pipeline._build_visualizer_ffmpeg_args()
 
-        bv_idx = args.index("-b:v")
-        assert args[bv_idx + 1] == "2500k"
+        gq_idx = args.index("-global_quality")
+        assert args[gq_idx + 1] == "20"
 
         mr_idx = args.index("-maxrate")
-        assert args[mr_idx + 1] == "3750k"
+        assert args[mr_idx + 1] == "6000k"
 
         bs_idx = args.index("-bufsize")
-        assert args[bs_idx + 1] == "5000k"
+        assert args[bs_idx + 1] == "10000k"
 
     def test_gop_and_keyframes(self, pipeline):
-        """Should set GOP size 60 and force keyframes every 2s."""
+        """Should set GOP size 30 and force keyframes every 1s."""
         args = pipeline._build_visualizer_ffmpeg_args()
 
         g_idx = args.index("-g")
-        assert args[g_idx + 1] == "60"
+        assert args[g_idx + 1] == "30"
 
         fk_idx = args.index("-force_key_frames")
-        assert args[fk_idx + 1] == "expr:gte(t,n_forced*2)"
+        assert args[fk_idx + 1] == "expr:gte(t,n_forced*1)"
 
     def test_constant_output_framerate(self, pipeline):
         """Should set -r 30 for constant output framerate."""

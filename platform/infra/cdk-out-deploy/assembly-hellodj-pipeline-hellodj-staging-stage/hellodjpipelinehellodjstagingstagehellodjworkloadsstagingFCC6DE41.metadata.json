@@ -1,0 +1,100 @@
+{
+  "/hellodj-pipeline/hellodj-staging-stage/hellodj-workloads-staging": [
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new HelloDjStage (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/pipeline-stack.ts:346:22)",
+        "new PipelineStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/pipeline-stack.ts:584:21)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:138:18)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-pipeline/hellodj-staging-stage/hellodj-workloads-staging/WorkloadsNamespace": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "WorkloadsNamespace"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new WorkloadsStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/workloads-stack.ts:369:5)",
+        "new HelloDjStage (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/pipeline-stack.ts:346:22)",
+        "new PipelineStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/pipeline-stack.ts:584:21)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:138:18)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-pipeline/hellodj-staging-stage/hellodj-workloads-staging/StageEndpointHostname": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "StageEndpointHostname"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new WorkloadsStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/workloads-stack.ts:375:5)",
+        "new HelloDjStage (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/pipeline-stack.ts:346:22)",
+        "new PipelineStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/pipeline-stack.ts:584:21)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:138:18)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-pipeline/hellodj-staging-stage/hellodj-workloads-staging/EcrRegistryBase": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "EcrRegistryBase"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new WorkloadsStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/workloads-stack.ts:381:5)",
+        "new HelloDjStage (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/pipeline-stack.ts:346:22)",
+        "new PipelineStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/pipeline-stack.ts:584:21)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:138:18)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-pipeline/hellodj-staging-stage/hellodj-workloads-staging/BootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BootstrapVersion"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/hellodj-pipeline/hellodj-staging-stage/hellodj-workloads-staging/CheckBootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CheckBootstrapVersion"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/hellodj-pipeline/hellodj-staging-stage/hellodj-workloads-staging/CDKMetadata/Default": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CDKMetadata"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ]
+}

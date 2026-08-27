@@ -22,6 +22,9 @@
 # this file (the newly-resolved upstream identifier), then re-run the workflow.
 
 [upstream]
+# hellodj: the app repo now lives in CodeCommit; its upstream identifier is the
+# tip of its build branch (main) resolved at pin time.
+hellodj = "main"
 lavalink = "fmp4-hls"
 lavaplayer = "8488449d733355ee54cd7c868d3fc2edc50b6fa9"
 lavasrc = "4.8.3"

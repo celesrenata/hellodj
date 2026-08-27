@@ -2,7 +2,7 @@
 name = "hellodj-config-renderer"
 version = "0.1.0"
 description = "Renders the complete Lavalink application.yml from AWS Secrets Manager + DynamoDB (no SQLite)."
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 readme = "README.md"
 
 # Runtime dependencies:

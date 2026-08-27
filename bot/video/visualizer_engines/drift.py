@@ -27,6 +27,7 @@ from pathlib import Path
 import numpy as np
 
 from video.visualizer_engines.base import AudioFeatures, TrackMetadata
+from video.visualizer_engines.drift_presets import DriftPresetManager
 from video.visualizer_engines.gpu_engine_base import GPUEngineBase
 
 log = logging.getLogger(__name__)
@@ -125,11 +126,22 @@ class DriftEngine(GPUEngineBase):
         super().__init__()
         self._preset: dict = kwargs.get("preset", DEFAULT_PRESET)
 
+        # Preset manager for crossfade and auto-advance
+        crossfade_duration = kwargs.get("crossfade_duration", 3.0)
+        auto_advance_interval = kwargs.get("auto_advance_interval", 45.0)
+        shuffle_presets = kwargs.get("shuffle_presets", False)
+        self._preset_manager = DriftPresetManager(
+            crossfade_duration=crossfade_duration,
+            auto_advance_interval=auto_advance_interval,
+            shuffle=shuffle_presets,
+        )
+
         # GL resources
         self._gl: ctypes.CDLL | None = None
 
         # Programs
         self._warp_program: int = 0
+        self._decay_program: int = 0
         self._composite_program: int = 0
         self._bloom_h_program: int = 0
         self._bloom_v_program: int = 0
@@ -154,12 +166,17 @@ class DriftEngine(GPUEngineBase):
         self._warp_ebo: int = 0
         self._warp_index_count: int = 0
 
-        # Composite fullscreen triangle VAO
+        # Composite fullscreen triangle VAO + VBO
         self._fs_vao: int = 0
+        self._fs_vbo: int = 0
 
         # Audio textures
         self._fft_texture: int = 0
         self._wave_texture: int = 0
+
+        # Audio uniform arrays (for composite shader)
+        self._audio_samples: list[float] = [0.0] * 128
+        self._fft_bands: list[float] = [0.0] * 32
 
         # Timing
         self._start_time: float = 0.0
@@ -169,6 +186,7 @@ class DriftEngine(GPUEngineBase):
         self._smooth_bass: float = 0.0
         self._smooth_mids: float = 0.0
         self._smooth_highs: float = 0.0
+        self._smooth_energy: float = 0.0
 
     # ------------------------------------------------------------------
     # GPUEngineBase hooks
@@ -185,6 +203,9 @@ class DriftEngine(GPUEngineBase):
         # Compile shader programs
         self._warp_program = self._compile_program(
             "drift_warp.vert", "drift_warp.frag"
+        )
+        self._decay_program = self._compile_program(
+            "drift_composite.vert", "drift_decay.frag"
         )
         self._composite_program = self._compile_program(
             "drift_composite.vert", "drift_composite.frag"
@@ -211,10 +232,8 @@ class DriftEngine(GPUEngineBase):
         # Create warp mesh
         self._create_warp_mesh()
 
-        # Create fullscreen triangle VAO (empty — uses gl_VertexID)
-        vao = ctypes.c_uint()
-        gl.glGenVertexArrays(1, ctypes.byref(vao))
-        self._fs_vao = vao.value
+        # Create fullscreen triangle VAO + VBO (Mesa iris requires vertex attributes)
+        self._create_fullscreen_triangle()
 
         # Create audio data textures
         self._fft_texture = self._create_1d_texture(64)
@@ -243,6 +262,12 @@ class DriftEngine(GPUEngineBase):
         now = time.monotonic()
         dt = 1.0 / 30.0  # Fixed timestep
         elapsed = now - self._start_time
+
+        # Tick the preset manager (handles timed auto-advance)
+        self._preset_manager.tick()
+
+        # Get the current (possibly interpolated) preset
+        self._preset = self._preset_manager.get_current()
 
         # Update smoothed audio values
         self._update_smoothed_audio(features, dt)
@@ -287,25 +312,44 @@ class DriftEngine(GPUEngineBase):
         gl.glDrawElements(GL_TRIANGLES, self._warp_index_count, 0x1405, None)  # GL_UNSIGNED_INT
         gl.glBindVertexArray(0)
 
-        # --- Pass 2: Composite (draw new shapes additively onto current FBO) ---
+        # --- Pass 2: Decay (multiply warped frame by decay factor) ---
+        # Read from tex_current (output of warp), write back to fbo_current
+        # We need a temp copy — rebind prev FBO as scratch for the decay output,
+        # then swap semantics. Alternatively, do in-place by reading tex_current.
+        # Simplest: render decay into fbo_prev, then swap which is "current".
+        gl.glBindFramebuffer(GL_FRAMEBUFFER, fbo_prev)
+        gl.glViewport(0, 0, width, height)
+        gl.glClear(GL_COLOR_BUFFER_BIT)
+
+        gl.glUseProgram(self._decay_program)
+        self._set_decay_uniforms(elapsed)
+
+        gl.glActiveTexture(GL_TEXTURE0)
+        gl.glBindTexture(GL_TEXTURE_2D, tex_current)
+        loc = gl.glGetUniformLocation(self._decay_program, b"u_prev_frame")
+        if loc >= 0:
+            gl.glUniform1i(loc, 0)
+
+        gl.glBindVertexArray(self._fs_vao)
+        gl.glDrawArrays(GL_TRIANGLES, 0, 3)
+        gl.glBindVertexArray(0)
+
+        # After decay: fbo_prev now holds the decayed warped frame.
+        # Swap so composite renders onto the decayed result.
+        fbo_current, tex_current, fbo_prev, tex_prev = fbo_prev, tex_prev, fbo_current, tex_current
+        # Note: local swap means the end-of-frame _current_is_a flip
+        # remains correct — the extra swap here cancels out with the
+        # end-of-frame flip, leaving fbo_current (post-swap) as "prev" next frame.
+
+        # --- Pass 3: Composite (draw new shapes additively onto current FBO) ---
         gl.glEnable(GL_BLEND)
         gl.glBlendFunc(GL_SRC_ALPHA, GL_ONE)  # Additive
 
         gl.glUseProgram(self._composite_program)
         self._set_composite_uniforms(elapsed, width, height)
 
-        # Bind FFT and waveform textures
-        gl.glActiveTexture(GL_TEXTURE0)
-        gl.glBindTexture(GL_TEXTURE_1D, self._fft_texture)
-        loc = gl.glGetUniformLocation(self._composite_program, b"u_fft")
-        if loc >= 0:
-            gl.glUniform1i(loc, 0)
-
-        gl.glActiveTexture(GL_TEXTURE1)
-        gl.glBindTexture(GL_TEXTURE_1D, self._wave_texture)
-        loc = gl.glGetUniformLocation(self._composite_program, b"u_waveform")
-        if loc >= 0:
-            gl.glUniform1i(loc, 1)
+        # Audio data passed as uniform arrays (u_audio_samples, u_fft_bands)
+        # — no texture bindings needed for the composite shader.
 
         # Draw fullscreen triangle
         gl.glBindVertexArray(self._fs_vao)
@@ -314,7 +358,7 @@ class DriftEngine(GPUEngineBase):
 
         gl.glDisable(GL_BLEND)
 
-        # --- Pass 3: Bloom (downsample + horizontal blur) ---
+        # --- Pass 4: Bloom (downsample + horizontal blur) ---
         hw, hh = width // 2, height // 2
 
         # Horizontal blur: current FBO → bloom_fbo_h
@@ -352,7 +396,7 @@ class DriftEngine(GPUEngineBase):
         gl.glDrawArrays(GL_TRIANGLES, 0, 3)
         gl.glBindVertexArray(0)
 
-        # --- Pass 4: Final composite (main + bloom → output FBO) ---
+        # --- Pass 5: Final composite (main + bloom → output FBO) ---
         gl.glBindFramebuffer(GL_FRAMEBUFFER, self._egl_ctx._fbo)
         gl.glViewport(0, 0, width, height)
         gl.glClear(GL_COLOR_BUFFER_BIT)
@@ -372,16 +416,24 @@ class DriftEngine(GPUEngineBase):
             gl.glUniform1i(loc, 1)
 
         bloom_cfg = self._preset.get("bloom", {})
+        base_intensity = bloom_cfg.get("intensity", 0.3)
+        # Modulate bloom intensity by audio energy (louder → more bloom)
+        audio_mod = 0.5 + self._smooth_energy * 1.5  # Range ~0.5–2.0
+        bloom_intensity = min(1.0, base_intensity * audio_mod)
         loc = gl.glGetUniformLocation(self._final_program, b"u_bloom_intensity")
         if loc >= 0:
-            gl.glUniform1f(loc, ctypes.c_float(bloom_cfg.get("intensity", 0.3)))
+            gl.glUniform1f(loc, ctypes.c_float(bloom_intensity))
 
         gl.glBindVertexArray(self._fs_vao)
         gl.glDrawArrays(GL_TRIANGLES, 0, 3)
         gl.glBindVertexArray(0)
 
         # --- Swap feedback buffers ---
-        self._current_is_a = not self._current_is_a
+        # The decay pass performs a local FBO swap (current ↔ prev), so the
+        # end-of-frame content is now in what started as fbo_prev. This means
+        # _current_is_a does NOT need flipping — the local swap already ensures
+        # next frame's "prev" points to this frame's final output.
+        # (Without the decay pass local swap, we would flip here.)
 
     async def stop(self) -> None:
         """Release all GL resources."""
@@ -392,6 +444,11 @@ class DriftEngine(GPUEngineBase):
         """Release GL resources then EGL context."""
         self._release_gl_resources()
         await super().suspend()
+
+    async def on_track_change(self, metadata: TrackMetadata) -> None:
+        """Advance preset on track change."""
+        self._preset_manager.on_track_change()
+        log.debug("Drift: track change → preset advance")
 
     # ------------------------------------------------------------------
     # Internal: shader compilation
@@ -549,6 +606,55 @@ class DriftEngine(GPUEngineBase):
         gl.glBindVertexArray(0)
 
     # ------------------------------------------------------------------
+    # Internal: fullscreen triangle
+    # ------------------------------------------------------------------
+
+    def _create_fullscreen_triangle(self) -> None:
+        """Create a VBO+VAO for a fullscreen triangle (Mesa iris compatible).
+
+        Uses a single oversized triangle covering [-1,1] clip space:
+          vertex 0: (-1, -1)
+          vertex 1: ( 3, -1)
+          vertex 2: (-1,  3)
+        This covers the entire viewport when clipped.
+        """
+        gl = self._gl
+
+        # Vertex data: 3 vertices × 2 floats (x, y)
+        verts = (ctypes.c_float * 6)(
+            -1.0, -1.0,
+             3.0, -1.0,
+            -1.0,  3.0,
+        )
+
+        # Create VBO
+        vbo = ctypes.c_uint()
+        gl.glGenBuffers(1, ctypes.byref(vbo))
+        gl.glBindBuffer(GL_ARRAY_BUFFER, vbo)
+        gl.glBufferData(GL_ARRAY_BUFFER, ctypes.sizeof(verts), verts, GL_STATIC_DRAW)
+        self._fs_vbo = vbo.value
+
+        # Create VAO
+        vao = ctypes.c_uint()
+        gl.glGenVertexArrays(1, ctypes.byref(vao))
+        gl.glBindVertexArray(vao)
+        gl.glBindBuffer(GL_ARRAY_BUFFER, self._fs_vbo)
+
+        # layout(location=0) in vec2 aPos
+        gl.glEnableVertexAttribArray(0)
+        gl.glVertexAttribPointer(
+            0,          # location
+            2,          # vec2
+            GL_FLOAT,   # type
+            GL_FALSE,   # normalized
+            8,          # stride (2 floats × 4 bytes)
+            ctypes.c_void_p(0),  # offset
+        )
+
+        gl.glBindVertexArray(0)
+        self._fs_vao = vao.value
+
+    # ------------------------------------------------------------------
     # Internal: audio textures
     # ------------------------------------------------------------------
 
@@ -566,12 +672,12 @@ class DriftEngine(GPUEngineBase):
         return tex.value
 
     def _upload_audio_textures(self, features: AudioFeatures | None) -> None:
-        """Upload FFT and waveform data to GPU textures."""
+        """Upload FFT and waveform data to GPU textures and uniform arrays."""
         gl = self._gl
         if features is None:
             return
 
-        # Upload FFT (first 64 bins)
+        # Upload FFT (first 64 bins) to 1D texture (used by older passes)
         fft_data = features.fft[:64] if len(features.fft) >= 64 else features.fft
         n = len(fft_data)
         fft_arr = (ctypes.c_float * 64)(*fft_data[:64])
@@ -593,6 +699,22 @@ class DriftEngine(GPUEngineBase):
         gl.glBindTexture(GL_TEXTURE_1D, self._wave_texture)
         gl.glTexSubImage1D(GL_TEXTURE_1D, 0, 0, 512, GL_RED, GL_FLOAT, wave_arr)
 
+        # Populate uniform arrays for composite shader (128 audio samples, 32 FFT bands)
+        # Audio samples: downsample 512 → 128
+        for i in range(128):
+            src_idx = i * 4
+            self._audio_samples[i] = wave_data[src_idx] if src_idx < 512 else 0.0
+
+        # FFT bands: downsample 64 → 32 (average pairs)
+        for i in range(32):
+            idx = i * 2
+            if idx + 1 < len(fft_data):
+                self._fft_bands[i] = (fft_data[idx] + fft_data[idx + 1]) * 0.5
+            elif idx < len(fft_data):
+                self._fft_bands[i] = fft_data[idx]
+            else:
+                self._fft_bands[i] = 0.0
+
     # ------------------------------------------------------------------
     # Internal: uniform setting
     # ------------------------------------------------------------------
@@ -607,8 +729,8 @@ class DriftEngine(GPUEngineBase):
         self._uf(prog, "u_bass", self._smooth_bass)
         self._uf(prog, "u_mids", self._smooth_mids)
         self._uf(prog, "u_highs", self._smooth_highs)
+        self._uf(prog, "u_energy", self._smooth_energy)
         self._uf(prog, "u_beat", self._beat_pulse)
-        self._uf(prog, "u_decay", self._preset.get("decay", 0.965))
 
         self._uf(prog, "u_zoom_base", warp_cfg.get("zoom_base", 1.005))
         self._uf(prog, "u_zoom_bass", warp_cfg.get("zoom_bass", 0.02))
@@ -619,12 +741,25 @@ class DriftEngine(GPUEngineBase):
         self._uf(prog, "u_warp_y_freq", warp_cfg.get("warp_y_freq", 3.0))
         self._uf(prog, "u_warp_amplitude", warp_cfg.get("warp_amplitude", 0.006))
 
+    def _set_decay_uniforms(self, elapsed: float) -> None:
+        """Set uniforms for the decay pass."""
+        gl = self._gl
+        prog = self._decay_program
+
+        self._uf(prog, "u_time", elapsed)
+        self._uf(prog, "u_bass", self._smooth_bass)
+        self._uf(prog, "u_mids", self._smooth_mids)
+        self._uf(prog, "u_highs", self._smooth_highs)
+        self._uf(prog, "u_energy", self._smooth_energy)
+        self._uf(prog, "u_decay_base", self._preset.get("decay", 0.965))
+
     def _set_composite_uniforms(self, elapsed: float, width: int, height: int) -> None:
-        """Set uniforms for the composite pass."""
+        """Set uniforms for the composite pass (uniform arrays for audio data)."""
         gl = self._gl
         prog = self._composite_program
         comp_cfg = self._preset.get("composite", {})
 
+        # Core uniforms
         self._uf(prog, "u_time", elapsed)
         loc = gl.glGetUniformLocation(prog, b"u_resolution")
         if loc >= 0:
@@ -633,25 +768,35 @@ class DriftEngine(GPUEngineBase):
         self._uf(prog, "u_bass", self._smooth_bass)
         self._uf(prog, "u_mids", self._smooth_mids)
         self._uf(prog, "u_highs", self._smooth_highs)
-        self._uf(prog, "u_bpm", 120.0)  # TODO: use features.bpm
+        self._uf(prog, "u_energy", self._smooth_energy)
 
-        # Wave
-        self._uf(prog, "u_wave_enabled", 1.0 if comp_cfg.get("wave_enabled", True) else 0.0)
-        self._uf(prog, "u_wave_thickness", comp_cfg.get("wave_thickness", 3.0))
+        # Audio uniform arrays: u_audio_samples[128]
+        loc = gl.glGetUniformLocation(prog, b"u_audio_samples[0]")
+        if loc >= 0:
+            arr = (ctypes.c_float * 128)(*self._audio_samples)
+            gl.glUniform1fv(loc, 128, arr)
+
+        # FFT uniform array: u_fft_bands[32]
+        loc = gl.glGetUniformLocation(prog, b"u_fft_bands[0]")
+        if loc >= 0:
+            arr = (ctypes.c_float * 32)(*self._fft_bands)
+            gl.glUniform1fv(loc, 32, arr)
+
+        # Wave color
         wc = comp_cfg.get("wave_color", [0.2, 0.7, 1.0])
         loc = gl.glGetUniformLocation(prog, b"u_wave_color")
         if loc >= 0:
             gl.glUniform3f(loc, ctypes.c_float(wc[0]), ctypes.c_float(wc[1]), ctypes.c_float(wc[2]))
 
+        # Wave thickness
+        self._uf(prog, "u_wave_thickness", comp_cfg.get("wave_thickness", 3.0))
+
         # Ring
         self._uf(prog, "u_ring_enabled", 1.0 if comp_cfg.get("ring_enabled", True) else 0.0)
         self._uf(prog, "u_ring_radius", comp_cfg.get("ring_radius", 0.25))
-        self._uf(prog, "u_ring_glow", comp_cfg.get("ring_glow", 1.2))
 
         # Particles
         self._uf(prog, "u_particles_enabled", 1.0 if comp_cfg.get("particles_enabled", True) else 0.0)
-        self._uf(prog, "u_particle_count", comp_cfg.get("particle_count", 40.0))
-        self._uf(prog, "u_particle_size", comp_cfg.get("particle_size", 5.0))
 
     def _uf(self, program: int, name: str, value: float) -> None:
         """Set a float uniform by name."""
@@ -673,14 +818,17 @@ class DriftEngine(GPUEngineBase):
             target_bass = (features.band_energy[0] + features.band_energy[1]) * 0.5
             target_mids = sum(features.band_energy[2:5]) / 3.0
             target_highs = (features.band_energy[5] + features.band_energy[6]) * 0.5
+            target_energy = sum(features.band_energy[:7]) / 7.0
         else:
             target_bass = 0.0
             target_mids = 0.0
             target_highs = 0.0
+            target_energy = 0.0
 
         self._smooth_bass += (target_bass - self._smooth_bass) * alpha
         self._smooth_mids += (target_mids - self._smooth_mids) * alpha
         self._smooth_highs += (target_highs - self._smooth_highs) * alpha
+        self._smooth_energy += (target_energy - self._smooth_energy) * alpha
 
     # ------------------------------------------------------------------
     # Internal: cleanup
@@ -693,7 +841,8 @@ class DriftEngine(GPUEngineBase):
             return
 
         # Delete programs
-        for prog in (self._warp_program, self._composite_program,
+        for prog in (self._warp_program, self._decay_program,
+                     self._composite_program,
                      self._bloom_h_program, self._bloom_v_program,
                      self._final_program):
             if prog:
@@ -724,5 +873,8 @@ class DriftEngine(GPUEngineBase):
         if self._fs_vao:
             vao_c = ctypes.c_uint(self._fs_vao)
             gl.glDeleteVertexArrays(1, ctypes.byref(vao_c))
+        if self._fs_vbo:
+            vbo_c = ctypes.c_uint(self._fs_vbo)
+            gl.glDeleteBuffers(1, ctypes.byref(vbo_c))
 
         self._gl = None

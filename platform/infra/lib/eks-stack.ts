@@ -324,6 +324,9 @@ export class EksStack extends cdk.Stack {
    */
   public readonly gpuIdleWindowSeconds: number;
 
+  /** The builder Nix store local cache tier manifest (R4.7/R4.8). */
+  public readonly builderCacheTierManifest: eks.KubernetesManifest;
+
   constructor(scope: Construct, id: string, props: EksStackProps) {
     super(scope, id, props);
 
@@ -526,6 +529,17 @@ export class EksStack extends cdk.Stack {
     // NodePool/EC2NodeClass CRDs are applied.
     this.nvidiaDevicePluginManifest.node.addDependency(this.karpenterChart);
     this.gpuNodePoolManifest?.node.addDependency(this.nvidiaDevicePluginManifest);
+
+    // -----------------------------------------------------------------------
+    // Local Nix cache tier (R4.7/R4.8) — node-local persistent /nix store.
+    // Builder pods on the same node reuse closures from the local store before
+    // falling through to the S3 binary cache. The local tier NEVER becomes the
+    // cross-stage source — S3 remains the shared build-once store for
+    // Beta/Staging/Production. The local tier is a performance optimization:
+    // it eliminates redundant S3 fetches for closures already present on the
+    // node from a previous build.
+    // -----------------------------------------------------------------------
+    this.builderCacheTierManifest = this.addBuilderCacheTier();
 
     // Outputs the later edge/pipeline/observability stacks (and task 16.3)
     // consume to reference the cluster without re-deriving it.
@@ -872,6 +886,108 @@ export class EksStack extends cdk.Stack {
       timeSlicingConfig,
       daemonSet,
     );
+  }
+
+  /**
+   * Provisions the node-local Nix store cache tier for builder pods (R4.7/R4.8).
+   * Builder pods mount /nix from a hostPath so the store persists across pod
+   * restarts on the same node. S3 remains the shared cross-stage source; the
+   * local tier is a pull-through performance optimization only.
+   */
+  private addBuilderCacheTier(): eks.KubernetesManifest {
+    return new eks.KubernetesManifest(this, 'BuilderNixCacheTier', {
+      cluster: this.cluster,
+      manifest: [
+        {
+          apiVersion: 'v1',
+          kind: 'Namespace',
+          metadata: { name: 'hellodj-builders' },
+        },
+        {
+          apiVersion: 'v1',
+          kind: 'PersistentVolume',
+          metadata: {
+            name: 'nix-store-local',
+            labels: { 'hellodj.bot/purpose': 'nix-builder-cache' },
+          },
+          spec: {
+            capacity: { storage: '50Gi' },
+            accessModes: ['ReadWriteOnce'],
+            persistentVolumeReclaimPolicy: 'Retain',
+            storageClassName: 'nix-store-local',
+            local: { path: '/var/lib/nix' },
+            nodeAffinity: {
+              required: {
+                nodeSelectorTerms: [{
+                  matchExpressions: [{
+                    key: 'kubernetes.io/os',
+                    operator: 'In',
+                    values: ['linux'],
+                  }],
+                }],
+              },
+            },
+          },
+        },
+        {
+          apiVersion: 'storage.k8s.io/v1',
+          kind: 'StorageClass',
+          metadata: { name: 'nix-store-local' },
+          provisioner: 'kubernetes.io/no-provisioner',
+          volumeBindingMode: 'WaitForFirstConsumer',
+        },
+        {
+          apiVersion: 'v1',
+          kind: 'PersistentVolumeClaim',
+          metadata: {
+            name: 'nix-store-cache',
+            namespace: 'hellodj-builders',
+          },
+          spec: {
+            accessModes: ['ReadWriteOnce'],
+            storageClassName: 'nix-store-local',
+            resources: { requests: { storage: '50Gi' } },
+          },
+        },
+        // -------------------------------------------------------------------
+        // Git credential helper configuration for CodeCommit auth (R2.2/R2.3/R2.5/R2.6).
+        // Builder pods use IRSA/pod-identity to assume the build IAM role.
+        // This ConfigMap provides the git config that enables the AWS
+        // credential helper — mounted at /etc/gitconfig in builder pods so
+        // `git` authenticates to CodeCommit from the assumed role with no
+        // static credential. Error mapping (R2.5/R2.6):
+        //   HTTP 403 / credential denial → authentication failure (naming the
+        //     input, not proceeding on partial/stale source)
+        //   HTTP 404 / "repository does not exist" → missing repo/branch
+        //     (naming the input, distinguished from auth failure)
+        // -------------------------------------------------------------------
+        {
+          apiVersion: 'v1',
+          kind: 'ConfigMap',
+          metadata: {
+            name: 'git-codecommit-config',
+            namespace: 'hellodj-builders',
+            labels: { 'hellodj.bot/purpose': 'codecommit-credential-helper' },
+          },
+          data: {
+            // Global git config enabling the AWS CodeCommit credential helper.
+            // Uses the IAM role assumed via IRSA/pod-identity — no static
+            // credential stored or transmitted (R2.3).
+            gitconfig: [
+              '[credential]',
+              '    helper = !aws codecommit credential-helper $@',
+              '    UseHttpPath = true',
+              '',
+              '# Error class mapping for build failures (R2.5/R2.6):',
+              '# HTTP 403 = authentication failure (credential denial)',
+              '# HTTP 404 = missing repo/branch (repository does not exist)',
+              '# The build script maps these exit codes to distinct error',
+              '# classes, naming the failing input in either case.',
+            ].join('\n'),
+          },
+        },
+      ],
+    });
   }
 
   /**

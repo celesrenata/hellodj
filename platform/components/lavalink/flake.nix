@@ -1,7 +1,7 @@
 {
   description = ''
     HelloDJ lavalink component — a THIN CONSUMER of the authoritative Lavalink
-    fork flake (`github:hellodj/Lavalink/dev`). It re-exports that fork's
+    fork flake (CodeCommit: Lavalink/dev). It re-exports that fork's
     Nix-built OCI `#image` (and the jar outputs) rather than building its own.
 
     Design §4 makes the `Lavalink` Fork_Flake the authoritative image builder
@@ -25,13 +25,15 @@
     honours this contract (WorkingDir = /opt/Lavalink, no application.yml baked).
   '';
 
-  # github: inputs ONLY (no path: inputs). The NixOS steering forbids path:
-  # inputs because they tie the build to a machine's filesystem layout (R11.3).
+  # CodeCommit git+https inputs (no path: inputs). The NixOS steering forbids
+  # path: inputs because they tie the build to a machine's filesystem layout.
   # Concrete revisions are captured in flake.lock at pin time (R11.1).
+  # Migrated inputs use the CodeCommit form (R2.1 / R3.1); IAM auth via the
+  # AWS git credential helper configured on the builder (R2.2/R2.3).
   #
   # `lavalink-fork` is the authoritative Lavalink fork on branch `dev` (R1.3).
   # For LOCAL build/verification the input is overridden on the CLI to the
-  # working fork checkout (the committed input stays the github: form — R1.5):
+  # working fork checkout (the committed input stays the CodeCommit form):
   #   nix build .#image \
   #     --override-input lavalink-fork path:/…/Lavalink
   # (the fork itself may need its own sibling overrides for
@@ -41,10 +43,11 @@
     flake-utils.url = "github:numtide/flake-utils";
 
     # The authoritative Lavalink fork flake — builds the custom Lavalink.jar
-    # and the OCI `#image` (Temurin 25 JRE base, real plugin jars). github:
-    # form only (R1.5 / R11.3); build branch `dev` (R1.3).
+    # and the OCI `#image` (Temurin 25 JRE base, real plugin jars). CodeCommit
+    # git+https form (R2.1 / R3.1); build branch `dev` (R1.3). IAM auth via
+    # the AWS git credential helper on the builder (R2.2/R2.3).
     lavalink-fork = {
-      url = "github:hellodj/Lavalink/dev";
+      url = "git+https://git-codecommit.us-east-1.amazonaws.com/v1/repos/Lavalink?ref=dev";
       inputs.nixpkgs.follows = "nixpkgs";
     };
   };

@@ -22,7 +22,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends curl \
     && curl -fsSL https://unpkg.com/alpinejs@3/dist/cdn.min.js -o dist/alpine.min.js
 
 # ---- Phase 2: Python runtime ---------------------------------------------
-FROM python:3.11-slim AS runtime
+FROM python:3.14-slim AS runtime
 WORKDIR /app
 
 ENV PYTHONUNBUFFERED=1 \

@@ -25,6 +25,7 @@ resources:
   - web-ui-service.yaml
   - web-ui-deployment.yaml
   - ingress.yaml
+  - lavalink-pool/
 
 # Image tags
 images:

@@ -1,0 +1,36 @@
+{
+  "version": "54.0.0",
+  "files": {
+    "faa95a81ae7d7373f3e1f242268f904eb748d8d0fdd306e8a6fe515a1905a7d6": {
+      "displayName": "hellodj-edge/Custom::S3AutoDeleteObjectsCustomResourceProvider Code",
+      "source": {
+        "path": "asset.faa95a81ae7d7373f3e1f242268f904eb748d8d0fdd306e8a6fe515a1905a7d6",
+        "packaging": "zip"
+      },
+      "destinations": {
+        "874927898283-us-east-1-a44c1a4a": {
+          "bucketName": "cdk-hnb659fds-assets-874927898283-us-east-1",
+          "objectKey": "faa95a81ae7d7373f3e1f242268f904eb748d8d0fdd306e8a6fe515a1905a7d6.zip",
+          "region": "us-east-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::874927898283:role/cdk-hnb659fds-file-publishing-role-874927898283-us-east-1"
+        }
+      }
+    },
+    "a6c4d6e189b5fc2d69bee59b9ca3f9e4c9c9692e817a586716f721d1b66bf89a": {
+      "displayName": "hellodj-edge Template",
+      "source": {
+        "path": "hellodj-edge.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "874927898283-us-east-1-bb96c01d": {
+          "bucketName": "cdk-hnb659fds-assets-874927898283-us-east-1",
+          "objectKey": "a6c4d6e189b5fc2d69bee59b9ca3f9e4c9c9692e817a586716f721d1b66bf89a.json",
+          "region": "us-east-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::874927898283:role/cdk-hnb659fds-file-publishing-role-874927898283-us-east-1"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}

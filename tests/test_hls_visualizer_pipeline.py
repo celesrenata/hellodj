@@ -158,36 +158,36 @@ class TestBuildVisualizerFfmpegArgs:
         assert args[pv_idx + 1] == "high"
 
     def test_fast_preset(self, pipeline):
-        """Uses medium preset for quality/speed balance."""
+        """Uses veryslow preset for better compression efficiency."""
         args = pipeline._build_visualizer_ffmpeg_args()
         p_idx = args.index("-preset")
-        assert args[p_idx + 1] == "medium"
+        assert args[p_idx + 1] == "veryslow"
 
     def test_bitrate_2500k_constrained_vbr(self, pipeline):
-        """Uses ICQ mode with global_quality 28, maxrate 3000k, and bufsize 5000k."""
+        """Uses ICQ mode with global_quality 20, maxrate 6000k, and bufsize 10000k."""
         args = pipeline._build_visualizer_ffmpeg_args()
 
         # ICQ mode uses -global_quality instead of -b:v
         gq_idx = args.index("-global_quality")
-        assert args[gq_idx + 1] == "28"
+        assert args[gq_idx + 1] == "20"
 
         mr_idx = args.index("-maxrate")
-        assert args[mr_idx + 1] == "3000k"
+        assert args[mr_idx + 1] == "6000k"
 
         bs_idx = args.index("-bufsize")
-        assert args[bs_idx + 1] == "5000k"
+        assert args[bs_idx + 1] == "10000k"
 
     def test_gop_size_60(self, pipeline):
-        """GOP size is 60 frames (2 seconds at 30fps)."""
+        """GOP size is 30 frames (1 second at 30fps)."""
         args = pipeline._build_visualizer_ffmpeg_args()
         g_idx = args.index("-g")
-        assert args[g_idx + 1] == "60"
+        assert args[g_idx + 1] == "30"
 
     def test_force_keyframes_every_2s(self, pipeline):
-        """Keyframes forced every 2 seconds for segment alignment."""
+        """Keyframes forced every 1 second for segment alignment."""
         args = pipeline._build_visualizer_ffmpeg_args()
         fk_idx = args.index("-force_key_frames")
-        assert args[fk_idx + 1] == "expr:gte(t,n_forced*2)"
+        assert args[fk_idx + 1] == "expr:gte(t,n_forced*1)"
 
     def test_constant_output_framerate(self, pipeline):
         """-r 30 ensures frame duplication if engine is slower."""

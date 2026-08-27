@@ -2,6 +2,15 @@
 
 This steering file captures the full architecture of the HelloDJ project so agents don't break the carefully constructed integration between services.
 
+## Deployment Targets
+
+HelloDJ runs in TWO environments:
+
+1. **On-prem Kubernetes** (gremlin nodes 10.1.1.12–15) — the current live deployment described below
+2. **AWS EKS** (us-east-1, account 874927898283) — the SaaS re-platform, fully deployed infrastructure (9 CDK stacks live), pipeline deploying workloads. See `platform/infra/ARCHITECTURE.md` for the AWS topology.
+
+Source code is hosted in **private AWS CodeCommit** (not public GitHub). The local repos have a `codecommit` remote pointing to `git-codecommit.us-east-1.amazonaws.com/v1/repos/<repo>`.
+
 ## Project Overview
 
 HelloDJ is a voice-activated Discord music bot with:
@@ -16,13 +25,13 @@ HelloDJ is a voice-activated Discord music bot with:
 
 ## Repository Layout
 
-| Repo / Path | Purpose |
-|---|---|
-| `hellodj/` (this repo) | Bot, web-ui, kube manifests, training |
-| `celesrenata/Lavalink` | Fork of lavalink-devs/Lavalink (upstream remote: `upstream`), branch `dev` |
-| `celesrenata/lavaplayer` | Fork of lavalink-devs/lavaplayer |
-| `celesrenata/LavaSrc` | Fork of topi314/LavaSrc (Tidal/Spotify source plugin) |
-| `celesrenata/youtube-source` | Fork of lavalink-devs/youtube-source (SABR support) |
+| Repo / Path | Purpose | CodeCommit |
+|---|---|---|
+| `hellodj/` (this repo) | Bot, web-ui, kube manifests, platform infra, training | `codecommit::us-east-1://hellodj` (branch: main) |
+| `celesrenata/Lavalink` | Fork of lavalink-devs/Lavalink (upstream remote: `upstream`), branch `dev` | `codecommit::us-east-1://Lavalink` (branch: dev) |
+| `celesrenata/lavaplayer` | Fork of lavalink-devs/lavaplayer | `codecommit::us-east-1://lavaplayer` (branch: main) |
+| `celesrenata/LavaSrc` | Fork of topi314/LavaSrc (Tidal/Spotify source plugin) | `codecommit::us-east-1://LavaSrc` (branch: tidal-v2-api) |
+| `celesrenata/youtube-source` | Fork of lavalink-devs/youtube-source (SABR support) | `codecommit::us-east-1://youtube-source` (branch: main) |
 
 The Lavalink fork uses a custom Lavalink.jar with lavaplayer fMP4 HLS patches. Plugins baked into the image: `lavasrc-plugin-4.8.3.jar`, `youtube-plugin-sabr.jar`.
 
@@ -276,6 +285,7 @@ NFS paths on Synology:
 |---------|------|--------------|
 | hellodj (lavalink) | 2333 | `hellodj.hellodj-service.svc.cluster.local:2333` |
 | hellodj (activity) | 8090 | `hellodj.hellodj-service.svc.cluster.local:8090` |
+| lavalink-pool (headless) | 2333 | `lavalink-pool.hellodj-service.svc.cluster.local:2333` |
 | yt-cipher | 8001 | `yt-cipher.hellodj-service.svc.cluster.local:8001` |
 | potoken-server | 4416 | `potoken-server.hellodj-service.svc.cluster.local:4416` |
 | hellodj-web-ui | 8080 | `hellodj-web-ui.hellodj-service.svc.cluster.local:8080` |
@@ -351,7 +361,7 @@ Deployment.yaml values (may be overridden by kustomize):
 - Web UI: `registry.celestium.life/hellodj/web-ui:v2026-08-17`
 
 Kustomize overrides (`kube/kustomization.yaml`):
-- Bot: `feature-freeze-2026-08-21`
+- Bot: `shader-presets-2026-08-24`
 - Web UI: `latest`
 - Tidal stream: `latest`
 - Spotify stream: `latest`
@@ -359,6 +369,14 @@ Kustomize overrides (`kube/kustomization.yaml`):
 External images (not in registry):
 - yt-cipher: `ghcr.io/kikkia/yt-cipher:master`
 - potoken-server: `brainicism/bgutil-ytdlp-pot-provider:latest`
+
+> **AWS re-platform note:** Under the `aws-saas-replatform` spec these two
+> external (Debian-based) images are rebuilt from scratch with Nix (no
+> Ubuntu/Debian base) as independent components at
+> `platform/components/yt-cipher/` (Nix-built Deno base, port 8001, shared
+> secret `API_TOKEN` injected at runtime from AWS Secrets Manager) and
+> `platform/components/potoken-server/` (Nix-built Node.js base, port 4416).
+> The on-prem deployment above still uses the upstream images.
 
 ## CRITICAL: YouTube Plugin Choice
 

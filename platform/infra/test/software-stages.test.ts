@@ -9,6 +9,7 @@ import {
   WorkloadsStack,
   workloadsNamespace,
   stageEndpoint,
+  stageLogLevel,
 } from '../lib/workloads-stack';
 import { COMPONENT_WORKLOADS } from '../lib/component-workloads';
 
@@ -322,5 +323,23 @@ describe('all three stages reference the SAME shared cluster (task 8.3, R2.4)', 
       (w) => `${w.stageEndpoint.namespace}|${w.stageEndpoint.hostname}`,
     );
     expect(new Set(endpointIdentities).size).toBe(ALL_STAGES.length);
+  });
+});
+
+
+describe('Per-stage debug logging (R8.4/R8.5)', () => {
+  test('beta stage gets LOG_LEVEL=DEBUG and HELLODJ_DEBUG=true', () => {
+    expect(stageLogLevel('beta')).toBe('DEBUG');
+    expect(stageLogLevel('Beta')).toBe('DEBUG');
+  });
+
+  test('staging stage gets LOG_LEVEL=DEBUG and HELLODJ_DEBUG=true', () => {
+    expect(stageLogLevel('staging')).toBe('DEBUG');
+    expect(stageLogLevel('Staging')).toBe('DEBUG');
+  });
+
+  test('production stage gets LOG_LEVEL=INFO and HELLODJ_DEBUG=false', () => {
+    expect(stageLogLevel('production')).toBe('INFO');
+    expect(stageLogLevel('Production')).toBe('INFO');
   });
 });

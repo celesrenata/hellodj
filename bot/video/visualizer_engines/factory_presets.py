@@ -9,9 +9,20 @@ from __future__ import annotations
 
 from typing import Any
 
+from video.visualizer_engines.drift_presets import DRIFT_FACTORY_PRESETS
+
 
 # Each preset entry: {"engine": str, "config": dict, "factory": True}
 FACTORY_PRESETS: dict[str, dict[str, Any]] = {
+    # --- drift presets (multipass feedback) ---
+    **{
+        f"drift-{preset['name'].lower().replace(' ', '-')}": {
+            "engine": "drift",
+            "config": preset,
+            "factory": True,
+        }
+        for preset in DRIFT_FACTORY_PRESETS
+    },
     # --- projectM presets (Milkdrop category-based) ---
     "milkdrop-classic": {
         "engine": "projectm",

@@ -6,7 +6,7 @@ Bugfix implementation for two issues: (1) EGL GBM platform dispatch failure on D
 
 ## Tasks
 
-- [ ] 1. Write bug condition exploration test
+- [x] 1. Write bug condition exploration test
   - **Property 1: Bug Condition** - YouTube Hostname Fallthrough & Rule 10 VIDEO Default
   - **CRITICAL**: This test MUST FAIL on unfixed code — failure confirms the bug exists
   - **DO NOT attempt to fix the test or the code when it fails**
@@ -29,7 +29,7 @@ Bugfix implementation for two issues: (1) EGL GBM platform dispatch failure on D
   - Mark task complete when test is written, run, and failure is documented
   - _Requirements: 1.3, 1.4, 1.5, 2.3, 2.5_
 
-- [ ] 2. Write preservation property tests (BEFORE implementing fix)
+- [x] 2. Write preservation property tests (BEFORE implementing fix)
   - **Property 2: Preservation** - Existing Classification Rules Unchanged
   - **IMPORTANT**: Follow observation-first methodology
   - **Observe on UNFIXED code:**
@@ -58,9 +58,9 @@ Bugfix implementation for two issues: (1) EGL GBM platform dispatch failure on D
   - Mark task complete when tests are written, run, and passing on unfixed code
   - _Requirements: 3.3, 3.4, 3.5, 3.8, 3.9_
 
-- [ ] 3. Fix for PlaybackRouter Video Classification (classifier.py)
+- [x] 3. Fix for PlaybackRouter Video Classification (classifier.py)
 
-  - [ ] 3.1 Expand Rule 9 YouTube hostname matching
+  - [x] 3.1 Expand Rule 9 YouTube hostname matching
     - Replace the static hostname tuple with a helper function `_is_youtube_domain(hostname: str) -> bool`
     - Match exact hosts: `youtube.com`, `www.youtube.com`, `m.youtube.com`, `youtu.be`, `www.youtu.be`, `youtube-nocookie.com`, `www.youtube-nocookie.com`
     - Match suffix: any hostname ending in `.youtube.com` (catches `gaming.youtube.com`, `consent.youtube.com`, future subdomains)
@@ -71,7 +71,7 @@ Bugfix implementation for two issues: (1) EGL GBM platform dispatch failure on D
     - _Preservation: Rules 1–8 unchanged, Rule 9 is a superset of previous behavior_
     - _Requirements: 1.3, 2.3, 2.6_
 
-  - [ ] 3.2 Flip Rule 10 default from VIDEO to AUDIO
+  - [x] 3.2 Flip Rule 10 default from VIDEO to AUDIO
     - Change `content_type=ContentType.VIDEO` to `content_type=ContentType.AUDIO` in Rule 10
     - Keep `source_hint="unknown_url"` and `confidence="default"`
     - Update the Rule 10 docstring to explain: unrecognized URLs default to AUDIO since `/play`'s primary intent is audio playback; explicit `mode:video` exists for video requests
@@ -80,7 +80,7 @@ Bugfix implementation for two issues: (1) EGL GBM platform dispatch failure on D
     - _Preservation: Video extension detection (Rule 8) still returns VIDEO; explicit mode overrides still work_
     - _Requirements: 1.5, 2.5_
 
-  - [ ] 3.3 Verify bug condition exploration test now passes
+  - [x] 3.3 Verify bug condition exploration test now passes
     - **Property 1: Expected Behavior** - YouTube Hostname Fallthrough & Rule 10 AUDIO Default
     - **IMPORTANT**: Re-run the SAME test from task 1 — do NOT write a new test
     - The test from task 1 encodes the expected behavior (YouTube domains → AUDIO, unrecognized URLs → AUDIO)
@@ -89,7 +89,7 @@ Bugfix implementation for two issues: (1) EGL GBM platform dispatch failure on D
     - **EXPECTED OUTCOME**: Test PASSES (confirms bug is fixed)
     - _Requirements: 2.3, 2.5_
 
-  - [ ] 3.4 Verify preservation tests still pass
+  - [x] 3.4 Verify preservation tests still pass
     - **Property 2: Preservation** - Existing Classification Rules Unchanged
     - **IMPORTANT**: Re-run the SAME tests from task 2 — do NOT write new tests
     - Run preservation property tests from step 2
@@ -97,9 +97,9 @@ Bugfix implementation for two issues: (1) EGL GBM platform dispatch failure on D
     - Confirm Spotify, Tidal video, Tidal audio, SoundCloud, video extensions, mode overrides, plain text, and music.youtube.com all still classify correctly
     - _Requirements: 3.3, 3.4, 3.5, 3.8, 3.9_
 
-- [ ] 4. Fix for EGL GBM Platform Dispatch (egl_context.py)
+- [x] 4. Fix for EGL GBM Platform Dispatch (egl_context.py)
 
-  - [ ] 4.1 Simplify EGL initialization to use eglGetPlatformDisplay directly
+  - [x] 4.1 Simplify EGL initialization to use eglGetPlatformDisplay directly
     - Remove the `eglGetProcAddress(b"eglGetPlatformDisplayEXT")` workaround block (lines that fetch function pointer via eglGetProcAddress and cast to CFUNCTYPE)
     - Replace with direct `self._egl.eglGetPlatformDisplay(EGL_PLATFORM_GBM_KHR, gbm_device, None)` call
     - Set proper `argtypes` and `restype` on `self._egl.eglGetPlatformDisplay`: `argtypes = [ctypes.c_uint, ctypes.c_void_p, ctypes.POINTER(ctypes.c_int)]`, `restype = ctypes.c_void_p`
@@ -112,34 +112,34 @@ Bugfix implementation for two issues: (1) EGL GBM platform dispatch failure on D
     - _Preservation: GBM device creation, eglInitialize, eglBindAPI, context creation, FBO creation all unchanged_
     - _Requirements: 1.1, 1.2, 2.1, 2.2_
 
-  - [ ] 4.2 Update error messages
+  - [x] 4.2 Update error messages
     - Change error message from `"eglGetPlatformDisplayEXT failed (GBM)"` to `"eglGetPlatformDisplay failed (GBM)"`
     - Remove error for `eglGetProcAddress(eglGetPlatformDisplayEXT) returned NULL` (no longer applicable)
     - _Requirements: 2.1_
 
-- [ ] 5. Rebase bot/Dockerfile from python:3.11-slim to Ubuntu 26.04
+- [x] 5. Rebase bot/Dockerfile from python:3.11-slim to Ubuntu 26.04
 
-  - [ ] 5.1 Change base image and install Python
+  - [x] 5.1 Change base image and install Python
     - Replace `FROM python:3.11-slim` with `FROM ubuntu:26.04`
     - Add `DEBIAN_FRONTEND=noninteractive` env for non-interactive apt
     - Install Python and pip: `python3`, `python3-pip`, `python3-venv`, `python3-dev`
     - Create symlink `python3 → python` so `CMD ["python", "bot.py"]` works
     - _Requirements: 2.1, 3.7_
 
-  - [ ] 5.2 Install Mesa/EGL and Intel GPU packages
+  - [x] 5.2 Install Mesa/EGL and Intel GPU packages
     - Install: `libegl1-mesa-dev`, `libgl1-mesa-dev`, `libgles2-mesa-dev`, `libgbm-dev`, `libdrm-dev`, `mesa-utils`
     - Ubuntu 26.04's Mesa packages include proper `/usr/share/glvnd/egl_vendor.d/50_mesa.json` for GBM platform dispatch
     - Install Intel VA-API/QSV: `intel-media-va-driver`, `libmfx-gen1.2`, `libvpl-dev`, `libva-dev`, `vainfo`
     - Install libprojectm: `libprojectm-dev`
     - _Requirements: 2.1, 2.2, 3.1, 3.2, 3.10_
 
-  - [ ] 5.3 Preserve FFmpeg 9 source build
+  - [x] 5.3 Preserve FFmpeg 9 source build
     - Keep identical `./configure` flags: `--enable-libvpl`, `--enable-vaapi`, `--enable-libx264`, `--enable-libx265`, `--enable-libopus`, `--enable-libdav1d`, `--enable-openssl`, `--enable-gpl`, `--enable-nonfree`
     - Build deps: `build-essential`, `nasm`, `pkg-config`, `libx264-dev`, `libx265-dev`, `libopus-dev`, `libdav1d-dev`, `libssl-dev`, `wget`, `ca-certificates`
     - Verify ffmpeg 9 builds successfully with all codecs
     - _Requirements: 3.1_
 
-  - [ ] 5.4 Preserve pip install layers and application setup
+  - [x] 5.4 Preserve pip install layers and application setup
     - Maintain three-stage requirements split (core → torch → AI) for registry push efficiency
     - Install yt-dlp for YouTube video downloading
     - Copy stickers directory for whiteboard feature
@@ -147,7 +147,7 @@ Bugfix implementation for two issues: (1) EGL GBM platform dispatch failure on D
     - Verify `render_lavalink_config.py` has access to Python + cryptography
     - _Requirements: 3.6, 3.7_
 
-- [ ] 6. Checkpoint — Ensure all tests pass
+- [x] 6. Checkpoint — Ensure all tests pass
   - Run the full test suite: `pytest tests/ -v`
   - Confirm bug condition exploration test (Property 1) PASSES on fixed code
   - Confirm preservation property tests (Property 2) PASS on fixed code

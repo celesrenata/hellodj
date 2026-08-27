@@ -1,0 +1,370 @@
+{
+ "Resources": {
+  "UserPool6BA7E5F2": {
+   "Type": "AWS::Cognito::UserPool",
+   "Properties": {
+    "AccountRecoverySetting": {
+     "RecoveryMechanisms": [
+      {
+       "Name": "verified_email",
+       "Priority": 1
+      }
+     ]
+    },
+    "AdminCreateUserConfig": {
+     "AllowAdminCreateUserOnly": false
+    },
+    "AliasAttributes": [
+     "email"
+    ],
+    "AutoVerifiedAttributes": [
+     "email"
+    ],
+    "EmailVerificationMessage": "The verification code to your new account is {####}",
+    "EmailVerificationSubject": "Verify your new account",
+    "EnabledMfas": [
+     "SOFTWARE_TOKEN_MFA"
+    ],
+    "MfaConfiguration": "OPTIONAL",
+    "Policies": {
+     "PasswordPolicy": {
+      "MinimumLength": 12,
+      "RequireLowercase": true,
+      "RequireNumbers": true,
+      "RequireSymbols": true,
+      "RequireUppercase": true
+     }
+    },
+    "Schema": [
+     {
+      "Mutable": true,
+      "Name": "email",
+      "Required": true
+     }
+    ],
+    "SmsVerificationMessage": "The verification code to your new account is {####}",
+    "UserPoolName": "hellodj-beta",
+    "VerificationMessageTemplate": {
+     "DefaultEmailOption": "CONFIRM_WITH_CODE",
+     "EmailMessage": "The verification code to your new account is {####}",
+     "EmailSubject": "Verify your new account",
+     "SmsMessage": "The verification code to your new account is {####}"
+    }
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "hellodj-auth/UserPool/Resource"
+   }
+  },
+  "UserPoolHostedUiDomainE021B0B6": {
+   "Type": "AWS::Cognito::UserPoolDomain",
+   "Properties": {
+    "Domain": "hellodj-beta-874927898283",
+    "UserPoolId": {
+     "Ref": "UserPool6BA7E5F2"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-auth/UserPool/HostedUiDomain/Resource"
+   }
+  },
+  "UserPoolWebUiClient3FC26054": {
+   "Type": "AWS::Cognito::UserPoolClient",
+   "Properties": {
+    "AllowedOAuthFlows": [
+     "code"
+    ],
+    "AllowedOAuthFlowsUserPoolClient": true,
+    "AllowedOAuthScopes": [
+     "openid",
+     "email",
+     "profile"
+    ],
+    "CallbackURLs": [
+     "https://example.com"
+    ],
+    "ClientName": "hellodj-web-ui-beta",
+    "ExplicitAuthFlows": [
+     "ALLOW_USER_SRP_AUTH",
+     "ALLOW_REFRESH_TOKEN_AUTH"
+    ],
+    "GenerateSecret": false,
+    "PreventUserExistenceErrors": "ENABLED",
+    "SupportedIdentityProviders": [
+     "COGNITO"
+    ],
+    "UserPoolId": {
+     "Ref": "UserPool6BA7E5F2"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-auth/UserPool/WebUiClient/Resource"
+   }
+  },
+  "AdminGroup": {
+   "Type": "AWS::Cognito::UserPoolGroup",
+   "Properties": {
+    "Description": "HelloDJ administrators (Platform_Owner + appointed admins).",
+    "GroupName": "admins",
+    "Precedence": 0,
+    "UserPoolId": {
+     "Ref": "UserPool6BA7E5F2"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-auth/AdminGroup"
+   }
+  },
+  "DiscordBotTokenSecret6314F565": {
+   "Type": "AWS::SecretsManager::Secret",
+   "Properties": {
+    "Description": "HelloDJ Discord bot token.",
+    "GenerateSecretString": {},
+    "Name": "hellodj/beta/discord-bot-token"
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "hellodj-auth/DiscordBotTokenSecret/Resource"
+   }
+  },
+  "TidalRefreshSecret03A83141": {
+   "Type": "AWS::SecretsManager::Secret",
+   "Properties": {
+    "Description": "HelloDJ first-party Tidal OAuth refresh token.",
+    "GenerateSecretString": {},
+    "Name": "hellodj/beta/tidal-refresh"
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "hellodj-auth/TidalRefreshSecret/Resource"
+   }
+  },
+  "SpotifySecretA8C04999": {
+   "Type": "AWS::SecretsManager::Secret",
+   "Properties": {
+    "Description": "HelloDJ Spotify credentials.",
+    "GenerateSecretString": {},
+    "Name": "hellodj/beta/spotify"
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "hellodj-auth/SpotifySecret/Resource"
+   }
+  },
+  "YtCipherSecret9F326071": {
+   "Type": "AWS::SecretsManager::Secret",
+   "Properties": {
+    "Description": "HelloDJ yt-cipher shared secret (API_TOKEN).",
+    "GenerateSecretString": {},
+    "Name": "hellodj/beta/yt-cipher-secret"
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "hellodj-auth/YtCipherSecret/Resource"
+   }
+  },
+  "AiTaskRole767A74B0": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "pods.eks.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Description": "Keyless task role for voice-pipeline AI access (Bedrock/Transcribe/Polly). No static credentials.",
+    "RoleName": "hellodj-ai-task-beta"
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-auth/AiTaskRole/Resource"
+   }
+  },
+  "AiTaskRoleDefaultPolicy3A4BF822": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "bedrock:InvokeModel",
+        "bedrock:InvokeModelWithResponseStream"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        "arn:aws:bedrock:us-east-1:874927898283:inference-profile/*",
+        "arn:aws:bedrock:us-east-1::foundation-model/*"
+       ],
+       "Sid": "BedrockInvoke"
+      },
+      {
+       "Action": [
+        "transcribe:StartStreamTranscription",
+        "transcribe:StartStreamTranscriptionWebSocket"
+       ],
+       "Effect": "Allow",
+       "Resource": "*",
+       "Sid": "TranscribeStreaming"
+      },
+      {
+       "Action": "polly:SynthesizeSpeech",
+       "Effect": "Allow",
+       "Resource": "*",
+       "Sid": "PollySynthesize"
+      },
+      {
+       "Action": [
+        "secretsmanager:DescribeSecret",
+        "secretsmanager:GetSecretValue"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Ref": "DiscordBotTokenSecret6314F565"
+        },
+        {
+         "Ref": "SpotifySecretA8C04999"
+        },
+        {
+         "Ref": "TidalRefreshSecret03A83141"
+        },
+        {
+         "Ref": "YtCipherSecret9F326071"
+        }
+       ]
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "AiTaskRoleDefaultPolicy3A4BF822",
+    "Roles": [
+     {
+      "Ref": "AiTaskRole767A74B0"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-auth/AiTaskRole/DefaultPolicy/Resource"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/2WOQQ6CMBBFz8K+jKYmXAATlxKMa1NLJQOlQ9qiMaR3l4IYElf//Td/MRx4lsE+ES+XyqpNNd5hvHghWzap2yipNugJxqtTtiDSLH+YH69wpE6g2Z6+Zq25RmX8dvBvTpaGPjCnpFXedcKIWtnpmbnH4UKBoehgLEmrKOcsSKN8x7pQCJHPg++HaW+oUtC43ZNz4AfgSeMQUzsYj52CcskP2V3+7gkBAAA="
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-auth/CDKMetadata/Default"
+   }
+  }
+ },
+ "Outputs": {
+  "UserPoolId": {
+   "Description": "HelloDJ Cognito user pool id (admin/registration/recovery).",
+   "Value": {
+    "Ref": "UserPool6BA7E5F2"
+   }
+  },
+  "UserPoolClientId": {
+   "Description": "HelloDJ Cognito web-ui client id.",
+   "Value": {
+    "Ref": "UserPoolWebUiClient3FC26054"
+   }
+  },
+  "AiTaskRoleArn": {
+   "Description": "HelloDJ keyless AI task role ARN (Bedrock/Transcribe/Polly).",
+   "Value": {
+    "Fn::GetAtt": [
+     "AiTaskRole767A74B0",
+     "Arn"
+    ]
+   }
+  },
+  "ExportsOutputRefDiscordBotTokenSecret6314F565555CBCA7": {
+   "Value": {
+    "Ref": "DiscordBotTokenSecret6314F565"
+   },
+   "Export": {
+    "Name": "hellodj-auth:ExportsOutputRefDiscordBotTokenSecret6314F565555CBCA7"
+   }
+  },
+  "ExportsOutputRefYtCipherSecret9F3260719E9AB809": {
+   "Value": {
+    "Ref": "YtCipherSecret9F326071"
+   },
+   "Export": {
+    "Name": "hellodj-auth:ExportsOutputRefYtCipherSecret9F3260719E9AB809"
+   }
+  },
+  "ExportsOutputRefTidalRefreshSecret03A83141E5DA5CFC": {
+   "Value": {
+    "Ref": "TidalRefreshSecret03A83141"
+   },
+   "Export": {
+    "Name": "hellodj-auth:ExportsOutputRefTidalRefreshSecret03A83141E5DA5CFC"
+   }
+  },
+  "ExportsOutputRefSpotifySecretA8C04999F9466CE2": {
+   "Value": {
+    "Ref": "SpotifySecretA8C04999"
+   },
+   "Export": {
+    "Name": "hellodj-auth:ExportsOutputRefSpotifySecretA8C04999F9466CE2"
+   }
+  },
+  "ExportsOutputFnGetAttAiTaskRole767A74B0Arn01A6F049": {
+   "Value": {
+    "Fn::GetAtt": [
+     "AiTaskRole767A74B0",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "hellodj-auth:ExportsOutputFnGetAttAiTaskRole767A74B0Arn01A6F049"
+   }
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

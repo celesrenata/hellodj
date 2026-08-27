@@ -1,13 +1,15 @@
 #version 330 core
 
 // Drift: Composite pass vertex shader.
-// Fullscreen triangle (no VBO needed, uses gl_VertexID).
+// Fullscreen triangle using layout(location=0) in vec2 aPos for Mesa iris
+// compatibility (gl_VertexID-only tricks fail on Mesa iris driver).
+// Expects a 3-vertex VBO covering [-1,1] clip space.
+
+layout(location = 0) in vec2 aPos;
 
 out vec2 v_uv;
 
 void main() {
-    float x = float((gl_VertexID & 1) << 2) - 1.0;
-    float y = float((gl_VertexID & 2) << 1) - 1.0;
-    gl_Position = vec4(x, y, 0.0, 1.0);
-    v_uv = vec2((x + 1.0) * 0.5, (y + 1.0) * 0.5);
+    gl_Position = vec4(aPos, 0.0, 1.0);
+    v_uv = aPos * 0.5 + 0.5;
 }

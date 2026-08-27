@@ -588,6 +588,7 @@ async def setup_hook():
     await bot.load_extension("cogs.help")
     await bot.load_extension("cogs.radio")
     await bot.load_extension("cogs.voice")
+    await bot.load_extension("cogs.remote")
 
     # Video streaming cog (optional — bot still works without the video module)
     try:
@@ -607,6 +608,11 @@ async def setup_hook():
     from views.unified_remote import UnifiedControlView
     bot.add_view(UnifiedControlView())
     dbg.info("setup_hook: UnifiedControlView registered as persistent view")
+
+    # Register the enhanced remote control view (persistent across restarts)
+    from cogs.remote import EnhancedRemoteView
+    bot.add_view(EnhancedRemoteView())
+    dbg.info("setup_hook: EnhancedRemoteView registered as persistent view")
 
     # Wire video cog's activity_backend into the unified router
     if _UNIFIED_PLAYBACK_AVAILABLE and _playback_router is not None:
@@ -647,6 +653,22 @@ async def setup_hook():
         except Exception as _admin_exc:
             log.warning("setup_hook: could not load admin panel cog (non-fatal): %s", _admin_exc)
 
+    # ── Heartbeat publisher (SaaS multi-tenant: tenant bot instances) ────
+    # If BOT_INSTANCE_ID is set, this is a tenant bot pod managed by the
+    # orchestrator. Publish heartbeats so the orchestrator can detect crashes.
+    _instance_id = os.environ.get("BOT_INSTANCE_ID")
+    _redis_url = os.environ.get("HELLODJ_REDIS_URL")
+    if _instance_id and _redis_url:
+        try:
+            from heartbeat import HeartbeatPublisher
+            bot._heartbeat_publisher = HeartbeatPublisher(
+                instance_id=_instance_id, redis_url=_redis_url
+            )
+            await bot._heartbeat_publisher.start()
+            dbg.info("setup_hook: heartbeat publisher started (instance=%s)", _instance_id)
+        except Exception as _hb_exc:
+            log.warning("setup_hook: could not start heartbeat publisher (non-fatal): %s", _hb_exc)
+
     # ── switchable voice-connect debug layer ─────────────────
     # Installs a socket raw-listener that logs whether the bot's OWN
     # VOICE_STATE_UPDATE / VOICE_SERVER_UPDATE events arrive after op-4,
@@ -663,6 +685,27 @@ async def setup_hook():
 
 
 bot.setup_hook = setup_hook
+
+
+# ── Heartbeat shutdown ──────────────────────────────────────
+# Stop the heartbeat publisher on bot close so the orchestrator detects
+# shutdown immediately (rather than waiting for TTL expiry).
+_original_close = bot.close
+
+
+async def _close_with_heartbeat():
+    """Stop heartbeat before closing the bot connection."""
+    publisher = getattr(bot, "_heartbeat_publisher", None)
+    if publisher is not None:
+        try:
+            await publisher.stop()
+            log.info("Heartbeat publisher stopped on shutdown")
+        except Exception as exc:
+            log.warning("Error stopping heartbeat publisher: %s", exc)
+    await _original_close()
+
+
+bot.close = _close_with_heartbeat
 
 # ── global permission check (blacklist + allowlist + mode) ──
 

@@ -41,13 +41,13 @@ Under `platform/components/`:
 | `spotify-stream` | Rust (librespot) | 8802 | ✅ yes | `buildLayeredImage` over `pkgs.librespot` + shell entrypoint |
 | `yt-cipher` | Deno | 8001 | ✅ yes | `buildLayeredImage` on `pkgs.deno`; placeholder app |
 | `potoken-server` | Node.js | 4416 | ✅ yes | `buildLayeredImage` on `pkgs.nodejs_22`; placeholder app |
-| `discord-bot-core` | Python 3.11 (discord.py/wavelink) | — (no server port) | ❌ **NO** | package only: `discord_bot_core/`, `pyproject.toml` |
-| `playback-orchestrator` | Python 3.11 | 8080 (HTTP) | ❌ **NO** | package only; single writer to `hellodj-session` |
-| `config-renderer` | Python 3.11 | — (init/Job) | ❌ **NO** | renders lavalink `application.yml`; runs as init container/Job |
-| `activity-backend` | Python 3.11 (aiohttp) | 8090 | ❌ **NO** | Activity server + WebSocket hub |
-| `voice-pipeline` | Python 3.11 (onnxruntime + boto3) | — (no server port) | ❌ **NO** | local ONNX wakeword; STT/intent/TTS via Bedrock/Transcribe/Polly |
-| `web-ui` | Python 3.11 (Flask/gunicorn) + Node (Tailwind v4 build) | 8080 | ❌ **NO** (has a **Dockerfile**) | Dockerfile uses `node:22-slim` + `python:3.11-slim` (Debian) — must be replaced by Nix |
-| `migration` | Python 3.11 (boto3) | — (one-shot Job) | ❌ **NO** | admin bootstrap migration job |
+| `discord-bot-core` | Python 3.14 (discord.py/wavelink) | — (no server port) | ❌ **NO** | package only: `discord_bot_core/`, `pyproject.toml`; bumped 3.11→3.14 (R5.2) |
+| `playback-orchestrator` | Python 3.14 | 8080 (HTTP) | ❌ **NO** | package only; single writer to `hellodj-session`; bumped 3.11→3.14 (R5.2) |
+| `config-renderer` | Python 3.14 | — (init/Job) | ❌ **NO** | renders lavalink `application.yml`; runs as init container/Job; bumped 3.11→3.14 (R5.2) |
+| `activity-backend` | Python 3.14 (aiohttp) | 8090 | ❌ **NO** | Activity server + WebSocket hub; bumped 3.11→3.14 (R5.2) |
+| `voice-pipeline` | Python 3.14 (onnxruntime + boto3) | — (no server port) | ❌ **NO** | local ONNX wakeword; STT/intent/TTS via Bedrock/Transcribe/Polly; bumped 3.11→3.14 (R5.2) |
+| `web-ui` | Python 3.14 (Flask/gunicorn) + Node (Tailwind v4 build) | 8080 | ❌ **NO** (has a **Dockerfile**) | Dockerfile reference base bumped to `node:22-slim` + `python:3.14-slim` (Debian) — replaced by Nix `python314`; bumped 3.11→3.14 (R5.2) |
+| `migration` | Python 3.14 (boto3) | — (one-shot Job) | ❌ **NO** | admin bootstrap migration job; bumped 3.11→3.14 (R5.2) |
 | `hellodj_platform_logic` | shared Python pkg | — | N/A | not a deployable image; imported by the others |
 
 **So: 7 components need a Nix image flake** — `discord-bot-core`, `playback-orchestrator`,
@@ -56,7 +56,7 @@ Under `platform/components/`:
 
 ### The web-ui special case
 `platform/components/web-ui/Dockerfile` is a **Debian-based reference** (`node:22-slim` Tailwind v4
-CSS build → `python:3.11-slim` gunicorn runtime). Its own header comment says the Nix packaging must
+CSS build → `python:3.14-slim` gunicorn runtime). Its own header comment says the Nix packaging must
 wrap the *same two phases* (a Node CSS build + a Python runtime) as Nix derivations. The Nix flake
 must reproduce: the Tailwind v4 CSS compile (`@tailwindcss/cli@4`), vendoring htmx/alpine JS locally
 (no runtime CDN), then a Python/gunicorn runtime — all Nix, no Debian.
@@ -78,9 +78,11 @@ document how: a shared Nix package input reused by every component flake is the 
   `pkgs.dockerTools.buildLayeredImage`, default target `aarch64-linux` (Graviton) with `x86_64-linux`
   as documented fallback, no distro base, `pkgs.cacert` for TLS, a `checks.image-builds` output,
   and a README documenting provenance + the config/secret injection contract.
-- **Python packaging:** use `pkgs.python311` + `buildPythonApplication`/`buildPythonPackage` (or
+- **Python packaging:** use `pkgs.python314` + `buildPythonApplication`/`buildPythonPackage` (or
   `poetry2nix`/`uv2nix` if preferred — the components use `pyproject.toml` with setuptools) so the
   component and `hellodj_platform_logic` are Nix-built layers, not `pip install` into a Debian base.
+  (Interpreter target bumped from `pkgs.python311` to `pkgs.python314` by
+  `hellodj-private-source-and-toolchain` R5.2 — see the "Python 3.14 migration" section below.)
 - **Base-image gate contract:** read `platform/tools/gate_base_image.py` and
   `hellodj_platform_logic/base_image_gate.py`. A component is "Nix-produced" when its `flake.nix`
   builds via `dockerTools.*Image` and references no `ubuntu`/`debian` base in an active position.
@@ -143,3 +145,44 @@ document how: a shared Nix package input reused by every component flake is the 
   Component Decomposition table) and `requirements.md` (Requirement 5).
 - Steering: `.kiro/steering/hellodj-architecture.md` and the global NixOS workflow steering
   (Nix-native, declarative, no imperative deploys).
+
+---
+
+## Python 3.14 migration (hellodj-private-source-and-toolchain R5)
+
+### Enumerated Python 3.11 component list (R5.1)
+
+The following **seven** deployable Python components currently target **Python 3.11** and are the
+authoritative, complete set migrated to **Python 3.14** (`pkgs.python314`) under
+`hellodj-private-source-and-toolchain` Requirement 5. This list is the durable enumeration required
+by R5.1 and is asserted by the no-deadsnakes / 3.11-list static scan (tasks 15.3).
+
+1. `discord-bot-core`      — discord.py / wavelink (no server port)
+2. `playback-orchestrator` — port 8080 (HTTP); single writer to `hellodj-session`
+3. `config-renderer`       — init/Job; renders lavalink `application.yml`
+4. `activity-backend`      — port 8090; aiohttp Activity server + WebSocket hub
+5. `voice-pipeline`        — onnxruntime + boto3; local ONNX wake word (no server port)
+6. `web-ui`                — port 8080; Flask/gunicorn (+ Node Tailwind v4 CSS build)
+7. `migration`             — one-shot Job; boto3 admin bootstrap
+
+`hellodj_platform_logic` is a shared library imported by these components (not a deployable image);
+it is Nix-built against the same interpreter and is not counted as one of the seven.
+
+### Interpreter switch (R5.2)
+
+Each component's Nix flake builds against `pkgs.python314` instead of `pkgs.python311`. Because the
+component flakes do not yet exist (they are produced by the sibling `nix-image-packaging` spec), the
+`3.14` target is recorded here (§4 "Python packaging") and reflected across the components' Python
+version surface:
+
+- each component `pyproject.toml`: `requires-python = ">=3.14"`;
+- each component's `ruff` config (where present): `target-version = "py314"`;
+- `web-ui/Dockerfile` (the non-authoritative Debian reference): runtime phase base pinned to
+  `python:3.14-slim` so the reference tracks the Nix `python314` target.
+
+### No deadsnakes at any state (R5.5)
+
+The Python interpreter comes exclusively from nixpkgs (`pkgs.python314`); no component flake,
+`pyproject.toml`, or Dockerfile declares, installs, or references the `deadsnakes` PPA at any point,
+including intermediate migration states. A static scan (task 15.3) asserts zero `deadsnakes`
+references across component flakes and Dockerfiles.

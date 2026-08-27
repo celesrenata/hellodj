@@ -1,0 +1,881 @@
+{% extends "base.html" %}
+
+{% block title %}Web Player{% endblock %}
+
+{% block content %}
+<div class="container-fluid py-3" x-data="playerApp()" x-init="init()">
+
+  {# Instance selector (if multiple instances) #}
+  {% if instances | length > 1 %}
+  <div class="mb-3">
+    <select class="form-select form-select-sm" style="max-width: 300px;"
+            x-model="instanceId" @change="switchInstance()">
+      {% for inst in instances %}
+      <option value="{{ inst.id }}">
+        Instance {{ inst.id | string | truncate(8, True, '') }}
+        ({{ inst.status }})
+      </option>
+      {% endfor %}
+    </select>
+  </div>
+  {% endif %}
+
+  {# Bot offline overlay #}
+  <div x-show="botOffline" x-transition class="text-center py-5">
+    <div class="card mx-auto" style="max-width: 480px;">
+      <div class="card-body py-5">
+        <i class="bi bi-robot fs-1 d-block mb-3" style="color: #bb86fc; opacity: 0.5;"></i>
+        <h4 style="color: #e0e0e0;">Bot Not Active</h4>
+        <p style="color: #a0a0b8;" class="mb-3">
+          Your bot instance is currently offline or not connected to a voice channel.
+        </p>
+        <button class="btn btn-hellodj" @click="reconnect()" x-show="canReconnect"
+                aria-label="Connect bot to voice channel">
+          <i class="bi bi-plug me-2"></i>Connect
+        </button>
+      </div>
+    </div>
+  </div>
+
+  {# Main player UI #}
+  <div x-show="!botOffline" x-transition>
+    <div class="row g-3">
+
+      {# Left column: Now Playing + Controls #}
+      <div class="col-lg-5 col-xl-4">
+        <div class="card">
+          <div class="card-body p-4">
+
+            {# Album art #}
+            <div class="position-relative mb-3" style="aspect-ratio: 1; border-radius: 12px; overflow: hidden; background: #1a1a2e;">
+              <img :src="currentTrack.artwork || '/static/img/no-art.svg'"
+                   :alt="currentTrack.title ? 'Album art for ' + currentTrack.title : 'No track playing'"
+                   class="w-100 h-100" style="object-fit: cover;"
+                   x-show="currentTrack.artwork">
+              <div x-show="!currentTrack.artwork" class="d-flex align-items-center justify-content-center h-100">
+                <i class="bi bi-music-note-beamed" style="font-size: 4rem; color: #3a3a5c;"></i>
+              </div>
+            </div>
+
+            {# Track info #}
+            <div class="mb-3 text-center">
+              <h5 class="mb-1 text-truncate" style="color: #e0e0e0;" x-text="currentTrack.title || 'Nothing playing'"></h5>
+              <p class="mb-0 text-truncate" style="color: #a0a0b8; font-size: 0.9rem;" x-text="currentTrack.artist || '—'"></p>
+            </div>
+
+            {# Progress bar #}
+            <div class="mb-3">
+              <div class="d-flex justify-content-between mb-1" style="font-size: 0.75rem; color: #a0a0b8;">
+                <span x-text="formatTime(positionMs)"></span>
+                <span x-text="formatTime(durationMs)"></span>
+              </div>
+              <div class="progress" style="height: 4px; background: #252537; border-radius: 2px; cursor: pointer;"
+                   @click="seekTo($event)" role="progressbar"
+                   :aria-valuenow="positionMs" :aria-valuemax="durationMs"
+                   aria-label="Playback progress">
+                <div class="progress-bar" role="presentation"
+                     :style="'width:' + progressPercent + '%; background: linear-gradient(90deg, #6f42c1, #bb86fc); border-radius: 2px; transition: width 1s linear;'">
+                </div>
+              </div>
+            </div>
+
+            {# Playback controls #}
+            <div class="d-flex align-items-center justify-content-center gap-2 mb-3">
+              <button class="btn btn-sm btn-outline-hellodj rounded-circle d-flex align-items-center justify-content-center"
+                      style="width: 40px; height: 40px; min-height: 40px !important; padding: 0 !important;"
+                      @click="sendCommand('shuffle')"
+                      :class="shuffleActive && 'active-control'"
+                      aria-label="Toggle shuffle" title="Shuffle">
+                <i class="bi bi-shuffle"></i>
+              </button>
+
+              <button class="btn btn-sm btn-outline-hellodj rounded-circle d-flex align-items-center justify-content-center"
+                      style="width: 40px; height: 40px; min-height: 40px !important; padding: 0 !important;"
+                      @click="sendCommand('previous')"
+                      aria-label="Previous track" title="Previous (P)">
+                <i class="bi bi-skip-start-fill"></i>
+              </button>
+
+              <button class="btn btn-hellodj rounded-circle d-flex align-items-center justify-content-center"
+                      style="width: 52px; height: 52px; min-height: 52px !important; padding: 0 !important; font-size: 1.4rem;"
+                      @click="togglePlayPause()"
+                      :aria-label="playing ? 'Pause' : 'Resume'" :title="playing ? 'Pause (Space)' : 'Play (Space)'">
+                <i :class="playing ? 'bi bi-pause-fill' : 'bi bi-play-fill'"></i>
+              </button>
+
+              <button class="btn btn-sm btn-outline-hellodj rounded-circle d-flex align-items-center justify-content-center"
+                      style="width: 40px; height: 40px; min-height: 40px !important; padding: 0 !important;"
+                      @click="sendCommand('skip')"
+                      aria-label="Skip track" title="Next (N)">
+                <i class="bi bi-skip-end-fill"></i>
+              </button>
+
+              <button class="btn btn-sm btn-outline-hellodj rounded-circle d-flex align-items-center justify-content-center"
+                      style="width: 40px; height: 40px; min-height: 40px !important; padding: 0 !important;"
+                      @click="cycleRepeat()"
+                      :class="repeatMode !== 'off' && 'active-control'"
+                      aria-label="Toggle repeat" :title="'Repeat: ' + repeatMode">
+                <i :class="repeatMode === 'one' ? 'bi bi-repeat-1' : 'bi bi-repeat'"></i>
+              </button>
+            </div>
+
+            {# Volume slider #}
+            <div class="d-flex align-items-center gap-2">
+              <button class="btn btn-sm p-0 border-0" style="color: #a0a0b8; background: none; min-height: auto !important;"
+                      @click="toggleMute()" :aria-label="muted ? 'Unmute' : 'Mute (M)'" :title="muted ? 'Unmute (M)' : 'Mute (M)'">
+                <i :class="volumeIcon"></i>
+              </button>
+              <input type="range" class="form-range flex-grow-1" min="0" max="100" step="1"
+                     x-model.number="volume"
+                     @input="debouncedVolume()"
+                     aria-label="Volume" style="accent-color: #bb86fc;">
+              <span class="text-nowrap" style="color: #a0a0b8; font-size: 0.75rem; min-width: 32px; text-align: right;"
+                    x-text="volume + '%'"></span>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+      {# Right column: Queue, Search, Playlists, History #}
+      <div class="col-lg-7 col-xl-8">
+
+        {# Tabs #}
+        <div class="card">
+          <div class="card-header p-0 border-0" style="background: transparent;">
+            <ul class="nav nav-tabs border-0" style="gap: 0;" role="tablist">
+              <li class="nav-item" role="presentation">
+                <button class="nav-link px-3 py-2" :class="tab === 'queue' && 'active'"
+                        @click="tab = 'queue'" style="border: none; border-radius: 0; background: none; color: #a0a0b8; min-height: auto !important;"
+                        :style="tab === 'queue' && 'color: #bb86fc; border-bottom: 2px solid #bb86fc;'"
+                        role="tab" :aria-selected="tab === 'queue'">
+                  <i class="bi bi-music-note-list me-1"></i>Queue
+                  <span class="badge ms-1" style="background: rgba(187,134,252,0.2); color: #d4b3ff; font-size: 0.7rem;"
+                        x-text="queue.length" x-show="queue.length > 0"></span>
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link px-3 py-2" :class="tab === 'search' && 'active'"
+                        @click="tab = 'search'" style="border: none; border-radius: 0; background: none; color: #a0a0b8; min-height: auto !important;"
+                        :style="tab === 'search' && 'color: #bb86fc; border-bottom: 2px solid #bb86fc;'"
+                        role="tab" :aria-selected="tab === 'search'">
+                  <i class="bi bi-search me-1"></i>Search
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link px-3 py-2" :class="tab === 'playlists' && 'active'"
+                        @click="tab = 'playlists'" style="border: none; border-radius: 0; background: none; color: #a0a0b8; min-height: auto !important;"
+                        :style="tab === 'playlists' && 'color: #bb86fc; border-bottom: 2px solid #bb86fc;'"
+                        role="tab" :aria-selected="tab === 'playlists'">
+                  <i class="bi bi-collection me-1"></i>Playlists
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link px-3 py-2" :class="tab === 'recent' && 'active'"
+                        @click="tab = 'recent'" style="border: none; border-radius: 0; background: none; color: #a0a0b8; min-height: auto !important;"
+                        :style="tab === 'recent' && 'color: #bb86fc; border-bottom: 2px solid #bb86fc;'"
+                        role="tab" :aria-selected="tab === 'recent'">
+                  <i class="bi bi-clock-history me-1"></i>Recent
+                </button>
+              </li>
+              <li class="nav-item" role="presentation">
+                <button class="nav-link px-3 py-2" :class="tab === 'popular' && 'active'"
+                        @click="tab = 'popular'" style="border: none; border-radius: 0; background: none; color: #a0a0b8; min-height: auto !important;"
+                        :style="tab === 'popular' && 'color: #bb86fc; border-bottom: 2px solid #bb86fc;'"
+                        role="tab" :aria-selected="tab === 'popular'">
+                  <i class="bi bi-fire me-1"></i>Popular
+                </button>
+              </li>
+            </ul>
+          </div>
+
+          <div class="card-body p-3">
+
+            {# Queue tab #}
+            <div x-show="tab === 'queue'" role="tabpanel">
+              <div id="player-queue"
+                   hx-get=""
+                   hx-trigger="none"
+                   hx-swap="innerHTML">
+                {# Queue rendered via Alpine.js for drag-to-reorder #}
+                <template x-if="queue.length === 0">
+                  <div class="text-center py-4" style="color: #a0a0b8;">
+                    <i class="bi bi-music-note-list fs-3 d-block mb-2" style="opacity: 0.5;"></i>
+                    <p class="mb-0">Queue is empty. Search for tracks or load a playlist.</p>
+                  </div>
+                </template>
+                <div class="list-group list-group-flush" x-show="queue.length > 0">
+                  <template x-for="(track, index) in queue" :key="track.id || index">
+                    <div class="list-group-item d-flex align-items-center gap-2 px-2 py-2"
+                         style="background: transparent; border-color: #3a3a5c; cursor: grab;"
+                         draggable="true"
+                         @dragstart="dragStart($event, index)"
+                         @dragover.prevent="dragOver($event, index)"
+                         @drop="drop($event, index)"
+                         @dragend="dragEnd()">
+                      <span class="drag-handle" style="color: #a0a0b8; cursor: grab;" aria-hidden="true">⠿</span>
+                      <img :src="track.artwork || '/static/img/no-art.svg'"
+                           :alt="''" style="width: 36px; height: 36px; border-radius: 6px; object-fit: cover;">
+                      <div class="flex-grow-1 min-width-0">
+                        <div class="text-truncate" style="color: #e0e0e0; font-size: 0.85rem;" x-text="track.title"></div>
+                        <div class="text-truncate" style="color: #a0a0b8; font-size: 0.75rem;" x-text="track.artist"></div>
+                      </div>
+                      <span style="color: #a0a0b8; font-size: 0.75rem; white-space: nowrap;" x-text="formatTime(track.duration_ms)"></span>
+                      <button class="btn btn-sm p-1 border-0" style="color: #a0a0b8; background: none; min-height: auto !important; padding: 2px !important;"
+                              @click="removeFromQueue(index)"
+                              :aria-label="'Remove ' + track.title + ' from queue'" title="Remove">
+                        <i class="bi bi-x-lg" style="font-size: 0.75rem;"></i>
+                      </button>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+
+            {# Search tab #}
+            <div x-show="tab === 'search'" role="tabpanel">
+              <div class="mb-3">
+                <div class="input-group">
+                  <input type="search" class="form-control"
+                         placeholder="Search tracks across all sources..."
+                         x-model="searchQuery"
+                         @keydown.enter="searchTracks()"
+                         aria-label="Search tracks">
+                  <button class="btn btn-hellodj" @click="searchTracks()"
+                          :disabled="searching" style="min-height: auto !important;">
+                    <i class="bi" :class="searching ? 'bi-arrow-repeat spin' : 'bi-search'"></i>
+                  </button>
+                </div>
+              </div>
+              <div id="player-search-results">
+                <template x-if="searchResults.length === 0 && !searching && searchQuery">
+                  <div class="text-center py-3" style="color: #a0a0b8;">
+                    <p class="mb-0">No results found.</p>
+                  </div>
+                </template>
+                <template x-if="searchResults.length === 0 && !searchQuery">
+                  <div class="text-center py-3" style="color: #a0a0b8;">
+                    <i class="bi bi-search fs-3 d-block mb-2" style="opacity: 0.5;"></i>
+                    <p class="mb-0">Search for tracks to add to your queue.</p>
+                  </div>
+                </template>
+                <div class="list-group list-group-flush" x-show="searchResults.length > 0">
+                  <template x-for="result in searchResults" :key="result.uri || result.title">
+                    <div class="list-group-item d-flex align-items-center gap-2 px-2 py-2"
+                         style="background: transparent; border-color: #3a3a5c;">
+                      <img :src="result.artwork || '/static/img/no-art.svg'"
+                           :alt="''" style="width: 36px; height: 36px; border-radius: 6px; object-fit: cover;">
+                      <div class="flex-grow-1 min-width-0">
+                        <div class="text-truncate" style="color: #e0e0e0; font-size: 0.85rem;" x-text="result.title"></div>
+                        <div class="text-truncate" style="color: #a0a0b8; font-size: 0.75rem;" x-text="result.artist"></div>
+                      </div>
+                      <span style="color: #a0a0b8; font-size: 0.75rem; white-space: nowrap;" x-text="formatTime(result.duration_ms)"></span>
+                      <button class="btn btn-sm btn-outline-hellodj"
+                              style="min-height: 32px !important; padding: 4px 8px !important; font-size: 0.75rem;"
+                              @click="addToQueue(result)"
+                              :aria-label="'Add ' + result.title + ' to queue'" title="Add to queue">
+                        <i class="bi bi-plus-lg"></i>
+                      </button>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
+
+            {# Playlists tab #}
+            <div x-show="tab === 'playlists'" role="tabpanel">
+              <template x-if="playlists.length === 0">
+                <div class="text-center py-4" style="color: #a0a0b8;">
+                  <i class="bi bi-collection fs-3 d-block mb-2" style="opacity: 0.5;"></i>
+                  <p class="mb-0">No playlists saved yet.</p>
+                </div>
+              </template>
+              <div class="list-group list-group-flush" x-show="playlists.length > 0">
+                <template x-for="playlist in playlists" :key="playlist.id">
+                  <div class="list-group-item d-flex align-items-center gap-2 px-2 py-2"
+                       style="background: transparent; border-color: #3a3a5c;">
+                    <i class="bi bi-collection" style="color: #bb86fc; font-size: 1.2rem;"></i>
+                    <div class="flex-grow-1 min-width-0">
+                      <div class="text-truncate" style="color: #e0e0e0; font-size: 0.85rem;" x-text="playlist.name"></div>
+                      <div style="color: #a0a0b8; font-size: 0.75rem;" x-text="playlist.track_count + ' tracks'"></div>
+                    </div>
+                    <button class="btn btn-sm btn-outline-hellodj"
+                            style="min-height: 32px !important; padding: 4px 8px !important; font-size: 0.75rem;"
+                            @click="loadPlaylist(playlist.id)"
+                            :aria-label="'Load playlist ' + playlist.name" title="Load into queue">
+                      <i class="bi bi-play-fill me-1"></i>Load
+                    </button>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            {# Recently Played tab #}
+            <div x-show="tab === 'recent'" role="tabpanel">
+              <template x-if="recentTracks.length === 0">
+                <div class="text-center py-4" style="color: #a0a0b8;">
+                  <i class="bi bi-clock-history fs-3 d-block mb-2" style="opacity: 0.5;"></i>
+                  <p class="mb-0">No recently played tracks.</p>
+                </div>
+              </template>
+              <div class="list-group list-group-flush" x-show="recentTracks.length > 0">
+                <template x-for="track in recentTracks" :key="track.uri || track.title">
+                  <div class="list-group-item d-flex align-items-center gap-2 px-2 py-2"
+                       style="background: transparent; border-color: #3a3a5c;">
+                    <img :src="track.artwork || '/static/img/no-art.svg'"
+                         :alt="''" style="width: 36px; height: 36px; border-radius: 6px; object-fit: cover;">
+                    <div class="flex-grow-1 min-width-0">
+                      <div class="text-truncate" style="color: #e0e0e0; font-size: 0.85rem;" x-text="track.title"></div>
+                      <div class="text-truncate" style="color: #a0a0b8; font-size: 0.75rem;" x-text="track.artist"></div>
+                    </div>
+                    <button class="btn btn-sm btn-outline-hellodj"
+                            style="min-height: 32px !important; padding: 4px 8px !important; font-size: 0.75rem;"
+                            @click="addToQueue(track)"
+                            :aria-label="'Re-queue ' + track.title" title="Add to queue">
+                      <i class="bi bi-plus-lg"></i>
+                    </button>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+            {# Popular Today tab #}
+            <div x-show="tab === 'popular'" role="tabpanel">
+              <template x-if="popularTracks.length === 0">
+                <div class="text-center py-4" style="color: #a0a0b8;">
+                  <i class="bi bi-fire fs-3 d-block mb-2" style="opacity: 0.5;"></i>
+                  <p class="mb-0">No popular tracks data available yet.</p>
+                </div>
+              </template>
+              <div class="list-group list-group-flush" x-show="popularTracks.length > 0">
+                <template x-for="(track, idx) in popularTracks" :key="track.uri || track.title">
+                  <div class="list-group-item d-flex align-items-center gap-2 px-2 py-2"
+                       style="background: transparent; border-color: #3a3a5c;">
+                    <span style="color: #a0a0b8; font-size: 0.75rem; min-width: 20px; text-align: center;" x-text="idx + 1"></span>
+                    <img :src="track.artwork || '/static/img/no-art.svg'"
+                         :alt="''" style="width: 36px; height: 36px; border-radius: 6px; object-fit: cover;">
+                    <div class="flex-grow-1 min-width-0">
+                      <div class="text-truncate" style="color: #e0e0e0; font-size: 0.85rem;" x-text="track.title"></div>
+                      <div class="text-truncate" style="color: #a0a0b8; font-size: 0.75rem;" x-text="track.artist"></div>
+                    </div>
+                    <button class="btn btn-sm btn-outline-hellodj"
+                            style="min-height: 32px !important; padding: 4px 8px !important; font-size: 0.75rem;"
+                            @click="addToQueue(track)"
+                            :aria-label="'Queue ' + track.title" title="Add to queue">
+                      <i class="bi bi-plus-lg"></i>
+                    </button>
+                  </div>
+                </template>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+
+  {# WebSocket connection status indicator #}
+  <div class="position-fixed bottom-0 start-0 p-2" style="z-index: 1000;">
+    <small class="d-flex align-items-center gap-1" style="color: #a0a0b8;">
+      <span class="status-dot" :class="wsConnected ? 'ok' : 'err'"
+            style="width: 8px; height: 8px;"
+            :title="wsConnected ? 'Connected' : 'Disconnected'"></span>
+      <span x-text="wsConnected ? 'Live' : 'Reconnecting...'" style="font-size: 0.7rem;"></span>
+    </small>
+  </div>
+
+</div>
+
+<style>
+  .active-control {
+    background-color: rgba(187, 134, 252, 0.2) !important;
+    border-color: #bb86fc !important;
+    color: #bb86fc !important;
+  }
+  .form-range::-webkit-slider-thumb { background: #bb86fc; }
+  .form-range::-moz-range-thumb { background: #bb86fc; }
+  .form-range::-webkit-slider-runnable-track { background: #3a3a5c; }
+  .form-range::-moz-range-track { background: #3a3a5c; }
+  .list-group-item.drag-over {
+    border-top: 2px solid #bb86fc !important;
+  }
+  @keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+  }
+  .spin { animation: spin 1s linear infinite; }
+  .min-width-0 { min-width: 0; }
+</style>
+{% endblock %}
+
+{% block scripts %}
+<script>
+/**
+ * HelloDJ Web Player — Alpine.js Application
+ *
+ * WebSocket real-time state sync with exponential backoff auto-reconnect.
+ * Keyboard shortcuts, drag-to-reorder queue, debounced volume control.
+ */
+function playerApp() {
+  return {
+    // Instance selection
+    instanceId: '{{ instances[0].id if instances else "" }}',
+
+    // Player state
+    playing: false,
+    currentTrack: { title: '', artist: '', artwork: '', duration_ms: 0 },
+    positionMs: 0,
+    durationMs: 0,
+    volume: 50,
+    muted: false,
+    previousVolume: 50,
+    repeatMode: 'off',  // off, all, one
+    shuffleActive: false,
+    queue: [],
+    botOffline: {{ 'true' if not instances or instances[0].status != 'running' else 'false' }},
+    canReconnect: false,
+
+    // UI state
+    tab: 'queue',
+    searchQuery: '',
+    searchResults: [],
+    searching: false,
+    playlists: [],
+    recentTracks: [],
+    popularTracks: [],
+
+    // WebSocket
+    ws: null,
+    wsConnected: false,
+    wsReconnectDelay: 1000,
+    wsMaxDelay: 30000,
+    wsReconnectTimer: null,
+
+    // Drag-to-reorder
+    dragIndex: null,
+
+    // Volume debounce
+    volumeTimer: null,
+
+    // Progress tick
+    progressTimer: null,
+
+    init() {
+      if (this.instanceId) {
+        this.connectWebSocket();
+        this.fetchInitialState();
+        this.fetchPlaylists();
+        this.fetchRecentTracks();
+        this.fetchPopularTracks();
+      }
+      this.bindKeyboard();
+      this.startProgressTicker();
+    },
+
+    // ─── WebSocket ────────────────────────────────────────────────────────
+
+    connectWebSocket() {
+      if (!this.instanceId) return;
+
+      const proto = location.protocol === 'https:' ? 'wss:' : 'ws:';
+      const token = this.getSessionToken();
+      const url = `${proto}//${location.host}/ws/player/${this.instanceId}?token=${encodeURIComponent(token)}`;
+
+      try {
+        this.ws = new WebSocket(url);
+      } catch (e) {
+        console.warn('[WS] Connection failed:', e);
+        this.scheduleReconnect();
+        return;
+      }
+
+      this.ws.onopen = () => {
+        this.wsConnected = true;
+        this.wsReconnectDelay = 1000;  // Reset backoff on success
+      };
+
+      this.ws.onmessage = (event) => {
+        this.handleWsMessage(JSON.parse(event.data));
+      };
+
+      this.ws.onclose = (event) => {
+        this.wsConnected = false;
+        if (!event.wasClean) {
+          this.scheduleReconnect();
+        }
+      };
+
+      this.ws.onerror = () => {
+        this.wsConnected = false;
+      };
+    },
+
+    scheduleReconnect() {
+      if (this.wsReconnectTimer) clearTimeout(this.wsReconnectTimer);
+
+      this.wsReconnectTimer = setTimeout(() => {
+        this.connectWebSocket();
+      }, this.wsReconnectDelay);
+
+      // Exponential backoff: 1s, 2s, 4s, 8s, 16s, max 30s
+      this.wsReconnectDelay = Math.min(this.wsReconnectDelay * 2, this.wsMaxDelay);
+    },
+
+    handleWsMessage(msg) {
+      switch (msg.type) {
+        case 'track_change':
+          this.currentTrack = msg.current || { title: '', artist: '', artwork: '', duration_ms: 0 };
+          this.positionMs = 0;
+          this.durationMs = this.currentTrack.duration_ms || 0;
+          this.playing = true;
+          if (msg.queue) this.queue = msg.queue;
+          break;
+
+        case 'progress':
+          this.positionMs = msg.position_ms || 0;
+          this.durationMs = msg.duration_ms || this.durationMs;
+          break;
+
+        case 'queue_update':
+          this.queue = msg.queue || [];
+          break;
+
+        case 'volume_change':
+          this.volume = msg.volume ?? this.volume;
+          break;
+
+        case 'state_change':
+          if (msg.playing !== undefined) this.playing = msg.playing;
+          if (msg.repeat !== undefined) this.repeatMode = msg.repeat;
+          if (msg.shuffle !== undefined) this.shuffleActive = msg.shuffle;
+          break;
+
+        case 'bot_status':
+          this.botOffline = (msg.status !== 'running');
+          if (msg.status === 'running' && !msg.in_voice) {
+            this.canReconnect = true;
+          } else {
+            this.canReconnect = false;
+          }
+          break;
+
+        case 'error':
+          this.showToast(msg.message || 'An error occurred', 'danger');
+          break;
+      }
+    },
+
+    getSessionToken() {
+      // Session token from cookie
+      const match = document.cookie.match(/(?:^|;\s*)session_token=([^;]*)/);
+      return match ? decodeURIComponent(match[1]) : '';
+    },
+
+    // ─── REST API ─────────────────────────────────────────────────────────
+
+    async fetchInitialState() {
+      try {
+        const resp = await fetch(`/api/v1/player/${this.instanceId}/state`);
+        if (resp.ok) {
+          const data = await resp.json();
+          this.currentTrack = data.current || this.currentTrack;
+          this.queue = data.queue || [];
+          this.volume = data.volume ?? 50;
+          this.playing = data.playing ?? false;
+          this.repeatMode = data.repeat || 'off';
+          this.shuffleActive = data.shuffle ?? false;
+          this.positionMs = data.position_ms || 0;
+          this.durationMs = data.duration_ms || this.currentTrack.duration_ms || 0;
+          this.botOffline = (data.bot_status !== 'running');
+        } else if (resp.status === 503) {
+          this.botOffline = true;
+        }
+      } catch (e) {
+        console.warn('[Player] Failed to fetch state:', e);
+      }
+    },
+
+    async sendCommand(action, body = {}) {
+      try {
+        const resp = await fetch(`/api/v1/player/${this.instanceId}/${action}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        if (!resp.ok) {
+          const err = await resp.json();
+          this.showToast(err.error || `Command ${action} failed`, 'danger');
+        }
+      } catch (e) {
+        this.showToast(`Failed to send ${action}`, 'danger');
+      }
+    },
+
+    togglePlayPause() {
+      this.sendCommand(this.playing ? 'pause' : 'resume');
+    },
+
+    cycleRepeat() {
+      this.sendCommand('repeat');
+    },
+
+    async searchTracks() {
+      if (!this.searchQuery.trim()) return;
+      this.searching = true;
+      this.searchResults = [];
+      try {
+        const resp = await fetch(`/api/v1/player/${this.instanceId}/play`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: this.searchQuery, search_only: true }),
+        });
+        if (resp.ok) {
+          const data = await resp.json();
+          this.searchResults = data.results || [];
+        }
+      } catch (e) {
+        this.showToast('Search failed', 'danger');
+      } finally {
+        this.searching = false;
+      }
+    },
+
+    async addToQueue(track) {
+      try {
+        const resp = await fetch(`/api/v1/player/${this.instanceId}/queue/add`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ uri: track.uri, title: track.title, artist: track.artist }),
+        });
+        if (resp.ok) {
+          this.showToast(`Added "${track.title}" to queue`, 'success');
+        } else {
+          const err = await resp.json();
+          this.showToast(err.error || 'Failed to add track', 'danger');
+        }
+      } catch (e) {
+        this.showToast('Failed to add track', 'danger');
+      }
+    },
+
+    async removeFromQueue(index) {
+      try {
+        await fetch(`/api/v1/player/${this.instanceId}/queue/remove`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ index }),
+        });
+      } catch (e) {
+        this.showToast('Failed to remove track', 'danger');
+      }
+    },
+
+    async fetchPlaylists() {
+      try {
+        const resp = await fetch('/api/v1/playlists');
+        if (resp.ok) {
+          const data = await resp.json();
+          this.playlists = data.playlists || [];
+        }
+      } catch (e) { /* silent */ }
+    },
+
+    async loadPlaylist(playlistId) {
+      try {
+        const resp = await fetch(`/api/v1/player/${this.instanceId}/queue/add`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ playlist_id: playlistId }),
+        });
+        if (resp.ok) {
+          this.showToast('Playlist loaded into queue', 'success');
+        }
+      } catch (e) {
+        this.showToast('Failed to load playlist', 'danger');
+      }
+    },
+
+    async fetchRecentTracks() {
+      try {
+        const resp = await fetch(`/api/v1/player/${this.instanceId}/recent`);
+        if (resp.ok) {
+          const data = await resp.json();
+          this.recentTracks = (data.tracks || []).slice(0, 50);
+        }
+      } catch (e) { /* silent */ }
+    },
+
+    async fetchPopularTracks() {
+      try {
+        const resp = await fetch('/api/v1/player/popular');
+        if (resp.ok) {
+          const data = await resp.json();
+          this.popularTracks = data.tracks || [];
+        }
+      } catch (e) { /* silent */ }
+    },
+
+    reconnect() {
+      this.sendCommand('connect');
+    },
+
+    switchInstance() {
+      // Clean up old connection
+      if (this.ws) { this.ws.close(); this.ws = null; }
+      if (this.wsReconnectTimer) clearTimeout(this.wsReconnectTimer);
+      this.wsConnected = false;
+      this.wsReconnectDelay = 1000;
+
+      // Reset state
+      this.queue = [];
+      this.currentTrack = { title: '', artist: '', artwork: '', duration_ms: 0 };
+      this.positionMs = 0;
+      this.durationMs = 0;
+
+      // Reconnect to new instance
+      this.connectWebSocket();
+      this.fetchInitialState();
+    },
+
+    // ─── Volume (debounced 500ms) ─────────────────────────────────────────
+
+    debouncedVolume() {
+      if (this.volumeTimer) clearTimeout(this.volumeTimer);
+      this.volumeTimer = setTimeout(() => {
+        this.sendCommand('volume', { volume: this.volume });
+      }, 500);
+    },
+
+    toggleMute() {
+      if (this.muted) {
+        this.volume = this.previousVolume;
+        this.muted = false;
+      } else {
+        this.previousVolume = this.volume;
+        this.volume = 0;
+        this.muted = true;
+      }
+      this.debouncedVolume();
+    },
+
+    get volumeIcon() {
+      if (this.volume === 0 || this.muted) return 'bi bi-volume-mute';
+      if (this.volume < 33) return 'bi bi-volume-down';
+      if (this.volume < 66) return 'bi bi-volume-down';
+      return 'bi bi-volume-up';
+    },
+
+    // ─── Progress ─────────────────────────────────────────────────────────
+
+    get progressPercent() {
+      if (!this.durationMs) return 0;
+      return Math.min((this.positionMs / this.durationMs) * 100, 100);
+    },
+
+    startProgressTicker() {
+      // Locally increment position every second when playing
+      this.progressTimer = setInterval(() => {
+        if (this.playing && this.positionMs < this.durationMs) {
+          this.positionMs += 1000;
+        }
+      }, 1000);
+    },
+
+    seekTo(event) {
+      if (!this.durationMs) return;
+      const rect = event.currentTarget.getBoundingClientRect();
+      const percent = (event.clientX - rect.left) / rect.width;
+      const seekMs = Math.round(percent * this.durationMs);
+      this.positionMs = seekMs;
+      this.sendCommand('seek', { position_ms: seekMs });
+    },
+
+    formatTime(ms) {
+      if (!ms || ms < 0) return '0:00';
+      const totalSec = Math.floor(ms / 1000);
+      const min = Math.floor(totalSec / 60);
+      const sec = totalSec % 60;
+      return `${min}:${sec.toString().padStart(2, '0')}`;
+    },
+
+    // ─── Drag-to-Reorder ──────────────────────────────────────────────────
+
+    dragStart(event, index) {
+      this.dragIndex = index;
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', index.toString());
+    },
+
+    dragOver(event, index) {
+      event.preventDefault();
+      // Visual feedback
+      const items = event.currentTarget.parentElement.children;
+      for (let item of items) item.classList.remove('drag-over');
+      event.currentTarget.classList.add('drag-over');
+    },
+
+    drop(event, toIndex) {
+      event.preventDefault();
+      const fromIndex = this.dragIndex;
+      if (fromIndex === null || fromIndex === toIndex) return;
+
+      // Optimistic UI update
+      const [moved] = this.queue.splice(fromIndex, 1);
+      this.queue.splice(toIndex, 0, moved);
+
+      // Persist via API
+      fetch(`/api/v1/player/${this.instanceId}/queue/move`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from_index: fromIndex, to_index: toIndex }),
+      }).catch(() => this.showToast('Failed to reorder queue', 'danger'));
+
+      this.dragEnd();
+    },
+
+    dragEnd() {
+      this.dragIndex = null;
+      document.querySelectorAll('.drag-over').forEach(el => el.classList.remove('drag-over'));
+    },
+
+    // ─── Keyboard Shortcuts ───────────────────────────────────────────────
+
+    bindKeyboard() {
+      document.addEventListener('keydown', (e) => {
+        // Don't capture when typing in inputs
+        if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') return;
+
+        switch (e.code) {
+          case 'Space':
+            e.preventDefault();
+            this.togglePlayPause();
+            break;
+          case 'KeyN':
+            e.preventDefault();
+            this.sendCommand('skip');
+            break;
+          case 'KeyP':
+            e.preventDefault();
+            this.sendCommand('previous');
+            break;
+          case 'KeyM':
+            e.preventDefault();
+            this.toggleMute();
+            break;
+        }
+      });
+    },
+
+    // ─── Toast Helper ─────────────────────────────────────────────────────
+
+    showToast(message, type = 'success') {
+      if (typeof window.showToast === 'function') {
+        window.showToast(message, type);
+      }
+    },
+  };
+}
+</script>
+{% endblock %}

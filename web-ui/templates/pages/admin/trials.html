@@ -1,0 +1,164 @@
+{% extends "base.html" %}
+
+{% block title %}Admin — Trial Applications{% endblock %}
+
+{% block content %}
+<div class="container py-4" x-data="{ confirmAction: null, confirmId: null, confirmName: '' }">
+
+  {# Page header #}
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h1 class="h3 mb-1" style="color: #e0e0e0; font-weight: 600;">
+        <i class="bi bi-clipboard-check me-2" style="color: #bb86fc;"></i>Trial Applications
+      </h1>
+      <p class="mb-0" style="color: #a0a0b8;">
+        Review and manage pending trial applications
+      </p>
+    </div>
+    <div>
+      <span class="badge" style="background: rgba(187, 134, 252, 0.2); color: #d4b3ff; font-size: 0.875rem;">
+        {{ pending_count | default(0) }} pending
+      </span>
+    </div>
+  </div>
+
+  {# Pending Trials Table #}
+  <div class="card mb-4">
+    <div class="card-header d-flex justify-content-between align-items-center">
+      <span><i class="bi bi-hourglass-split me-2"></i>Pending Applications</span>
+    </div>
+    <div class="card-body p-0">
+      <div id="trials-table-container">
+        {% if trials and trials | length > 0 %}
+        <div class="table-responsive">
+          <table class="table table-hover mb-0" aria-label="Pending trial applications">
+            <thead>
+              <tr style="border-bottom: 1px solid #3a3a5c;">
+                <th style="color: #a0a0b8; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">Applicant</th>
+                <th style="color: #a0a0b8; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">Discord ID</th>
+                <th style="color: #a0a0b8; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">Applied</th>
+                <th style="color: #a0a0b8; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px; text-align: right;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="trials-list">
+              {% for trial in trials %}
+              <tr id="trial-row-{{ trial.id }}">
+                <td style="color: #e0e0e0;">
+                  <div class="d-flex align-items-center gap-2">
+                    {% if trial.avatar_url %}
+                    <img src="{{ trial.avatar_url }}" alt="" class="rounded-circle" style="width: 32px; height: 32px;">
+                    {% else %}
+                    <div class="rounded-circle d-flex align-items-center justify-content-center"
+                         style="width: 32px; height: 32px; background: rgba(187, 134, 252, 0.15);">
+                      <i class="bi bi-person" style="color: #bb86fc;"></i>
+                    </div>
+                    {% endif %}
+                    <span>{{ trial.discord_username | default('Unknown') }}</span>
+                  </div>
+                </td>
+                <td style="color: #a0a0b8; font-family: monospace; font-size: 0.85rem;">
+                  {{ trial.discord_user_id }}
+                </td>
+                <td style="color: #a0a0b8;">
+                  {{ trial.applied_at.strftime('%Y-%m-%d %H:%M') if trial.applied_at else '—' }}
+                </td>
+                <td class="text-end">
+                  <button class="btn btn-sm btn-outline-hellodj me-1"
+                          hx-post="/api/v1/admin/trials/{{ trial.id }}/approve"
+                          hx-target="#trial-row-{{ trial.id }}"
+                          hx-swap="outerHTML"
+                          hx-confirm="Approve trial for {{ trial.discord_username }}?"
+                          aria-label="Approve trial for {{ trial.discord_username }}">
+                    <i class="bi bi-check-lg"></i> Approve
+                  </button>
+                  <button class="btn btn-sm btn-outline-danger"
+                          hx-post="/api/v1/admin/trials/{{ trial.id }}/deny"
+                          hx-target="#trial-row-{{ trial.id }}"
+                          hx-swap="outerHTML"
+                          aria-label="Deny trial for {{ trial.discord_username }}"
+                          @click="confirmAction='deny'; confirmId='{{ trial.id }}'; confirmName='{{ trial.discord_username }}'">
+                    <i class="bi bi-x-lg"></i> Deny
+                  </button>
+                </td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% else %}
+        <div class="text-center py-5" style="color: #a0a0b8;">
+          <i class="bi bi-inbox fs-1 d-block mb-3" style="opacity: 0.5;"></i>
+          <p class="mb-0">No pending trial applications.</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+
+  {# Recent Decisions (approved/denied history) #}
+  {% if recent_decisions and recent_decisions | length > 0 %}
+  <div class="card">
+    <div class="card-header">
+      <i class="bi bi-clock-history me-2"></i>Recent Decisions
+    </div>
+    <div class="card-body p-0">
+      <div class="table-responsive">
+        <table class="table table-hover mb-0" aria-label="Recent trial decisions">
+          <thead>
+            <tr style="border-bottom: 1px solid #3a3a5c;">
+              <th style="color: #a0a0b8; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">Applicant</th>
+              <th style="color: #a0a0b8; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">Decision</th>
+              <th style="color: #a0a0b8; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">Decided At</th>
+              <th style="color: #a0a0b8; font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.5px;">By</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for decision in recent_decisions %}
+            <tr>
+              <td style="color: #e0e0e0;">{{ decision.discord_username | default('Unknown') }}</td>
+              <td>
+                <span class="badge"
+                      style="background: rgba({% if decision.status == 'approved' %}46, 204, 113{% else %}231, 76, 60{% endif %}, 0.2);
+                             color: {% if decision.status == 'approved' %}#2ecc71{% else %}#e74c3c{% endif %};">
+                  {{ decision.status | capitalize }}
+                </span>
+              </td>
+              <td style="color: #a0a0b8;">
+                {{ decision.decided_at.strftime('%Y-%m-%d %H:%M') if decision.decided_at else '—' }}
+              </td>
+              <td style="color: #a0a0b8;">{{ decision.decided_by | default('—') }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+<script defer src="https://unpkg.com/alpinejs@3"></script>
+<script>
+  // After HTMX swaps a trial row (approve/deny), update the pending count badge
+  document.addEventListener('htmx:afterSwap', function(evt) {
+    if (evt.detail.target && evt.detail.target.id && evt.detail.target.id.startsWith('trial-row-')) {
+      const rows = document.querySelectorAll('#trials-list tr');
+      const badge = document.querySelector('.badge');
+      if (badge && badge.textContent.includes('pending')) {
+        badge.textContent = rows.length + ' pending';
+      }
+      // Show empty state if no rows remain
+      if (rows.length === 0) {
+        document.getElementById('trials-table-container').innerHTML =
+          '<div class="text-center py-5" style="color: #a0a0b8;">' +
+          '<i class="bi bi-inbox fs-1 d-block mb-3" style="opacity: 0.5;"></i>' +
+          '<p class="mb-0">No pending trial applications.</p></div>';
+      }
+    }
+  });
+</script>
+{% endblock %}

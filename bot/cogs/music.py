@@ -2086,41 +2086,8 @@ class Music(commands.Cog):
 
     # ── /remote control panel ───────────────────────────────
 
-    @app_commands.command(
-        name="remote",
-        description="Show or refresh the unified now-playing control panel",
-    )
-    async def remote(self, interaction: discord.Interaction):
-        from views.unified_remote import UnifiedControlView
-
-        guild_id = interaction.guild.id
-        state = player.get_state(guild_id)
-        current = state.get("current")
-        old_msg = state.get("now_playing_msg")
-        view = UnifiedControlView()
-
-        # Build the appropriate embed based on what's currently active
-        if player._is_video_active(guild_id):
-            # Video is active — use the video embed format with seek bar
-            embed = await self._build_video_remote_embed(guild_id)
-            if embed is None:
-                # Fallback if we can't get video info
-                embed = self._build_idle_embed()
-        elif current:
-            embed = player.build_now_playing_embed_from_entry(current)
-        else:
-            embed = self._build_idle_embed()
-
-        # Delete the old remote panel if it exists
-        if old_msg:
-            try:
-                await old_msg.delete()
-            except (discord.NotFound, discord.HTTPException):
-                pass
-
-        # Send a fresh one
-        await interaction.response.send_message(embed=embed, view=view)
-        state["now_playing_msg"] = await interaction.original_response()
+    # NOTE: /remote command has been moved to cogs/remote.py (EnhancedRemoteView)
+    # The old /remote from this file is superseded by the enhanced version.
 
     def _build_idle_embed(self) -> discord.Embed:
         return discord.Embed(

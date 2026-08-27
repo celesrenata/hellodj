@@ -2,6 +2,8 @@ discord.py[voice]
 wavelink>=3.5.0
 python-dotenv
 aiohttp
+asyncpg>=0.29.0
+cryptography>=42.0.0
 
 # Voice activation
 discord-ext-voice-recv>=0.5.2a179

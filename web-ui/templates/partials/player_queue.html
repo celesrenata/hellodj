@@ -1,0 +1,46 @@
+{#
+  HTMX fragment: Player queue list
+  Rendered server-side as a fallback or for initial page load without JS.
+  Swapped in via hx-get="/player/queue?instance_id=..."
+
+  Expected context:
+    - queue: list of track dicts with title, artist, artwork, duration_ms, uri
+    - instance_id: the bot instance ID
+#}
+{% if queue %}
+<div class="list-group list-group-flush">
+  {% for track in queue %}
+  <div class="list-group-item d-flex align-items-center gap-2 px-2 py-2"
+       style="background: transparent; border-color: #3a3a5c; cursor: grab;"
+       draggable="true"
+       data-index="{{ loop.index0 }}">
+    <span class="drag-handle" style="color: #a0a0b8; cursor: grab;" aria-hidden="true">⠿</span>
+    <img src="{{ track.artwork or '/static/img/no-art.svg' }}"
+         alt="" style="width: 36px; height: 36px; border-radius: 6px; object-fit: cover;">
+    <div class="flex-grow-1" style="min-width: 0;">
+      <div class="text-truncate" style="color: #e0e0e0; font-size: 0.85rem;">{{ track.title }}</div>
+      <div class="text-truncate" style="color: #a0a0b8; font-size: 0.75rem;">{{ track.artist }}</div>
+    </div>
+    <span style="color: #a0a0b8; font-size: 0.75rem; white-space: nowrap;">
+      {% set total_sec = (track.duration_ms // 1000) if track.duration_ms else 0 %}
+      {{ '%d:%02d' | format(total_sec // 60, total_sec % 60) }}
+    </span>
+    <button class="btn btn-sm p-1 border-0"
+            style="color: #a0a0b8; background: none; min-height: auto !important; padding: 2px !important;"
+            hx-post="/api/v1/player/{{ instance_id }}/queue/remove"
+            hx-vals='{"index": {{ loop.index0 }}}'
+            hx-target="#player-queue"
+            hx-swap="innerHTML"
+            aria-label="Remove {{ track.title }} from queue"
+            title="Remove">
+      <i class="bi bi-x-lg" style="font-size: 0.75rem;"></i>
+    </button>
+  </div>
+  {% endfor %}
+</div>
+{% else %}
+<div class="text-center py-4" style="color: #a0a0b8;">
+  <i class="bi bi-music-note-list fs-3 d-block mb-2" style="opacity: 0.5;"></i>
+  <p class="mb-0">Queue is empty. Search for tracks or load a playlist.</p>
+</div>
+{% endif %}

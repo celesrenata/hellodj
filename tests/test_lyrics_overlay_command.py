@@ -80,6 +80,14 @@ class TestLyricsOverlayOn:
             cog._genius = MagicMock()
 
             interaction = _make_interaction(guild_id=456)
+            # The real code checks interaction.user.voice — must be truthy
+            interaction.user.voice = MagicMock()
+            interaction.user.voice.channel = MagicMock()
+            interaction.user.voice.channel.id = 999
+
+            # Mock _ensure_activity (it's async and called internally)
+            cog._ensure_activity = AsyncMock(return_value=None)
+
             await cog.lyrics.callback(cog, interaction, overlay="on")
 
             # Service enabled
@@ -95,10 +103,11 @@ class TestLyricsOverlayOn:
                 456, {"type": "lyrics_overlay_enable"}
             )
 
-            # Ephemeral confirmation
-            interaction.response.send_message.assert_awaited_once_with(
-                "🎤 Lyrics overlay enabled for all viewers.", ephemeral=True
-            )
+            # The code defers then sends followup (not response.send_message)
+            interaction.response.defer.assert_awaited_once_with(ephemeral=True)
+            interaction.followup.send.assert_awaited_once()
+            msg = interaction.followup.send.await_args[0][0]
+            assert "Lyrics overlay enabled" in msg
 
 
 class TestLyricsOverlayOff:

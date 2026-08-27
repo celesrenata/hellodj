@@ -8,11 +8,15 @@
 #   Temurin/JDK (== 25 LTS), nixpkgs, nixos-generators, Karpenter,
 #   and the EKS Kubernetes version.
 #
-# Each input pins upstream via `github:owner/repo/branch` (R11.3) so that
-# `nix flake update <input>` synchronizes future upstream merges (R11.4). The
-# `github:` form is mandatory — a `path:` input is forbidden by the NixOS
-# steering (it ties the build to a machine's filesystem layout) and is rejected
-# by the workflow.
+# The five migrated repos (the HelloDJ app + the four JVM forks) now pin
+# upstream via a CodeCommit input (`type = "codecommit"` with region/repo/branch,
+# hellodj-private-source-and-toolchain R2.1/R3.1), which supersedes
+# nix-native-delivery R11.3's `github:owner/repo/branch`-only rule for those
+# inputs. The remaining inputs (Temurin, nixpkgs, nixos-generators, Karpenter,
+# EKS) still pin via `github:owner/repo/branch` (R11.3) so that
+# `nix flake update <input>` synchronizes future upstream merges (R11.4). A
+# `path:` input remains forbidden by the NixOS steering (it ties the build to a
+# machine's filesystem layout) and is rejected by the workflow for every entry.
 #
 # `pinned_identifier` is the revision/tag/version captured in `flake.lock` (or,
 # for the CDK-managed inputs Karpenter/EKS, the version literal in the infra
@@ -29,29 +33,53 @@
 # Eclipse Adoptium at pin time (R11.2); its `feature_version` is asserted == 25.
 
 # ---------------------------------------------------------------------------
-# The four JVM forks (github:hellodj/<repo>/<branch>) — R1.5 / R11.1 / R11.3
+# The HelloDJ app + the four JVM forks — CodeCommit inputs (R1 / R2 / R3.1).
+#
+# The source of truth has moved off public GitHub into private Amazon
+# CodeCommit. Each of these five entries declares `type = "codecommit"` with
+# `region`, `repo`, and `branch`, resolving to
+#   git+https://git-codecommit.<region>.amazonaws.com/v1/repos/<repo>?ref=<branch>
+# (R3.1). `pinned_identifier` is retained verbatim so `verify_pin` (Property 13)
+# still checks pinned == upstream at pin time. The pin gate accepts these as a
+# valid input form (superseding nix-native-delivery R11.3's github-only rule)
+# while still rejecting `path:` inputs (R3.3).
 # ---------------------------------------------------------------------------
 
+[inputs.hellodj]
+type = "codecommit"            # R3.1 — the app repo (contains platform/)
+region = "us-east-1"
+repo = "hellodj"
+branch = "main"
+pinned_identifier = "main"
+# resolves to:
+#   git+https://git-codecommit.us-east-1.amazonaws.com/v1/repos/hellodj?ref=main
+
 [inputs.lavalink]
-owner = "hellodj"
+type = "codecommit"            # R3.1
+region = "us-east-1"
 repo = "Lavalink"
 branch = "dev"                 # R1.3 — the designated build branch
 pinned_identifier = "fmp4-hls"
+# resolves to:
+#   git+https://git-codecommit.us-east-1.amazonaws.com/v1/repos/Lavalink?ref=dev
 
 [inputs.lavaplayer]
-owner = "hellodj"
+type = "codecommit"            # R3.1
+region = "us-east-1"
 repo = "lavaplayer"
 branch = "main"
 pinned_identifier = "8488449d733355ee54cd7c868d3fc2edc50b6fa9"
 
 [inputs.lavasrc]
-owner = "hellodj"
+type = "codecommit"            # R3.1
+region = "us-east-1"
 repo = "LavaSrc"
 branch = "tidal-v2-api"
 pinned_identifier = "4.8.3"
 
 [inputs.youtube-source]
-owner = "hellodj"
+type = "codecommit"            # R3.1
+region = "us-east-1"
 repo = "youtube-source"
 branch = "main"
 pinned_identifier = "sabr"

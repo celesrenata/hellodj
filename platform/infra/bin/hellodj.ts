@@ -66,6 +66,7 @@ const edge = new EdgeStack(app, 'hellodj-edge', {
   env,
   stage: config.stage,
   region: config.region,
+  applicationLoadBalancer: network.applicationLoadBalancer,
 });
 
 // DynamoDB + DAX data stack (task 10.1). DAX runs inside the platform VPC, so

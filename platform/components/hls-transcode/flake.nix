@@ -1,0 +1,70 @@
+{
+  description = ''
+    HelloDJ hls-transcode component — hybrid CPU/GPU HLS transcoder (libx264 on
+    Graviton by default, NVENC on G5g), co-located visualizer rendering, HLS
+    written to S3. Nix-built OCI image, NO Ubuntu/Debian base (R5.1/5.2/5.3).
+
+    Port 8095. AWS access via IAM (IRSA, R6.1).
+  '';
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+  };
+
+  outputs = { self, nixpkgs, flake-utils }:
+    flake-utils.lib.eachSystem [ "aarch64-linux" "x86_64-linux" ] (system:
+      let
+        pkgs = import nixpkgs { inherit system; };
+
+        python = pkgs.python314;
+
+        pythonDeps = ps: with ps; [
+          aiohttp
+          boto3
+          botocore
+        ];
+
+        pythonEnv = python.withPackages pythonDeps;
+
+        # FFmpeg with libx264 (CPU baseline transcode on Graviton).
+        ffmpeg = pkgs.ffmpeg_7-full;
+
+        appSrc = pkgs.runCommand "hellodj-hls-transcode-src" { src = ./.; } ''
+          mkdir -p $out/app
+          cp -r $src/hls_transcode $out/app/hls_transcode 2>/dev/null || true
+          find $src -maxdepth 1 -name '*.py' -exec cp {} $out/app/ \;
+        '';
+
+        image = pkgs.dockerTools.buildLayeredImage {
+          name = "hellodj-hls-transcode";
+          tag = "nix";
+
+          contents = [ pythonEnv ffmpeg pkgs.cacert pkgs.coreutils ];
+
+          extraCommands = ''
+            cp -r ${appSrc}/app opt-app
+          '';
+
+          config = {
+            WorkingDir = "/opt-app";
+            ExposedPorts = { "8095/tcp" = { }; };
+            Env = [
+              "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+              "PYTHONUNBUFFERED=1"
+            ];
+            Entrypoint = [
+              "${pythonEnv}/bin/python"
+              "-m" "hls_transcode.server"
+            ];
+          };
+        };
+      in
+      {
+        packages = {
+          default = image;
+          image = image;
+        };
+        checks = { image-builds = image; };
+      });
+}

@@ -29,6 +29,8 @@ from flask import (
 )
 from werkzeug.exceptions import HTTPException
 
+from auth_middleware import login_required, operator_required, role_required
+
 # ── Logging: console + rotating file under the config dir (NFS shared) ──
 def _setup_logging():
     """Configure console + rotating-file logging. File path from WEBUI_LOG_FILE,
@@ -155,6 +157,22 @@ def _log_response(response):
         log.warning("Could not log response: %s", exc)
     return response
 
+@app.after_request
+def _set_security_headers(response):
+    """Add security headers to every response (including errors).
+
+    Sets X-Content-Type-Options, X-Frame-Options, and HSTS. Does not touch
+    existing Content-Type or CORS (Access-Control-*) headers.
+    """
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault(
+        "Strict-Transport-Security",
+        "max-age=31536000; includeSubDomains",
+    )
+    return response
+
+
 @app.errorhandler(Exception)
 def _handle_exception(exc):
     """Log a full traceback for every unhandled exception."""
@@ -179,8 +197,19 @@ def _handle_exception(exc):
 
 @app.context_processor
 def inject_auth():
-    """Expose the current session user to all templates."""
-    # current_user is a module-level helper defined below; it resolves at render time.
+    """Expose the current session user to all templates.
+
+    Prefers the new Redis-backed session (g.session) if available,
+    falls back to the legacy Flask session (current_user()) for backward compat.
+    """
+    session_data = getattr(g, "session", None)
+    if session_data:
+        return {
+            "current_user": str(session_data.get("discord_user_id", "")),
+            "session_username": session_data.get("discord_username", ""),
+            "is_operator": session_data.get("is_operator", False),
+        }
+    # Fallback: legacy Flask session (for routes not yet migrated / public pages)
     return {"current_user": current_user()}
 # FLASK_SECRET from env; fall back to a generated value persisted in config so
 # sessions survive restarts without a configured secret.
@@ -468,10 +497,9 @@ def favicon():
     return app.send_static_file("favicon.ico")
 
 @app.route("/")
+@login_required
 def index():
     """Dashboard — login-required."""
-    if require_auth():
-        return require_auth()
     return render_template("index.html", active="dashboard")
 
 # ── OAuth / Auth ───────────────────────────────────────────
@@ -812,13 +840,6 @@ def provider_login(provider):
     url = f"{prov['auth_url']}?{urlencode(params)}"
     return redirect(url)
 
-@app.route("/auth/login")
-def auth_login():
-    """Begin the Discord OAuth flow (backward-compatible wrapper)."""
-    if current_user() is not None:
-        return redirect(url_for("index"))
-    return provider_login("discord")
-
 @app.route("/auth/<provider>/callback")
 def provider_callback(provider):
     """Exchange an OAuth code for tokens and store them under providers.
@@ -970,20 +991,20 @@ def provider_callback(provider):
     save_oauth(oauth)
     return redirect(url_for("config_page"))
 
-@app.route("/auth/callback")
+@app.route("/auth/legacy-callback")
 def auth_callback():
     """Backward-compatible callback wrapper.
     
     Routes to Tidal stream callback if redirect_url is present (Tidal PKCE flow),
-    otherwise handles as Discord OAuth callback.
+    otherwise handles as Discord OAuth callback via the provider system.
     """
     if request.args.get("redirect_url"):
         return tidal_stream_callback()
     return provider_callback("discord")
 
-@app.route("/auth/logout")
+@app.route("/auth/legacy-logout")
 def auth_logout():
-    """Clear the Flask session."""
+    """Clear the legacy Flask session (for non-Discord provider flows)."""
     session.clear()
     return redirect(url_for("index"))
 
@@ -1514,18 +1535,16 @@ def _metrics_daily(days: int = 14) -> list:
 
 
 @app.route("/metrics")
+@login_required
 def metrics_page():
     """Metrics dashboard — login-required."""
-    if require_auth():
-        return require_auth()
     return render_template("metrics.html", active="metrics")
 
 
 @app.route("/api/metrics")
+@role_required("viewer")
 def api_metrics():
     """Return aggregated AI usage metrics (auth required)."""
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
     period = request.args.get("period", "today")
     if period not in ("today", "week", "month", "all"):
         period = "today"
@@ -1572,17 +1591,15 @@ def api_status():
 # ── Configuration ──────────────────────────────────────────
 
 @app.route("/config")
+@login_required
 def config_page():
     """Config page — login-required."""
-    if require_auth():
-        return require_auth()
     return render_template("config.html", active="config")
 
 @app.route("/api/config")
+@role_required("viewer")
 def api_get_config():
-    """Return the full configuration (owner/admin only)."""
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
+    """Return the full configuration (viewer or higher)."""
     env = read_env()
     config = read_json(CONFIG_FILE, {})
 
@@ -1653,10 +1670,9 @@ def api_get_config():
     return jsonify(full)
 
 @app.route("/api/config", methods=["POST"])
+@role_required("editor")
 def api_update_config():
-    """Update configuration values (owner/admin only)."""
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
+    """Update configuration values (editor or higher)."""
     data = request.json
     if not data:
         return jsonify({"error": "No data provided"}), 400
@@ -1788,21 +1804,19 @@ def api_update_config():
 # ── Sessions / Guilds ──────────────────────────────────────
 
 @app.route("/guilds")
+@login_required
 def guilds_page():
     """Guilds page — login-required."""
-    if require_auth():
-        return require_auth()
     return render_template("guilds.html", active="guilds")
 
 @app.route("/api/guilds")
+@role_required("viewer")
 def api_get_guilds():
     """Return the bot's authoritative guild list from bot_guilds.json.
 
     Each guild includes its name, icon, member count, channel list,
     activation status, and its unique activation key.
     """
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
     guilds_data = read_json(GUILDS_FILE, {})
 
     try:
@@ -1840,10 +1854,9 @@ def api_get_guilds():
     return jsonify({"guilds": guilds})
 
 @app.route("/api/guilds/<gid>", methods=["DELETE"])
+@role_required("editor")
 def api_clear_guild(gid):
-    """Clear a guild's session (owner/admin only)."""
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
+    """Clear a guild's session (editor or higher)."""
     sessions = read_json(SESSIONS_FILE, {})
     if gid in sessions:
         del sessions[gid]
@@ -1852,58 +1865,51 @@ def api_clear_guild(gid):
     return jsonify({"error": "Guild not found"}), 404
 
 @app.route("/api/guilds/<gid>/deactivate", methods=["POST"])
+@operator_required
 def api_deactivate_guild(gid):
     """Deactivate a guild — revoke its activation and regenerate its key."""
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
-    if not is_admin(current_user()):
-        return jsonify({"error": "Admin only"}), 403
     try:
         from credentials import creds
         creds.delete(f"guild.{gid}.activated")
         # Regenerate the key so the old one can't be reused
         new_key = secrets.token_urlsafe(16)
         creds.set(f"guild.{gid}.activation_key", new_key)
-        log.info("api: guild %s deactivated by user %s (key regenerated)", gid, current_user())
+        log.info("api: guild %s deactivated by user %s (key regenerated)", gid, g.session.get("discord_user_id"))
         return jsonify({"status": "ok", "message": f"Guild {gid} deactivated. A new key has been generated."})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 500
 
 @app.route("/api/guilds/<gid>/reset-session", methods=["POST"])
+@role_required("editor")
 def api_reset_guild_session(gid):
     """Reset a guild's playback session (clear queue, current track)."""
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
     sessions = read_json(SESSIONS_FILE, {})
     if gid in sessions:
         del sessions[gid]
         write_json(SESSIONS_FILE, sessions)
-        log.info("api: guild %s session reset by user %s", gid, current_user())
+        log.info("api: guild %s session reset by user %s", gid, g.session.get("discord_user_id"))
         return jsonify({"status": "ok", "message": f"Guild {gid} session reset"})
     return jsonify({"status": "ok", "message": f"Guild {gid} had no session to reset"})
 
 # ── Playlists ───────────────────────────────────────────────
 
 @app.route("/playlists")
+@login_required
 def playlists_page():
     """Playlists page — login-required."""
-    if require_auth():
-        return require_auth()
     return render_template("playlists.html", active="playlists")
 
 @app.route("/api/playlists")
+@role_required("viewer")
 def api_get_playlists():
     """Return all playlists grouped by guild."""
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
     playlists = read_json(PLAYLISTS_FILE, {})
     return jsonify({"playlists": playlists})
 
 @app.route("/api/playlists/<gid>/<name>", methods=["DELETE"])
+@role_required("editor")
 def api_delete_playlist(gid, name):
-    """Delete a playlist (owner/admin only)."""
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
+    """Delete a playlist (editor or higher)."""
     playlists = read_json(PLAYLISTS_FILE, {})
     guild = playlists.get(gid)
     if guild and name in guild:
@@ -1915,22 +1921,21 @@ def api_delete_playlist(gid, name):
 # ── Backups ────────────────────────────────────────────────
 
 @app.route("/backups")
+@login_required
 def backups_page():
     """Backups page — login-required."""
-    if require_auth():
-        return require_auth()
     return render_template("backups.html", active="backups")
 
 @app.route("/api/backups")
+@role_required("viewer")
 def api_get_backups():
     """List all backups."""
     return jsonify({"backups": get_backup_list()})
 
 @app.route("/api/backups", methods=["POST"])
+@role_required("editor")
 def api_create_backup():
-    """Create a new backup (owner/admin only)."""
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
+    """Create a new backup (editor or higher)."""
     try:
         path = create_backup()
         fname = os.path.basename(path)
@@ -1944,10 +1949,9 @@ def api_create_backup():
         return jsonify({"error": str(exc)}), 500
 
 @app.route("/api/backups/<name>/restore", methods=["POST"])
+@role_required("editor")
 def api_restore_backup(name):
-    """Restore a backup by name (owner/admin only)."""
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
+    """Restore a backup by name (editor or higher)."""
     import tarfile
     backup_path = os.path.join(BACKUP_DIR, name)
     if not os.path.exists(backup_path):
@@ -1974,10 +1978,9 @@ def api_restore_backup(name):
         return jsonify({"error": str(exc)}), 500
 
 @app.route("/api/backups/<name>", methods=["DELETE"])
+@role_required("editor")
 def api_delete_backup(name):
-    """Delete a backup (owner/admin only)."""
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
+    """Delete a backup (editor or higher)."""
     backup_path = os.path.join(BACKUP_DIR, name)
     if os.path.exists(backup_path):
         os.remove(backup_path)
@@ -1987,10 +1990,9 @@ def api_delete_backup(name):
 # ── Blacklist ──────────────────────────────────────────────
 
 @app.route("/blacklist")
+@login_required
 def blacklist_page():
     """Blacklist page — login-required."""
-    if require_auth():
-        return require_auth()
     return render_template("blacklist.html", active="blacklist")
 
 # data/blacklist.json is the single source of truth for the blacklist. The bot
@@ -1999,18 +2001,16 @@ def blacklist_page():
 BLACKLIST_FILE = os.path.join(DATA_DIR, "blacklist.json")
 
 @app.route("/api/blacklist")
+@role_required("viewer")
 def api_get_blacklist():
     """Return the blacklist (read from data/blacklist.json)."""
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
     bl = read_json(BLACKLIST_FILE, {})
     return jsonify({"blacklist": bl})
 
 @app.route("/api/blacklist", methods=["POST"])
+@role_required("editor")
 def api_update_blacklist():
-    """Update the blacklist (owner/admin only)."""
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
+    """Update the blacklist (editor or higher)."""
     data = request.json
     if not data or "blacklist" not in data:
         return jsonify({"error": "No blacklist data provided"}), 400
@@ -2020,19 +2020,15 @@ def api_update_blacklist():
 # ── Admins ─────────────────────────────────────────────────
 
 @app.route("/admins")
+@operator_required
 def admins_page():
-    """Admins management page — owner-only."""
-    if require_auth():
-        return require_auth()
-    if not is_owner(current_user()):
-        return jsonify({"error": "Owner only"}), 403
+    """Admins management page — operator-only."""
     return render_template("admins.html", active="admins")
 
 @app.route("/api/admins")
+@operator_required
 def api_get_admins():
-    """List the bound owner and all admin user ids (owner/admin only)."""
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
+    """List the bound owner and all admin user ids (operator only)."""
     oauth = load_oauth()
     return jsonify({
         "owner_user_id": oauth.get("owner_user_id"),
@@ -2041,10 +2037,9 @@ def api_get_admins():
     })
 
 @app.route("/api/admins", methods=["POST"])
+@operator_required
 def api_add_admin():
-    """Add an admin by Discord user_id (owner only)."""
-    if require_owner():
-        return require_owner()
+    """Add an admin by Discord user_id (operator only)."""
     data = request.json or {}
     admin_id = data.get("user_id")
     if not admin_id:
@@ -2061,10 +2056,9 @@ def api_add_admin():
     return jsonify({"status": "ok", "message": f"Admin {admin_id} added"})
 
 @app.route("/api/admins/<admin_id>", methods=["DELETE"])
+@operator_required
 def api_remove_admin(admin_id):
-    """Remove an admin by Discord user_id (owner only)."""
-    if require_owner():
-        return require_owner()
+    """Remove an admin by Discord user_id (operator only)."""
     oauth = load_oauth()
     admin_ids = oauth.get("admin_user_ids", []) or []
     oauth["admin_user_ids"] = [a for a in admin_ids if str(a) != str(admin_id)]
@@ -2138,13 +2132,13 @@ def tail_file(path, lines):
     return result
 
 @app.route("/logs")
+@login_required
 def logs_page():
     """Logs viewer page — login-required."""
-    if require_auth():
-        return require_auth()
     return render_template("logs.html", active="logs")
 
 @app.route("/api/logs")
+@role_required("viewer")
 def api_get_logs():
     """Return the tail of the webui and bot log files as JSON."""
     lines = request.args.get("lines", default=200, type=int)
@@ -2157,24 +2151,20 @@ def api_get_logs():
 # ── Instances ──────────────────────────────────────────────
 
 @app.route("/instances")
+@login_required
 def instances_page():
     """Bot Instances management page — login-required."""
-    if require_auth():
-        return require_auth()
     return render_template("instances.html", active="instances")
 
 
 @app.route("/api/instances")
+@role_required("viewer")
 def api_get_instances():
     """List all configured bot instances with status.
 
     Reads instance credentials from the credential store and returns
     index, display name, app_id, and status for each.
     """
-    guard = require_auth()
-    if guard:
-        return guard
-
     try:
         from credentials import creds
     except Exception as exc:
@@ -2206,18 +2196,13 @@ def api_get_instances():
 
 
 @app.route("/api/instances", methods=["POST"])
+@operator_required
 def api_add_instance():
     """Add a new bot instance to the credential store.
 
     Expects JSON body: { "token": "...", "app_id": "...", "name": "..." }
     Appends the instance at the next available index and increments instance_count.
     """
-    guard = require_auth()
-    if guard:
-        return guard
-    if not is_admin(current_user()):
-        return jsonify({"error": "Admin access required"}), 403
-
     data = request.get_json(silent=True) or {}
     token = (data.get("token") or "").strip()
     app_id = (data.get("app_id") or "").strip()
@@ -2264,18 +2249,13 @@ def api_add_instance():
 
 
 @app.route("/api/instances/<int:index>", methods=["DELETE"])
+@operator_required
 def api_remove_instance(index):
     """Remove a bot instance by index.
 
     Deletes the instance's credentials from the store and decrements instance_count.
     If the removed instance is not the last, shifts subsequent instances down.
     """
-    guard = require_auth()
-    if guard:
-        return guard
-    if not is_admin(current_user()):
-        return jsonify({"error": "Admin access required"}), 403
-
     try:
         from credentials import creds
     except Exception as exc:
@@ -2315,6 +2295,7 @@ def api_remove_instance(index):
 
 
 @app.route("/api/instances/status")
+@role_required("viewer")
 def api_instances_status():
     """Return live health/status of all instances.
 
@@ -2323,10 +2304,6 @@ def api_instances_status():
     via an IPC mechanism. For now, returns config-based data with placeholder
     status.
     """
-    guard = require_auth()
-    if guard:
-        return guard
-
     try:
         from credentials import creds
     except Exception as exc:
@@ -2402,21 +2379,16 @@ USER_BANS_FILE = os.path.join(DATA_DIR, "user_bans.json")
 
 
 @app.route("/moderation")
+@login_required
 def moderation_page():
     """Moderation management page — login-required, admin-only."""
-    if require_auth():
-        return require_auth()
     return render_template("moderation.html", active="moderation")
 
 
 @app.route("/api/moderation/<int:guild_id>/filters")
+@role_required("viewer")
 def api_get_filters(guild_id):
     """Return all content filter rules for a guild."""
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
-    if not is_admin(current_user()):
-        return jsonify({"error": "Admin access required"}), 403
-
     data = read_json(CONTENT_FILTERS_FILE, {})
     guild_data = data.get(str(guild_id), {})
     rules = guild_data.get("rules", [])
@@ -2424,16 +2396,12 @@ def api_get_filters(guild_id):
 
 
 @app.route("/api/moderation/<int:guild_id>/filters", methods=["POST"])
+@role_required("editor")
 def api_add_filter(guild_id):
     """Add a content filter rule to a guild.
 
     Expects JSON: {"type": "artist|track|domain|keyword", "value": "..."}
     """
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
-    if not is_admin(current_user()):
-        return jsonify({"error": "Admin access required"}), 403
-
     body = request.get_json(silent=True) or {}
     rule_type = body.get("type", "").strip()
     value = body.get("value", "").strip()
@@ -2450,7 +2418,7 @@ def api_add_filter(guild_id):
         "id": rule_id,
         "type": rule_type,
         "value": value,
-        "added_by": int(current_user()),
+        "added_by": int(g.session.get("discord_user_id", 0)),
         "added_at": datetime.now(timezone.utc).isoformat(),
     }
 
@@ -2462,18 +2430,14 @@ def api_add_filter(guild_id):
     write_json(CONTENT_FILTERS_FILE, data)
 
     log.info("Moderation: added %s filter %r for guild %s by user %s",
-             rule_type, value, guild_id, current_user())
+             rule_type, value, guild_id, g.session.get("discord_user_id"))
     return jsonify({"status": "ok", "rule_id": rule_id})
 
 
 @app.route("/api/moderation/<int:guild_id>/filters/<rule_id>", methods=["DELETE"])
+@role_required("editor")
 def api_delete_filter(guild_id, rule_id):
     """Remove a content filter rule by its ID."""
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
-    if not is_admin(current_user()):
-        return jsonify({"error": "Admin access required"}), 403
-
     data = read_json(CONTENT_FILTERS_FILE, {})
     gid_str = str(guild_id)
     guild_data = data.get(gid_str)
@@ -2491,20 +2455,16 @@ def api_delete_filter(guild_id, rule_id):
                 data[gid_str]["rules"] = rules
             write_json(CONTENT_FILTERS_FILE, data)
             log.info("Moderation: removed filter %s from guild %s by user %s",
-                     rule_id, guild_id, current_user())
+                     rule_id, guild_id, g.session.get("discord_user_id"))
             return jsonify({"status": "ok"})
 
     return jsonify({"error": "Rule not found"}), 404
 
 
 @app.route("/api/moderation/<int:guild_id>/bans")
+@role_required("viewer")
 def api_get_bans(guild_id):
     """Return all banned users for a guild."""
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
-    if not is_admin(current_user()):
-        return jsonify({"error": "Admin access required"}), 403
-
     data = read_json(USER_BANS_FILE, {})
     guild_data = data.get(str(guild_id), {})
     bans = guild_data.get("banned_users", [])
@@ -2512,16 +2472,12 @@ def api_get_bans(guild_id):
 
 
 @app.route("/api/moderation/<int:guild_id>/bans", methods=["POST"])
+@role_required("editor")
 def api_add_ban(guild_id):
     """Ban a user from playback in a guild.
 
     Expects JSON: {"user_id": 123456789}
     """
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
-    if not is_admin(current_user()):
-        return jsonify({"error": "Admin access required"}), 403
-
     body = request.get_json(silent=True) or {}
     user_id = body.get("user_id")
 
@@ -2542,24 +2498,20 @@ def api_add_ban(guild_id):
 
     banned_users.append({
         "user_id": user_id,
-        "banned_by": int(current_user()),
+        "banned_by": int(g.session.get("discord_user_id", 0)),
         "banned_at": datetime.now(timezone.utc).isoformat(),
     })
     write_json(USER_BANS_FILE, data)
 
     log.info("Moderation: banned user %s in guild %s by user %s",
-             user_id, guild_id, current_user())
+             user_id, guild_id, g.session.get("discord_user_id"))
     return jsonify({"status": "ok"})
 
 
 @app.route("/api/moderation/<int:guild_id>/bans/<int:user_id>", methods=["DELETE"])
+@role_required("editor")
 def api_delete_ban(guild_id, user_id):
     """Remove a user ban."""
-    if current_user() is None:
-        return jsonify({"error": "Authentication required"}), 401
-    if not is_admin(current_user()):
-        return jsonify({"error": "Admin access required"}), 403
-
     data = read_json(USER_BANS_FILE, {})
     gid_str = str(guild_id)
     guild_data = data.get(gid_str)
@@ -2577,11 +2529,41 @@ def api_delete_ban(guild_id, user_id):
                 data[gid_str]["banned_users"] = banned_users
             write_json(USER_BANS_FILE, data)
             log.info("Moderation: unbanned user %s in guild %s by user %s",
-                     user_id, guild_id, current_user())
+                     user_id, guild_id, g.session.get("discord_user_id"))
             return jsonify({"status": "ok"})
 
     return jsonify({"error": "User not found in ban list"}), 404
 
+
+# ── Blueprint Registration ─────────────────────────────────
+
+from blueprints.public import public_bp  # noqa: E402
+app.register_blueprint(public_bp)
+
+from blueprints.auth import auth_bp  # noqa: E402
+app.register_blueprint(auth_bp)
+
+from blueprints.player import player_bp, init_app as init_player  # noqa: E402
+app.register_blueprint(player_bp)
+init_player(app)
+
+from blueprints.admin import admin_bp  # noqa: E402
+app.register_blueprint(admin_bp)
+
+from blueprints.session_bp import session_bp  # noqa: E402
+app.register_blueprint(session_bp)
+
+from blueprints.delegates import delegates_bp  # noqa: E402
+app.register_blueprint(delegates_bp)
+
+# ── Startup Warnings ──────────────────────────────────────
+
+_operator_id = os.environ.get("OPERATOR_DISCORD_ID", "").strip()
+if not _operator_id:
+    log.warning(
+        "OPERATOR_DISCORD_ID is unset or empty — operator/admin access is not configured. "
+        "All admin API endpoints will be inaccessible until this is set."
+    )
 
 # ── Main ───────────────────────────────────────────────────
 

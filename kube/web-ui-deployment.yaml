@@ -37,6 +37,8 @@ spec:
         fsGroup: 1000
         runAsGroup: 1000
         runAsUser: 1000
+      nodeSelector:
+        kubernetes.io/hostname: gremlin-3
       containers:
         - name: web-ui
           image: registry.celestium.life/hellodj/web-ui:v2026-08-17
@@ -156,6 +158,20 @@ spec:
                 secretKeyRef:
                   name: hellodj-secret
                   key: GENIUS_API_KEY
+                  optional: true
+            # ── SaaS Auth System ────────────────────────────────────────
+            - name: HELLODJ_PG_URI
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-pg-uri
+                  key: HELLODJ_PG_URI
+            - name: REDIS_URL
+              value: "redis://:SGaIkaf342Ljym7jChmqPY7i@redis-master.redis-service.svc.cluster.local:6379/0"
+            - name: OPERATOR_DISCORD_ID
+              valueFrom:
+                secretKeyRef:
+                  name: hellodj-secret
+                  key: OPERATOR_DISCORD_ID
                   optional: true
           resources:
             limits:

@@ -1,0 +1,57 @@
+{#
+  HTMX fragment: Player search results
+  Rendered server-side for search result display.
+  Swapped in via hx-get="/player/search?q=...&instance_id=..."
+
+  Expected context:
+    - results: list of track dicts with title, artist, artwork, duration_ms, uri, source
+    - query: the search query string
+    - instance_id: the bot instance ID
+#}
+{% if results %}
+<div class="list-group list-group-flush">
+  {% for result in results %}
+  <div class="list-group-item d-flex align-items-center gap-2 px-2 py-2"
+       style="background: transparent; border-color: #3a3a5c;">
+    <img src="{{ result.artwork or '/static/img/no-art.svg' }}"
+         alt="" style="width: 36px; height: 36px; border-radius: 6px; object-fit: cover;">
+    <div class="flex-grow-1" style="min-width: 0;">
+      <div class="text-truncate" style="color: #e0e0e0; font-size: 0.85rem;">{{ result.title }}</div>
+      <div class="d-flex align-items-center gap-1">
+        <span class="text-truncate" style="color: #a0a0b8; font-size: 0.75rem;">{{ result.artist }}</span>
+        {% if result.source %}
+        <span class="badge" style="background: rgba(187,134,252,0.1); color: #a0a0b8; font-size: 0.6rem; padding: 1px 4px;">
+          {{ result.source }}
+        </span>
+        {% endif %}
+      </div>
+    </div>
+    <span style="color: #a0a0b8; font-size: 0.75rem; white-space: nowrap;">
+      {% set total_sec = (result.duration_ms // 1000) if result.duration_ms else 0 %}
+      {{ '%d:%02d' | format(total_sec // 60, total_sec % 60) }}
+    </span>
+    <button class="btn btn-sm btn-outline-hellodj"
+            style="min-height: 32px !important; padding: 4px 8px !important; font-size: 0.75rem;"
+            hx-post="/api/v1/player/{{ instance_id }}/queue/add"
+            hx-vals='{"uri": "{{ result.uri }}", "title": "{{ result.title | e }}", "artist": "{{ result.artist | e }}"}'
+            hx-target="#search-toast-target"
+            hx-swap="innerHTML"
+            aria-label="Add {{ result.title }} to queue"
+            title="Add to queue">
+      <i class="bi bi-plus-lg"></i>
+    </button>
+  </div>
+  {% endfor %}
+</div>
+<div id="search-toast-target"></div>
+{% elif query %}
+<div class="text-center py-3" style="color: #a0a0b8;">
+  <p class="mb-0">No results found for "{{ query }}".</p>
+  <p class="mb-0" style="font-size: 0.8rem; margin-top: 0.5rem;">Try a different search term or check your enabled sources.</p>
+</div>
+{% else %}
+<div class="text-center py-3" style="color: #a0a0b8;">
+  <i class="bi bi-search fs-3 d-block mb-2" style="opacity: 0.5;"></i>
+  <p class="mb-0">Search for tracks to add to your queue.</p>
+</div>
+{% endif %}

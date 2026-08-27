@@ -1,0 +1,66 @@
+{
+  description = ''
+    HelloDJ playback-orchestrator component — routing, classification, content
+    filtering, user bans, unified queue/session persistence (single writer to
+    hellodj-session). Nix-built OCI image, NO Ubuntu/Debian base (R5.1/5.2/5.3).
+
+    DynamoDB/DAX access via IAM (IRSA). No static credentials baked in (R6.1).
+  '';
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+  };
+
+  outputs = { self, nixpkgs, flake-utils }:
+    flake-utils.lib.eachSystem [ "aarch64-linux" "x86_64-linux" ] (system:
+      let
+        pkgs = import nixpkgs { inherit system; };
+
+        python = pkgs.python314;
+
+        pythonDeps = ps: with ps; [
+          boto3
+          botocore
+        ];
+
+        pythonEnv = python.withPackages pythonDeps;
+
+        appSrc = pkgs.runCommand "hellodj-playback-orchestrator-src" { src = ./.; } ''
+          mkdir -p $out/app
+          cp -r $src/playback_orchestrator $out/app/playback_orchestrator 2>/dev/null || true
+          find $src -maxdepth 1 -name '*.py' -exec cp {} $out/app/ \;
+        '';
+
+        image = pkgs.dockerTools.buildLayeredImage {
+          name = "hellodj-playback-orchestrator";
+          tag = "nix";
+
+          contents = [ pythonEnv pkgs.cacert pkgs.coreutils ];
+
+          extraCommands = ''
+            cp -r ${appSrc}/app opt-app
+          '';
+
+          config = {
+            WorkingDir = "/opt-app";
+            ExposedPorts = { "8080/tcp" = { }; };
+            Env = [
+              "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+              "PYTHONUNBUFFERED=1"
+            ];
+            Entrypoint = [
+              "${pythonEnv}/bin/python"
+              "-m" "playback_orchestrator"
+            ];
+          };
+        };
+      in
+      {
+        packages = {
+          default = image;
+          image = image;
+        };
+        checks = { image-builds = image; };
+      });
+}

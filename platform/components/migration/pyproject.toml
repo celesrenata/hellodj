@@ -2,7 +2,7 @@
 name = "hellodj-migration"
 version = "0.1.0"
 description = "One-time clean-slate migration Job: seeds only the admin bootstrap credential into Cognito; all other data starts fresh in DynamoDB (R19)."
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 readme = "README.md"
 
 # Runtime dependencies:

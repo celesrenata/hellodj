@@ -1075,19 +1075,21 @@ class HLSTranscodePipeline:
             "-filter_hw_device", "qsv",
             # Filter: RGBA → NV12 → QSV surface upload
             "-vf", "format=nv12,hwupload=extra_hw_frames=64",
-            # Video encode: h264_qsv ICQ (generated content compresses well)
+            # Video encode: h264_qsv ICQ (Drift engine detailed visuals need
+            # higher quality — the iGPU has headroom for veryslow preset)
             "-c:v", "h264_qsv",
             "-profile:v", "high",
-            "-preset", "medium",
-            "-global_quality", "28",
+            "-preset", "veryslow",
+            "-global_quality", "20",
             "-look_ahead", "1",
             "-look_ahead_depth", "40",
             "-extbrc", "1",
-            "-maxrate", "3000k",
-            "-bufsize", "5000k",
-            # GOP and keyframe alignment with HLS segments
-            "-g", "60",
-            "-force_key_frames", "expr:gte(t,n_forced*2)",
+            "-maxrate", "6000k",
+            "-bufsize", "10000k",
+            # GOP and keyframe alignment with HLS segments (1s keyframes
+            # reduce quality drops at segment boundaries)
+            "-g", "30",
+            "-force_key_frames", "expr:gte(t,n_forced*1)",
             # Constant 30fps output (duplicates frames if engine is slower)
             "-r", str(fps),
         ])

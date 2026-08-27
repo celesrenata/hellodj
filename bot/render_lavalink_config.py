@@ -1,39 +1,133 @@
 #!/usr/bin/env python3
 """HelloDJ — Lavalink config renderer.
 
-Reads credentials from the encrypted SQLite store and renders a complete
+Reads credentials from the encrypted credential store and renders a complete
 application.yml for Lavalink. Runs as an init container before Lavalink starts.
 
+Supports two backends:
+  - PostgreSQL (preferred): Set HELLODJ_PG_URI to use CNPG cluster
+  - SQLite (fallback): Used when HELLODJ_PG_URI is not set (backwards compat)
+
 Usage:
-    HELLODJ_DB_KEY=<key> python render_lavalink_config.py /output/application.yml
+    HELLODJ_DB_KEY=<key> HELLODJ_PG_URI=<uri> python render_lavalink_config.py /output/application.yml
 """
 
-import sys
+import asyncio
+import base64
+import hashlib
+import logging
 import os
+import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-os.environ.setdefault("DATA_DIR", "/app/data")
-
-from credentials import CredentialStore
-
-# Init container mounts data volume read-only; use read_only=True to avoid
-# WAL mode and schema creation attempts.
-creds = CredentialStore(read_only=True)
+logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
+log = logging.getLogger(__name__)
 
 
-def render() -> str:
+# ── Fernet decryption (same derivation as credentials.py) ──────────────────────
+
+def _derive_key(passphrase: str) -> bytes:
+    """Derive a 32-byte Fernet key from an arbitrary passphrase.
+
+    Uses SHA-256 to normalize any-length input into a valid Fernet key (which
+    requires url-safe base64 of 32 bytes).
+    """
+    raw = hashlib.sha256(passphrase.encode()).digest()
+    return base64.urlsafe_b64encode(raw)
+
+
+def _decrypt(fernet, ciphertext: bytes) -> str:
+    """Decrypt a Fernet-encrypted value."""
+    from cryptography.fernet import InvalidToken
+    try:
+        return fernet.decrypt(ciphertext).decode()
+    except InvalidToken:
+        log.error("Failed to decrypt credential — key may have changed")
+        return ""
+
+
+# ── PostgreSQL credential reader ───────────────────────────────────────────────
+
+class PGCredentialReader:
+    """Read-only credential access via PostgreSQL (asyncpg) with Fernet decryption."""
+
+    def __init__(self, pg_uri: str, fernet):
+        self._pg_uri = pg_uri
+        self._fernet = fernet
+        self._conn = None
+
+    async def connect(self):
+        """Establish a connection to PostgreSQL with 10s timeout."""
+        import asyncpg
+
+        try:
+            self._conn = await asyncio.wait_for(
+                asyncpg.connect(self._pg_uri),
+                timeout=10.0,
+            )
+            log.info("Connected to PostgreSQL")
+        except asyncio.TimeoutError:
+            log.error("PostgreSQL connection timed out (10s)")
+            raise
+        except Exception as exc:
+            log.error("PostgreSQL connection failed: %s", exc)
+            raise
+
+    async def close(self):
+        """Close the PostgreSQL connection."""
+        if self._conn:
+            await self._conn.close()
+            self._conn = None
+
+    async def get(self, key: str, default: str | None = None) -> str | None:
+        """Get a credential by key. Returns default if not found."""
+        row = await self._conn.fetchrow(
+            "SELECT value FROM credentials WHERE key = $1", key
+        )
+        if row is None:
+            return default
+        return _decrypt(self._fernet, row["value"])
+
+
+# ── SQLite credential reader (fallback) ────────────────────────────────────────
+
+class SQLiteCredentialReader:
+    """Read-only credential access via SQLite with Fernet decryption."""
+
+    def __init__(self):
+        self._store = None
+
+    async def connect(self):
+        """Initialize the SQLite credential store in read-only mode."""
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        os.environ.setdefault("DATA_DIR", "/app/data")
+        from credentials import CredentialStore
+        self._store = CredentialStore(read_only=True)
+        log.info("Using SQLite credential store (fallback)")
+
+    async def close(self):
+        """No-op for SQLite."""
+        pass
+
+    async def get(self, key: str, default: str | None = None) -> str | None:
+        """Get a credential by key. Returns default if not found."""
+        return self._store.get(key, default)
+
+
+# ── Config renderer ────────────────────────────────────────────────────────────
+
+async def render(creds) -> str:
     """Render the full Lavalink application.yml from the credential store."""
-    spotify_id = creds.get("spotify.client_id", "")
-    spotify_secret = creds.get("spotify.client_secret", "")
-    tidal_token = creds.get("tidal.access_token") or creds.get("tidal.api_token") or "none"
-    tidal_client_id = creds.get("tidal.td_client_id") or creds.get("tidal.client_id") or ""
-    tidal_client_secret = creds.get("tidal.td_client_secret") or creds.get("tidal.client_secret") or ""
-    tidal_country = creds.get("tidal.country_code", "US")
-    tidal_limit = creds.get("tidal.search_limit", "6")
-    ytcipher_token = creds.get("ytcipher.api_token", "")
-    yt_refresh_token = creds.get("youtube.oauth_refresh_token") or creds.get("youtube.refresh_token") or ""
-    yt_pot_token = creds.get("youtube.pot_token", "")
-    yt_visitor_data = creds.get("youtube.pot_visitor_data", "")
+    spotify_id = await creds.get("spotify.client_id", "")
+    spotify_secret = await creds.get("spotify.client_secret", "")
+    tidal_token = await creds.get("tidal.access_token") or await creds.get("tidal.api_token") or "none"
+    tidal_client_id = await creds.get("tidal.td_client_id") or await creds.get("tidal.client_id") or ""
+    tidal_client_secret = await creds.get("tidal.td_client_secret") or await creds.get("tidal.client_secret") or ""
+    tidal_country = await creds.get("tidal.country_code", "US")
+    tidal_limit = await creds.get("tidal.search_limit", "6")
+    ytcipher_token = await creds.get("ytcipher.api_token", "")
+    yt_refresh_token = await creds.get("youtube.oauth_refresh_token") or await creds.get("youtube.refresh_token") or ""
+    yt_pot_token = await creds.get("youtube.pot_token", "")
+    yt_visitor_data = await creds.get("youtube.pot_visitor_data", "")
 
     # Tidal source enabled if we have either client credentials OR a real token
     has_tidal_creds = bool(tidal_client_id and tidal_client_secret)
@@ -49,7 +143,7 @@ def render() -> str:
     yt_oauth_enabled = "true" if yt_refresh_token else "false"
 
     return f"""# Auto-generated by render_lavalink_config.py — DO NOT EDIT
-# Credentials sourced from encrypted SQLite store.
+# Credentials sourced from encrypted credential store.
 
 lavalink:
   server:
@@ -156,17 +250,56 @@ server:
 """
 
 
+async def async_main(output_path: str):
+    """Async entry point for the renderer."""
+    # Validate HELLODJ_DB_KEY
+    db_key = os.environ.get("HELLODJ_DB_KEY", "")
+    if not db_key:
+        log.error("HELLODJ_DB_KEY environment variable is required")
+        sys.exit(1)
+
+    from cryptography.fernet import Fernet
+    fernet = Fernet(_derive_key(db_key))
+
+    # Determine backend: PostgreSQL if HELLODJ_PG_URI is set, else SQLite fallback
+    pg_uri = os.environ.get("HELLODJ_PG_URI", "")
+
+    if pg_uri:
+        # PostgreSQL path
+        reader = PGCredentialReader(pg_uri, fernet)
+        try:
+            await reader.connect()
+        except Exception:
+            log.error("Failed to connect to PostgreSQL — init container cannot proceed")
+            sys.exit(1)
+    else:
+        # SQLite fallback (backwards compatibility during migration)
+        log.info("HELLODJ_PG_URI not set, falling back to SQLite credential store")
+        reader = SQLiteCredentialReader()
+        try:
+            await reader.connect()
+        except Exception as exc:
+            log.error("Failed to initialize SQLite credential store: %s", exc)
+            sys.exit(1)
+
+    try:
+        config = await render(reader)
+    finally:
+        await reader.close()
+
+    os.makedirs(os.path.dirname(output_path) or ".", exist_ok=True)
+    with open(output_path, "w") as f:
+        f.write(config)
+    log.info("Rendered Lavalink config to %s", output_path)
+
+
 def main():
     if len(sys.argv) < 2:
         output_path = "/opt/Lavalink/application.yml"
     else:
         output_path = sys.argv[1]
 
-    config = render()
-    os.makedirs(os.path.dirname(output_path), exist_ok=True)
-    with open(output_path, "w") as f:
-        f.write(config)
-    print(f"Rendered Lavalink config to {output_path}")
+    asyncio.run(async_main(output_path))
 
 
 if __name__ == "__main__":

@@ -23,6 +23,7 @@ import { Construct } from 'constructs';
 import * as acm from 'aws-cdk-lib/aws-certificatemanager';
 import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as targets from 'aws-cdk-lib/aws-route53-targets';
 import * as s3 from 'aws-cdk-lib/aws-s3';
@@ -39,6 +40,14 @@ export interface EdgeStackProps extends cdk.StackProps {
   readonly stage: DeploymentStage;
   /** The AWS region the stage is provisioned in (e.g. `us-east-1`). */
   readonly region: string;
+  /**
+   * The shared Application Load Balancer fronting the EKS workloads (web-ui,
+   * activity-backend). CloudFront uses this as the default origin for dynamic
+   * requests, falling through to the ALB for Flask routes, API calls, and
+   * WebSocket upgrades. When unset, all traffic routes to the S3 web-static
+   * bucket (static-only mode, no dynamic app).
+   */
+  readonly applicationLoadBalancer?: elbv2.IApplicationLoadBalancer;
 }
 
 /**
@@ -115,13 +124,29 @@ export class EdgeStack extends cdk.Stack {
     });
 
     // --- CloudFront distribution: managed edge cache ----------------------
-    // Default behavior serves web static assets; the `/hls/*` path pattern
-    // serves HLS segments from the dedicated HLS origin (Requirements 18.2,
-    // 18.4). Both origins are S3 buckets fronted by Origin Access Identity.
-    const webOrigin =
+    // Architecture:
+    //   * Default behavior → ALB (dynamic Flask/HTMX app, Activity backend,
+    //     API, WebSocket upgrades). This is the normal request path.
+    //   * `/static/*` → S3 web-static bucket (cached CSS/JS/images/fonts).
+    //   * `hls/*` → S3 HLS bucket (ephemeral transcoded segments).
+    //
+    // When no ALB is supplied (static-only mode), the default falls back to
+    // the S3 web-static origin.
+    const webStaticOrigin =
       origins.S3BucketOrigin.withOriginAccessControl(webStaticBucket);
     const hlsOrigin =
       origins.S3BucketOrigin.withOriginAccessControl(hlsBucket);
+
+    // ALB origin for dynamic app traffic (Flask, activity WebSocket, API).
+    // Uses HTTP (port 80) between CloudFront and the ALB; TLS terminates at
+    // CloudFront (the ACM cert above). The ALB's listener handles HTTP → pods.
+    const alb = props.applicationLoadBalancer;
+    const defaultOrigin = alb
+      ? new origins.HttpOrigin(alb.loadBalancerDnsName, {
+          protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY,
+          httpPort: 80,
+        })
+      : webStaticOrigin;
 
     // Alternate domain names the distribution answers on.
     const domainNames = isProd
@@ -134,13 +159,31 @@ export class EdgeStack extends cdk.Stack {
       certificate: this.certificate,
       minimumProtocolVersion: cloudfront.SecurityPolicyProtocol.TLS_V1_2_2021,
       defaultBehavior: {
-        origin: webOrigin,
+        origin: defaultOrigin,
         viewerProtocolPolicy:
           cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
-        cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
-        allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
+        // Dynamic content: forward all headers/cookies/query strings to the
+        // ALB so Flask sessions, HTMX requests, and CSRF tokens work. No
+        // caching at the edge for dynamic routes.
+        cachePolicy: alb
+          ? cloudfront.CachePolicy.CACHING_DISABLED
+          : cloudfront.CachePolicy.CACHING_OPTIMIZED,
+        originRequestPolicy: alb
+          ? cloudfront.OriginRequestPolicy.ALL_VIEWER
+          : undefined,
+        allowedMethods: alb
+          ? cloudfront.AllowedMethods.ALLOW_ALL
+          : cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
       },
       additionalBehaviors: {
+        // Static assets: long-lived, cache-optimized.
+        'static/*': {
+          origin: webStaticOrigin,
+          viewerProtocolPolicy:
+            cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+          cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+          allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
+        },
         // HLS segments: cache-optimized, GET/HEAD only.
         'hls/*': {
           origin: hlsOrigin,

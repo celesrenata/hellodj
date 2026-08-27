@@ -2,7 +2,7 @@
 name = "hellodj-discord-bot-core"
 version = "0.1.0"
 description = "HelloDJ discord-bot-core component: Discord gateway, cog/command registration, guild policy, and background watchdogs. Delegates all playback to the playback-orchestrator."
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 readme = "README.md"
 
 # Runtime dependencies. discord.py drives the gateway/command layer, wavelink is

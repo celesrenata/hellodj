@@ -1,7 +1,13 @@
 flask>=3.0
 flask-cors>=4.0
+flask-sock>=0.7
 python-dotenv>=1.0
 aiohttp>=3.9
 gunicorn>=21.2
 requests>=2.31
 cryptography>=42.0.0
+redis>=5.0
+httpx>=0.27
+psycopg2-binary>=2.9
+kubernetes>=28.0
+kubernetes>=29.0

@@ -1,0 +1,421 @@
+{
+ "Resources": {
+  "CoreTable97EB8292": {
+   "Type": "AWS::DynamoDB::Table",
+   "Properties": {
+    "AttributeDefinitions": [
+     {
+      "AttributeName": "PK",
+      "AttributeType": "S"
+     },
+     {
+      "AttributeName": "SK",
+      "AttributeType": "S"
+     },
+     {
+      "AttributeName": "GSI1PK",
+      "AttributeType": "S"
+     },
+     {
+      "AttributeName": "GSI1SK",
+      "AttributeType": "S"
+     }
+    ],
+    "BillingMode": "PAY_PER_REQUEST",
+    "GlobalSecondaryIndexes": [
+     {
+      "IndexName": "GSI1",
+      "KeySchema": [
+       {
+        "AttributeName": "GSI1PK",
+        "KeyType": "HASH"
+       },
+       {
+        "AttributeName": "GSI1SK",
+        "KeyType": "RANGE"
+       }
+      ],
+      "Projection": {
+       "ProjectionType": "ALL"
+      }
+     }
+    ],
+    "KeySchema": [
+     {
+      "AttributeName": "PK",
+      "KeyType": "HASH"
+     },
+     {
+      "AttributeName": "SK",
+      "KeyType": "RANGE"
+     }
+    ],
+    "PointInTimeRecoverySpecification": {
+     "PointInTimeRecoveryEnabled": true
+    },
+    "SSESpecification": {
+     "SSEEnabled": true
+    },
+    "TableName": "hellodj-core"
+   },
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain",
+   "Metadata": {
+    "aws:cdk:path": "hellodj-data/CoreTable/Resource"
+   }
+  },
+  "SearchCacheTable8AFC07AE": {
+   "Type": "AWS::DynamoDB::Table",
+   "Properties": {
+    "AttributeDefinitions": [
+     {
+      "AttributeName": "queryKey",
+      "AttributeType": "S"
+     }
+    ],
+    "BillingMode": "PAY_PER_REQUEST",
+    "KeySchema": [
+     {
+      "AttributeName": "queryKey",
+      "KeyType": "HASH"
+     }
+    ],
+    "SSESpecification": {
+     "SSEEnabled": true
+    },
+    "TableName": "hellodj-search-cache",
+    "TimeToLiveSpecification": {
+     "AttributeName": "ttl",
+     "Enabled": true
+    }
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "hellodj-data/SearchCacheTable/Resource"
+   }
+  },
+  "SessionTableA016F679": {
+   "Type": "AWS::DynamoDB::Table",
+   "Properties": {
+    "AttributeDefinitions": [
+     {
+      "AttributeName": "PK",
+      "AttributeType": "S"
+     },
+     {
+      "AttributeName": "SK",
+      "AttributeType": "S"
+     }
+    ],
+    "BillingMode": "PAY_PER_REQUEST",
+    "KeySchema": [
+     {
+      "AttributeName": "PK",
+      "KeyType": "HASH"
+     },
+     {
+      "AttributeName": "SK",
+      "KeyType": "RANGE"
+     }
+    ],
+    "PointInTimeRecoverySpecification": {
+     "PointInTimeRecoveryEnabled": true
+    },
+    "SSESpecification": {
+     "SSEEnabled": true
+    },
+    "TableName": "hellodj-session"
+   },
+   "UpdateReplacePolicy": "Retain",
+   "DeletionPolicy": "Retain",
+   "Metadata": {
+    "aws:cdk:path": "hellodj-data/SessionTable/Resource"
+   }
+  },
+  "DaxServiceRole2D2D58ED": {
+   "Type": "AWS::IAM::Role",
+   "Properties": {
+    "AssumeRolePolicyDocument": {
+     "Statement": [
+      {
+       "Action": "sts:AssumeRole",
+       "Effect": "Allow",
+       "Principal": {
+        "Service": "dax.amazonaws.com"
+       }
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "Description": "Role assumed by the HelloDJ DAX cluster to access the hot DynamoDB tables."
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-data/DaxServiceRole/Resource"
+   }
+  },
+  "DaxServiceRoleDefaultPolicyF1BE0C7D": {
+   "Type": "AWS::IAM::Policy",
+   "Properties": {
+    "PolicyDocument": {
+     "Statement": [
+      {
+       "Action": [
+        "dynamodb:BatchGetItem",
+        "dynamodb:BatchWriteItem",
+        "dynamodb:ConditionCheckItem",
+        "dynamodb:DeleteItem",
+        "dynamodb:DescribeTable",
+        "dynamodb:GetItem",
+        "dynamodb:GetRecords",
+        "dynamodb:GetShardIterator",
+        "dynamodb:PutItem",
+        "dynamodb:Query",
+        "dynamodb:Scan",
+        "dynamodb:UpdateItem"
+       ],
+       "Effect": "Allow",
+       "Resource": [
+        {
+         "Fn::GetAtt": [
+          "SearchCacheTable8AFC07AE",
+          "Arn"
+         ]
+        },
+        {
+         "Fn::GetAtt": [
+          "SessionTableA016F679",
+          "Arn"
+         ]
+        }
+       ]
+      }
+     ],
+     "Version": "2012-10-17"
+    },
+    "PolicyName": "DaxServiceRoleDefaultPolicyF1BE0C7D",
+    "Roles": [
+     {
+      "Ref": "DaxServiceRole2D2D58ED"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-data/DaxServiceRole/DefaultPolicy/Resource"
+   }
+  },
+  "DaxSecurityGroupC27BF149": {
+   "Type": "AWS::EC2::SecurityGroup",
+   "Properties": {
+    "GroupDescription": "Security group for the HelloDJ DAX cluster nodes.",
+    "SecurityGroupEgress": [
+     {
+      "CidrIp": "0.0.0.0/0",
+      "Description": "Allow all outbound traffic by default",
+      "IpProtocol": "-1"
+     }
+    ],
+    "VpcId": {
+     "Fn::ImportValue": "hellodj-network:ExportsOutputRefVpc8378EB38272D6E3A"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-data/DaxSecurityGroup/Resource"
+   }
+  },
+  "DaxSubnetGroup": {
+   "Type": "AWS::DAX::SubnetGroup",
+   "Properties": {
+    "Description": "Subnet group for the HelloDJ DAX cluster.",
+    "SubnetGroupName": "hellodj-dax-subnets",
+    "SubnetIds": [
+     {
+      "Fn::ImportValue": "hellodj-network:ExportsOutputRefVpcprivateegressSubnet1Subnet830BC88F45116193"
+     },
+     {
+      "Fn::ImportValue": "hellodj-network:ExportsOutputRefVpcprivateegressSubnet2SubnetEB0EA9CBFD91A0CD"
+     },
+     {
+      "Fn::ImportValue": "hellodj-network:ExportsOutputRefVpcprivateegressSubnet3Subnet6C8E65FBD4F775F0"
+     }
+    ]
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-data/DaxSubnetGroup"
+   }
+  },
+  "DaxCluster": {
+   "Type": "AWS::DAX::Cluster",
+   "Properties": {
+    "ClusterName": "hellodj-dax",
+    "Description": "DAX cluster fronting the hellodj-search-cache and hellodj-session hot tables (R7.6).",
+    "IAMRoleARN": {
+     "Fn::GetAtt": [
+      "DaxServiceRole2D2D58ED",
+      "Arn"
+     ]
+    },
+    "NodeType": "dax.t3.small",
+    "ReplicationFactor": 1,
+    "SSESpecification": {
+     "SSEEnabled": true
+    },
+    "SecurityGroupIds": [
+     {
+      "Fn::GetAtt": [
+       "DaxSecurityGroupC27BF149",
+       "GroupId"
+      ]
+     }
+    ],
+    "SubnetGroupName": "hellodj-dax-subnets"
+   },
+   "DependsOn": [
+    "DaxSubnetGroup"
+   ],
+   "Metadata": {
+    "aws:cdk:path": "hellodj-data/DaxCluster"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/1WNwQrCMBBEv6X3dJUI/YEePCrVu6TJCmnTpCRZtYT8u00LgqeZebvMcOBNA8dKvEMt1Vgb3UO6RSFHtqJHUosVk1MrvIveIGufdjOZaTFB6tzONr06o+VS4u4yQ8nXNpTkdVzO3tFcrn8gMyU+kAqm3mL8fbWGQkSfM+swOPJyG7pQnClmZp1CGMLhxTnwE/BqCFrXnmzUE0K36xfFpQa23QAAAA=="
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-data/CDKMetadata/Default"
+   }
+  }
+ },
+ "Outputs": {
+  "CoreTableNameOutput": {
+   "Description": "Name of the hellodj-core single table.",
+   "Value": {
+    "Ref": "CoreTable97EB8292"
+   }
+  },
+  "SearchCacheTableNameOutput": {
+   "Description": "Name of the hellodj-search-cache hot table.",
+   "Value": {
+    "Ref": "SearchCacheTable8AFC07AE"
+   }
+  },
+  "SessionTableNameOutput": {
+   "Description": "Name of the hellodj-session hot table.",
+   "Value": {
+    "Ref": "SessionTableA016F679"
+   }
+  },
+  "DaxEndpointOutput": {
+   "Description": "DAX cluster discovery endpoint fronting the hot tables.",
+   "Value": {
+    "Fn::GetAtt": [
+     "DaxCluster",
+     "ClusterDiscoveryEndpoint"
+    ]
+   }
+  },
+  "ExportsOutputFnGetAttSessionTableA016F679ArnBB55F1BB": {
+   "Value": {
+    "Fn::GetAtt": [
+     "SessionTableA016F679",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "hellodj-data:ExportsOutputFnGetAttSessionTableA016F679ArnBB55F1BB"
+   }
+  },
+  "ExportsOutputFnGetAttCoreTable97EB8292Arn0DE736BD": {
+   "Value": {
+    "Fn::GetAtt": [
+     "CoreTable97EB8292",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "hellodj-data:ExportsOutputFnGetAttCoreTable97EB8292Arn0DE736BD"
+   }
+  },
+  "ExportsOutputRefCoreTable97EB8292DFE1E6FC": {
+   "Value": {
+    "Ref": "CoreTable97EB8292"
+   },
+   "Export": {
+    "Name": "hellodj-data:ExportsOutputRefCoreTable97EB8292DFE1E6FC"
+   }
+  },
+  "ExportsOutputRefSessionTableA016F6796391FBE5": {
+   "Value": {
+    "Ref": "SessionTableA016F679"
+   },
+   "Export": {
+    "Name": "hellodj-data:ExportsOutputRefSessionTableA016F6796391FBE5"
+   }
+  },
+  "ExportsOutputFnGetAttSearchCacheTable8AFC07AEArn2AF3B2F9": {
+   "Value": {
+    "Fn::GetAtt": [
+     "SearchCacheTable8AFC07AE",
+     "Arn"
+    ]
+   },
+   "Export": {
+    "Name": "hellodj-data:ExportsOutputFnGetAttSearchCacheTable8AFC07AEArn2AF3B2F9"
+   }
+  },
+  "ExportsOutputRefSearchCacheTable8AFC07AE0F7AC330": {
+   "Value": {
+    "Ref": "SearchCacheTable8AFC07AE"
+   },
+   "Export": {
+    "Name": "hellodj-data:ExportsOutputRefSearchCacheTable8AFC07AE0F7AC330"
+   }
+  },
+  "ExportsOutputFnGetAttDaxClusterClusterDiscoveryEndpoint3E74B53D": {
+   "Value": {
+    "Fn::GetAtt": [
+     "DaxCluster",
+     "ClusterDiscoveryEndpoint"
+    ]
+   },
+   "Export": {
+    "Name": "hellodj-data:ExportsOutputFnGetAttDaxClusterClusterDiscoveryEndpoint3E74B53D"
+   }
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

@@ -65,6 +65,7 @@ graph TB
 
     subgraph OtherCluster["Other Cluster Services"]
         Speaches["Speaches TTS<br/>(port 8000)"]
+        Redis["Redis 7.x<br/>(port 6379)<br/>redis-service namespace<br/>Sessions, PubSub, Rate Limits"]
     end
 
     %% Storage

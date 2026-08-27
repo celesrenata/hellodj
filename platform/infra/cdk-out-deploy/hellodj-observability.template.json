@@ -1,0 +1,253 @@
+{
+ "Resources": {
+  "PlatformLogGroup1EACCAC2": {
+   "Type": "AWS::Logs::LogGroup",
+   "Properties": {
+    "LogGroupName": "/hellodj/beta/platform",
+    "RetentionInDays": 14
+   },
+   "UpdateReplacePolicy": "Delete",
+   "DeletionPolicy": "Delete",
+   "Metadata": {
+    "aws:cdk:path": "hellodj-observability/PlatformLogGroup/Resource"
+   }
+  },
+  "AlarmTopicD01E77F9": {
+   "Type": "AWS::SNS::Topic",
+   "Properties": {
+    "DisplayName": "HelloDJ:",
+    "TopicName": "hellodj-beta-alarms"
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-observability/AlarmTopic/Resource"
+   }
+  },
+  "AlarmTopic14257853431CC10B4EC": {
+   "Type": "AWS::SNS::Subscription",
+   "Properties": {
+    "Endpoint": "+14257853431",
+    "Protocol": "sms",
+    "TopicArn": {
+     "Ref": "AlarmTopicD01E77F9"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-observability/AlarmTopic/+14257853431/Resource"
+   }
+  },
+  "AlarmTopicceleshellodjcelestiumlife02D4416E": {
+   "Type": "AWS::SNS::Subscription",
+   "Properties": {
+    "Endpoint": "celes+hellodj@celestium.life",
+    "Protocol": "email",
+    "TopicArn": {
+     "Ref": "AlarmTopicD01E77F9"
+    }
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-observability/AlarmTopic/celes+hellodj@celestium.life/Resource"
+   }
+  },
+  "CpuTranscodePressureAlarm7FF0D1BE": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "AlarmActions": [
+     {
+      "Ref": "AlarmTopicD01E77F9"
+     }
+    ],
+    "AlarmDescription": "CPU transcode pressure sustained above scale-out threshold (design D3 / R16).",
+    "AlarmName": "HelloDJ: hellodj-beta-cpu-transcode-pressure",
+    "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+    "EvaluationPeriods": 3,
+    "MetricName": "CpuTranscodePressure",
+    "Namespace": "HelloDJ/Platform",
+    "OKActions": [
+     {
+      "Ref": "AlarmTopicD01E77F9"
+     }
+    ],
+    "Period": 60,
+    "Statistic": "Average",
+    "Threshold": 70,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-observability/CpuTranscodePressureAlarm/Resource"
+   }
+  },
+  "GpuTranscodePressureAlarmB1E861A1": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "AlarmActions": [
+     {
+      "Ref": "AlarmTopicD01E77F9"
+     }
+    ],
+    "AlarmDescription": "GPU transcode pressure sustained above scale-out threshold (design D3 / R16).",
+    "AlarmName": "HelloDJ: hellodj-beta-gpu-transcode-pressure",
+    "ComparisonOperator": "GreaterThanOrEqualToThreshold",
+    "EvaluationPeriods": 3,
+    "MetricName": "GpuTranscodePressure",
+    "Namespace": "HelloDJ/Platform",
+    "OKActions": [
+     {
+      "Ref": "AlarmTopicD01E77F9"
+     }
+    ],
+    "Period": 60,
+    "Statistic": "Average",
+    "Threshold": 70,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-observability/GpuTranscodePressureAlarm/Resource"
+   }
+  },
+  "ComponentErrorAlarmD374EEC9": {
+   "Type": "AWS::CloudWatch::Alarm",
+   "Properties": {
+    "AlarmActions": [
+     {
+      "Ref": "AlarmTopicD01E77F9"
+     }
+    ],
+    "AlarmDescription": "Platform component error rate crossed the alarm threshold (R10.5).",
+    "AlarmName": "HelloDJ: hellodj-beta-component-errors",
+    "ComparisonOperator": "GreaterThanThreshold",
+    "EvaluationPeriods": 1,
+    "MetricName": "ComponentErrors",
+    "Namespace": "HelloDJ/Platform",
+    "OKActions": [
+     {
+      "Ref": "AlarmTopicD01E77F9"
+     }
+    ],
+    "Period": 300,
+    "Statistic": "Sum",
+    "Threshold": 10,
+    "TreatMissingData": "notBreaching"
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-observability/ComponentErrorAlarm/Resource"
+   }
+  },
+  "PlatformDashboard94C19816": {
+   "Type": "AWS::CloudWatch::Dashboard",
+   "Properties": {
+    "DashboardBody": {
+     "Fn::Join": [
+      "",
+      [
+       "{\"widgets\":[{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":0,\"y\":0,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Transcode pressure (CPU vs GPU)\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"HelloDJ/Platform\",\"CpuTranscodePressure\",{\"period\":60}],[\"HelloDJ/Platform\",\"GpuTranscodePressure\",{\"period\":60}]],\"yAxis\":{}}},{\"type\":\"metric\",\"width\":12,\"height\":6,\"x\":12,\"y\":0,\"properties\":{\"view\":\"timeSeries\",\"title\":\"Component errors\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"metrics\":[[\"HelloDJ/Platform\",\"ComponentErrors\",{\"stat\":\"Sum\"}]],\"yAxis\":{}}},{\"type\":\"alarm\",\"width\":12,\"height\":3,\"x\":0,\"y\":6,\"properties\":{\"title\":\"Platform alarms\",\"alarms\":[\"",
+       {
+        "Fn::GetAtt": [
+         "CpuTranscodePressureAlarm7FF0D1BE",
+         "Arn"
+        ]
+       },
+       "\",\"",
+       {
+        "Fn::GetAtt": [
+         "GpuTranscodePressureAlarmB1E861A1",
+         "Arn"
+        ]
+       },
+       "\",\"",
+       {
+        "Fn::GetAtt": [
+         "ComponentErrorAlarmD374EEC9",
+         "Arn"
+        ]
+       },
+       "\"]}},{\"type\":\"log\",\"width\":12,\"height\":6,\"x\":12,\"y\":6,\"properties\":{\"view\":\"table\",\"title\":\"Recent platform logs\",\"region\":\"",
+       {
+        "Ref": "AWS::Region"
+       },
+       "\",\"query\":\"SOURCE '",
+       {
+        "Ref": "PlatformLogGroup1EACCAC2"
+       },
+       "' | fields @timestamp, @message\\n| sort @timestamp desc\\n| limit 50\"}}]}"
+      ]
+     ]
+    },
+    "DashboardName": "hellodj-beta-platform"
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-observability/PlatformDashboard/Resource"
+   }
+  },
+  "CDKMetadata": {
+   "Type": "AWS::CDK::Metadata",
+   "Properties": {
+    "Analytics": "v2:deflate64:H4sIAAAAAAAA/02KywrCMBBFv6X7dJQI3YuCG0Gw7iWP2qZNMyEPuwj5dxuK4mrOOXco0KaBfcUWXws51VpxSG1gYiJreiaNvYd0xf7iMFpyepkvZ+LNOj3QKlH6Bm3kXjhlg0JT6r9nIjRGubAgBkhHzdxcXjY4Mz9wZE6W9JOci95isDFkYlB2MPrdm1KgB6DV6JWqXTRBzR3ct/sBuHZyF9IAAAA="
+   },
+   "Metadata": {
+    "aws:cdk:path": "hellodj-observability/CDKMetadata/Default"
+   }
+  }
+ },
+ "Outputs": {
+  "PlatformLogGroupNameOutput": {
+   "Description": "Name of the shared platform CloudWatch Logs group (R10.2).",
+   "Value": {
+    "Ref": "PlatformLogGroup1EACCAC2"
+   }
+  },
+  "AlarmTopicArnOutput": {
+   "Description": "ARN of the SNS topic alarms notify on breach (R10.5).",
+   "Value": {
+    "Ref": "AlarmTopicD01E77F9"
+   }
+  },
+  "DashboardNameOutput": {
+   "Description": "Name of the platform CloudWatch dashboard (R10.4).",
+   "Value": {
+    "Ref": "PlatformDashboard94C19816"
+   }
+  }
+ },
+ "Parameters": {
+  "BootstrapVersion": {
+   "Type": "AWS::SSM::Parameter::Value<String>",
+   "Default": "/cdk-bootstrap/hnb659fds/version",
+   "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+  }
+ },
+ "Rules": {
+  "CheckBootstrapVersion": {
+   "Assertions": [
+    {
+     "Assert": {
+      "Fn::Not": [
+       {
+        "Fn::Contains": [
+         [
+          "1",
+          "2",
+          "3",
+          "4",
+          "5"
+         ],
+         {
+          "Ref": "BootstrapVersion"
+         }
+        ]
+       }
+      ]
+     },
+     "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+    }
+   ]
+  }
+ }
+}

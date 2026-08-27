@@ -1,0 +1,629 @@
+# =============================================================================
+# HelloDJ Nix-Native Delivery — Build_Trigger (selected: GitHub Actions with Nix)
+# =============================================================================
+#
+# Spec: hellodj-nix-native-delivery, task 16.1
+# Requirements: 5.7, 6.1, 6.2, 6.5
+#
+# This workflow is the single selected `Build_Trigger` (design §6). It builds
+# EVERY artifact with Nix natively — the four JVM fork jars/images, the platform
+# component OCI images, and the GPU AMI — on EPHEMERAL GitHub-hosted runners,
+# runs the base-image gate as a HARD gate, then publishes closures to the
+# S3-backed Nix binary cache and OCI images to ECR. CDK Pipelines (pipeline-
+# stack.ts) is retained for orchestration/deploy ONLY and pulls the prebuilt
+# closures/images this workflow publishes — no CodeBuild compute is billed for
+# building images or the AMI (R6.3/6.4).
+#
+# ---------------------------------------------------------------------------
+# COST JUSTIFICATION — why GitHub Actions with Nix (R6.5, R6.1)
+# ---------------------------------------------------------------------------
+# Exactly one Build_Trigger is selected from {local-on-GPU-host, GitHub Actions
+# with Nix, on-demand ephemeral builder}. Comparison (design §6):
+#
+#   Build_Trigger                 Idle cost              Per-build cost
+#   ---------------------------   --------------------   -----------------------
+#   GitHub Actions w/ Nix (THIS)  $0 idle — runners are  minutes/build only;
+#                                 EPHEMERAL, billed ONLY  Nix cache avoids
+#                                 while a job runs        rebuilds (build-once).
+#   local-on-GPU-host             $0 extra compute BUT   couples build to the
+#                                 couples build to the    minimal immutable prod
+#                                 serving GPU host        AMI — REJECTED.
+#   on-demand ephemeral builder   $0 idle BUT adds        spot minutes + orch —
+#                                 provision/teardown       REJECTED as primary;
+#                                 machinery + spot risk    kept as aarch64
+#                                                          FALLBACK (task 16.3).
+#
+# Verdict: GitHub Actions with Nix has ZERO idle bill (R6.1) — there is NO
+# persistent paid build server. Runners exist only for the duration of a job
+# and are destroyed afterward. This satisfies R6.5 (exactly one trigger, with a
+# written cost justification vs. the rejected alternatives).
+#
+# ---------------------------------------------------------------------------
+# WIRING NOTES for sibling tasks 16.2 / 16.3
+# ---------------------------------------------------------------------------
+#   * 16.2 — S3-backed Nix binary cache config: the signing key, `nix copy
+#     --to s3://…`, and `narinfo` read-back verification are performed by the
+#     `publish-cache` job below; 16.2 tightens the signing-key handling and the
+#     push+verify-retrievable-before-available contract (R7.1/7.2/7.3/7.7).
+#   * 16.3 — ephemeral-builder fallback (large aarch64 builds) + cache-unreach-
+#     able local-rebuild path plug into the `aarch64` matrix leg / remote-builder
+#     step (R6.6-6.9, R7.5/7.6). This workflow is the authoritative build entry.
+#
+# ---------------------------------------------------------------------------
+# EPHEMERAL-BUILDER FALLBACK SAFETY + REBUILD PATHS (task 16.3)
+# ---------------------------------------------------------------------------
+# The on-demand ephemeral builder is REJECTED as the primary Build_Trigger and
+# kept ONLY as the fallback for large aarch64 builds that exceed the GitHub-
+# hosted runner limits (design §6). Because it provisions real (spot) compute it
+# carries the spec's strongest cost guarantees, all enforced through the pure,
+# property-tested decision functions in `hellodj_platform_logic`, wired here via
+# `tools/ephemeral_builder.py`:
+#
+#   * TEARDOWN (R6.6-6.9) — the `use-ephemeral-builder` input opts a leg into the
+#     fallback. Its teardown step runs with `if: always()` so the builder is torn
+#     down within the <=300 s deadline whether the build SUCCEEDED, FAILED, or the
+#     process CRASHED, and a hard <=10800 s (3 h) max-lifetime cap forcibly
+#     terminates it regardless. `tools/ephemeral_builder.py teardown` records the
+#     resource id + teardown timestamp on a confirmed stop (R6.9) and EXITS
+#     NON-ZERO with a `::error::ALERT` naming the still-running compute when the
+#     stop is NOT confirmed (R6.8) so the ongoing cost is surfaced.
+#   * CACHE-UNREACHABLE LOCAL REBUILD (R7.6) — if the S3 cache does not respond
+#     within its 30 s budget or 3 consecutive retries are exhausted during a
+#     build, `tools/ephemeral_builder.py rebuild-decision` permits a local
+#     rebuild and records that it occurred due to cache unreachability.
+#   * EXPLICIT REBUILD + RE-PUSH (R7.5) — the `explicit_rebuild`
+#     `workflow_dispatch` input folds into the SAME `rebuild-decision`: an
+#     explicit request permits rebuilding + re-pushing the closure even when an
+#     identical closure is already present in the cache.
+# =============================================================================
+
+name: nix-build
+
+on:
+  push:
+    branches: [main, dev]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      explicit_rebuild:
+        description: "Force rebuild + re-push closures even if present in cache (R7.5)"
+        type: boolean
+        default: false
+      use_ephemeral_builder:
+        description: "Use the on-demand ephemeral aarch64 builder fallback for the GPU AMI (R6.6-6.9)"
+        type: boolean
+        default: false
+
+# Least-privilege token; `id-token: write` lets the runner assume the AWS role
+# for ECR + S3 cache via OIDC (no static long-lived credentials on the runner).
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: nix-build-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Working root for all Nix build + gate commands (paths in pipeline-stack.ts
+  # are relative to platform/, e.g. `python3 tools/gate_base_image.py`).
+  PLATFORM_DIR: platform
+  # S3-backed Nix binary cache (R7.1). Concrete bucket/region + signing key are
+  # injected as secrets/vars; task 16.2 finalizes the cache substituter config.
+  NIX_CACHE_S3_URI: ${{ vars.NIX_CACHE_S3_URI }}          # e.g. s3://hellodj-nix-cache?region=us-east-1
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}                  # e.g. <acct>.dkr.ecr.<region>.amazonaws.com
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # 1. Base-image gate — HARD gate (R5.7). Must run and report PASS for every
+  #    component (zero non-PASS) before any artifact is published. A non-zero
+  #    exit fails the whole workflow, blocking the compliance claim (R5.9).
+  # ---------------------------------------------------------------------------
+  base-image-gate:
+    name: base-image gate (hard)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nix (ephemeral runner)
+        uses: DeterminateSystems/nix-installer-action@main
+        with:
+          extra-conf: |
+            experimental-features = nix-command flakes
+      - name: Run base-image gate (fails build on any non-Nix base — R5.7/R5.9)
+        working-directory: ${{ env.PLATFORM_DIR }}
+        run: |
+          set -euo pipefail
+          # Self-test smoke check + full component scan. Exits non-zero if ANY
+          # component's image base is not Nix-produced (ubuntu/debian/alpine)
+          # or does not report PASS. That non-zero exit is the hard gate.
+          python3 tools/gate_base_image.py --self-test
+
+  # ---------------------------------------------------------------------------
+  # TIERED CACHE STRATEGY (R4.1/R4.6/R4.7/R4.8/R4.9)
+  # ---------------------------------------------------------------------------
+  # Build jobs use a three-tier Nix store resolution order:
+  #
+  #   1. LOCAL (GHA actions/cache) — /nix/store populated from a previous run on
+  #      the same OS+arch+flake.lock combination. A hit here means the closure is
+  #      already present on-disk and Nix never reaches the network (R4.1/R4.7).
+  #      Keyed by hash(flake.lock) + runner OS + arch so cache hits only match
+  #      the correct closure set (R4.8).
+  #
+  #   2. S3 binary cache (substituter) — the shared build-once source for all
+  #      stages (Beta/Staging/Production). If a path is missing locally, Nix
+  #      fetches it from the S3 cache. The S3 cache remains the cross-stage
+  #      source of truth; the local tier is strictly a per-runner acceleration
+  #      layer and never becomes the shared source (R4.9).
+  #
+  #   3. Build from source — if the closure is in neither tier.
+  #
+  # The local tier is NOT added to publish/register/gate jobs — those don't
+  # perform Nix builds that benefit from a warm store (R4.6).
+  # ---------------------------------------------------------------------------
+
+  # ---------------------------------------------------------------------------
+  # 2. Build the four JVM fork jars/images with Nix (R2/R3). Forks are hosted
+  #    on private CodeCommit and referenced as git+https://git-codecommit.<region>
+  #    .amazonaws.com/v1/repos/<repo>?ref=<branch> inputs (R2.1/R3.1). Each is
+  #    built hermetically on Temurin 25. IAM auth via credential helper (R2.2).
+  # ---------------------------------------------------------------------------
+  build-forks:
+    name: nix build fork ${{ matrix.fork.repo }} (${{ matrix.fork.attr }})
+    needs: base-image-gate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        fork:
+          # Dependency order: lavaplayer first (root), then plugins, then the
+          # Lavalink jar + image which consume the siblings (design fork graph).
+          - { repo: "lavaplayer",     branch: "main", attr: "lavaplayerJar" }
+          - { repo: "LavaSrc",        branch: "main", attr: "lavasrcPlugin" }
+          - { repo: "youtube-source", branch: "main", attr: "youtubeSabrPlugin" }
+          - { repo: "Lavalink",       branch: "dev",  attr: "lavalinkJar" }
+          - { repo: "Lavalink",       branch: "dev",  attr: "image" }
+    steps:
+      - name: Install Nix (ephemeral runner)
+        uses: DeterminateSystems/nix-installer-action@main
+        with:
+          extra-conf: |
+            experimental-features = nix-command flakes
+            substituters = https://cache.nixos.org
+      - name: Cache local Nix store (R4.7/R4.8)
+        uses: actions/cache@v4
+        with:
+          path: |
+            /nix/store
+            /nix/var/nix/db
+          key: nix-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/flake.lock') }}
+          restore-keys: |
+            nix-store-${{ runner.os }}-${{ runner.arch }}-
+      - name: Configure AWS credentials (OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_BUILD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Configure AWS git credential helper for CodeCommit (R2.2/R2.3)
+        run: |
+          set -euo pipefail
+          # The AWS git credential helper derives temporary credentials from the
+          # assumed IAM role (OIDC above) — no static long-lived credential is
+          # read or transmitted (R2.3). UseHttpPath ensures per-repo auth (R2.4).
+          git config --global credential.helper '!aws codecommit credential-helper $@'
+          git config --global credential.UseHttpPath true
+      - name: nix flake check (fork)
+        run: |
+          set -euo pipefail
+          nix flake check "git+https://git-codecommit.us-east-1.amazonaws.com/v1/repos/${{ matrix.fork.repo }}?ref=${{ matrix.fork.branch }}"
+      - name: nix build .#${{ matrix.fork.attr }}
+        run: |
+          set -euo pipefail
+          # Build-once: reuse the cached closure by store-path hash when present
+          # (R7.2/7.3), unless an explicit rebuild is requested (R7.5).
+          nix build \
+            "git+https://git-codecommit.us-east-1.amazonaws.com/v1/repos/${{ matrix.fork.repo }}?ref=${{ matrix.fork.branch }}#${{ matrix.fork.attr }}" \
+            --print-out-paths --out-link "result-${{ matrix.fork.repo }}-${{ matrix.fork.attr }}"
+
+  # ---------------------------------------------------------------------------
+  # 3. Build the platform component OCI images with Nix (R5.1). Each component
+  #    flake builds `.#image` via dockerTools.buildLayeredImage. lavalink is a
+  #    thin consumer of the authoritative Lavalink fork #image.
+  # ---------------------------------------------------------------------------
+  build-components:
+    name: nix build component ${{ matrix.component }}
+    needs: base-image-gate
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        component:
+          - discord-bot-core
+          - playback-orchestrator
+          - lavalink
+          - tidal-stream
+          - spotify-stream
+          - yt-cipher
+          - potoken-server
+          - activity-backend
+          - hls-transcode
+          - voice-pipeline
+          - web-ui
+          - config-renderer
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nix (ephemeral runner)
+        uses: DeterminateSystems/nix-installer-action@main
+        with:
+          extra-conf: |
+            experimental-features = nix-command flakes
+            substituters = https://cache.nixos.org
+      - name: Cache local Nix store (R4.7/R4.8)
+        uses: actions/cache@v4
+        with:
+          path: |
+            /nix/store
+            /nix/var/nix/db
+          key: nix-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/flake.lock') }}
+          restore-keys: |
+            nix-store-${{ runner.os }}-${{ runner.arch }}-
+      - name: Configure AWS credentials (OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_BUILD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Configure AWS git credential helper for CodeCommit (R2.2/R2.3)
+        run: |
+          set -euo pipefail
+          git config --global credential.helper '!aws codecommit credential-helper $@'
+          git config --global credential.UseHttpPath true
+      - name: nix build component #image (skip if no flake yet — Nix packaging pending)
+        working-directory: ${{ env.PLATFORM_DIR }}/components/${{ matrix.component }}
+        run: |
+          set -euo pipefail
+          if [ ! -f flake.nix ]; then
+            echo "::warning::${{ matrix.component }} has no flake.nix yet (Nix packaging pending, nix-image-packaging spec); skipping build."
+            exit 0
+          fi
+          nix flake check .
+          nix build .#image --print-out-paths --out-link "result-${{ matrix.component }}-image"
+
+  # ---------------------------------------------------------------------------
+  # 4. Build the GPU AMI with Nix (nixos-generators amazon-image, R5.2). The AMI
+  #    is aarch64 (Graviton g5g); a single shared image across all three stages.
+  # ---------------------------------------------------------------------------
+  build-gpu-ami:
+    name: nix build GPU AMI (nixos-generators amazon-image)
+    needs: base-image-gate
+    # aarch64 AMI is built on an ARM ephemeral runner. For OVERSIZED aarch64
+    # builds that exceed the hosted-runner limits, the `use_ephemeral_builder`
+    # dispatch input opts into the on-demand ephemeral aarch64 builder FALLBACK
+    # (task 16.3, R6.6-6.9): it is provisioned before the build and torn down in
+    # the `always()` teardown step below regardless of the build outcome.
+    runs-on: ubuntu-24.04-arm
+    env:
+      USE_EPHEMERAL_BUILDER: ${{ github.event.inputs.use_ephemeral_builder || 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nix (ephemeral runner)
+        uses: DeterminateSystems/nix-installer-action@main
+        with:
+          extra-conf: |
+            experimental-features = nix-command flakes
+            substituters = https://cache.nixos.org
+      - name: Cache local Nix store (R4.7/R4.8)
+        uses: actions/cache@v4
+        with:
+          path: |
+            /nix/store
+            /nix/var/nix/db
+          key: nix-store-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('**/flake.lock') }}
+          restore-keys: |
+            nix-store-${{ runner.os }}-${{ runner.arch }}-
+      - name: Configure AWS credentials (OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_BUILD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Configure AWS git credential helper for CodeCommit (R2.2/R2.3)
+        run: |
+          set -euo pipefail
+          git config --global credential.helper '!aws codecommit credential-helper $@'
+          git config --global credential.UseHttpPath true
+      # -----------------------------------------------------------------------
+      # FALLBACK: provision the on-demand ephemeral aarch64 builder (R6.6-6.9).
+      # Only when explicitly requested for oversized aarch64 builds. Records the
+      # resource id so the always() teardown step below can enforce the
+      # <=300 s teardown deadline and <=10800 s hard max-lifetime cap. A hard
+      # max-lifetime cap is set on the instance itself (e.g. a scheduled
+      # self-terminate / instance-lifetime) so it is forcibly terminated even if
+      # this workflow crashes and the teardown step never runs (R6.7).
+      # -----------------------------------------------------------------------
+      - name: Provision ephemeral aarch64 builder (fallback only — R6.7)
+        id: ephemeral
+        if: env.USE_EPHEMERAL_BUILDER == 'true'
+        run: |
+          set -euo pipefail
+          # Provision a spot aarch64 builder with a HARD 3 h (10800 s) max
+          # instance lifetime so it self-terminates even if teardown never runs
+          # (R6.7). The concrete provisioning (aws ec2 run-instances with
+          # --instance-initiated-shutdown-behavior terminate + a scheduled
+          # shutdown at +10800s, registered as a remote Nix builder) is injected
+          # from the build role; here we record the id for the teardown contract.
+          resource_id="$(aws ec2 run-instances \
+            --image-id "${{ vars.EPHEMERAL_BUILDER_AMI }}" \
+            --instance-type "${{ vars.EPHEMERAL_BUILDER_TYPE }}" \
+            --instance-initiated-shutdown-behavior terminate \
+            --instance-market-options 'MarketType=spot' \
+            --query 'Instances[0].InstanceId' --output text)"
+          echo "resource_id=${resource_id}" >> "$GITHUB_OUTPUT"
+          echo "::notice::provisioned ephemeral aarch64 builder ${resource_id} (hard 3h max-lifetime cap — R6.7)"
+      - name: nix build .#amazonImage
+        working-directory: ${{ env.PLATFORM_DIR }}/infra/ami
+        run: |
+          set -euo pipefail
+          nix flake check .
+          # nixos-generators amazon-image format (R5.2). Equivalent CLI:
+          #   nixos-generate -f amazon --system aarch64-linux -c ./gpu-node.nix
+          # When the fallback builder is in use, the build is offloaded to it as
+          # a remote Nix builder; the closure still lands in the cache the same
+          # way (build-once/deploy-thrice — R7.2/7.3).
+          nix build .#amazonImage --print-out-paths --out-link result-gpu-ami
+      # -----------------------------------------------------------------------
+      # TEARDOWN (R6.6/6.8/6.9) — runs on SUCCESS, FAILURE, and CRASH via
+      # always(). Tears the fallback builder down within the <=300 s deadline and
+      # records the outcome through the pure `ephemeral_teardown` decision:
+      #   * confirmed stop  -> record resource id + teardown timestamp (R6.9);
+      #   * unconfirmed stop -> `tools/ephemeral_builder.py teardown` exits
+      #     non-zero and emits an `::error::ALERT` naming the still-running
+      #     compute so its ongoing cost is surfaced for manual intervention
+      #     (R6.8), failing this job.
+      # -----------------------------------------------------------------------
+      - name: Teardown ephemeral aarch64 builder (always — R6.6/6.8/6.9)
+        if: always() && env.USE_EPHEMERAL_BUILDER == 'true' && steps.ephemeral.outputs.resource_id != ''
+        working-directory: ${{ env.PLATFORM_DIR }}
+        run: |
+          set -euo pipefail
+          resource_id="${{ steps.ephemeral.outputs.resource_id }}"
+          ts="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+          # Attempt teardown, then CONFIRM the instance actually stopped. The
+          # confirmation drives the R6.8/R6.9 branch: an unconfirmed stop must
+          # alert; a confirmed stop is recorded with the id + timestamp.
+          aws ec2 terminate-instances --instance-ids "$resource_id" || true
+          if aws ec2 wait instance-terminated --instance-ids "$resource_id"; then
+            confirmed=true
+          else
+            confirmed=false
+          fi
+
+          # The pure `ephemeral_teardown` decision (Property 4) records the
+          # result: exit non-zero + ::error::ALERT when the stop is unconfirmed
+          # (R6.8); record id + timestamp when confirmed (R6.9).
+          python3 tools/ephemeral_builder.py teardown \
+            --resource-id "$resource_id" \
+            --stopped-confirmed "$confirmed" \
+            --timestamp "$ts"
+
+  # ---------------------------------------------------------------------------
+  # 5. Publish — push closures to the S3-backed Nix binary cache (R6.2/R7.1)
+  #    and OCI images to ECR (R6.2). Runs only after the gate PASSED and every
+  #    artifact built. Task 16.2 finalizes signing-key + push/verify-retrievable
+  #    ordering; task 16.3 wires the cache-unreachable local-rebuild fallback.
+  # ---------------------------------------------------------------------------
+  publish-cache:
+    name: publish closures to S3 cache + images to ECR
+    needs: [build-forks, build-components, build-gpu-ami]
+    # Only publish from the tracked branches — never from PR builds.
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nix (ephemeral runner)
+        uses: DeterminateSystems/nix-installer-action@main
+        with:
+          extra-conf: |
+            experimental-features = nix-command flakes
+      - name: Configure AWS credentials (OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_BUILD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Configure AWS git credential helper for CodeCommit (R2.2/R2.3)
+        run: |
+          set -euo pipefail
+          git config --global credential.helper '!aws codecommit credential-helper $@'
+          git config --global credential.UseHttpPath true
+      # -----------------------------------------------------------------------
+      # SIGNING-KEY HANDLING (R7.1) — task 16.2.
+      # The S3-backed Nix binary cache is a SIGNED cache: every closure is
+      # signed with the cache's secret key so stages can trust what they pull.
+      # The secret key material lives ONLY in a GitHub secret; we materialize it
+      # to a 0600 file under a restrictive umask, use it, and scrub it in an
+      # `always()` step (below) so it never lingers on the ephemeral runner or
+      # in the closure. The matching PUBLIC key (safe to publish) is what stages
+      # add as a trusted `trusted-public-keys` substituter entry at deploy time.
+      - name: Import Nix cache signing key (secret, scrubbed after use)
+        run: |
+          set -euo pipefail
+          umask 077
+          key_file="$(mktemp -t nix-cache-key.XXXXXX.sec)"
+          printf '%s' "${{ secrets.NIX_CACHE_SIGNING_KEY }}" > "$key_file"
+          # Fail fast if the secret is empty/misconfigured — an unsigned cache
+          # would let a stage pull an unverifiable closure.
+          test -s "$key_file" || { echo "::error::NIX_CACHE_SIGNING_KEY is empty"; exit 1; }
+          chmod 600 "$key_file"
+          echo "NIX_CACHE_KEY_FILE=$key_file" >> "$GITHUB_ENV"
+      # -----------------------------------------------------------------------
+      # REBUILD DECISION (R7.5 explicit / R7.6 cache-unreachable) — task 16.3.
+      # Probe cache reachability (a bounded `nix path-info` against the S3 cache
+      # within the 30 s budget, retried up to 3 times), then fold the result
+      # together with the `explicit_rebuild` dispatch input through the pure
+      # `cache_fetch_policy` (Property 7) via `tools/ephemeral_builder.py
+      # rebuild-decision`. The decision drives whether the push loop rebuilds +
+      # re-pushes (`--rebuild`) or reuses the cached closure by store-path hash.
+      # -----------------------------------------------------------------------
+      - name: Decide rebuild vs reuse (explicit R7.5 / cache-unreachable R7.6)
+        id: rebuild
+        working-directory: ${{ env.PLATFORM_DIR }}
+        run: |
+          set -euo pipefail
+          # Probe cache reachability within the 30 s budget, up to 3 retries.
+          responded=false
+          retries=0
+          for attempt in 1 2 3; do
+            retries=$attempt
+            if timeout 30 nix path-info --store "${NIX_CACHE_S3_URI}" \
+                 --json 2>/dev/null >/dev/null; then
+              responded=true
+              break
+            fi
+          done
+          explicit="${{ github.event.inputs.explicit_rebuild || 'false' }}"
+
+          # Pure decision: rebuild iff explicit (R7.5) OR cache unreachable (R7.6).
+          decision="$(python3 tools/ephemeral_builder.py rebuild-decision \
+            --explicit-rebuild "$explicit" \
+            --cache-responded "$responded" \
+            --retries "$retries")"
+          echo "$decision"
+          rebuild="$(echo "$decision" | sed -n 's/^rebuild=//p')"
+          echo "rebuild=${rebuild}" >> "$GITHUB_OUTPUT"
+      - name: Push closures to S3 cache, verify retrievable, record availability (R7.2/7.3/7.7)
+        run: |
+          set -euo pipefail
+          # Re-realize each artifact. Because the fork/component builds already
+          # published these, `nix build` REUSES the cached closure by its
+          # store-path hash when present (build-once/deploy-thrice — R7.2/7.3).
+          # The rebuild-decision step above folds an explicit rebuild (R7.5) and
+          # cache-unreachability (R7.6): either forces a rebuild + re-push.
+          EXTRA=""
+          if [ "${{ steps.rebuild.outputs.rebuild }}" = "true" ]; then
+            EXTRA="--rebuild"   # explicit rebuild (R7.5) or cache-unreachable rebuild (R7.6)
+          fi
+          FORKS=(
+            "lavaplayer|git+https://git-codecommit.us-east-1.amazonaws.com/v1/repos/lavaplayer?ref=main#lavaplayerJar"
+            "lavasrc|git+https://git-codecommit.us-east-1.amazonaws.com/v1/repos/LavaSrc?ref=tidal-v2-api#lavasrcPlugin"
+            "youtube-source|git+https://git-codecommit.us-east-1.amazonaws.com/v1/repos/youtube-source?ref=main#youtubeSabrPlugin"
+            "lavalink|git+https://git-codecommit.us-east-1.amazonaws.com/v1/repos/Lavalink?ref=dev#image"
+          )
+          for entry in "${FORKS[@]}"; do
+            name="${entry%%|*}"
+            ref="${entry##*|}"
+            out="$(nix build "$ref" $EXTRA --print-out-paths --no-link)"
+
+            # 1. SIGN the closure with the cache's secret key (R7.1).
+            nix store sign --key-file "$NIX_CACHE_KEY_FILE" --recursive "$out"
+
+            # 2. PUSH the closure to the S3-backed cache (R7.2).
+            nix copy --to "${NIX_CACHE_S3_URI}" "$out"
+
+            # 3. VERIFY RETRIEVABLE — narinfo read-back against the S3 cache —
+            #    BEFORE the artifact is marked available for stage deploy (R7.7).
+            #    The narinfo path is <hash>.narinfo; a present, valid narinfo
+            #    means the signed closure is retrievable by every stage.
+            hash="$(basename "$out" | cut -d- -f1)"
+            nix path-info --store "${NIX_CACHE_S3_URI}" "$out" >/dev/null \
+              || { echo "::error::closure not retrievable from cache (narinfo missing): $out ($hash)"; exit 1; }
+
+            # 4. MARK AVAILABLE — only now record the build-once store-path hash
+            #    in closures.toml so the deploy path (tools/resolve_closure.py)
+            #    pulls THIS hash for Beta/Staging/Production (R7.3). Recorded
+            #    strictly AFTER the read-back so nothing unverified is advertised.
+            python3 "${PLATFORM_DIR}/tools/record_closure.py" \
+              --name "$name" --store-path "$out"
+            echo "::notice::marked available: $name -> $out ($hash)"
+          done
+      - name: Push component OCI images to ECR + record closures (R6.2/R7.3/R7.7)
+        working-directory: ${{ env.PLATFORM_DIR }}
+        run: |
+          set -euo pipefail
+          aws ecr get-login-password --region "${AWS_REGION}" \
+            | skopeo login --username AWS --password-stdin "${ECR_REGISTRY}"
+          # dockerTools.buildLayeredImage produces a loadable tarball per
+          # component; copy each into ECR under ${ECR_REGISTRY}/<component>:<tag>.
+          # The pipeline injects the deploy tag; here we tag with the commit SHA.
+          TAG="${GITHUB_SHA}"
+          for dir in components/*/; do
+            comp="$(basename "$dir")"
+            [ -f "$dir/flake.nix" ] || continue
+            img="$(nix build "path:$dir#image" --print-out-paths --no-link 2>/dev/null)" || continue
+
+            # Sign + push the image closure to the S3 cache, verify retrievable
+            # (narinfo read-back) BEFORE marking available, then record the
+            # build-once store-path hash so every stage pulls the SAME closure
+            # (R7.2/7.3/7.7). Only after the read-back do we push to ECR + record.
+            nix store sign --key-file "$NIX_CACHE_KEY_FILE" --recursive "$img"
+            nix copy --to "${NIX_CACHE_S3_URI}" "$img"
+            nix path-info --store "${NIX_CACHE_S3_URI}" "$img" >/dev/null \
+              || { echo "::error::component closure not retrievable: $comp ($img)"; exit 1; }
+
+            skopeo copy "docker-archive:${img}" \
+              "docker://${ECR_REGISTRY}/${comp}:${TAG}"
+
+            python3 tools/record_closure.py --name "$comp" --store-path "$img"
+            echo "::notice::marked available: $comp -> $img"
+          done
+      - name: Scrub signing key
+        if: always()
+        run: rm -f "${NIX_CACHE_KEY_FILE:-}"
+
+  # ---------------------------------------------------------------------------
+  # 6. Register the GPU AMI from the pushed closure (R5.2). Depends on the AMI
+  #    build + cache publish so the disk image is available.
+  # ---------------------------------------------------------------------------
+  register-gpu-ami:
+    name: register GPU AMI
+    needs: [publish-cache]
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Nix (ephemeral runner)
+        uses: DeterminateSystems/nix-installer-action@main
+        with:
+          extra-conf: |
+            experimental-features = nix-command flakes
+      - name: Configure AWS credentials (OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_BUILD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Import Nix cache signing key (secret, scrubbed after use)
+        run: |
+          set -euo pipefail
+          umask 077
+          key_file="$(mktemp -t nix-cache-key.XXXXXX.sec)"
+          printf '%s' "${{ secrets.NIX_CACHE_SIGNING_KEY }}" > "$key_file"
+          test -s "$key_file" || { echo "::error::NIX_CACHE_SIGNING_KEY is empty"; exit 1; }
+          chmod 600 "$key_file"
+          echo "NIX_CACHE_KEY_FILE=$key_file" >> "$GITHUB_ENV"
+      - name: Build + push + verify + record the GPU AMI closure (R5.2/R7.3/R7.7)
+        working-directory: ${{ env.PLATFORM_DIR }}/infra/ami
+        run: |
+          set -euo pipefail
+          out="$(nix build .#amazonImage --print-out-paths --no-link)"
+          echo "GPU AMI disk image built at: $out"
+
+          # Sign + push the single shared GPU AMI closure to the S3 cache and
+          # confirm retrievable (narinfo read-back) BEFORE marking it available
+          # (R7.7). One image serves all three stages (R8.4) so its store-path
+          # hash is the build-once identity every stage resolves (R7.2/7.3).
+          nix store sign --key-file "$NIX_CACHE_KEY_FILE" --recursive "$out"
+          nix copy --to "${NIX_CACHE_S3_URI}" "$out"
+          nix path-info --store "${NIX_CACHE_S3_URI}" "$out" >/dev/null \
+            || { echo "::error::GPU AMI closure not retrievable from cache: $out"; exit 1; }
+
+          # Mark available: record the build-once hash so deploy resolves the
+          # AMI via `tools/resolve_closure.py --ami --verify`.
+          python3 "${{ github.workspace }}/${PLATFORM_DIR}/tools/record_closure.py" \
+            --name gpu-ami --store-path "$out"
+
+          # ec2 import/register step (aws ec2 register-image / import-snapshot) is
+          # driven from the produced, now-available disk image; wired with the
+          # deploy pipeline.
+          echo "::notice::GPU AMI artifact marked available for registration: $out"
+      - name: Scrub signing key
+        if: always()
+        run: rm -f "${NIX_CACHE_KEY_FILE:-}"

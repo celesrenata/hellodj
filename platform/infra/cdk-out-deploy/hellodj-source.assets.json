@@ -1,0 +1,21 @@
+{
+  "version": "54.0.0",
+  "files": {
+    "91ca250d394c302bbbd5fdb6e51b1aec2894067ca1ddf4169a8bd9f2ec728cdd": {
+      "displayName": "hellodj-source Template",
+      "source": {
+        "path": "hellodj-source.template.json",
+        "packaging": "file"
+      },
+      "destinations": {
+        "874927898283-us-east-1-9894f406": {
+          "bucketName": "cdk-hnb659fds-assets-874927898283-us-east-1",
+          "objectKey": "91ca250d394c302bbbd5fdb6e51b1aec2894067ca1ddf4169a8bd9f2ec728cdd.json",
+          "region": "us-east-1",
+          "assumeRoleArn": "arn:${AWS::Partition}:iam::874927898283:role/cdk-hnb659fds-file-publishing-role-874927898283-us-east-1"
+        }
+      }
+    }
+  },
+  "dockerImages": {}
+}

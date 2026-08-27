@@ -1,0 +1,699 @@
+{
+  "/hellodj-network": [
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "...node internals, ts-node, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-network/FleetSecurityGroup": [
+    {
+      "type": "aws:cdk:warning",
+      "data": "Ignoring Egress rule since 'allowAllOutbound' is set to true; To add customized rules, set allowAllOutbound=false on the SecurityGroup [ack: @aws-cdk/aws-ec2:ipv4IgnoreEgressRule]",
+      "trace": [
+        "Annotations.addMessage (/home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/core/lib/annotations.js:1:3506)",
+        "Annotations.addWarningV2 (/home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/core/lib/annotations.js:1:2194)",
+        "WrappedClass.addEgressRule (/home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/security-group.js:1:12648)",
+        "WrappedClass.<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/core/lib/metadata-resource.js:1:2059)",
+        "/home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/connections.js:1:3469",
+        "ReactiveList.forEachAndForever (/home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/connections.js:1:6485)",
+        "/home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/connections.js:1:3373",
+        "ReactiveList.forEachAndForever (/home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/connections.js:1:6485)",
+        "Connections.allowInternally (/home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/connections.js:1:3314)",
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:136:41)",
+        "Object.<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "Module._compile (node:internal/modules/cjs/loader:1781:14)",
+        "Module.m._compile (/home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/ts-node/src/index.ts:1618:23)",
+        "node:internal/modules/cjs/loader:1913:10",
+        "Object.require.extensions.<computed> [as .ts] (/home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/ts-node/src/index.ts:1621:12)",
+        "Module.load (node:internal/modules/cjs/loader:1505:32)",
+        "Function._load (node:internal/modules/cjs/loader:1309:12)",
+        "wrapModuleLoad (node:internal/modules/cjs/loader:254:19)",
+        "Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)",
+        "phase4 (/home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/ts-node/src/bin.ts:649:14)",
+        "bootstrap (/home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/ts-node/src/bin.ts:95:10)",
+        "main (/home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/ts-node/src/bin.ts:55:10)",
+        "Object.<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/ts-node/src/bin.ts:800:3)",
+        "Module._compile (node:internal/modules/cjs/loader:1781:14)",
+        "Object.<anonymous> (node:internal/modules/cjs/loader:1913:10)",
+        "Module.load (node:internal/modules/cjs/loader:1505:32)",
+        "Function._load (node:internal/modules/cjs/loader:1309:12)",
+        "wrapModuleLoad (node:internal/modules/cjs/loader:254:19)",
+        "Function.executeUserEntryPoint [as runMain] (node:internal/modules/run_main:171:5)",
+        "node:internal/main/run_main_module:36:49"
+      ]
+    }
+  ],
+  "/hellodj-network/VpcId": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcId"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:175:5)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-network/AlbDnsName": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "AlbDnsName"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:179:5)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-network/NlbDnsName": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "NlbDnsName"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:183:5)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-network/BootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "BootstrapVersion"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/hellodj-network/CheckBootstrapVersion": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CheckBootstrapVersion"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...aws-cdk-lib...",
+        "(no user code in 10 frames, use --stack-trace-limit to capture more)"
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "Vpc8378EB38"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:82:16)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/IGW": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcIGWD7BA715C"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:82:16)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/VPCGW": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcVPCGWBF912B6E"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:82:16)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-network/AlbSecurityGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "AlbSecurityGroup86A59E99"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new SecurityGroup2 in aws-cdk-lib...",
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:103:29)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-network/FleetSecurityGroup/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "FleetSecurityGroup27D2C237"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new SecurityGroup2 in aws-cdk-lib...",
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:122:31)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-network/FleetSecurityGroup/from hellodjnetworkAlbSecurityGroup71F87916:1024-65535": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "FleetSecurityGroupfromhellodjnetworkAlbSecurityGroup71F87916102465535D4F6A788"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...WrappedClass.<anonymous> in aws-cdk-lib...",
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:131:29)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-network/FleetSecurityGroup/from hellodjnetworkFleetSecurityGroup725FA4A7:ALL TRAFFIC": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "FleetSecurityGroupfromhellodjnetworkFleetSecurityGroup725FA4A7ALLTRAFFICEE593F68"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...Connections.allowInternally in aws-cdk-lib...",
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:136:41)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)"
+      ]
+    }
+  ],
+  "/hellodj-network/AppLoadBalancer/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "AppLoadBalancer0268F95E"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new ApplicationLoadBalancer2 in aws-cdk-lib...",
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:146:36)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-network/GatewayLoadBalancer/Resource": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "GatewayLoadBalancer03482DCE"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new NetworkLoadBalancer2 in aws-cdk-lib...",
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:162:32)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "...node internals, ts-node, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-network/CDKMetadata/Default": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "CDKMetadata"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...App.synth in aws-cdk-lib...",
+        "assertFoundationSingleton (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/foundation.ts:132:24)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:201:26)"
+      ]
+    }
+  ],
+  "/hellodj-network/Exports/Output{\"Ref\":\"Vpc8378EB38\"}": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ExportsOutputRefVpc8378EB38272D6E3A"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...App.synth in aws-cdk-lib...",
+        "assertFoundationSingleton (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/foundation.ts:132:24)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:201:26)"
+      ]
+    }
+  ],
+  "/hellodj-network/Exports/Output{\"Ref\":\"VpcprivateegressSubnet1Subnet830BC88F\"}": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ExportsOutputRefVpcprivateegressSubnet1Subnet830BC88F45116193"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...App.synth in aws-cdk-lib...",
+        "assertFoundationSingleton (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/foundation.ts:132:24)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:201:26)"
+      ]
+    }
+  ],
+  "/hellodj-network/Exports/Output{\"Ref\":\"VpcprivateegressSubnet2SubnetEB0EA9CB\"}": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ExportsOutputRefVpcprivateegressSubnet2SubnetEB0EA9CBFD91A0CD"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...App.synth in aws-cdk-lib...",
+        "assertFoundationSingleton (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/foundation.ts:132:24)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:201:26)"
+      ]
+    }
+  ],
+  "/hellodj-network/Exports/Output{\"Ref\":\"VpcprivateegressSubnet3Subnet6C8E65FB\"}": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "ExportsOutputRefVpcprivateegressSubnet3Subnet6C8E65FBD4F775F0"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...App.synth in aws-cdk-lib...",
+        "assertFoundationSingleton (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/foundation.ts:132:24)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:201:26)"
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/publicSubnet1/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet1Subnet2BB74ED7"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:268 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/publicSubnet1/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet1RouteTable15C15F8E"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:268 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/publicSubnet1/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet1RouteTableAssociation4E83B6E4"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:268 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/publicSubnet1/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet1DefaultRouteB88F9E93"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:208 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...new Vpc2 in aws-cdk-lib...",
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:82:16)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "...node internals, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/publicSubnet1/EIP": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet1EIP411541E6"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:82:16)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "...node internals, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/publicSubnet1/NATGateway": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet1NATGatewayA036E8A6"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:82:16)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "...node internals, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/publicSubnet2/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet2SubnetE34B022A"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:268 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/publicSubnet2/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet2RouteTableC5A6DF77"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:268 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/publicSubnet2/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet2RouteTableAssociationCCE257FF"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:268 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/publicSubnet2/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet2DefaultRoute732F0BEB"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:208 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...new Vpc2 in aws-cdk-lib...",
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:82:16)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "...node internals, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/publicSubnet3/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet3SubnetDFEF064A"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:268 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/publicSubnet3/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet3RouteTable80517A9C"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:268 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/publicSubnet3/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet3RouteTableAssociation61C43F88"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:268 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/publicSubnet3/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcpublicSubnet3DefaultRouteA3904BF0"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:208 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...new Vpc2 in aws-cdk-lib...",
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:82:16)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "...node internals, ts-node..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/private-egressSubnet1/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcprivateegressSubnet1Subnet830BC88F"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:270 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/private-egressSubnet1/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcprivateegressSubnet1RouteTable53552907"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:270 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/private-egressSubnet1/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcprivateegressSubnet1RouteTableAssociationBC4FB59B"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:270 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/private-egressSubnet1/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcprivateegressSubnet1DefaultRoute8024DE89"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:82:16)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/private-egressSubnet2/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcprivateegressSubnet2SubnetEB0EA9CB"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:270 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/private-egressSubnet2/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcprivateegressSubnet2RouteTableD35AFE98"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:270 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/private-egressSubnet2/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcprivateegressSubnet2RouteTableAssociation947897EE"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:270 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/private-egressSubnet2/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcprivateegressSubnet2DefaultRouteC804F6D0"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:82:16)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "...node internals..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/private-egressSubnet3/Subnet": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcprivateegressSubnet3Subnet6C8E65FB"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:270 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/private-egressSubnet3/RouteTable": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcprivateegressSubnet3RouteTableDE64FAB9"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:270 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/private-egressSubnet3/RouteTableAssociation": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcprivateegressSubnet3RouteTableAssociationD6086BC6"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        ".../home/celes/sources/celesrenata/hellodj/platform/infra/node_modules/aws-cdk-lib/aws-ec2/lib/vpc.js:1:270 in aws-cdk-lib...",
+        "Array.forEach (:)",
+        "...aws-cdk-lib..."
+      ]
+    }
+  ],
+  "/hellodj-network/Vpc/private-egressSubnet3/DefaultRoute": [
+    {
+      "type": "aws:cdk:logicalId",
+      "data": "VpcprivateegressSubnet3DefaultRoute256F7FEA"
+    },
+    {
+      "type": "aws:cdk:creationStack",
+      "data": [
+        "...new Vpc2 in aws-cdk-lib...",
+        "new NetworkStack (/home/celes/sources/celesrenata/hellodj/platform/infra/lib/network-stack.ts:82:16)",
+        "<anonymous> (/home/celes/sources/celesrenata/hellodj/platform/infra/bin/hellodj.ts:54:17)",
+        "...node internals..."
+      ]
+    }
+  ]
+}

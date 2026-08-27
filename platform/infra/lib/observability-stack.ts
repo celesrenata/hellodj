@@ -29,8 +29,11 @@ import * as cdk from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import * as cloudwatch from 'aws-cdk-lib/aws-cloudwatch';
 import * as cloudwatchActions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import * as iam from 'aws-cdk-lib/aws-iam';
+import * as lambda from 'aws-cdk-lib/aws-lambda';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as sns from 'aws-cdk-lib/aws-sns';
+import * as sqs from 'aws-cdk-lib/aws-sqs';
 import * as subscriptions from 'aws-cdk-lib/aws-sns-subscriptions';
 
 /**
@@ -86,6 +89,15 @@ export interface ObservabilityStackProps extends cdk.StackProps {
    * {@link DEFAULT_ALARM_SMS}.
    */
   readonly alarmSms?: string;
+
+  /**
+   * When true, alarm emails are routed through a Subject_Rewriter Lambda that
+   * rewrites the subject to start with `HelloDJ:` and enriches the body with
+   * alarm details before delivering via SES. When false (default), the
+   * existing SNS-to-email subscription delivers directly. The SMS subscription
+   * is always present regardless of this toggle. (R7.1, R7.4, R7.5)
+   */
+  readonly subjectRewriterEnabled?: boolean;
 }
 
 /**
@@ -105,6 +117,12 @@ export class ObservabilityStack extends cdk.Stack {
 
   /** The threshold alarms wired to {@link alarmTopic}. */
   public readonly alarms: cloudwatch.Alarm[];
+
+  /**
+   * The Subject_Rewriter Lambda, created only when
+   * {@link ObservabilityStackProps.subjectRewriterEnabled} is true.
+   */
+  public readonly subjectRewriterLambda?: lambda.Function;
 
   constructor(scope: Construct, id: string, props: ObservabilityStackProps) {
     super(scope, id, props);
@@ -138,12 +156,105 @@ export class ObservabilityStack extends cdk.Stack {
     // and every alarm below is named with the `HelloDJ:` prefix, so alarm
     // emails arrive with a subject starting `HelloDJ:` for folder filtering.
     // SMS: delivered to the US number in E.164 form.
-    this.alarmTopic.addSubscription(
-      new subscriptions.EmailSubscription(props.alarmEmail ?? DEFAULT_ALARM_EMAIL),
-    );
+
+    const alarmEmail = props.alarmEmail ?? DEFAULT_ALARM_EMAIL;
+
+    // SMS subscription is ALWAYS present regardless of the rewriter toggle.
     this.alarmTopic.addSubscription(
       new subscriptions.SmsSubscription(props.alarmSms ?? DEFAULT_ALARM_SMS),
     );
+
+    if (props.subjectRewriterEnabled) {
+      // -----------------------------------------------------------------------
+      // R7.1, R7.4, R7.5: Subject_Rewriter Lambda path.
+      // The Lambda subscribes to the alarm SNS topic, rewrites the subject to
+      // start with `HelloDJ:` and enriches the body with alarm details, then
+      // delivers via SES. A Dead Letter Queue catches Lambda failures and a
+      // DLQ alarm re-notifies the same topic with a direct email subscription
+      // as failsafe.
+      // -----------------------------------------------------------------------
+
+      // Dead Letter Queue for Lambda invocation failures.
+      const dlq = new sqs.Queue(this, 'SubjectRewriterDLQ', {
+        queueName: `hellodj-${stage}-subject-rewriter-dlq`,
+        retentionPeriod: cdk.Duration.days(14),
+      });
+
+      // Subject_Rewriter Lambda function.
+      this.subjectRewriterLambda = new lambda.Function(this, 'SubjectRewriterLambda', {
+        functionName: `hellodj-${stage}-alarm-subject-rewriter`,
+        description:
+          'Rewrites CloudWatch alarm notification emails with HelloDJ: prefix and alarm details, delivers via SES. (R7.1, R7.4)',
+        runtime: lambda.Runtime.PYTHON_3_13,
+        handler: 'handler.lambda_handler',
+        code: lambda.Code.fromAsset('platform/components/alarm_subject_rewriter'),
+        timeout: cdk.Duration.seconds(30),
+        deadLetterQueue: dlq,
+        environment: {
+          RECIPIENT_EMAIL: alarmEmail,
+          SENDER_EMAIL: alarmEmail,
+          SUBJECT_PREFIX: ALARM_SUBJECT_PREFIX,
+        },
+      });
+
+      // Grant SES:SendEmail permission to the Lambda.
+      this.subjectRewriterLambda.addToRolePolicy(
+        new iam.PolicyStatement({
+          actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+          resources: ['*'],
+        }),
+      );
+
+      // Subscribe the Lambda to the alarm SNS topic.
+      this.alarmTopic.addSubscription(
+        new subscriptions.LambdaSubscription(this.subjectRewriterLambda),
+      );
+
+      // Failsafe: alarm on DLQ message count > 0 so Lambda failures still
+      // reach the Platform_Owner's email via a direct subscription on the
+      // same topic.
+      const dlqAlarm = new cloudwatch.Alarm(this, 'SubjectRewriterDLQAlarm', {
+        alarmName: `${ALARM_SUBJECT_PREFIX} hellodj-${stage}-subject-rewriter-dlq`,
+        alarmDescription:
+          'Subject_Rewriter Lambda is failing — alarm messages are landing in the DLQ. Direct email failsafe activated. (R7.5)',
+        metric: dlq.metricApproximateNumberOfMessagesVisible({
+          period: cdk.Duration.minutes(1),
+        }),
+        threshold: 0,
+        evaluationPeriods: 1,
+        comparisonOperator:
+          cloudwatch.ComparisonOperator.GREATER_THAN_THRESHOLD,
+        treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+      });
+
+      // The DLQ alarm notifies the SAME topic — but we add a direct email
+      // subscription as a failsafe so the Platform_Owner still gets notified
+      // even when the Lambda is broken.
+      dlqAlarm.addAlarmAction(new cloudwatchActions.SnsAction(this.alarmTopic));
+
+      // Direct email subscription as failure sink (activates when DLQ alarm
+      // fires, but since it's a topic-level subscription it always receives
+      // the DLQ alarm notification directly).
+      this.alarmTopic.addSubscription(
+        new subscriptions.EmailSubscription(alarmEmail, {
+          filterPolicy: {
+            // Only deliver to this subscription when the message comes from
+            // the DLQ alarm (AlarmName contains "subject-rewriter-dlq").
+            // Normal alarm messages go through the Lambda instead.
+            AlarmName: sns.SubscriptionFilter.stringFilter({
+              allowlist: [
+                `${ALARM_SUBJECT_PREFIX} hellodj-${stage}-subject-rewriter-dlq`,
+              ],
+            }),
+          },
+        }),
+      );
+    } else {
+      // Default path: direct SNS-to-email subscription (no Lambda).
+      this.alarmTopic.addSubscription(
+        new subscriptions.EmailSubscription(alarmEmail),
+      );
+    }
 
     const alarmAction = new cloudwatchActions.SnsAction(this.alarmTopic);
 

@@ -1443,18 +1443,66 @@ function getTextBg() {
 
 // ─── canvas_resize.js ────────────────────────────────────────────────────────
 
+function getVideoContentRect(video) {
+  const containerRect = video.getBoundingClientRect();
+  const containerW = containerRect.width;
+  const containerH = containerRect.height;
+  const videoW = video.videoWidth;
+  const videoH = video.videoHeight;
+  if (!videoW || !videoH || containerW === 0 || containerH === 0) {
+    return { x: 0, y: 0, width: containerW, height: containerH };
+  }
+  const containerAspect = containerW / containerH;
+  const videoAspect = videoW / videoH;
+  let renderW, renderH, offsetX, offsetY;
+  if (videoAspect > containerAspect) {
+    renderW = containerW;
+    renderH = containerW / videoAspect;
+    offsetX = 0;
+    offsetY = (containerH - renderH) / 2;
+  } else {
+    renderH = containerH;
+    renderW = containerH * videoAspect;
+    offsetX = (containerW - renderW) / 2;
+    offsetY = 0;
+  }
+  return {
+    x: Math.round(offsetX),
+    y: Math.round(offsetY),
+    width: Math.round(renderW),
+    height: Math.round(renderH),
+  };
+}
+
 function initCanvasResize(canvas, overlay) {
   const parent = canvas.parentElement;
-  const observer = new ResizeObserver((entries) => {
-    for (const entry of entries) {
-      const { width, height } = entry.contentRect;
-      if (width === 0 || height === 0) return;
-      overlay.resize();
-    }
-  });
+  const video = parent.querySelector('video');
+
+  const doResize = () => {
+    if (!video) { overlay.resize(); return; }
+    const rect = getVideoContentRect(video);
+    if (!rect || rect.width === 0 || rect.height === 0) return;
+    overlay.resize(rect);
+  };
+
+  const observer = new ResizeObserver(() => { doResize(); });
   observer.observe(parent);
-  requestAnimationFrame(() => overlay.resize());
-  return { disconnect() { observer.disconnect(); } };
+
+  if (video) {
+    video.addEventListener('loadedmetadata', doResize);
+    video.addEventListener('resize', doResize);
+  }
+
+  requestAnimationFrame(() => doResize());
+  return {
+    disconnect() {
+      observer.disconnect();
+      if (video) {
+        video.removeEventListener('loadedmetadata', doResize);
+        video.removeEventListener('resize', doResize);
+      }
+    },
+  };
 }
 
 // ─── controls_passthrough.js ─────────────────────────────────────────────────
@@ -1539,6 +1587,12 @@ class WhiteboardOverlay {
     this.canvas.style.pointerEvents = 'none';
     this.toggleButton.dataset.active = 'false';
 
+    // Off-screen indicator state
+    this._offscreenDirs = { top: false, bottom: false, left: false, right: false };
+    this._indicatorAnimFrame = null;
+    this._indicatorBlinkOn = true;
+    this._indicatorBlinkStart = 0;
+
     // Sticker overlay layer
     this._stickerLayer = document.createElement('div');
     this._stickerLayer.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:36;overflow:hidden;';
@@ -1596,6 +1650,7 @@ class WhiteboardOverlay {
   redraw() {
     this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
     for (const stroke of this.strokes.values()) this.renderer.renderStroke(stroke);
+    this._drawOffscreenIndicators();
   }
 
   _addStickerElement(stroke) {
@@ -1618,12 +1673,13 @@ class WhiteboardOverlay {
   _clearStickerElements() { this._stickerLayer.innerHTML = ''; this._stickerElements.clear(); }
 
   _positionStickerElement(stroke, img) {
-    const container = this.canvas.parentElement;
-    const w = container.clientWidth;
-    const h = container.clientHeight;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
     if (w === 0 || h === 0) return;
-    const [x1, y1] = [stroke.points[0][0] * w, stroke.points[0][1] * h];
-    const [x2, y2] = [stroke.points[1][0] * w, stroke.points[1][1] * h];
+    const offsetX = parseInt(this.canvas.style.left, 10) || 0;
+    const offsetY = parseInt(this.canvas.style.top, 10) || 0;
+    const [x1, y1] = [stroke.points[0][0] * w + offsetX, stroke.points[0][1] * h + offsetY];
+    const [x2, y2] = [stroke.points[1][0] * w + offsetX, stroke.points[1][1] * h + offsetY];
     img.style.left = `${Math.min(x1, x2)}px`;
     img.style.top = `${Math.min(y1, y2)}px`;
     img.style.width = `${Math.abs(x2 - x1)}px`;
@@ -1637,16 +1693,135 @@ class WhiteboardOverlay {
     }
   }
 
-  resize() {
-    const rect = this.canvas.parentElement.getBoundingClientRect();
-    const width = Math.floor(rect.width);
-    const height = Math.floor(rect.height);
+  resize(videoRect) {
+    let width, height, offsetX, offsetY;
+    if (videoRect) {
+      width = videoRect.width;
+      height = videoRect.height;
+      offsetX = videoRect.x;
+      offsetY = videoRect.y;
+    } else {
+      const rect = this.canvas.parentElement.getBoundingClientRect();
+      width = Math.floor(rect.width);
+      height = Math.floor(rect.height);
+      offsetX = 0;
+      offsetY = 0;
+    }
     if (width === 0 || height === 0) return;
+    this.canvas.style.left = `${offsetX}px`;
+    this.canvas.style.top = `${offsetY}px`;
+    this.canvas.style.width = `${width}px`;
+    this.canvas.style.height = `${height}px`;
     this.canvas.width = width;
     this.canvas.height = height;
     this.renderer.resize(width, height);
+    this._computeOffscreenDirections();
     this.redraw();
     this._repositionAllStickers();
+  }
+
+  // ─── Off-screen Stroke Indicators ──────────────────────────────────────
+
+  _computeOffscreenDirections() {
+    const dirs = { top: false, bottom: false, left: false, right: false };
+    for (const stroke of this.strokes.values()) {
+      if (!stroke.points || stroke.points.length === 0) continue;
+      for (const pt of stroke.points) {
+        const [nx, ny] = pt;
+        if (nx < -0.01) dirs.left = true;
+        if (nx > 1.01) dirs.right = true;
+        if (ny < -0.01) dirs.top = true;
+        if (ny > 1.01) dirs.bottom = true;
+      }
+    }
+    const changed = (
+      dirs.top !== this._offscreenDirs.top ||
+      dirs.bottom !== this._offscreenDirs.bottom ||
+      dirs.left !== this._offscreenDirs.left ||
+      dirs.right !== this._offscreenDirs.right
+    );
+    this._offscreenDirs = dirs;
+    const hasAny = dirs.top || dirs.bottom || dirs.left || dirs.right;
+    if (hasAny && !this._indicatorAnimFrame) {
+      this._indicatorBlinkStart = performance.now();
+      this._startIndicatorBlink();
+    } else if (!hasAny && this._indicatorAnimFrame) {
+      this._stopIndicatorBlink();
+    }
+  }
+
+  _drawOffscreenIndicators() {
+    const dirs = this._offscreenDirs;
+    if (!dirs.top && !dirs.bottom && !dirs.left && !dirs.right) return;
+    if (!this._indicatorBlinkOn) return;
+    const ctx = this.ctx;
+    const w = this.canvas.width;
+    const h = this.canvas.height;
+    const arrowSize = 8;
+    const margin = 12;
+    ctx.save();
+    ctx.fillStyle = 'rgba(255, 255, 255, 0.85)';
+    ctx.shadowColor = 'rgba(88, 101, 242, 0.8)';
+    ctx.shadowBlur = 6;
+    if (dirs.top) {
+      const cx = w / 2, cy = margin;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy - arrowSize);
+      ctx.lineTo(cx - arrowSize, cy + arrowSize);
+      ctx.lineTo(cx + arrowSize, cy + arrowSize);
+      ctx.closePath();
+      ctx.fill();
+    }
+    if (dirs.bottom) {
+      const cx = w / 2, cy = h - margin;
+      ctx.beginPath();
+      ctx.moveTo(cx, cy + arrowSize);
+      ctx.lineTo(cx - arrowSize, cy - arrowSize);
+      ctx.lineTo(cx + arrowSize, cy - arrowSize);
+      ctx.closePath();
+      ctx.fill();
+    }
+    if (dirs.left) {
+      const cx = margin, cy = h / 2;
+      ctx.beginPath();
+      ctx.moveTo(cx - arrowSize, cy);
+      ctx.lineTo(cx + arrowSize, cy - arrowSize);
+      ctx.lineTo(cx + arrowSize, cy + arrowSize);
+      ctx.closePath();
+      ctx.fill();
+    }
+    if (dirs.right) {
+      const cx = w - margin, cy = h / 2;
+      ctx.beginPath();
+      ctx.moveTo(cx + arrowSize, cy);
+      ctx.lineTo(cx - arrowSize, cy - arrowSize);
+      ctx.lineTo(cx - arrowSize, cy + arrowSize);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
+  _startIndicatorBlink() {
+    if (this._indicatorAnimFrame) return;
+    const tick = () => {
+      const elapsed = performance.now() - this._indicatorBlinkStart;
+      const newBlink = Math.floor(elapsed / 800) % 2 === 0;
+      if (newBlink !== this._indicatorBlinkOn) {
+        this._indicatorBlinkOn = newBlink;
+        this.redraw();
+      }
+      this._indicatorAnimFrame = requestAnimationFrame(tick);
+    };
+    this._indicatorAnimFrame = requestAnimationFrame(tick);
+  }
+
+  _stopIndicatorBlink() {
+    if (this._indicatorAnimFrame) {
+      cancelAnimationFrame(this._indicatorAnimFrame);
+      this._indicatorAnimFrame = null;
+    }
+    this._indicatorBlinkOn = true;
   }
 }
 

@@ -1,0 +1,216 @@
+{% extends "base.html" %}
+
+{% block title %}Admin — System Metrics{% endblock %}
+
+{% block content %}
+<div class="container py-4">
+
+  {# Page header #}
+  <div class="d-flex justify-content-between align-items-center mb-4">
+    <div>
+      <h1 class="h3 mb-1" style="color: #e0e0e0; font-weight: 600;">
+        <i class="bi bi-bar-chart-line me-2" style="color: #bb86fc;"></i>System Metrics
+      </h1>
+      <p class="mb-0" style="color: #a0a0b8;">
+        Platform-wide health and resource utilization
+      </p>
+    </div>
+    <div>
+      <span class="badge" style="background: rgba(46, 204, 113, 0.2); color: #2ecc71; font-size: 0.75rem;">
+        <i class="bi bi-arrow-repeat me-1"></i>Auto-refresh 60s
+      </span>
+    </div>
+  </div>
+
+  {# Metrics container — auto-refresh every 60s via HTMX (Req 9.7) #}
+  <div id="metrics-container"
+       hx-get="/api/v1/admin/metrics"
+       hx-trigger="every 60s"
+       hx-swap="innerHTML">
+
+    {# Summary Stat Cards #}
+    <div class="row g-4 mb-4">
+      <div class="col-6 col-md-3">
+        <div class="card h-100">
+          <div class="card-body text-center py-4">
+            <div class="rounded-circle d-flex align-items-center justify-content-center mx-auto mb-3"
+                 style="width: 48px; height: 48px; background: rgba(187, 134, 252, 0.15);">
+              <i class="bi bi-people-fill" style="color: #bb86fc; font-size: 1.25rem;"></i>
+            </div>
+            <h5 class="card-title mb-1">Total Tenants</h5>
+            <h2 class="display-4 mb-0" style="font-size: 2.5rem; color: #e0e0e0;">
+              {{ metrics.total_tenants | default(0) }}
+            </h2>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-6 col-md-3">
+        <div class="card h-100">
+          <div class="card-body text-center py-4">
+            <div class="rounded-circle d-flex align-items-center justify-content-center mx-auto mb-3"
+                 style="width: 48px; height: 48px; background: rgba(243, 156, 18, 0.15);">
+              <i class="bi bi-hourglass-split" style="color: #f39c12; font-size: 1.25rem;"></i>
+            </div>
+            <h5 class="card-title mb-1">Active Trials</h5>
+            <h2 class="display-4 mb-0" style="font-size: 2.5rem; color: #e0e0e0;">
+              {{ metrics.active_trials | default(0) }}
+            </h2>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-6 col-md-3">
+        <div class="card h-100">
+          <div class="card-body text-center py-4">
+            <div class="rounded-circle d-flex align-items-center justify-content-center mx-auto mb-3"
+                 style="width: 48px; height: 48px; background: rgba(46, 204, 113, 0.15);">
+              <i class="bi bi-credit-card-fill" style="color: #2ecc71; font-size: 1.25rem;"></i>
+            </div>
+            <h5 class="card-title mb-1">Active Subscriptions</h5>
+            <h2 class="display-4 mb-0" style="font-size: 2.5rem; color: #e0e0e0;">
+              {{ metrics.active_subscriptions | default(0) }}
+            </h2>
+          </div>
+        </div>
+      </div>
+
+      <div class="col-6 col-md-3">
+        <div class="card h-100">
+          <div class="card-body text-center py-4">
+            <div class="rounded-circle d-flex align-items-center justify-content-center mx-auto mb-3"
+                 style="width: 48px; height: 48px; background: rgba(52, 152, 219, 0.15);">
+              <i class="bi bi-robot" style="color: #3498db; font-size: 1.25rem;"></i>
+            </div>
+            <h5 class="card-title mb-1">Bot Instances</h5>
+            <h2 class="display-4 mb-0" style="font-size: 2.5rem; color: #e0e0e0;">
+              {{ metrics.total_bot_instances | default(0) }}
+            </h2>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    {# GPU Utilization per Node (Req 9.7) #}
+    <div class="card mb-4">
+      <div class="card-header">
+        <i class="bi bi-gpu-card me-2"></i>GPU Utilization per Node
+      </div>
+      <div class="card-body">
+        {% if metrics.gpu_utilization %}
+        <div class="row g-3">
+          {% for node in metrics.gpu_utilization %}
+          <div class="col-md-3 col-6">
+            <div class="p-3 rounded-3" style="background: rgba(30, 30, 45, 0.8); border: 1px solid #3a3a5c;">
+              <div class="d-flex justify-content-between align-items-center mb-2">
+                <span style="color: #e0e0e0; font-size: 0.875rem; font-weight: 600;">{{ node.name }}</span>
+                <span style="color: {% if node.percent >= 90 %}#e74c3c{% elif node.percent >= 70 %}#f39c12{% else %}#2ecc71{% endif %}; font-size: 0.875rem; font-weight: 700;">
+                  {{ node.percent }}%
+                </span>
+              </div>
+              {# Progress bar #}
+              <div class="progress" style="height: 8px; background: rgba(60, 60, 80, 0.8); border-radius: 4px;">
+                <div class="progress-bar" role="progressbar"
+                     style="width: {{ node.percent }}%;
+                            background: {% if node.percent >= 90 %}#e74c3c{% elif node.percent >= 70 %}#f39c12{% else %}#2ecc71{% endif %};
+                            border-radius: 4px;"
+                     aria-valuenow="{{ node.percent }}" aria-valuemin="0" aria-valuemax="100"
+                     aria-label="{{ node.name }} GPU utilization {{ node.percent }}%">
+                </div>
+              </div>
+              <div class="mt-2 d-flex justify-content-between" style="font-size: 0.75rem; color: #a0a0b8;">
+                <span>{{ node.vfs_used | default(0) }}/{{ node.vfs_total | default(7) }} VFs</span>
+                <span>{{ node.pods | default(0) }} pods</span>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% else %}
+        <div class="text-center py-4" style="color: #a0a0b8;">
+          <i class="bi bi-gpu-card fs-3 d-block mb-2" style="opacity: 0.5;"></i>
+          <p class="mb-0">No GPU data available.</p>
+        </div>
+        {% endif %}
+      </div>
+    </div>
+
+    {# Additional Platform Stats #}
+    <div class="row g-4">
+      <div class="col-md-6">
+        <div class="card h-100">
+          <div class="card-header">
+            <i class="bi bi-diagram-3 me-2"></i>Instance Distribution
+          </div>
+          <div class="card-body">
+            {% if metrics.instance_distribution %}
+            <div class="d-flex flex-column gap-2">
+              {% for status, count in metrics.instance_distribution.items() %}
+              <div class="d-flex justify-content-between align-items-center">
+                <span style="color: #e0e0e0; font-size: 0.875rem;">
+                  {% set status_icons = {
+                    'running': 'bi-play-circle-fill',
+                    'stopped': 'bi-stop-circle-fill',
+                    'provisioning': 'bi-arrow-clockwise',
+                    'error': 'bi-exclamation-triangle-fill',
+                    'failed': 'bi-x-circle-fill',
+                    'pending_resources': 'bi-hourglass'
+                  } %}
+                  <i class="bi {{ status_icons.get(status, 'bi-circle') }} me-2"
+                     style="color: {% if status == 'running' %}#2ecc71{% elif status in ['error', 'failed'] %}#e74c3c{% elif status in ['provisioning', 'pending_resources'] %}#f39c12{% else %}#808080{% endif %};"></i>
+                  {{ status | replace('_', ' ') | capitalize }}
+                </span>
+                <span class="badge" style="background: rgba(187, 134, 252, 0.15); color: #d4b3ff;">
+                  {{ count }}
+                </span>
+              </div>
+              {% endfor %}
+            </div>
+            {% else %}
+            <p class="mb-0 text-center" style="color: #a0a0b8;">No instances.</p>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <div class="col-md-6">
+        <div class="card h-100">
+          <div class="card-header">
+            <i class="bi bi-graph-up me-2"></i>Platform Summary
+          </div>
+          <div class="card-body">
+            <div class="d-flex flex-column gap-3">
+              <div class="d-flex justify-content-between">
+                <span style="color: #a0a0b8; font-size: 0.875rem;">Pending Trials</span>
+                <span style="color: #e0e0e0; font-weight: 600;">{{ metrics.pending_trials | default(0) }}</span>
+              </div>
+              <div class="d-flex justify-content-between">
+                <span style="color: #a0a0b8; font-size: 0.875rem;">Pending Payments</span>
+                <span style="color: #e0e0e0; font-weight: 600;">{{ metrics.pending_payments | default(0) }}</span>
+              </div>
+              <div class="d-flex justify-content-between">
+                <span style="color: #a0a0b8; font-size: 0.875rem;">Monthly Revenue</span>
+                <span style="color: #2ecc71; font-weight: 600;">${{ '%.2f' | format(metrics.monthly_revenue_cents | default(0) / 100) }}</span>
+              </div>
+              <div class="d-flex justify-content-between">
+                <span style="color: #a0a0b8; font-size: 0.875rem;">Cluster Nodes</span>
+                <span style="color: #e0e0e0; font-weight: 600;">{{ metrics.cluster_nodes | default(4) }}</span>
+              </div>
+              <div class="d-flex justify-content-between">
+                <span style="color: #a0a0b8; font-size: 0.875rem;">Total GPU VFs Available</span>
+                <span style="color: #e0e0e0; font-weight: 600;">{{ metrics.total_vfs_available | default(0) }}/{{ metrics.total_vfs | default(28) }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>{# /metrics-container #}
+
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://unpkg.com/htmx.org@2.0.4"></script>
+{% endblock %}

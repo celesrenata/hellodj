@@ -3,6 +3,8 @@ import { Template, Match } from 'aws-cdk-lib/assertions';
 import {
   ObservabilityStack,
   PLATFORM_METRICS_NAMESPACE,
+  DEFAULT_ALARM_EMAIL,
+  DEFAULT_ALARM_SMS,
 } from '../lib/observability-stack';
 import { DeploymentStage } from '../lib/config';
 
@@ -114,5 +116,123 @@ describe('ObservabilityStack (CloudWatch + SNS)', () => {
       (r: any) => typeof r.Type === 'string' && r.Type.includes('Prometheus'),
     );
     expect(prometheusResources).toHaveLength(0);
+  });
+});
+
+describe('ObservabilityStack — Subject Rewriter toggle (task 17.3)', () => {
+  test('when disabled (default), no Lambda is created', () => {
+    const app = new cdk.App();
+    const stack = new ObservabilityStack(app, 'DisabledRewriter', {
+      stage: 'beta',
+      subjectRewriterEnabled: false,
+    });
+    const template = Template.fromStack(stack);
+    template.resourceCountIs('AWS::Lambda::Function', 0);
+  });
+
+  test('when enabled, a Lambda function is created', () => {
+    const app = new cdk.App();
+    const stack = new ObservabilityStack(app, 'EnabledRewriter', {
+      stage: 'beta',
+      subjectRewriterEnabled: true,
+    });
+    const template = Template.fromStack(stack);
+    template.resourceCountIs('AWS::Lambda::Function', 1);
+    template.hasResourceProperties('AWS::Lambda::Function', {
+      Handler: 'handler.lambda_handler',
+      Runtime: Match.stringLikeRegexp('python3'),
+    });
+  });
+
+  test('when enabled, a Dead Letter Queue is created', () => {
+    const app = new cdk.App();
+    const stack = new ObservabilityStack(app, 'EnabledDLQ', {
+      stage: 'beta',
+      subjectRewriterEnabled: true,
+    });
+    const template = Template.fromStack(stack);
+    template.hasResourceProperties('AWS::SQS::Queue', {
+      QueueName: Match.stringLikeRegexp('subject-rewriter-dlq'),
+    });
+  });
+
+  test('SMS subscription is present when rewriter is disabled (R7.4)', () => {
+    const app = new cdk.App();
+    const stack = new ObservabilityStack(app, 'SMSDisabled', {
+      stage: 'beta',
+      subjectRewriterEnabled: false,
+    });
+    const template = Template.fromStack(stack);
+    template.hasResourceProperties('AWS::SNS::Subscription', {
+      Protocol: 'sms',
+      Endpoint: DEFAULT_ALARM_SMS,
+    });
+  });
+
+  test('SMS subscription is present when rewriter is enabled (R7.4)', () => {
+    const app = new cdk.App();
+    const stack = new ObservabilityStack(app, 'SMSEnabled', {
+      stage: 'beta',
+      subjectRewriterEnabled: true,
+    });
+    const template = Template.fromStack(stack);
+    template.hasResourceProperties('AWS::SNS::Subscription', {
+      Protocol: 'sms',
+      Endpoint: DEFAULT_ALARM_SMS,
+    });
+  });
+
+  test('when disabled, direct email subscription is present', () => {
+    const app = new cdk.App();
+    const stack = new ObservabilityStack(app, 'EmailDirect', {
+      stage: 'beta',
+      subjectRewriterEnabled: false,
+    });
+    const template = Template.fromStack(stack);
+    template.hasResourceProperties('AWS::SNS::Subscription', {
+      Protocol: 'email',
+      Endpoint: DEFAULT_ALARM_EMAIL,
+    });
+  });
+
+  test('when enabled, Lambda subscription replaces direct email', () => {
+    const app = new cdk.App();
+    const stack = new ObservabilityStack(app, 'LambdaSub', {
+      stage: 'beta',
+      subjectRewriterEnabled: true,
+    });
+    const template = Template.fromStack(stack);
+    template.hasResourceProperties('AWS::SNS::Subscription', {
+      Protocol: 'lambda',
+    });
+  });
+});
+
+describe('ObservabilityStack — R8 regression guards', () => {
+  const app = new cdk.App();
+  const stack = new ObservabilityStack(app, 'R8Guards', { stage: 'beta' });
+  const template = Template.fromStack(stack);
+
+  test('email subscription for celes+hellodj@celestium.life (R8.2)', () => {
+    template.hasResourceProperties('AWS::SNS::Subscription', {
+      Protocol: 'email',
+      Endpoint: 'celes+hellodj@celestium.life',
+    });
+  });
+
+  test('SMS subscription for +14257853431 (R8.2)', () => {
+    template.hasResourceProperties('AWS::SNS::Subscription', {
+      Protocol: 'sms',
+      Endpoint: '+14257853431',
+    });
+  });
+
+  test('every alarm name begins with HelloDJ: prefix (R8.3)', () => {
+    const alarms = template.findResources('AWS::CloudWatch::Alarm');
+    for (const [, alarm] of Object.entries(alarms)) {
+      const alarmName = alarm.Properties?.AlarmName;
+      expect(alarmName).toBeDefined();
+      expect(alarmName).toMatch(/^HelloDJ:/);
+    }
   });
 });

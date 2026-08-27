@@ -1,0 +1,107 @@
+{
+  description = ''
+    HelloDJ web-ui component — Flask + HTMX + Alpine.js + Tailwind v4 admin UI,
+    packaged into a Nix-built OCI image. NO Ubuntu/Debian base layers
+    (Requirements 5.1/5.2/5.3).
+
+    Serves on port 8080. Credentials injected at runtime from AWS Secrets
+    Manager (R6.1).
+  '';
+
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    flake-utils.url = "github:numtide/flake-utils";
+  };
+
+  outputs = { self, nixpkgs, flake-utils }:
+    flake-utils.lib.eachSystem [ "aarch64-linux" "x86_64-linux" ] (system:
+      let
+        pkgs = import nixpkgs { inherit system; };
+
+        python = pkgs.python314;
+
+        pythonDeps = ps: with ps; [
+          flask
+          gunicorn
+          boto3
+          botocore
+        ];
+
+        pythonEnv = python.withPackages pythonDeps;
+
+        # Tailwind CSS v4 compiled at Nix build time via buildNpmPackage.
+        # Deterministic, sandboxed, fully offline once deps are fetched.
+        tailwindCss = pkgs.buildNpmPackage {
+          pname = "hellodj-web-ui-css";
+          version = "0.1.0";
+          src = ./.;
+          npmDepsHash = "sha256-odcKDsZGYAKDRV0zDep8jR7pZAYLkpQ5IbhS514Jcl4=";
+          # The build step: compile Tailwind scanning templates for used classes.
+          buildPhase = ''
+            npx @tailwindcss/cli -i static/css/app.css -o $out/app.css --minify
+          '';
+          # No install phase — we only want the compiled CSS output.
+          installPhase = "true";
+          dontFixup = true;
+        };
+
+        # Vendor HTMX + Alpine.js at build time using Nix fetchurl (sandbox-safe).
+        htmxJs = pkgs.fetchurl {
+          url = "https://unpkg.com/htmx.org@2.0.4/dist/htmx.min.js";
+          hash = "sha256-4gndpcgjVHnzFm3vx3UOHbzVpcGAi3eS/C5nM3aPtEc=";
+        };
+
+        alpineJs = pkgs.fetchurl {
+          url = "https://unpkg.com/alpinejs@3.14.9/dist/cdn.min.js";
+          hash = "sha256-PtHu0lJIiSHfZeNj1nFd6wTX+Squ255SGZ/fc8seCtM=";
+        };
+
+        # Application source tree assembled for the image.
+        appSrc = pkgs.runCommand "hellodj-web-ui-src" { src = ./.; } ''
+          mkdir -p $out/app/static/css $out/app/static/js $out/app/static/icons
+          cp $src/app.py $src/auth.py $src/pages.py $src/config_store.py $src/secrets_store.py $out/app/
+          cp -r $src/templates $out/app/templates
+          # Copy static assets except css/js we're replacing with compiled versions
+          cp -r $src/static/icons/* $out/app/static/icons/ 2>/dev/null || true
+          # Compiled CSS from buildNpmPackage
+          cp ${tailwindCss}/app.css $out/app/static/css/app.css
+          # Vendored JS from fetchurl
+          cp ${htmxJs} $out/app/static/js/htmx.min.js
+          cp ${alpineJs} $out/app/static/js/alpine.min.js
+        '';
+
+        image = pkgs.dockerTools.buildLayeredImage {
+          name = "hellodj-web-ui";
+          tag = "nix";
+
+          contents = [ pythonEnv pkgs.cacert pkgs.coreutils ];
+
+          extraCommands = ''
+            cp -r ${appSrc}/app opt-app
+          '';
+
+          config = {
+            WorkingDir = "/opt-app";
+            ExposedPorts = { "8080/tcp" = { }; };
+            Env = [
+              "SSL_CERT_FILE=${pkgs.cacert}/etc/ssl/certs/ca-bundle.crt"
+              "PYTHONUNBUFFERED=1"
+              "HELLODJ_STAGE=beta"
+            ];
+            Entrypoint = [
+              "${pythonEnv}/bin/gunicorn"
+              "--bind" "0.0.0.0:8080"
+              "--workers" "2"
+              "app:app"
+            ];
+          };
+        };
+      in
+      {
+        packages = {
+          default = image;
+          image = image;
+        };
+        checks = { image-builds = image; };
+      });
+}

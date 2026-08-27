@@ -11,7 +11,10 @@ RUN pip install --no-cache-dir -r requirements.txt && \
     gunicorn --version
 
 COPY app.py .
+COPY auth_middleware.py .
 COPY credentials.py .
+COPY blueprints/ ./blueprints/
+COPY services/ ./services/
 COPY templates/ ./templates/
 COPY static/ ./static/
 

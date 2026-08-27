@@ -73,15 +73,16 @@ describe('EdgeStack — non-prod (Beta, us-east-1)', () => {
     template.resourceCountIs('AWS::CertificateManager::Certificate', 1);
   });
 
-  test('creates a CloudFront distribution with default + hls/* behaviors', () => {
-    // Default behavior must be present, and an additional cache behavior
-    // must serve the `hls/*` path pattern (Requirement 18.2).
+  test('creates a CloudFront distribution with default + static/* + hls/* behaviors', () => {
+    // Default behavior forwards to the ALB (or S3 when no ALB); additional
+    // cache behaviors serve `static/*` and `hls/*` from S3 (Requirement 18.2).
     template.hasResourceProperties('AWS::CloudFront::Distribution', {
       DistributionConfig: Match.objectLike({
         DefaultCacheBehavior: Match.objectLike({
           ViewerProtocolPolicy: Match.anyValue(),
         }),
         CacheBehaviors: Match.arrayWith([
+          Match.objectLike({ PathPattern: 'static/*' }),
           Match.objectLike({ PathPattern: 'hls/*' }),
         ]),
       }),

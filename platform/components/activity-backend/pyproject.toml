@@ -2,7 +2,7 @@
 name = "hellodj-activity-backend"
 version = "0.1.0"
 description = "HelloDJ activity-backend component: aiohttp Discord Activity server (video control, whiteboard, visualizer control, synced lyrics) with a WebSocket hub over ALB/CloudFront /activity/. Emits transcode requests to hls-transcode and serves/reads HLS from S3 via CloudFront."
-requires-python = ">=3.11"
+requires-python = ">=3.14"
 readme = "README.md"
 
 # Runtime dependencies. aiohttp drives the HTTP endpoints and the WebSocket hub;

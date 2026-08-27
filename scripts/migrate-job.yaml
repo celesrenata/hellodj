@@ -1,0 +1,71 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: migrate-saas-script
+  namespace: hellodj-service
+data:
+  migrate.py: |
+    import psycopg2
+
+    HELLODJ_DSN = "host=postgresql-rw.postgresql-service.svc.cluster.local port=5432 dbname=hellodj user=celes password=PSCh4ng3me!"
+
+    conn = psycopg2.connect(HELLODJ_DSN)
+    conn.autocommit = True
+    cur = conn.cursor()
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS tenants (
+            id                UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+            discord_user_id   BIGINT UNIQUE NOT NULL,
+            discord_username  TEXT,
+            email             TEXT,
+            created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
+            updated_at        TIMESTAMPTZ NOT NULL DEFAULT now()
+        )
+    """)
+    print("tenants table ready")
+
+    cur.execute("""
+        CREATE TABLE IF NOT EXISTS tenant_roles (
+            tenant_id       UUID NOT NULL REFERENCES tenants(id) ON DELETE CASCADE,
+            discord_user_id BIGINT NOT NULL,
+            role            TEXT NOT NULL CHECK (role IN ('admin', 'editor', 'viewer')),
+            granted_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
+            granted_by      BIGINT NOT NULL,
+            PRIMARY KEY (tenant_id, discord_user_id)
+        )
+    """)
+    print("tenant_roles table ready")
+
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_tenant_roles_user ON tenant_roles(discord_user_id)")
+    cur.execute("CREATE INDEX IF NOT EXISTS idx_tenant_roles_tenant ON tenant_roles(tenant_id)")
+    print("Indexes ready")
+
+    cur.close()
+    conn.close()
+    print("Migration complete!")
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: migrate-saas
+  namespace: hellodj-service
+spec:
+  ttlSecondsAfterFinished: 120
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: migrate
+          image: registry.celestium.life/hellodj/web-ui:saas-auth-2026-08-25
+          imagePullPolicy: Always
+          command: ["python", "/scripts/migrate.py"]
+          volumeMounts:
+            - name: script
+              mountPath: /scripts
+      volumes:
+        - name: script
+          configMap:
+            name: migrate-saas-script
+      imagePullSecrets:
+        - name: harbor-credentials
