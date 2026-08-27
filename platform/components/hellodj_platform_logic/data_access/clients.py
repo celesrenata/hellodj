@@ -117,7 +117,7 @@ class BackoffConfig:
         self._sleep(self.delay_for_attempt(attempt))
 
 
-def with_backoff(
+def with_backoff[T](
     operation: Callable[[], T],
     *,
     config: BackoffConfig | None = None,
