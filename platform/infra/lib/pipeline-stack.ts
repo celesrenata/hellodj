@@ -572,23 +572,28 @@ export class PipelineStack extends cdk.Stack {
       forkSources[fork.name] = CodePipelineSource.codeCommit(forkRepo, fork.branch);
     }
 
-    // ALL component builds run in the SINGLE synth step (sequentially) so they
-    // share one Nix install and one EFS mount. No per-component parallel projects.
+    // Per-component build paths — 12 parallel CodeBuild steps, each installs
+    // Nix on its own local disk (no shared state, no race). S3 cache handles
+    // persistence between runs.
     this.componentBuildSteps = {};
-
-    // Build all components as part of the synth step commands.
-    const allComponentBuildCommands: string[] = [];
+    const componentInputs: CodeBuildStep[] = [];
     for (const component of PLATFORM_COMPONENTS) {
-      allComponentBuildCommands.push(...getComponentBuildCommands(component));
+      const step = new CodeBuildStep(`build-${component}`, {
+        input: source,
+        installCommands: getInstallCommands(),
+        commands: getComponentBuildCommands(component),
+      });
+      this.componentBuildSteps[component] = step;
+      componentInputs.push(step);
     }
 
-    // The synth/build stage. Installs Nix (or reuses from EFS), runs CDK synth,
-    // then builds all 12 component images sequentially and pushes to ECR.
+    // The synth step runs CDK synth. Per-component build steps are wired as
+    // prerequisites so they run in parallel during the build stage.
     const synth = new CodeBuildStep('synth', {
       input: source,
       primaryOutputDirectory: 'platform/infra/cdk.out',
       installCommands: getInstallCommands(),
-      commands: [...getBuildCommands(), ...allComponentBuildCommands],
+      commands: getBuildCommands(),
       additionalInputs: {
         'forks/Lavalink': forkSources['Lavalink'],
         'forks/lavaplayer': forkSources['lavaplayer'],
@@ -596,6 +601,9 @@ export class PipelineStack extends cdk.Stack {
         'forks/youtube-source': forkSources['youtube-source'],
       },
     });
+    for (const step of componentInputs) {
+      synth.addStepDependency(step);
+    }
 
     this.pipeline = new CodePipeline(this, 'pipeline', {
       pipelineName: 'hellodj-pipeline',
