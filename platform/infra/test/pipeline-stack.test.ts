@@ -105,45 +105,38 @@ describe('PipelineStack helpers — promotion order and build-stage steps', () =
     ).toBe(false);
   });
 
-  test('getComponentBuildCommands resolve/verify closures rather than compiling images (Requirements 6.3, 6.4)', () => {
-    // Each Component's build step RESOLVES its prebuilt closure by store-path
-    // hash and VERIFIES retrievability from the cache/ECR; it never compiles
-    // an image on CodeBuild, so no build compute is billed (R6.3, R6.4).
+  test('getComponentBuildCommands builds the Nix image and pushes to ECR', () => {
+    // Each Component's build step builds the Nix OCI image for aarch64-linux
+    // on CodeBuild and pushes to ECR. Source is CodeCommit (no GHA).
     const commands = getComponentBuildCommands('lavalink');
-    const resolve = commands.find((c) => c.includes('resolve_closure'));
-    expect(resolve).toBeDefined();
-    // Resolves this specific component's closure and verifies it.
-    expect(resolve).toContain('--component lavalink');
-    expect(resolve).toContain('--verify');
-    // No image compilation happens in a component build step (R6.3, R6.4).
+    // Runs nix build for the component's aarch64-linux image.
     expect(
-      commands.some((c) =>
-        /nixos-generate|docker build|buildLayeredImage|nix build/i.test(c),
-      ),
-    ).toBe(false);
+      commands.some((c) => c.includes('nix build') && c.includes('aarch64-linux')),
+    ).toBe(true);
+    // Pushes to ECR.
+    expect(
+      commands.some((c) => c.includes('docker push') && c.includes('lavalink')),
+    ).toBe(true);
+    // Runs the dependency gate.
+    expect(
+      commands.some((c) => c.includes('gate_dependencies') && c.includes('lavalink')),
+    ).toBe(true);
   });
 
-  test('every Component build step resolves/verifies its closure (no compile) (Requirements 6.3, 6.4, 15.2)', () => {
+  test('every Component build step builds and pushes its image (R15.2)', () => {
     // Per-component paths: one entry per independently deployable Component,
-    // each doing metadata-only resolve/verify rather than a build.
+    // each building its Nix image and pushing to ECR.
     expect(PLATFORM_COMPONENTS).toHaveLength(12);
     for (const component of PLATFORM_COMPONENTS) {
       const commands = getComponentBuildCommands(component);
-      // Resolves + verifies the closure for exactly this component.
+      // Builds the Nix image for this component.
       expect(
-        commands.some(
-          (c) =>
-            c.includes('resolve_closure') &&
-            c.includes(`--component ${component}`) &&
-            c.includes('--verify'),
-        ),
+        commands.some((c) => c.includes('nix build') && c.includes(component)),
       ).toBe(true);
-      // Never compiles an image for the component.
+      // Pushes to ECR for this component.
       expect(
-        commands.some((c) =>
-          /nixos-generate|docker build|buildLayeredImage|nix build/i.test(c),
-        ),
-      ).toBe(false);
+        commands.some((c) => c.includes('docker push') || c.includes('ECR push')),
+      ).toBe(true);
     }
   });
 });

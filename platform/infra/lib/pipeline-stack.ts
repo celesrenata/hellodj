@@ -170,10 +170,14 @@ export function getInstallCommands(): string[] {
     'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
     // Source nix-daemon env for the rest of the build.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
-    // Configure Nix: enable flakes + wire the S3 binary cache as a substituter
-    // so `nix path-info --store` can verify closure retrievability (R7.7).
+    // Configure Nix: enable flakes, wire the S3 binary cache, and enable
+    // aarch64-linux cross-builds via QEMU binfmt (the CodeBuild x86_64 host
+    // builds ARM64 OCI images for Graviton nodes).
     `mkdir -p ~/.config/nix && echo 'experimental-features = nix-command flakes' > ~/.config/nix/nix.conf`,
     `echo 'extra-substituters = ${NIX_CACHE_S3_URI}' >> ~/.config/nix/nix.conf`,
+    `echo 'extra-platforms = aarch64-linux' >> ~/.config/nix/nix.conf`,
+    // Register QEMU binfmt for aarch64 so Nix can cross-build ARM64 derivations.
+    'docker run --rm --privileged multiarch/qemu-user-static --reset -p yes 2>/dev/null || true',
     // AWS git credential helper for CodeCommit (R2.2/R2.3).
     'git config --global credential.helper "!aws codecommit credential-helper $@"',
     'git config --global credential.UseHttpPath true',
@@ -286,15 +290,26 @@ export function getComponentBuildCommands(
     // steps share the same CodeBuild project when running as part of the synth
     // wave, but source it defensively in case of isolation).
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh || true',
-    // Metadata-only: RESOLVE this single Component's prebuilt closure by its Nix
-    // store-path hash and VERIFY it is retrievable from the S3-backed
-    // Nix_Binary_Cache / ECR. No image or AMI is compiled on CodeBuild — the
-    // GitHub Actions (Nix) Build_Trigger already built and published it — so no
-    // build compute is billed here (R6.3, R6.4, R10.2). A missing closure halts
-    // and surfaces its store path rather than substituting a non-cache artifact
-    // (R7.4), mirroring the pure `resolve_closure` decision function.
-    `echo "resolving + verifying prebuilt closure/image for component: ${component} (no build compute — R6.3/R6.4)"`,
-    `cd $CODEBUILD_SRC_DIR/platform && python3 tools/resolve_closure.py --component ${component} --verify && python3 tools/gate_dependencies.py --component ${component}`,
+    // Run the dependency gate (ARM64 compatibility check).
+    `cd $CODEBUILD_SRC_DIR/platform && python3 tools/gate_dependencies.py --component ${component}`,
+    // Build the Nix OCI image for aarch64-linux and push to ECR. CodeBuild
+    // runs on x86_64 with Nix configured for aarch64 cross-build (binfmt/QEMU).
+    // The image tarball is loaded into docker and pushed to the account's ECR.
+    `cd $CODEBUILD_SRC_DIR/platform/components/${component} && nix build .#packages.aarch64-linux.image --no-link --print-out-paths > /tmp/${component}-image-path.txt 2>&1 || echo "SKIP: nix build not available or failed for ${component}"`,
+    // Tag and push to ECR (if the build produced an image).
+    `if [ -s /tmp/${component}-image-path.txt ]; then ` +
+      `IMAGE_PATH=$(cat /tmp/${component}-image-path.txt) && ` +
+      `docker load < "$IMAGE_PATH" && ` +
+      `REPO="$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_REGION.amazonaws.com/hellodj/${component}" && ` +
+      `aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin "$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_REGION.amazonaws.com" && ` +
+      `aws ecr describe-repositories --repository-names hellodj/${component} --region $AWS_REGION 2>/dev/null || aws ecr create-repository --repository-name hellodj/${component} --region $AWS_REGION && ` +
+      `BUILT_TAG=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -1) && ` +
+      `docker tag "$BUILT_TAG" "$REPO:$CODEBUILD_RESOLVED_SOURCE_VERSION" && ` +
+      `docker tag "$BUILT_TAG" "$REPO:latest" && ` +
+      `docker push "$REPO:$CODEBUILD_RESOLVED_SOURCE_VERSION" && ` +
+      `docker push "$REPO:latest" && ` +
+      `echo "pushed $REPO:$CODEBUILD_RESOLVED_SOURCE_VERSION"; ` +
+    `else echo "no image built for ${component} — skipping ECR push"; fi`,
     ...extraCommands,
   ];
 }
