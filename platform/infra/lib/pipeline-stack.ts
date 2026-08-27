@@ -177,12 +177,12 @@ export function getInstallCommands(): string[] {
     'dnf install -y nodejs22 && alternatives --set node /usr/bin/node22 || ln -sf /usr/bin/node22 /usr/local/bin/node',
     // Install Nix (Determinate Systems installer).
     // ARM64 CodeBuild on AL2023 (Graviton) — native aarch64 builds.
+    // If EFS is mounted at /mnt/nix-store, symlink /nix/store BEFORE install
+    // so Nix writes directly to EFS (persists across builds).
+    'mkdir -p /nix && if [ -d /mnt/nix-store ]; then ln -sfn /mnt/nix-store /nix/store; fi',
     'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
     // Source nix-daemon env for the rest of the build.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
-    // Symlink /nix/store to the EFS-backed /mnt/nix-store so the store persists.
-    // The installer created /nix/store (empty); replace it with the EFS mount.
-    'if [ -d /mnt/nix-store ]; then rm -rf /nix/store && ln -s /mnt/nix-store /nix/store && systemctl restart nix-daemon 2>/dev/null || true; fi',
     // Configure Nix daemon: wire the S3 binary cache as a substituter + trusted.
     // `trusted-substituters` means Nix accepts unsigned narinfos from this cache.
     `echo 'extra-substituters = ${NIX_CACHE_S3_URI}' >> /etc/nix/nix.conf`,
