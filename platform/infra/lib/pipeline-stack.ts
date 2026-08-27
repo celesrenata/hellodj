@@ -175,11 +175,10 @@ export function getInstallCommands(): string[] {
     // AL2023 ARM64 ships Node 18 by default; CDK needs >= 20.
     // Node 22 is available as a namespaced package in AL2023.
     'dnf install -y nodejs22 && alternatives --set node /usr/bin/node22 || ln -sf /usr/bin/node22 /usr/local/bin/node',
-    // Install Nix (Determinate Systems installer).
-    // ARM64 CodeBuild on AL2023 (Graviton) — native aarch64 builds.
-    // If EFS is mounted at /mnt/nix-store, symlink /nix/store BEFORE install
-    // so Nix writes directly to EFS (persists across builds).
-    'mkdir -p /nix && if [ -d /mnt/nix-store ]; then ln -sfn /mnt/nix-store /nix/store; fi',
+    // Install Nix with persistent EFS-backed /nix/store.
+    // EFS is mounted at /mnt/nix-store by CodeBuild. We bind-mount it over
+    // /nix/store (not symlink — rename() needs same-filesystem semantics).
+    'mkdir -p /nix/store && if [ -d /mnt/nix-store ]; then mount --bind /mnt/nix-store /nix/store; fi',
     'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
     // Source nix-daemon env for the rest of the build.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
