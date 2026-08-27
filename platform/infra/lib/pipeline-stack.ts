@@ -59,9 +59,7 @@
  */
 import * as cdk from 'aws-cdk-lib';
 import * as codecommit from 'aws-cdk-lib/aws-codecommit';
-import * as codebuild from 'aws-cdk-lib/aws-codebuild';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
-import * as efs from 'aws-cdk-lib/aws-efs';
 import * as eks from 'aws-cdk-lib/aws-eks';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
@@ -175,17 +173,8 @@ export function getInstallCommands(): string[] {
     // AL2023 ARM64 ships Node 18 by default; CDK needs >= 20.
     // Node 22 is available as a namespaced package in AL2023.
     'dnf install -y nodejs22 && alternatives --set node /usr/bin/node22 || ln -sf /usr/bin/node22 /usr/local/bin/node',
-    // Install Nix with persistent EFS-backed /nix.
-    // EFS is mounted at /mnt/nix-store by CodeBuild. We bind-mount it over
-    // the entire /nix so the installer's temp-install-dir and /nix/store are
-    // on the same filesystem (rename() requires same-fs). The installer writes
-    // everything to EFS; next run it's already there.
-    'mkdir -p /nix && if [ -d /mnt/nix-store ]; then mount --bind /mnt/nix-store /nix; fi',
-    // Clean corrupted EFS state: receipt exists but no actual Nix binary.
-    'if [ -f /nix/receipt.json ] && [ ! -x /nix/var/nix/profiles/default/bin/nix ]; then echo "Corrupted EFS state, wiping"; rm -rf /nix/*; fi',
-    // If Nix was already installed (EFS has previous run's data), start daemon.
-    // Otherwise fresh install.
-    'if [ -x /nix/var/nix/profiles/default/bin/nix ]; then echo "Nix on EFS"; /nix/var/nix/profiles/default/bin/nix daemon & sleep 2; else curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm; fi',
+    // Install Nix on local disk (fast). S3 cache handles persistence.
+    'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
     // Source nix-daemon env for the rest of the build.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
     // Configure Nix daemon: wire the S3 binary cache as a substituter + trusted.
@@ -545,30 +534,10 @@ export class PipelineStack extends cdk.Stack {
   constructor(scope: Construct, id: string, props: PipelineStackProps = {}) {
     super(scope, id, props);
 
-    // Persistent Nix store cache on EFS. A SINGLE build project (not 12
-    // parallel) mounts EFS at /mnt/nix-store, bind-mounts it over /nix, and
-    // builds all 12 components sequentially. No race. Second run is instant.
-    let nixStoreFs: efs.FileSystem | undefined;
-    if (props.vpc) {
-      const efsSg = new ec2.SecurityGroup(this, 'NixStoreEfsSg', {
-        vpc: props.vpc,
-        description: 'NFS access for CodeBuild Nix store EFS',
-        allowAllOutbound: true,
-      });
-      efsSg.addIngressRule(
-        ec2.Peer.ipv4(props.vpc.vpcCidrBlock),
-        ec2.Port.tcp(2049),
-        'NFS from VPC (CodeBuild)',
-      );
-      nixStoreFs = new efs.FileSystem(this, 'NixStoreGpEfs', {
-        vpc: props.vpc,
-        performanceMode: efs.PerformanceMode.GENERAL_PURPOSE,
-        throughputMode: efs.ThroughputMode.ELASTIC,
-        removalPolicy: cdk.RemovalPolicy.DESTROY,
-        lifecyclePolicy: efs.LifecyclePolicy.AFTER_30_DAYS,
-        securityGroup: efsSg,
-      });
-    }
+    // Nix store cache is S3-backed (hellodj-nix-cache). No EFS — EFS latency
+    // is too high for Nix builds (which do heavy random I/O on /nix/store).
+    // Builds use fast local disk; results pushed to S3 with signing.
+    void props.vpc;
 
     const branch = props.branch ?? 'main';
     // Source from the private CodeCommit `hellodj` repository (R2.1/R3.1).
@@ -644,17 +613,6 @@ export class PipelineStack extends cdk.Stack {
       // When VPC is supplied, CodeBuild runs in-VPC with a persistent EFS-backed
       // /nix/store so subsequent builds skip all downloads.
       codeBuildDefaults: {
-        ...(props.vpc && nixStoreFs ? {
-          vpc: props.vpc,
-          subnetSelection: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
-          fileSystemLocations: [
-            codebuild.FileSystemLocation.efs({
-              identifier: 'nix_store',
-              location: `${nixStoreFs.fileSystemId}.efs.${this.region}.amazonaws.com:/`,
-              mountPoint: '/mnt/nix-store',
-            }),
-          ],
-        } : {}),
         buildEnvironment: {
           computeType: cdk.aws_codebuild.ComputeType.LARGE,
           buildImage: cdk.aws_codebuild.LinuxArmBuildImage.fromCodeBuildImageId(
