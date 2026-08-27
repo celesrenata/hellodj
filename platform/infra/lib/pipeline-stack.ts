@@ -158,7 +158,7 @@ export const NIX_CACHE_S3_URI = 's3://hellodj-nix-cache';
 
 /** Public key for the Nix cache signing key (narinfo verification). */
 export const NIX_CACHE_PUBLIC_KEY =
-  'hellodj-nix-cache:2gVEQtuz35FjpE+AVEVLh/gSiZ86NMoTDlrutgiFbk0=';
+  'hellodj-nix-cache:OZtAgL5UxJUnnl//7W/On1SReSVdGkcFHKQFJUk1IDo=';
 
 /**
  * Install commands that provision Nix + Python tooling in the CodeBuild env.
@@ -186,7 +186,7 @@ export function getInstallCommands(): string[] {
     'systemctl restart nix-daemon 2>/dev/null || true',
     // Decrypt the Nix cache signing key from sops (KMS-backed).
     'curl -fsSL -o /usr/local/bin/sops https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.arm64 && chmod +x /usr/local/bin/sops',
-    `sops --decrypt $CODEBUILD_SRC_DIR/platform/secrets/nix-cache-key.sec.enc > /tmp/nix-cache-key.sec`,
+    `sops --decrypt --input-type binary --output-type binary $CODEBUILD_SRC_DIR/platform/secrets/nix-cache-key.sec.enc > /tmp/nix-cache-key.sec`,
     // AWS git credential helper for CodeCommit (R2.2/R2.3).
     'git config --global credential.helper "!aws codecommit credential-helper $@"',
     'git config --global credential.UseHttpPath true',
