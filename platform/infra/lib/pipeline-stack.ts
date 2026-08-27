@@ -607,14 +607,12 @@ export class PipelineStack extends cdk.Stack {
       // fail because the kubectl handler is scoped to the EKS stack. Pipeline
       // definition changes are deployed manually with `cdk deploy hellodj-pipeline`.
       selfMutation: false,
-      // Use MEDIUM compute on ARM64 (Graviton) for all CodeBuild projects.
-      // Native aarch64 builds — no QEMU cross-compilation needed since the
-      // target EKS nodes are also ARM64. AL2023 ARM64 standard:1.0 ships
-      // Node 20+, Python 3.11+, and modern tooling.
+      // Use LARGE compute on ARM64 (Graviton) for all CodeBuild projects.
+      // Native aarch64 builds — no QEMU. AL2023 ARM64 requires LARGE compute.
       // Privileged mode is required for docker daemon (image build + push).
       codeBuildDefaults: {
         buildEnvironment: {
-          computeType: cdk.aws_codebuild.ComputeType.MEDIUM,
+          computeType: cdk.aws_codebuild.ComputeType.LARGE,
           buildImage: cdk.aws_codebuild.LinuxArmBuildImage.fromCodeBuildImageId(
             'aws/codebuild/amazonlinux2023-aarch64-standard:1.0',
           ),
