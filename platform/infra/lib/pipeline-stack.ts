@@ -644,6 +644,24 @@ export class PipelineStack extends cdk.Stack {
               `arn:aws:ecr:${this.region}:${this.account}:repository/hellodj/*`,
             ],
           }),
+          // CodeCommit pull for flake inputs referencing the fork repos.
+          new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            actions: [
+              'codecommit:GitPull',
+              'codecommit:GetBranch',
+              'codecommit:GetCommit',
+              'codecommit:GetRepository',
+              'codecommit:ListBranches',
+            ],
+            resources: [
+              `arn:aws:codecommit:${this.region}:${this.account}:hellodj`,
+              `arn:aws:codecommit:${this.region}:${this.account}:Lavalink`,
+              `arn:aws:codecommit:${this.region}:${this.account}:lavaplayer`,
+              `arn:aws:codecommit:${this.region}:${this.account}:LavaSrc`,
+              `arn:aws:codecommit:${this.region}:${this.account}:youtube-source`,
+            ],
+          }),
         ],
       },
     });
