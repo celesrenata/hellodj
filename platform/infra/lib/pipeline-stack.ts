@@ -177,6 +177,8 @@ export function getInstallCommands(): string[] {
     'dnf install -y nodejs22 && alternatives --set node /usr/bin/node22 || ln -sf /usr/bin/node22 /usr/local/bin/node',
     // Install Nix (Determinate Systems installer).
     // ARM64 CodeBuild on AL2023 (Graviton) — native aarch64 builds.
+    // Remove stale receipt from EFS if present (from failed prior installs).
+    'rm -f /nix/receipt.json /nix/nix-installer 2>/dev/null || true',
     'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
     // Source nix-daemon env for the rest of the build.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
@@ -674,7 +676,7 @@ export class PipelineStack extends cdk.Stack {
             codebuild.FileSystemLocation.efs({
               identifier: 'nix_store',
               location: `${nixStoreFs!.fileSystemId}.efs.${this.region}.amazonaws.com:/`,
-              mountPoint: '/nix',
+              mountPoint: '/nix/store',
             }),
           ],
         } : {}),
