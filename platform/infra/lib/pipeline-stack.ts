@@ -174,9 +174,11 @@ export function getInstallCommands(): string[] {
     // Source nix-daemon env for the rest of the build.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
     // Configure Nix daemon: wire the S3 binary cache as a substituter + trusted.
+    // `trusted-substituters` means Nix accepts unsigned narinfos from this cache.
     `echo 'extra-substituters = ${NIX_CACHE_S3_URI}' >> /etc/nix/nix.conf`,
     `echo 'extra-trusted-substituters = ${NIX_CACHE_S3_URI}' >> /etc/nix/nix.conf`,
     `echo 'extra-trusted-users = root' >> /etc/nix/nix.conf`,
+    `echo 'require-sigs = false' >> /etc/nix/nix.conf`,
     'systemctl restart nix-daemon 2>/dev/null || true',
     // AWS git credential helper for CodeCommit (R2.2/R2.3).
     'git config --global credential.helper "!aws codecommit credential-helper $@"',
