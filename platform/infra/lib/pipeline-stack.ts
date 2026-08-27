@@ -281,30 +281,28 @@ export function getComponentBuildCommands(
   extraCommands: string[] = [],
 ): string[] {
   return [
-    // Source Nix env (installed by installCommands on the synth step; component
-    // steps share the same CodeBuild project when running as part of the synth
-    // wave, but source it defensively in case of isolation).
+    // Source Nix env.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh || true',
     // Run the dependency gate (ARM64 compatibility check).
     `cd $CODEBUILD_SRC_DIR/platform && python3 tools/gate_dependencies.py --component ${component}`,
-    // Build the Nix OCI image for aarch64-linux and push to ECR. CodeBuild
-    // runs on x86_64 with Nix configured for aarch64 cross-build (binfmt/QEMU).
-    // The image tarball is loaded into docker and pushed to the account's ECR.
-    `cd $CODEBUILD_SRC_DIR/platform/components/${component} && nix build .#packages.aarch64-linux.image --no-link --print-out-paths > /tmp/${component}-image-path.txt 2>&1 || echo "SKIP: nix build not available or failed for ${component}"`,
-    // Tag and push to ECR (if the build produced an image).
-    `if [ -s /tmp/${component}-image-path.txt ]; then ` +
-      `IMAGE_PATH=$(cat /tmp/${component}-image-path.txt) && ` +
-      `docker load < "$IMAGE_PATH" && ` +
-      `REPO="$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_REGION.amazonaws.com/hellodj/${component}" && ` +
-      `aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin "$(aws sts get-caller-identity --query Account --output text).dkr.ecr.$AWS_REGION.amazonaws.com" && ` +
-      `aws ecr describe-repositories --repository-names hellodj/${component} --region $AWS_REGION 2>/dev/null || aws ecr create-repository --repository-name hellodj/${component} --region $AWS_REGION && ` +
-      `BUILT_TAG=$(docker images --format "{{.Repository}}:{{.Tag}}" | head -1) && ` +
-      `docker tag "$BUILT_TAG" "$REPO:$CODEBUILD_RESOLVED_SOURCE_VERSION" && ` +
-      `docker tag "$BUILT_TAG" "$REPO:latest" && ` +
-      `docker push "$REPO:$CODEBUILD_RESOLVED_SOURCE_VERSION" && ` +
-      `docker push "$REPO:latest" && ` +
-      `echo "pushed $REPO:$CODEBUILD_RESOLVED_SOURCE_VERSION"; ` +
-    `else echo "no image built for ${component} — skipping ECR push"; fi`,
+    // Build the Nix OCI image for aarch64-linux natively (CodeBuild is ARM64).
+    `cd $CODEBUILD_SRC_DIR/platform/components/${component} && nix build .#packages.aarch64-linux.image --no-link --print-out-paths > /tmp/${component}-image-path.txt || echo "SKIP: nix build failed for ${component}"`,
+    // Load + tag + push to ECR.
+    `set +e; if [ -s /tmp/${component}-image-path.txt ]; then ` +
+      `IMAGE_PATH=$(head -1 /tmp/${component}-image-path.txt); ` +
+      `if [ -f "$IMAGE_PATH" ]; then ` +
+        `ACCOUNT=$(aws sts get-caller-identity --query Account --output text); ` +
+        `REPO="$ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com/hellodj/${component}"; ` +
+        `aws ecr get-login-password --region $AWS_REGION | docker login --username AWS --password-stdin "$ACCOUNT.dkr.ecr.$AWS_REGION.amazonaws.com"; ` +
+        `docker load < "$IMAGE_PATH"; ` +
+        `BUILT_TAG=$(docker images --format "{{.Repository}}:{{.Tag}}" | grep -v "^$" | head -1); ` +
+        `docker tag "$BUILT_TAG" "$REPO:$CODEBUILD_RESOLVED_SOURCE_VERSION"; ` +
+        `docker tag "$BUILT_TAG" "$REPO:latest"; ` +
+        `docker push "$REPO:$CODEBUILD_RESOLVED_SOURCE_VERSION"; ` +
+        `docker push "$REPO:latest"; ` +
+        `echo "pushed $REPO:$CODEBUILD_RESOLVED_SOURCE_VERSION"; ` +
+      `else echo "image path not a file: $IMAGE_PATH"; cat /tmp/${component}-image-path.txt; exit 1; fi; ` +
+    `else echo "no image built for ${component}"; cat /tmp/${component}-image-path.txt 2>/dev/null; exit 1; fi`,
     ...extraCommands,
   ];
 }
