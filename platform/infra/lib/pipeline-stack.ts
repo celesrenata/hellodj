@@ -299,6 +299,13 @@ export function getComponentBuildCommands(
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh || true',
     // Run the dependency gate (ARM64 compatibility check).
     `cd $CODEBUILD_SRC_DIR/platform && python3 tools/gate_dependencies.py --component ${component}`,
+    // Copy shared platform logic into the component source tree so the Nix
+    // flake can see it (flakes only access git-tracked files within their root).
+    `cd $CODEBUILD_SRC_DIR/platform/components/${component} && ` +
+      `if [ -d $CODEBUILD_SRC_DIR/platform/components/hellodj_platform_logic ]; then ` +
+        `cp -r $CODEBUILD_SRC_DIR/platform/components/hellodj_platform_logic ./hellodj_platform_logic && ` +
+        `git add -f hellodj_platform_logic 2>/dev/null || true; ` +
+      `fi`,
     // Build the Nix OCI image for aarch64-linux natively (CodeBuild is ARM64).
     `cd $CODEBUILD_SRC_DIR/platform/components/${component} && nix build .#packages.aarch64-linux.image --no-link --print-out-paths > /tmp/${component}-image-path.txt || echo "SKIP: nix build failed for ${component}"`,
     // Load + tag + push to ECR, then push closure to S3 Nix cache.

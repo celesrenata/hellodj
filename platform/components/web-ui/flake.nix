@@ -29,10 +29,6 @@
 
         pythonEnv = python.withPackages pythonDeps;
 
-        # The shared pure-logic package (auth_routing, data_access, types)
-        # bundled alongside the component at build time.
-        platformLogicSrc = ../hellodj_platform_logic;
-
         # Tailwind CSS v4 compiled at Nix build time via buildNpmPackage.
         # Deterministic, sandboxed, fully offline once deps are fetched.
         tailwindCss = pkgs.buildNpmPackage {
@@ -72,12 +68,10 @@
           # Vendored JS from fetchurl
           cp ${htmxJs} $out/app/static/js/htmx.min.js
           cp ${alpineJs} $out/app/static/js/alpine.min.js
-          # Shared platform logic package
-          mkdir -p $out/app/hellodj_platform_logic
-          cp -r ${platformLogicSrc}/*.py $out/app/hellodj_platform_logic/
-          cp -r ${platformLogicSrc}/py.typed $out/app/hellodj_platform_logic/ 2>/dev/null || true
-          cp -r ${platformLogicSrc}/types $out/app/hellodj_platform_logic/types 2>/dev/null || true
-          cp -r ${platformLogicSrc}/data_access $out/app/hellodj_platform_logic/data_access 2>/dev/null || true
+          # Shared platform logic package (copied into source tree by pipeline)
+          if [ -d $src/hellodj_platform_logic ]; then
+            cp -r $src/hellodj_platform_logic $out/app/hellodj_platform_logic
+          fi
         '';
 
         image = pkgs.dockerTools.buildLayeredImage {
