@@ -156,6 +156,10 @@ export const GATE_HOOK_MARKER = 'HELLODJ_BUILD_GATE_HOOK';
 /** S3-backed Nix binary cache URI (matches closures.toml [cache].uri). */
 export const NIX_CACHE_S3_URI = 's3://hellodj-nix-cache';
 
+/** Public key for the Nix cache signing key (narinfo verification). */
+export const NIX_CACHE_PUBLIC_KEY =
+  'hellodj-nix-cache:2gVEQtuz35FjpE+AVEVLh/gSiZ86NMoTDlrutgiFbk0=';
+
 /**
  * Install commands that provision Nix + Python tooling in the CodeBuild env.
  * These run once before any build/gate command and configure:
@@ -178,8 +182,11 @@ export function getInstallCommands(): string[] {
     `echo 'extra-substituters = ${NIX_CACHE_S3_URI}' >> /etc/nix/nix.conf`,
     `echo 'extra-trusted-substituters = ${NIX_CACHE_S3_URI}' >> /etc/nix/nix.conf`,
     `echo 'extra-trusted-users = root' >> /etc/nix/nix.conf`,
-    `echo 'require-sigs = false' >> /etc/nix/nix.conf`,
+    `echo 'trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ${NIX_CACHE_PUBLIC_KEY}' >> /etc/nix/nix.conf`,
     'systemctl restart nix-daemon 2>/dev/null || true',
+    // Decrypt the Nix cache signing key from sops (KMS-backed).
+    'curl -fsSL -o /usr/local/bin/sops https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.arm64 && chmod +x /usr/local/bin/sops',
+    `sops --decrypt $CODEBUILD_SRC_DIR/platform/secrets/nix-cache-key.sec.enc > /tmp/nix-cache-key.sec`,
     // AWS git credential helper for CodeCommit (R2.2/R2.3).
     'git config --global credential.helper "!aws codecommit credential-helper $@"',
     'git config --global credential.UseHttpPath true',
@@ -308,7 +315,7 @@ export function getComponentBuildCommands(
         `docker push "$REPO:$CODEBUILD_RESOLVED_SOURCE_VERSION"; ` +
         `docker push "$REPO:latest"; ` +
         `echo "pushed $REPO:$CODEBUILD_RESOLVED_SOURCE_VERSION"; ` +
-        `nix copy --to '${NIX_CACHE_S3_URI}' "$IMAGE_PATH" 2>/dev/null || true; ` +
+        `nix copy --to '${NIX_CACHE_S3_URI}' --secret-key-files /tmp/nix-cache-key.sec "$IMAGE_PATH" 2>/dev/null || true; ` +
       `else echo "image path not a file: $IMAGE_PATH"; cat /tmp/${component}-image-path.txt; exit 1; fi; ` +
     `else echo "no image built for ${component}"; cat /tmp/${component}-image-path.txt 2>/dev/null; exit 1; fi`,
     ...extraCommands,
@@ -679,6 +686,14 @@ export class PipelineStack extends cdk.Stack {
             resources: [
               'arn:aws:s3:::hellodj-nix-cache',
               'arn:aws:s3:::hellodj-nix-cache/*',
+            ],
+          }),
+          // KMS decrypt for sops (Nix cache signing key).
+          new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            actions: ['kms:Decrypt'],
+            resources: [
+              `arn:aws:kms:${this.region}:${this.account}:key/3a087d5f-2c33-4cfa-adfe-fdcad27bbe0d`,
             ],
           }),
         ],
