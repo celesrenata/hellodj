@@ -616,13 +616,42 @@ export class PipelineStack extends cdk.Stack {
       // default SMALL (2 vCPU, 3 GB) is too slow for the Nix install + npm ci
       // + cdk synth cycle. Ubuntu 24.04 standard:8.0 ships with Node 22/24,
       // Python 3.14, and modern tooling — no need to install Node separately.
+      // Privileged mode is required for docker daemon (image build + push).
       codeBuildDefaults: {
         buildEnvironment: {
           computeType: cdk.aws_codebuild.ComputeType.MEDIUM,
           buildImage: cdk.aws_codebuild.LinuxBuildImage.fromCodeBuildImageId(
             'aws/codebuild/standard:8.0',
           ),
+          privileged: true,
         },
+        rolePolicy: [
+          // ECR push permissions for Nix-built OCI images.
+          new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            actions: [
+              'ecr:GetAuthorizationToken',
+            ],
+            resources: ['*'],
+          }),
+          new iam.PolicyStatement({
+            effect: iam.Effect.ALLOW,
+            actions: [
+              'ecr:BatchCheckLayerAvailability',
+              'ecr:GetDownloadUrlForLayer',
+              'ecr:BatchGetImage',
+              'ecr:PutImage',
+              'ecr:InitiateLayerUpload',
+              'ecr:UploadLayerPart',
+              'ecr:CompleteLayerUpload',
+              'ecr:DescribeRepositories',
+              'ecr:CreateRepository',
+            ],
+            resources: [
+              `arn:aws:ecr:${this.region}:${this.account}:repository/hellodj/*`,
+            ],
+          }),
+        ],
       },
     });
 
