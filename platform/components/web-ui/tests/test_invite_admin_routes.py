@@ -21,6 +21,7 @@ class _FakeInviteService:
         self.invite_calls: list[tuple[str, str]] = []
         self.resend_calls: list[tuple[str, str]] = []
         self.revoke_calls: list[str] = []
+        self.delete_calls: list[str] = []
         self.raise_on_revoke: str | None = None
 
     def list_invites(self) -> list[dict[str, Any]]:
@@ -39,6 +40,10 @@ class _FakeInviteService:
         if self.raise_on_revoke is not None:
             raise InviteError(self.raise_on_revoke)
         return {"email": email, "status": "revoked"}
+
+    def delete(self, email: str) -> dict[str, Any]:
+        self.delete_calls.append(email)
+        return {"email": email, "status": "deleted"}
 
 
 def _login_admin(client) -> None:
@@ -216,3 +221,32 @@ def test_invite_revoke_forbidden_for_non_admin(app) -> None:
 
     assert resp.status_code in (301, 302, 303)
     assert service.revoke_calls == []
+
+
+# -- POST /admin/invite/<email>/delete -------------------------------------
+
+
+def test_invite_delete_calls_service_and_refreshes(app) -> None:
+    service = _FakeInviteService(_invites())
+    app.extensions["invite_service"] = service
+    client = app.test_client()
+    _login_admin(client)
+
+    resp = client.post("/admin/invite/b@example.com/delete")
+    body = resp.get_data(as_text=True)
+
+    assert resp.status_code == 200
+    assert service.delete_calls == ["b@example.com"]
+    assert "Invite for b@example.com deleted." in body
+
+
+def test_invite_delete_forbidden_for_non_admin(app) -> None:
+    service = _FakeInviteService(_invites())
+    app.extensions["invite_service"] = service
+    client = app.test_client()
+    _login_user(client)
+
+    resp = client.post("/admin/invite/b@example.com/delete")
+
+    assert resp.status_code in (301, 302, 303)
+    assert service.delete_calls == []

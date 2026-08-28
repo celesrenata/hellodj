@@ -285,6 +285,36 @@ def build_pages_blueprint() -> Blueprint:
             directory.set_enabled(username, enabled)
         return render_template("partials/admin_user_list.html", users=_admin_users())
 
+    @bp.route("/admin/users/<username>/delete", methods=["POST"])
+    def admin_delete_user(username: str):  # type: ignore[unused-ignore]
+        """Permanently delete an account, then return the list. Admin-only.
+
+        Distinct from disabling (a reversible flag): this removes the account
+        from Cognito outright, so it drops off the directory. A surfaced error
+        (e.g. Cognito failure) is shown as a notice above the refreshed list.
+        """
+        if not _require_login():
+            return redirect(url_for("pages.login"))
+        if not _is_admin():
+            return redirect(url_for("pages.dashboard"))
+        directory = _admin_directory()
+        error = None
+        success = None
+        if not directory:
+            error = "user management is not available (no directory configured)"
+        else:
+            try:
+                directory.delete_user(username)
+                success = f"Account {username} deleted."
+            except Exception as exc:  # noqa: BLE001 - surface message to admin
+                error = str(exc)
+        return render_template(
+            "partials/admin_user_list.html",
+            users=_admin_users(),
+            invite_error=error,
+            invite_success=success,
+        )
+
     return bp
 
 

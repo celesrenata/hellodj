@@ -42,6 +42,8 @@ class CognitoClient(Protocol):
 
     def admin_disable_user(self, **kwargs: Any) -> dict[str, Any]: ...
 
+    def admin_delete_user(self, **kwargs: Any) -> dict[str, Any]: ...
+
 
 class AdminDirectory:
     """Manage all platform accounts through the Cognito user pool."""
@@ -92,6 +94,18 @@ class AdminDirectory:
             self._client.admin_disable_user(
                 UserPoolId=self._user_pool_id, Username=username
             )
+
+    def delete_user(self, username: str) -> None:
+        """Permanently delete the account from the Cognito user pool.
+
+        Unlike :meth:`set_enabled` (a reversible disable), this removes the
+        account outright. Irreversible: the user is gone from Cognito and must
+        be re-invited to return. Group membership is dropped automatically with
+        the user.
+        """
+        self._client.admin_delete_user(
+            UserPoolId=self._user_pool_id, Username=username
+        )
 
     def _row(self, user: dict[str, Any]) -> dict[str, Any]:
         """Normalize a Cognito user object into a template-friendly row."""

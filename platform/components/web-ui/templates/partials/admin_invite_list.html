@@ -43,6 +43,10 @@
                       hx-confirm="Revoke the invite for {{ invite.email }}?"
                       hx-target="#admin-invite-list">Revoke</button>
             {% endif %}
+            <button class="btn btn-danger btn-sm"
+                    hx-post="{{ url_for('invite_admin.invite_delete', email=invite.email) }}"
+                    hx-confirm="Permanently delete the invite for {{ invite.email }}?"
+                    hx-target="#admin-invite-list">Delete</button>
           </td>
         </tr>
       {% else %}

@@ -204,6 +204,16 @@ body {
   border-color: var(--color-border);
 }
 .btn-ghost:hover { border-color: var(--color-border-hover); }
+.btn-danger {
+  background: transparent; color: var(--color-danger);
+  border-color: color-mix(in oklch, var(--color-danger) 40%, transparent);
+}
+.btn-danger:hover {
+  background: color-mix(in oklch, var(--color-danger) 15%, transparent);
+  border-color: var(--color-danger);
+}
+.btn-danger:active { transform: scale(0.97); transition: transform 0.1s ease; }
+.btn-sm { min-height: 32px; padding: 6px 12px; font-size: 0.85rem; }
 .btn-block { width: 100%; margin-bottom: 12px; }
 .btn-disabled, .btn:disabled {
   background: var(--color-surface-2); color: var(--color-text-muted);

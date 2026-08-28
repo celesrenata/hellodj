@@ -30,6 +30,7 @@ __all__ = [
     "put_index_pointer",
     "list_invites",
     "revoke_invite",
+    "delete_invite",
     "effective_status",
     "RevokeError",
 ]
@@ -130,6 +131,34 @@ def revoke_invite(
             f"no pending invite for {email_norm} to revoke"
         ) from error
     return {"email": email_norm, "status": "revoked"}
+
+
+def delete_invite(
+    core: CoreTable,
+    *,
+    index_pk: str,
+    invite_pk: Any,
+    invite_sk: str,
+    invite_index_sk: Any,
+    email: str,
+) -> dict[str, Any]:
+    """Permanently delete an invite record and its listing pointer.
+
+    Unlike :func:`revoke_invite` (which keeps the record, flipping it to
+    ``revoked`` so its token dies but the row lingers in the admin list), this
+    removes the invite outright: both the per-email invite item and its pointer
+    in the shared index partition are deleted, so the row disappears from
+    :func:`list_invites`. Any token the invite held stops resolving because the
+    record — and its GSI1 token slot — no longer exist.
+
+    Idempotent: deleting an unknown/already-deleted invite is a no-op (the two
+    ``delete`` calls tolerate missing items) and still returns a ``deleted``
+    result so the caller renders a clean list.
+    """
+    email_norm = email.strip().lower()
+    core.delete(invite_pk(email_norm), invite_sk)
+    core.delete(index_pk, invite_index_sk(email_norm))
+    return {"email": email_norm, "status": "deleted"}
 
 
 def effective_status(data: Mapping[str, Any]) -> str:

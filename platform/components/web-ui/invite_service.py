@@ -295,6 +295,21 @@ class InviteService:
         except invite_admin.RevokeError as error:
             raise InviteError(str(error)) from error
 
+    def delete(self, email: str) -> dict[str, Any]:
+        """Permanently delete an invite record (any status) and its pointer.
+
+        Unlike :meth:`revoke` (which keeps a ``revoked`` row), this removes the
+        invite entirely so it drops off :meth:`list_invites`; idempotent (R1.4).
+        """
+        return invite_admin.delete_invite(
+            self._core,
+            index_pk=INVITE_INDEX_PK,
+            invite_pk=invite_pk,
+            invite_sk=INVITE_SK,
+            invite_index_sk=invite_index_sk,
+            email=email,
+        )
+
     def resend(self, email: str, *, invited_by: str) -> dict[str, Any]:
         """Re-send an invite by minting a fresh single-use token (R1.4).
 

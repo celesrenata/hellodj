@@ -143,4 +143,28 @@ def build_invite_admin_blueprint() -> Blueprint:
                 error = str(exc)
         return _invite_list(error=error, success=success)
 
+    @bp.route("/admin/invite/<email>/delete", methods=["POST"])
+    def invite_delete(email: str):  # type: ignore[unused-ignore]
+        """Permanently delete an invite record so it drops off the list.
+
+        Unlike revoke (which leaves a ``revoked`` row), this removes the invite
+        entirely — used to clear out accepted/expired/revoked clutter. Admin-only.
+        """
+        if not _require_login():
+            return redirect(url_for("pages.login"))
+        if not _is_admin():
+            return redirect(url_for("pages.dashboard"))
+        service = _invite_service()
+        error = None
+        success = None
+        if not service:
+            error = "invites are not available (no directory configured)"
+        else:
+            try:
+                service.delete(email)
+                success = f"Invite for {email} deleted."
+            except Exception as exc:  # noqa: BLE001 - surface message to admin
+                error = str(exc)
+        return _invite_list(error=error, success=success)
+
     return bp

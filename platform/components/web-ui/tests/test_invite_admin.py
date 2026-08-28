@@ -302,3 +302,43 @@ def test_resend_rejects_already_registered_email() -> None:
     svc, _, _, _ = _service(registered={"iris@example.com"})
     with pytest.raises(InviteError, match="already registered"):
         svc.resend("iris@example.com", invited_by="owner@x.io")
+
+
+# -- delete ----------------------------------------------------------------
+
+
+def test_delete_removes_invite_and_drops_it_from_the_list() -> None:
+    svc, core, _, _ = _service()
+    raw = svc.invite("jade@example.com", invited_by="owner@x.io")["raw_token"]
+
+    result = svc.delete("jade@example.com")
+
+    assert result["status"] == "deleted"
+    # The record and its listing pointer are gone (not just flipped).
+    assert core.get(invite_pk("jade@example.com"), INVITE_SK) is None
+    assert svc.list_invites() == []
+    # The deleted invite's token no longer resolves.
+    with pytest.raises(InviteConsumedError):
+        svc.resolve_by_token(raw)
+
+
+def test_delete_removes_an_accepted_invite_too() -> None:
+    svc, _, _, _ = _service()
+    raw = svc.invite("kyle@example.com", invited_by="owner@x.io")["raw_token"]
+    svc.register(raw)
+
+    svc.delete("kyle@example.com")
+
+    assert svc.list_invites() == []
+
+
+def test_delete_is_case_insensitive_and_idempotent() -> None:
+    svc, _, _, _ = _service()
+    svc.invite("lena@example.com", invited_by="owner@x.io")
+
+    svc.delete("Lena@Example.com")
+    # A second delete of an already-gone invite is a harmless no-op.
+    result = svc.delete("lena@example.com")
+
+    assert result["status"] == "deleted"
+    assert svc.list_invites() == []
