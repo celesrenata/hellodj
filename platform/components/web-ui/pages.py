@@ -51,6 +51,11 @@ def _admin_directory():
     return current_app.extensions.get("admin_directory")
 
 
+def _invite_service():
+    """Return the app's InviteService or ``None`` in degraded mode."""
+    return current_app.extensions.get("invite_service")
+
+
 def _require_login() -> bool:
     """Return whether an authenticated session exists."""
     return bool(session.get("user"))
@@ -188,6 +193,28 @@ def build_pages_blueprint() -> Blueprint:
             nav_items=_nav_for_current_user(),
             active="admin",
             users=_admin_users(),
+        )
+
+    @bp.route("/admin/invite", methods=["POST"])
+    def admin_invite():  # type: ignore[unused-ignore]
+        """Invite a new user by email (Cognito sends the email). Admin-only."""
+        if not _require_login():
+            return redirect(url_for("pages.login"))
+        if not _is_admin():
+            return redirect(url_for("pages.dashboard"))
+        email = request.form.get("email", "").strip()
+        service = _invite_service()
+        error = None
+        if service:
+            try:
+                service.invite(
+                    email,
+                    invited_by=(session.get("user") or {}).get("email", ""),
+                )
+            except Exception as exc:  # noqa: BLE001 - surface message to admin
+                error = str(exc)
+        return render_template(
+            "partials/admin_user_list.html", users=_admin_users(), invite_error=error
         )
 
     @bp.route("/admin/users/search")

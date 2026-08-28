@@ -36,6 +36,11 @@ from flask import (
 from hellodj_platform_logic.auth_routing import route_auth
 from hellodj_platform_logic.types import AuthProvider, AuthPurpose, UserType
 
+from source_oauth import (
+    source_authorize_url,
+    source_tokens_from_request,
+)
+
 __all__ = ["auth_bp", "build_auth_blueprint"]
 
 DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize"
@@ -132,6 +137,48 @@ def build_auth_blueprint() -> Blueprint:
         }
         return redirect(url_for("pages.dashboard"))
 
+    @bp.route("/discord/link")
+    def discord_link():  # type: ignore[unused-ignore]
+        """Start linking the logged-in user's Discord account (R3.1)."""
+        if not session.get("user"):
+            return redirect(url_for("pages.login"))
+        state = _new_state()
+        session["discord_link_state"] = state
+        params = {
+            "client_id": current_app.config.get("DISCORD_CLIENT_ID", ""),
+            "response_type": "code",
+            "scope": "identify",
+            "redirect_uri": _redirect_uri("auth.discord_link_callback"),
+            "state": state,
+        }
+        return redirect(
+            f"{DISCORD_AUTHORIZE_URL}?{urllib.parse.urlencode(params)}"
+        )
+
+    @bp.route("/discord/link/callback")
+    def discord_link_callback():  # type: ignore[unused-ignore]
+        """Finish Discord linking: store discord_id → user mapping (R3.1-3.4)."""
+        if not session.get("user"):
+            return redirect(url_for("pages.login"))
+        state = request.args.get("state", "")
+        if not state or state != session.pop("discord_link_state", None):
+            return redirect(url_for("guild.account", error="state_mismatch"))
+        code = request.args.get("code", "")
+        discord_id = _discord_id_from_code(
+            code, _redirect_uri("auth.discord_link_callback")
+        )
+        profiles = current_app.extensions.get("user_profiles")
+        user = session.get("user") or {}
+        if discord_id and profiles and user.get("sub"):
+            try:
+                profiles.link_discord(user["sub"], discord_id)
+                user["discord_id"] = discord_id
+                user["discord_linked"] = True
+                session["user"] = user
+            except ValueError:
+                return redirect(url_for("guild.account", error="already_linked"))
+        return redirect(url_for("guild.account"))
+
     @bp.route("/tidal/callback")
     def tidal_callback():  # type: ignore[unused-ignore]
         """First-party Tidal OAuth callback (R9.2, R9.5).
@@ -153,6 +200,51 @@ def build_auth_blueprint() -> Blueprint:
         forwarded = f"{tidal_stream_url.rstrip('/')}/auth/callback?{query}"
         return redirect(forwarded)
 
+    @bp.route("/sources/<guild_id>/<provider>/connect")
+    def source_connect(guild_id: str, provider: str):  # type: ignore[unused-ignore]
+        """Start a per-guild source OAuth flow (R5.1).
+
+        Stashes the guild + provider so the provider callback stores the tokens
+        into the correct isolated Per_Guild_Secret. Ownership is enforced by the
+        guild routes before the connect link is ever shown, and re-checked here.
+        """
+        if not session.get("user"):
+            return redirect(url_for("pages.login"))
+        if not _guild_source_authorized(guild_id):
+            return redirect(url_for("pages.guilds"))
+        state = _new_state()
+        session["source_state"] = state
+        session["source_guild"] = guild_id
+        session["source_provider"] = provider
+        authorize_url = source_authorize_url(provider, state, guild_id)
+        if not authorize_url:
+            # Provider not wired for interactive OAuth: land back on the guild.
+            return redirect(url_for("guild.guild_detail", guild_id=guild_id))
+        return redirect(authorize_url)
+
+    @bp.route("/sources/<guild_id>/<provider>/callback")
+    def source_callback(guild_id: str, provider: str):  # type: ignore[unused-ignore]
+        """Finish a per-guild source OAuth flow and store isolated tokens."""
+        if not session.get("user"):
+            return redirect(url_for("pages.login"))
+        state = request.args.get("state", "")
+        if not state or state != session.pop("source_state", None):
+            return redirect(url_for("guild.guild_detail", guild_id=guild_id))
+        if not _guild_source_authorized(guild_id):
+            return redirect(url_for("pages.guilds"))
+        tokens = source_tokens_from_request(provider)
+        sources = current_app.extensions.get("guild_sources")
+        if sources and tokens:
+            sources.store_tokens(
+                guild_id,
+                provider,
+                tokens,
+                connected_by=(session.get("user") or {}).get("sub", ""),
+            )
+        session.pop("source_guild", None)
+        session.pop("source_provider", None)
+        return redirect(url_for("guild.guild_detail", guild_id=guild_id))
+
     @bp.route("/logout", methods=["POST", "GET"])
     def logout():  # type: ignore[unused-ignore]
         """Clear the session."""
@@ -160,6 +252,27 @@ def build_auth_blueprint() -> Blueprint:
         return redirect(url_for("pages.login"))
 
     return bp
+
+
+def _guild_source_authorized(guild_id: str) -> bool:
+    """Re-check the caller may manage this guild's sources (defense in depth)."""
+    from guild_admin_service import can_manage_guild  # noqa: PLC0415
+
+    user = session.get("user") or {}
+    ga = current_app.extensions.get("guild_admin")
+    owner_sub = ga.owner_of(guild_id) if ga else None
+    admin_ids = ga.admin_discord_ids(guild_id) if ga else set()
+    return can_manage_guild(
+        guild_id=guild_id,
+        user_sub=user.get("sub"),
+        discord_id=user.get("discord_id"),
+        is_super_admin=bool(user.get("is_admin")),
+        owner_sub=owner_sub,
+        admin_discord_ids=admin_ids,
+    )
+
+
+
 
 
 def _start_discord_oauth():
@@ -248,6 +361,51 @@ def _exchange_code_for_groups(code: str, verifier: str) -> list[str]:
         return []
     id_token = tokens.get("id_token", "")
     return _groups_from_id_token(id_token)
+
+
+def _discord_id_from_code(code: str, redirect_uri: str) -> str | None:
+    """Exchange a Discord OAuth code for the user's Discord id.
+
+    Performs the Discord token exchange then calls ``/users/@me`` to read the
+    numeric user id used to link the account (R3.1). Returns ``None`` on any
+    failure so linking degrades rather than erroring.
+    """
+    if not code:
+        return None
+    client_id = current_app.config.get("DISCORD_CLIENT_ID", "")
+    client_secret = current_app.config.get("DISCORD_CLIENT_SECRET", "")
+    if not client_id or not client_secret:
+        return None
+    import urllib.request as _req
+
+    token_body = urllib.parse.urlencode(
+        {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": client_id,
+            "client_secret": client_secret,
+        }
+    ).encode("ascii")
+    try:
+        token_req = _req.Request(
+            f"{DISCORD_API_BASE}/oauth2/token",
+            data=token_body,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        with _req.urlopen(token_req, timeout=8) as resp:  # noqa: S310
+            access = json.loads(resp.read().decode("utf-8")).get("access_token")
+        if not access:
+            return None
+        me_req = _req.Request(
+            f"{DISCORD_API_BASE}/users/@me",
+            headers={"Authorization": f"Bearer {access}"},
+        )
+        with _req.urlopen(me_req, timeout=8) as resp:  # noqa: S310
+            return json.loads(resp.read().decode("utf-8")).get("id")
+    except Exception:  # noqa: BLE001
+        return None
 
 
 def _groups_from_id_token(id_token: str) -> list[str]:

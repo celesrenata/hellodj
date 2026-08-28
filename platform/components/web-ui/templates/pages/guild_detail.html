@@ -1,0 +1,45 @@
+{% extends layout|default("base.html") %}
+
+{% block title %}Guild{% endblock %}
+{% block heading %}Guild {{ guild_id }}{% endblock %}
+
+{% block content %}
+<div class="glass-panel panel-section" x-data="{ tab: 'admins' }">
+  <div class="tabs" role="tablist">
+    <button class="tab" :class="tab === 'admins' && 'tab--active'"
+            @click="tab = 'admins'" role="tab">Admins</button>
+    <button class="tab" :class="tab === 'sources' && 'tab--active'"
+            @click="tab = 'sources'" role="tab">Sources</button>
+  </div>
+
+  <div x-show="tab === 'admins'" x-transition role="tabpanel">
+    <h2 class="panel-section__title">Guild administrators</h2>
+    <p class="panel-section__muted">
+      Appoint people by Discord user id to administer this guild. Once they link
+      their Discord account they can manage this guild's sources.
+    </p>
+    <form class="field-row"
+          hx-post="{{ url_for('guild.appoint_admin', guild_id=guild_id) }}"
+          hx-target="#guild-admin-list">
+      <input class="field__input" name="discord_id" type="text"
+             inputmode="numeric" pattern="[0-9]+"
+             placeholder="Discord user id" aria-label="Discord user id">
+      <button type="submit" class="btn btn-primary">Add admin</button>
+    </form>
+    <div id="guild-admin-list">
+      {% include "partials/guild_admin_list.html" %}
+    </div>
+  </div>
+
+  <div x-show="tab === 'sources'" x-transition role="tabpanel">
+    <h2 class="panel-section__title">Connected sources</h2>
+    <p class="panel-section__muted">
+      Each source is authorized for THIS guild only. Connecting a source here
+      never affects any other guild.
+    </p>
+    <div id="guild-source-list">
+      {% include "partials/guild_source_list.html" %}
+    </div>
+  </div>
+</div>
+{% endblock %}

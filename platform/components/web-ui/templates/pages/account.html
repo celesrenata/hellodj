@@ -1,0 +1,24 @@
+{% extends layout|default("base.html") %}
+
+{% block title %}Account{% endblock %}
+{% block heading %}Account{% endblock %}
+
+{% block content %}
+<div class="glass-panel panel-section">
+  <h2 class="panel-section__title">Discord</h2>
+  {% if profile.discord_linked %}
+    <p class="panel-section__muted">
+      Linked to Discord id <code>{{ profile.discord_id }}</code>. You can sign
+      in with Discord from now on.
+    </p>
+  {% else %}
+    <p class="panel-section__muted">
+      Link your Discord account to sign in with Discord and to be recognized as
+      a guild administrator.
+    </p>
+    <a class="btn btn-primary" href="{{ url_for('auth.discord_link') }}">
+      Link Discord account
+    </a>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,33 @@
+{# Per-guild source connection status + connect/disconnect (isolated per guild). #}
+<div class="glass-panel data-table__wrap">
+  <table class="data-table">
+    <thead>
+      <tr><th scope="col">Source</th><th scope="col">Status</th><th scope="col"></th></tr>
+    </thead>
+    <tbody>
+      {% for source in sources %}
+        <tr>
+          <td>{{ source.provider|replace('_', ' ')|title }}</td>
+          <td>
+            {% if source.connected %}
+              <span class="badge badge--ok">Connected</span>
+            {% else %}
+              <span class="badge badge--muted">Not connected</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if source.connected %}
+              <button class="btn btn-ghost btn-sm"
+                      hx-post="{{ url_for('guild.disconnect_source', guild_id=guild_id, provider=source.provider) }}"
+                      hx-target="#guild-source-list"
+                      hx-confirm="Disconnect {{ source.provider }} for this guild?">Disconnect</button>
+            {% else %}
+              <a class="btn btn-primary btn-sm"
+                 href="{{ url_for('auth.source_connect', guild_id=guild_id, provider=source.provider) }}">Connect</a>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

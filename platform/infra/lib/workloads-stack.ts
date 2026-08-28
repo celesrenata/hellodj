@@ -199,6 +199,21 @@ export function stageEndpoint(stage: string, region: string): StageEndpoint {
 export const PLACEHOLDER_IMAGE_TAG = 'latest';
 
 /**
+ * Components on the playback path that resolve a guild's own source OAuth
+ * tokens at play time (R6.1). Each gets READ-ONLY access to the per-guild
+ * secret prefix `hellodj/<stage>/guild/*` so a track played in one guild uses
+ * that guild's Tidal/Spotify/YouTube auth, isolated from every other guild
+ * (R6.3, R7.2). The web-ui is the writer (handled separately); these are
+ * readers only.
+ */
+export const PER_GUILD_SOURCE_READERS: ReadonlySet<string> = new Set([
+  'discord-bot-core',
+  'tidal-stream',
+  'spotify-stream',
+  'lavalink',
+]);
+
+/**
  * Data/DAX/secret resources the workloads wire to. Pass the sibling stacks'
  * exposed props (from `DataStack` / `AuthStack`).
  */
@@ -610,10 +625,56 @@ export class WorkloadsStack extends cdk.Stack {
             'cognito-idp:AdminRemoveUserFromGroup',
             'cognito-idp:AdminEnableUser',
             'cognito-idp:AdminDisableUser',
+            // Email invite flow (R1.1): admin_create_user sends the Cognito
+            // invitation email with a temporary password.
+            'cognito-idp:AdminCreateUser',
           ],
           resources: [
             `arn:aws:cognito-idp:${this.region}:${this.account}:userpool/` +
               this.props.cognitoUserPoolId,
+          ],
+        }),
+      );
+      // Per-guild source OAuth tokens: the web-ui creates/updates/reads/deletes
+      // one isolated Secrets Manager secret per guild+provider under the
+      // `hellodj/<stage>/guild/*` prefix. Scoping the grant to that prefix is
+      // the IAM half of the per-guild isolation (R5.1, R5.2, R7.1) — the
+      // web-ui can never touch a non-guild secret.
+      sa.role.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          sid: 'PerGuildSourceSecrets',
+          effect: iam.Effect.ALLOW,
+          actions: [
+            'secretsmanager:CreateSecret',
+            'secretsmanager:PutSecretValue',
+            'secretsmanager:GetSecretValue',
+            'secretsmanager:DescribeSecret',
+            'secretsmanager:DeleteSecret',
+          ],
+          resources: [
+            `arn:aws:secretsmanager:${this.region}:${this.account}:secret:` +
+              `hellodj/${this.stage}/guild/*`,
+          ],
+        }),
+      );
+    }
+
+    // Bot-side per-guild source resolution (R6.1, R7.2): the playback path
+    // components resolve a guild's own OAuth tokens at play time. They get
+    // READ-ONLY access to the same `hellodj/<stage>/guild/*` prefix — enough to
+    // load a guild's credentials, never to write or reach another guild's.
+    if (PER_GUILD_SOURCE_READERS.has(spec.name)) {
+      sa.role.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          sid: 'PerGuildSourceSecretsRead',
+          effect: iam.Effect.ALLOW,
+          actions: [
+            'secretsmanager:GetSecretValue',
+            'secretsmanager:DescribeSecret',
+          ],
+          resources: [
+            `arn:aws:secretsmanager:${this.region}:${this.account}:secret:` +
+              `hellodj/${this.stage}/guild/*`,
           ],
         }),
       );

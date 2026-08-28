@@ -1,0 +1,24 @@
+{# Guild admin edges (by Discord id) with remove action. #}
+<div class="glass-panel data-table__wrap">
+  <table class="data-table">
+    <thead>
+      <tr><th scope="col">Discord id</th><th scope="col">Appointed by</th><th scope="col"></th></tr>
+    </thead>
+    <tbody>
+      {% for admin in admins %}
+        <tr>
+          <td><code>{{ admin.discord_id }}</code></td>
+          <td>{{ admin.appointed_by }}</td>
+          <td>
+            <button class="btn btn-ghost btn-sm"
+                    hx-post="{{ url_for('guild.remove_admin', guild_id=guild_id, discord_id=admin.discord_id) }}"
+                    hx-target="#guild-admin-list"
+                    hx-confirm="Remove admin {{ admin.discord_id }}?">Remove</button>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td class="data-table__empty" colspan="3">No admins appointed.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

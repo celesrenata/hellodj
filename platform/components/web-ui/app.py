@@ -34,7 +34,9 @@ from flask import Flask, redirect, session, url_for
 
 from admin_directory import AdminDirectory, build_admin_directory
 from auth import build_auth_blueprint
+from bootstrap import build_services
 from config_store import ConfigStore
+from guild_routes import build_guild_blueprint
 from pages import build_pages_blueprint
 from secrets_store import SecretsProvider
 
@@ -82,7 +84,17 @@ def create_app(
     )
     _configure(app, overrides or {})
 
-    app.extensions["config_store"] = config_store
+    # Runtime services (config, user profiles, guild admin, per-guild sources,
+    # invites) built from the environment. When a config_store is explicitly
+    # injected (tests), respect it; otherwise bootstrap the full service set.
+    services = build_services()
+    app.extensions["config_store"] = (
+        config_store if config_store is not None else services["config_store"]
+    )
+    app.extensions["user_profiles"] = services["user_profiles"]
+    app.extensions["guild_admin"] = services["guild_admin"]
+    app.extensions["guild_sources"] = services["guild_sources"]
+    app.extensions["invite_service"] = services["invite_service"]
     app.extensions["secrets"] = secrets_provider
     # The admin panel manages ALL accounts via Cognito; falls back to the
     # env-built directory (or None → degraded/empty) when not injected.
@@ -94,6 +106,7 @@ def create_app(
 
     app.register_blueprint(build_auth_blueprint())
     app.register_blueprint(build_pages_blueprint())
+    app.register_blueprint(build_guild_blueprint())
 
     _register_static_hash(app)
     _register_health(app)
@@ -111,9 +124,14 @@ def _configure(app: Flask, overrides: dict[str, Any]) -> None:
         HELLODJ_STAGE=stage,
         PUBLIC_BASE_URL=os.getenv("HELLODJ_PUBLIC_BASE_URL", ""),
         DISCORD_CLIENT_ID=os.getenv("DISCORD_CLIENT_ID", ""),
+        DISCORD_CLIENT_SECRET=os.getenv("DISCORD_CLIENT_SECRET", ""),
         COGNITO_DOMAIN=os.getenv("COGNITO_DOMAIN", ""),
         COGNITO_CLIENT_ID=os.getenv("COGNITO_CLIENT_ID", ""),
         TIDAL_STREAM_URL=os.getenv("TIDAL_STREAM_URL", ""),
+        # Per-guild source OAuth client ids (secrets stay with the sidecars).
+        SPOTIFY_CLIENT_ID=os.getenv("SPOTIFY_CLIENT_ID", ""),
+        TIDAL_CLIENT_ID=os.getenv("TIDAL_CLIENT_ID", ""),
+        GOOGLE_CLIENT_ID=os.getenv("GOOGLE_CLIENT_ID", ""),
     )
     app.config.update(overrides)
 

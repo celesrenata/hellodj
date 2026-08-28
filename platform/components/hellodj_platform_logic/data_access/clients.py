@@ -81,6 +81,10 @@ class TableLike(Protocol):
         """Return a response dict containing an ``Items`` list."""
         ...
 
+    def delete_item(self, **kwargs: Any) -> dict[str, Any]:
+        """Delete a single item by key, honoring any ``ConditionExpression``."""
+        ...
+
 
 class BackoffConfig:
     """Configuration for :func:`with_backoff` exponential-backoff retries."""
@@ -249,4 +253,12 @@ class ReadThroughTable:
             lambda: self._ddb.update_item(**kwargs),
             config=self._backoff,
             description="ddb update_item",
+        )
+
+    def delete_item(self, **kwargs: Any) -> dict[str, Any]:
+        """Delete one item on DynamoDB (the authoritative store)."""
+        return with_backoff(
+            lambda: self._ddb.delete_item(**kwargs),
+            config=self._backoff,
+            description="ddb delete_item",
         )

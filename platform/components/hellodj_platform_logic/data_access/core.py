@@ -141,6 +141,30 @@ class CoreTable:
         response = self._table.query(**kwargs)
         return [dict(item) for item in response.get("Items", [])]
 
+    def query_pk_prefix(
+        self,
+        pk: str,
+        *,
+        sk_prefix: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Query the base table by partition key, optionally by ``SK`` prefix.
+
+        Used to enumerate an item collection under one partition (e.g. all
+        ``ADMIN#<discordId>`` edges or ``SOURCE#<provider>`` items for a guild).
+        Served through the DAX read path with fall-through to DynamoDB.
+        """
+        kwargs: dict[str, Any] = {
+            "KeyConditionExpression": "PK = :pk",
+            "ExpressionAttributeValues": {":pk": pk},
+        }
+        if sk_prefix is not None:
+            kwargs["KeyConditionExpression"] = (
+                "PK = :pk AND begins_with(SK, :skp)"
+            )
+            kwargs["ExpressionAttributeValues"][":skp"] = sk_prefix
+        response = self._table.query(**kwargs)
+        return [dict(item) for item in response.get("Items", [])]
+
     # -- writes -------------------------------------------------------------
 
     def put_new(
@@ -271,3 +295,7 @@ class CoreTable:
             f"after {self._lock_retries + 1} attempts",
             error_code="ConditionalCheckFailedException",
         )
+
+    def delete(self, pk: str, sk: str) -> None:
+        """Delete the item at (``pk``, ``sk``); a no-op if it does not exist."""
+        self._table.delete_item(Key=core_key(pk, sk))
