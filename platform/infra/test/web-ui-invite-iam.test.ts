@@ -170,10 +170,13 @@ describe('web-ui tokenized-invite IAM + env wiring (task 15, R7.1, R7.4)', () =>
           Match.objectLike({
             Effect: 'Allow',
             Action: ['ses:SendEmail', 'ses:SendRawEmail'],
-            // Scoped to the stage's verified sender DOMAIN identity ARN
-            // (`identity/<stage>.<region>.hellodj.bot`), with the actual From
-            // pinned to `invites@<domain>` via an ses:FromAddress condition.
-            Resource: `arn:aws:ses:${TEST_REGION}:${TEST_ACCOUNT}:identity/${expectedHostname}`,
+            // SES authorizes the send against BOTH the domain identity ARN and
+            // the email-address identity ARN, so the grant lists both; the
+            // From is pinned via an ses:FromAddress condition.
+            Resource: [
+              `arn:aws:ses:${TEST_REGION}:${TEST_ACCOUNT}:identity/${expectedHostname}`,
+              `arn:aws:ses:${TEST_REGION}:${TEST_ACCOUNT}:identity/${expectedSender}`,
+            ],
             Condition: {
               'ForAllValues:StringEquals': {
                 'ses:FromAddress': expectedSender,
@@ -185,16 +188,18 @@ describe('web-ui tokenized-invite IAM + env wiring (task 15, R7.1, R7.4)', () =>
     });
   });
 
-  test('the SES send grant resource matches the domain identity ARN suffix (R7.1)', () => {
+  test('the SES send grant covers the email-address identity ARN (R7.1)', () => {
     const { eksTemplate } = compose();
     eksTemplate.hasResourceProperties('AWS::IAM::Policy', {
       PolicyDocument: Match.objectLike({
         Statement: Match.arrayWith([
           Match.objectLike({
             Action: ['ses:SendEmail', 'ses:SendRawEmail'],
-            Resource: Match.stringLikeRegexp(
-              `identity/${expectedHostname.replace(/\./g, '\\.')}$`,
-            ),
+            // The array must include the invites@<domain> email-address ARN —
+            // the resource SES actually authorizes the From against.
+            Resource: Match.arrayWith([
+              `arn:aws:ses:${TEST_REGION}:${TEST_ACCOUNT}:identity/${expectedSender}`,
+            ]),
           }),
         ]),
       }),

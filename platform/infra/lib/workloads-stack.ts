@@ -902,12 +902,13 @@ export class WorkloadsStack extends cdk.Stack {
         }),
       );
       // Branded invitation email delivery (R1.1, R7.1, R7.4): the web-ui sends
-      // the single-use registration link from the stage's verified SES sender
-      // identity. The identity is the stage DOMAIN
-      // (`<stage>.<region>.hellodj.bot`), so scope the grant to that domain
-      // identity's ARN and pin the actual From to `invites@<domain>` via an
-      // `ses:FromAddress` condition — least privilege, so the web-ui can send
-      // only from the invite sender on the verified stage domain.
+      // the single-use registration link from `invites@<stage>.<region>...`.
+      // SES authorizes `SendEmail` for that From against BOTH the DOMAIN
+      // identity ARN (`identity/<domain>`) AND the EMAIL-ADDRESS identity ARN
+      // (`identity/invites@<domain>`) — so the grant must list both, or the
+      // send is denied with AccessDenied on `identity/invites@<domain>`
+      // (observed). The `ses:FromAddress` condition keeps it least-privilege:
+      // the web-ui can send only as the invite sender on the stage domain.
       sa.role.addToPrincipalPolicy(
         new iam.PolicyStatement({
           sid: 'InviteEmailSend',
@@ -916,6 +917,8 @@ export class WorkloadsStack extends cdk.Stack {
           resources: [
             `arn:aws:ses:${this.region}:${this.account}:identity/` +
               this.inviteSenderDomain,
+            `arn:aws:ses:${this.region}:${this.account}:identity/` +
+              this.inviteSender,
           ],
           conditions: {
             'ForAllValues:StringEquals': {
