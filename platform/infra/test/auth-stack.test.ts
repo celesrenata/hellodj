@@ -1,6 +1,10 @@
 import * as cdk from 'aws-cdk-lib';
 import { Template, Match } from 'aws-cdk-lib/assertions';
-import { AuthStack } from '../lib/auth-stack';
+import {
+  AuthStack,
+  COGNITO_INVITATION_SUBJECT,
+  COGNITO_VERIFICATION_SUBJECT,
+} from '../lib/auth-stack';
 import { DeploymentStage } from '../lib/config';
 
 /**
@@ -49,6 +53,53 @@ describe('AuthStack (Cognito + Secrets + IAM)', () => {
     template.resourceCountIs('AWS::Cognito::UserPoolClient', 1);
     template.hasResourceProperties('AWS::Cognito::UserPoolClient', {
       ClientName: 'hellodj-web-ui-beta',
+    });
+  });
+
+  test('enables USER_PASSWORD_AUTH for the first-party login form', () => {
+    // The web-ui login form calls InitiateAuth(USER_PASSWORD_AUTH)
+    // server-side; the app client must allow that flow (custom-auth-forms R6.1).
+    template.hasResourceProperties('AWS::Cognito::UserPoolClient', {
+      ExplicitAuthFlows: Match.arrayWith(['ALLOW_USER_PASSWORD_AUTH']),
+    });
+  });
+
+  test('sends Cognito emails via SES from the verified stage domain', () => {
+    // EmailSendingAccount DEVELOPER + a from address on the DKIM-verified
+    // stage domain (invites@<stage>.<region>.hellodj.bot) — not COGNITO_DEFAULT.
+    template.hasResourceProperties('AWS::Cognito::UserPool', {
+      EmailConfiguration: Match.objectLike({
+        EmailSendingAccount: 'DEVELOPER',
+        From: Match.stringLikeRegexp('invites@beta\\.us-east-1\\.hellodj\\.bot'),
+        SourceArn: Match.anyValue(),
+      }),
+    });
+  });
+
+  test('brands the Cognito verification email as HelloDJ HTML', () => {
+    // Replaces the plain "The verification code to your new account is {####}"
+    // default with an inline-styled HelloDJ dark-glass template.
+    template.hasResourceProperties('AWS::Cognito::UserPool', {
+      VerificationMessageTemplate: Match.objectLike({
+        EmailSubject: COGNITO_VERIFICATION_SUBJECT,
+        EmailMessage: Match.stringLikeRegexp('HelloDJ'),
+        DefaultEmailOption: 'CONFIRM_WITH_CODE',
+      }),
+    });
+  });
+
+  test('brands the admin-invitation email as HelloDJ HTML (no plaintext default)', () => {
+    // The reported bug: an unbranded "Your username is X and temporary
+    // password is Y" email. Branding the invitation template guarantees any
+    // account created outside the SES invite flow still gets themed HTML.
+    template.hasResourceProperties('AWS::Cognito::UserPool', {
+      AdminCreateUserConfig: Match.objectLike({
+        InviteMessageTemplate: Match.objectLike({
+          EmailSubject: COGNITO_INVITATION_SUBJECT,
+          // Contains the brand shell and both Cognito placeholders.
+          EmailMessage: Match.stringLikeRegexp('HelloDJ'),
+        }),
+      }),
     });
   });
 

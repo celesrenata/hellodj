@@ -14,23 +14,40 @@
       <h1 class="login-card__title">HelloDJ</h1>
       <p class="login-card__subtitle">Sign in to the control panel</p>
 
-      {% if error == 'denied' %}
-        <p class="notice notice--danger" role="alert">Authorization was denied.</p>
-      {% elif error == 'state_mismatch' %}
-        <p class="notice notice--danger" role="alert">Session expired. Please try again.</p>
-      {% endif %}
+      <div aria-live="polite">
+        {% if error %}
+          <p class="notice notice--danger" role="alert">{{ error }}</p>
+        {% elif request.args.get('registered') %}
+          <p class="notice notice--success" role="status">Account confirmed. Please sign in.</p>
+        {% elif request.args.get('reset') %}
+          <p class="notice notice--success" role="status">Password updated. Please sign in.</p>
+        {% endif %}
+      </div>
 
-      <a class="btn btn-primary btn-block" href="{{ url_for('auth.login') }}">
+      <form method="post" action="{{ url_for('auth.admin_login') }}" class="auth-form">
+        <label class="field">
+          <span class="field__label">Username or email</span>
+          <input class="field__input" type="text" name="username"
+                 autocomplete="username" required autofocus>
+        </label>
+        <label class="field">
+          <span class="field__label">Password</span>
+          <input class="field__input" type="password" name="password"
+                 autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+      </form>
+
+      <div class="login-card__divider" aria-hidden="true">or</div>
+
+      <a class="btn btn-ghost btn-block" href="{{ url_for('auth.login') }}">
         Log in with Discord
-      </a>
-      <a class="btn btn-ghost btn-block" href="{{ url_for('auth.admin_login') }}">
-        Administrator sign in
       </a>
 
       <div class="login-card__links">
         <a href="{{ url_for('auth.register') }}">Register</a>
         <span aria-hidden="true">·</span>
-        <a href="{{ url_for('auth.recover') }}">Recover account</a>
+        <a href="{{ url_for('auth.recover') }}">Forgot password?</a>
       </div>
 
       {% include "partials/owner_attribution.html" %}

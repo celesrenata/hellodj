@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Recover account · HelloDJ</title>
+  <link rel="stylesheet" href="{{ static_hash('css/app.css') }}">
+</head>
+<body class="bg-surface-0 text-text-secondary login-body">
+  <canvas id="bg-shader" class="fixed inset-0 -z-10 w-full h-full pointer-events-none" aria-hidden="true"></canvas>
+
+  <main class="login-shell" role="main">
+    <div class="glass-panel login-card">
+      <h1 class="login-card__title">HelloDJ</h1>
+
+      <div aria-live="polite">
+        {% if error %}
+          <p class="notice notice--danger" role="alert">{{ error }}</p>
+        {% endif %}
+      </div>
+
+      {% if stage == 'confirm' %}
+      <p class="login-card__subtitle">Enter the code we sent and choose a new password</p>
+      <form method="post" action="{{ url_for('auth.recover') }}" class="auth-form">
+        <input type="hidden" name="step" value="confirm">
+        <label class="field">
+          <span class="field__label">Email</span>
+          <input class="field__input" type="email" name="email"
+                 value="{{ email or '' }}" autocomplete="email" required>
+        </label>
+        <label class="field">
+          <span class="field__label">Reset code</span>
+          <input class="field__input" type="text" name="code"
+                 inputmode="numeric" autocomplete="one-time-code" required autofocus>
+        </label>
+        <label class="field">
+          <span class="field__label">New password</span>
+          <input class="field__input" type="password" name="new_password"
+                 autocomplete="new-password" required>
+        </label>
+        <p class="field__hint">Min 12 characters with upper, lower, number, and symbol.</p>
+        <button type="submit" class="btn btn-primary btn-block">Reset password</button>
+      </form>
+      {% else %}
+      <p class="login-card__subtitle">We'll email a reset code if an account exists</p>
+      <form method="post" action="{{ url_for('auth.recover') }}" class="auth-form">
+        <input type="hidden" name="step" value="start">
+        <label class="field">
+          <span class="field__label">Email</span>
+          <input class="field__input" type="email" name="email"
+                 autocomplete="email" required autofocus>
+        </label>
+        <button type="submit" class="btn btn-primary btn-block">Send reset code</button>
+      </form>
+      {% endif %}
+
+      <div class="login-card__links">
+        <a href="{{ url_for('pages.login') }}">Back to sign in</a>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

@@ -43,6 +43,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as eks from 'aws-cdk-lib/aws-eks';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as ses from 'aws-cdk-lib/aws-ses';
 import * as s3 from 'aws-cdk-lib/aws-s3';
@@ -481,11 +482,21 @@ export class WorkloadsStack extends cdk.Stack {
    * The stage's SES sender {@link ses.EmailIdentity} for invitation emails.
    * Provisioning it here (a foundation-shared but stage-scoped identity) makes
    * the verified sender part of the declarative infra rather than a manual
-   * console step. NOTE: SES still requires the identity to complete
-   * verification (address confirmation email or domain DNS records) before it
-   * can actually send — CDK creates the identity; verification is external.
+   * console step. It is a DOMAIN identity for {@link inviteSenderDomain} with
+   * Easy-DKIM CNAMEs published into the delegated `hellodj.bot` zone, so SES
+   * self-verifies it (no manual mailbox-confirmation click). The account must
+   * still leave the SES sandbox to email arbitrary (unverified) recipients —
+   * that production-access request has no CloudFormation resource and is done
+   * once out-of-band.
    */
   public readonly inviteSenderIdentity: ses.EmailIdentity;
+
+  /**
+   * The verified stage DOMAIN the {@link inviteSender} address belongs to
+   * (`<stage>.<region>.hellodj.bot`). The web-ui role's `ses:SendEmail` grant
+   * is scoped to this domain identity's ARN.
+   */
+  public readonly inviteSenderDomain: string;
 
   /** The deployment stage this stack's workloads belong to. */
   public readonly stage: string;
@@ -523,24 +534,63 @@ export class WorkloadsStack extends cdk.Stack {
     this.stageEndpoint = stageEndpoint(this.stage, props.region ?? this.region);
 
     // Verified SES sender identity for the branded, single-use invitation
-    // emails the web-ui sends (R7.4). It defaults to
-    // `invites@<stage>.<region>.hellodj.bot` so the sender agrees with the
-    // stage's Ingress hostname + public base URL (one dns_naming-derived name).
-    // Provisioning the identity here makes the verified sender part of the
-    // declarative infra; SES still requires the identity to complete
-    // verification out-of-band before it can send. The web-ui role's
-    // `ses:SendEmail`/`ses:SendRawEmail` grant below is scoped to THIS
-    // identity's ARN (least privilege, R7.1).
+    // emails the web-ui sends (R7.4). The sender is
+    // `invites@<stage>.<region>.hellodj.bot` so it agrees with the stage's
+    // Ingress hostname + public base URL (one dns_naming-derived name).
+    //
+    // We verify the whole STAGE DOMAIN (`<stage>.<region>.hellodj.bot`) via
+    // DKIM rather than the single `invites@` email address. A domain identity
+    // lets ANY mailbox on that domain send (so `invites@` works, and future
+    // senders like `noreply@` do too), and — crucially — it self-verifies:
+    // the Easy-DKIM CNAMEs are written into the delegated `hellodj.bot` public
+    // hosted zone (the same zone the EdgeStack uses for ACM DNS validation),
+    // so SES completes verification automatically with no manual mailbox
+    // confirmation. (An email identity, by contrast, sits in `Pending` forever
+    // unless a human clicks a link mailed to an address that may have no
+    // mailbox — that was the beta bug: `invites@...` stuck Pending.)
+    //
+    // The identity is the stage subdomain (`beta.us-east-1.hellodj.bot`), not
+    // the apex, so DKIM is strictly DMARC-aligned with the `invites@<stage>`
+    // From address and each stage stays isolated. `Identity.publicHostedZone`
+    // would verify the ZONE's name (the apex `hellodj.bot`), so instead we use
+    // `Identity.domain(<subdomain>)` and create its DKIM CNAMEs ourselves into
+    // the looked-up apex zone (the subdomain is a strict child of `hellodj.bot`
+    // and has no zone of its own). The web-ui role's `ses:SendEmail`/
+    // `ses:SendRawEmail` grant below is scoped to THIS identity's ARN
+    // (least privilege, R7.1).
     this.inviteSender =
       props.inviteSender ??
       stageInviteSender(this.stage, props.region ?? this.region);
+    this.inviteSenderDomain = stageHostname(
+      this.stage,
+      props.region ?? this.region,
+    );
+    const inviteZone = route53.HostedZone.fromLookup(
+      this,
+      `${this.stage}-InviteSenderZone`,
+      { domainName: HELLODJ_ZONE },
+    );
     this.inviteSenderIdentity = new ses.EmailIdentity(
       this,
       `${this.stage}-InviteSenderIdentity`,
       {
-        identity: ses.Identity.email(this.inviteSender),
+        identity: ses.Identity.domain(this.inviteSenderDomain),
       },
     );
+    // Easy-DKIM self-verification: publish the three CNAME tokens SES issues
+    // for the domain identity into the delegated `hellodj.bot` zone. Once they
+    // resolve, SES flips the identity to Verified with no manual step.
+    this.inviteSenderIdentity.dkimRecords.forEach((record, index) => {
+      new route53.CnameRecord(
+        this,
+        `${this.stage}-InviteSenderDkim${index}`,
+        {
+          zone: inviteZone,
+          recordName: record.name,
+          domainName: record.value,
+        },
+      );
+    });
 
     // The per-stage namespace for every HelloDJ workload in this stage.
     // All three stages add their manifests to the ONE shared cluster, so every
@@ -843,9 +893,11 @@ export class WorkloadsStack extends cdk.Stack {
       );
       // Branded invitation email delivery (R1.1, R7.1, R7.4): the web-ui sends
       // the single-use registration link from the stage's verified SES sender
-      // identity. Grant `ses:SendEmail`/`ses:SendRawEmail` scoped to THAT
-      // identity's ARN only — least privilege, so the web-ui can never send
-      // from any other identity.
+      // identity. The identity is the stage DOMAIN
+      // (`<stage>.<region>.hellodj.bot`), so scope the grant to that domain
+      // identity's ARN and pin the actual From to `invites@<domain>` via an
+      // `ses:FromAddress` condition — least privilege, so the web-ui can send
+      // only from the invite sender on the verified stage domain.
       sa.role.addToPrincipalPolicy(
         new iam.PolicyStatement({
           sid: 'InviteEmailSend',
@@ -853,8 +905,13 @@ export class WorkloadsStack extends cdk.Stack {
           actions: ['ses:SendEmail', 'ses:SendRawEmail'],
           resources: [
             `arn:aws:ses:${this.region}:${this.account}:identity/` +
-              this.inviteSender,
+              this.inviteSenderDomain,
           ],
+          conditions: {
+            'ForAllValues:StringEquals': {
+              'ses:FromAddress': this.inviteSender,
+            },
+          },
         }),
       );
       // Per-guild source OAuth tokens: the web-ui creates/updates/reads/deletes

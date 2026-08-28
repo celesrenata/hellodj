@@ -44,14 +44,18 @@ def test_login_page_renders(client) -> None:
     assert 'class="glass-panel login-card"' in html
     assert "Sign in to the control panel" in html
     assert "Log in with Discord" in html
-    assert "Administrator sign in" in html
+    # First-party admin credential form posts to /auth/admin (no hosted UI).
+    assert 'action="/auth/admin"' in html
+    assert 'name="username"' in html
+    assert 'name="password"' in html
     # Entry links for the Cognito-routed purposes.
     assert "/auth/register" in html
     assert "/auth/recover" in html
 
 
 def test_login_page_shows_error_notice(client) -> None:
-    resp = client.get("/login?error=state_mismatch")
+    # The error param renders the generic notice (error text is passed through).
+    resp = client.get("/login?error=Session%20expired.")
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     assert 'class="notice notice--danger"' in html

@@ -2,3 +2,6 @@
 Flask>=3.0
 gunicorn>=22.0
 boto3>=1.34
+# Cognito JWT verification for the first-party auth forms (RS256 + JWKS).
+PyJWT>=2.8
+cryptography>=42.0

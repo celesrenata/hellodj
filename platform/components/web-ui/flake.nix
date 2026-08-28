@@ -25,6 +25,12 @@
           gunicorn
           boto3
           botocore
+          # Cognito JWT (id/access token) verification for the first-party auth
+          # forms: PyJWT provides RS256 verification + PyJWKClient (JWKS fetch +
+          # kid cache); cryptography is PyJWT's RS256 backend. (custom-auth-forms
+          # design: cognito_jwt.py)
+          pyjwt
+          cryptography
         ];
 
         pythonEnv = python.withPackages pythonDeps;

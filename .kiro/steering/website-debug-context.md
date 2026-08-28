@@ -13,6 +13,89 @@ without re-discovering everything.
 - **Path**: CloudFront → ALB → EKS web-ui (Flask/gunicorn) pods
 - **Login**: works. Admin account `admin` / `Wkh3llodjbeta!` (Cognito, `admins` group)
 
+## Invitation email / Amazon SES (fixed 2026-08-28)
+
+The admin-panel invite flow sends a branded single-use registration link via
+Amazon SES (`invite_email.py` → SES `send_email`), sender
+`invites@<stage>.<region>.hellodj.bot` (`INVITE_SENDER` env). On failure the
+web-ui catches the `MessageRejected`, rolls back the pending invite, and shows a
+generic "could not send" — the SES detail is intentionally suppressed (R7.4), so
+**pod logs stay clean on send failure**. Don't expect a stack trace.
+
+**The bug:** CDK provisioned the sender as an SES **email-address identity**
+(`ses.Identity.email(...)`), which sits `VerificationStatus: Pending` forever
+because it needs a human to click a link mailed to `invites@...` (no mailbox).
+Every send was rejected.
+
+**The fix (in `platform/infra/lib/workloads-stack.ts`):** switched to a
+**domain identity** for the stage host `<stage>.<region>.hellodj.bot` via
+`ses.Identity.domain(...)`, and publish the three Easy-DKIM CNAME tokens
+(`identity.dkimRecords`) into the delegated `hellodj.bot` Route 53 zone
+(`HostedZone.fromLookup`). SES self-verifies once the CNAMEs resolve — no manual
+click. A domain identity authorizes any mailbox on the domain (so `invites@`
+works). The web-ui role's `ses:SendEmail`/`SendRawEmail` grant is scoped to the
+domain identity ARN (`identity/<stage>.<region>.hellodj.bot`) with an
+`ses:FromAddress` condition pinning the From to `invites@<domain>`. Deploy with
+`cdk deploy hellodj-eks` (the WorkloadsStack manifests attach to that stack).
+
+**Still manual (no CloudFormation resource exists):** the account is in the SES
+**sandbox** (`ProductionAccessEnabled: false`), so it can only send to *verified*
+recipients even after the sender is verified. To email arbitrary invitees,
+request production access once out-of-band:
+`aws sesv2 put-account-details --production-access-enabled --mail-type TRANSACTIONAL ...`.
+
+Facts: SES account region us-east-1, `SendingEnabled: true`, quota 200/day @
+1 msg/s (sandbox default). Verified identities: `aws ses list-identities`.
+
+### First-party auth forms (custom-auth-forms spec, 2026-08-28)
+
+Admin login, self-registration, and account recovery are now HelloDJ-branded
+**first-party Flask forms**, not the Cognito hosted UI. Cognito is still the
+identity provider (the `auth_routing.py` invariant is unchanged — this is a
+presentation change to the Cognito-routed purposes only). Key pieces in
+`platform/components/web-ui/`:
+
+- `cognito_auth.py` — `CognitoAuth`: server-side `InitiateAuth`
+  (`USER_PASSWORD_AUTH`), `RespondToAuthChallenge` (NEW_PASSWORD_REQUIRED /
+  SOFTWARE_TOKEN_MFA), `SignUp`/`ConfirmSignUp`, `ForgotPassword`/
+  `ConfirmForgotPassword`. Normalizes Cognito errors to non-enumerating copy;
+  never logs secrets.
+- `cognito_jwt.py` — verifies id/access token RS256 sig + `iss`/`aud`/
+  `token_use`/`exp` against the pool JWKS (PyJWT + `PyJWKClient`) BEFORE trusting
+  the `cognito:groups` claim that drives `is_admin`. (The old hosted-UI callback
+  read groups without verifying — retired.)
+- `auth_forms.py` — the login/challenge/register/recover flow controllers
+  (keeps `auth.py` thin, under the 500-line ceiling).
+- `auth_ratelimit.py` — best-effort per-pod fixed-window limiter on the auth
+  POST routes (Cognito enforces the authoritative throttling).
+- Templates: `pages/login.html` (now a real credential form),
+  `auth_new_password.html`, `auth_mfa.html`, `auth_register.html`,
+  `auth_recover.html`.
+- CDK: `auth-stack.ts` app client enables `ALLOW_USER_PASSWORD_AUTH`
+  (`authFlows.userPassword`). Deploy via `cdk deploy hellodj-auth`.
+- Deps added to the web-ui image: `PyJWT` + `cryptography` (flake.nix,
+  requirements.txt, pyproject.toml).
+
+New deps mean a fresh image: web-ui Python change goes CodeCommit push →
+pipeline rebuild → `rollout restart deploy/web-ui`. The `USER_PASSWORD_AUTH`
+app-client change goes `cdk deploy hellodj-auth`.
+
+### Cognito-managed emails branded (fixed 2026-08-28)
+
+The reported plaintext "Your username is X and temporary password is Y" email
+was Cognito's DEFAULT invitation template (the pool had no
+`AdminCreateUserConfig.InviteMessageTemplate`, sender `COGNITO_DEFAULT`). Both
+Python paths that create users (`invite_service.register` and the migration
+`cognito_seeder`) already pass `MessageAction=SUPPRESS`, so that email only
+fires for accounts created OUTSIDE those flows (e.g. a console
+`AdminCreateUser`). Fix: `auth-stack.ts` now sets branded HTML `userInvitation`
+and `userVerification` templates (shared `hellodjEmailShell`, dark-glass palette
+matching `invite_email.py`, kept <2000 chars — the Cognito body limit — with the
+required `{username}`/`{####}` placeholders intact). Deploy with
+`cdk deploy hellodj-auth`. NOTE: the primary invite email is still the SES one
+(`invite_email.py`); the Cognito templates are the branded fallback/verification
+path, not the main invite.
+
 ## CRITICAL WORKFLOW RULES (read first)
 
 1. **DO NOT build/push Docker images locally.** The CI/CD pipeline builds all

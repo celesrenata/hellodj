@@ -38,12 +38,74 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 import { DeploymentStage } from './config';
+import { stageHostname, stageInviteSender } from './workloads-stack';
 
 /** Properties for {@link AuthStack}. */
 export interface AuthStackProps extends cdk.StackProps {
   /** The deployment stage this auth model is provisioned for. */
   readonly stage: DeploymentStage;
 }
+
+/**
+ * Wrap Cognito-managed email body HTML in the shared HelloDJ dark-glass shell.
+ *
+ * Cognito's COGNITO_DEFAULT sender caps invitation/verification email bodies at
+ * 2000 characters, so the markup is intentionally compact and inline-styled
+ * (no external CSS survives email clients anyway). The palette mirrors the
+ * branded SES invite (`invite_email.py`): bg `#0b0b12`, panel `#15151f`,
+ * heading `#c7b3ff`, body `#e9e9f2`, accent `#7c4dff`. `inner` carries the
+ * per-email message and MUST keep any Cognito placeholders (`{username}`,
+ * `{####}`) intact — Cognito substitutes them at send time.
+ */
+function hellodjEmailShell(inner: string): string {
+  return (
+    '<div style="margin:0;background:#0b0b12;font-family:Inter,' +
+    "-apple-system,Segoe UI,system-ui,sans-serif;color:#e9e9f2;" +
+    'padding:32px">' +
+    '<div style="max-width:520px;margin:0 auto;background:#15151f;' +
+    'border:1px solid #2a2a3a;border-radius:16px;padding:32px">' +
+    '<h1 style="margin:0 0 16px;font-size:22px;font-weight:600;' +
+    'color:#c7b3ff">HelloDJ</h1>' +
+    inner +
+    '</div></div>'
+  );
+}
+
+/** Branded HTML for the Cognito self-sign-up / recovery verification code. */
+export const COGNITO_VERIFICATION_EMAIL = hellodjEmailShell(
+  '<p style="margin:0 0 12px;font-size:16px;line-height:1.6">' +
+    'Use this code to verify your HelloDJ account:</p>' +
+    '<p style="margin:16px 0;font-size:30px;font-weight:600;' +
+    'letter-spacing:6px;color:#a99bff">{####}</p>' +
+    '<p style="margin:16px 0 0;font-size:13px;color:#8a8aa0;line-height:1.6">' +
+    "If you didn't request this, you can ignore this email.</p>",
+);
+
+/** Subject for the branded Cognito verification email. */
+export const COGNITO_VERIFICATION_SUBJECT = 'Verify your HelloDJ account';
+
+/**
+ * Branded HTML for Cognito's admin-invitation email (temporary password).
+ *
+ * The web-ui invite flow suppresses this and sends its own SES invite, so this
+ * template only fires for accounts created OUT of that flow (e.g. a console
+ * `AdminCreateUser`). Branding it means no unstyled "Your username is X and
+ * temporary password is Y" plaintext email can ever leave the platform.
+ */
+export const COGNITO_INVITATION_EMAIL = hellodjEmailShell(
+  '<p style="margin:0 0 12px;font-size:16px;line-height:1.6">' +
+    "You've been added to HelloDJ. Sign in with these temporary " +
+    'credentials, then set your own password:</p>' +
+    '<p style="margin:16px 0;font-size:15px;line-height:1.8">' +
+    'Username: <span style="color:#a99bff">{username}</span><br>' +
+    'Temporary password: <span style="color:#a99bff">{####}</span></p>' +
+    '<p style="margin:16px 0 0;font-size:13px;color:#8a8aa0;line-height:1.6">' +
+    'This temporary password expires soon — sign in to set a permanent one.' +
+    '</p>',
+);
+
+/** Subject for the branded Cognito invitation email. */
+export const COGNITO_INVITATION_SUBJECT = "You're invited to HelloDJ";
 
 /**
  * Cognito user pool + Discord/Tidal OAuth secrets + keyless AI IAM roles.
@@ -116,8 +178,26 @@ export class AuthStack extends cdk.Stack {
     // registration; account recovery is via a verified email. Day-to-day
     // registered/appointed-user login uses Discord OAuth in the web-ui and
     // does not touch this pool.
+    // Send all Cognito-managed emails (verification, recovery, invitation)
+    // through Amazon SES from the stage's verified sender domain, instead of
+    // the default Cognito sender. This makes the branded HTML templates below
+    // arrive from `invites@<stage>.<region>.hellodj.bot` (matching the SES
+    // invite in `invite_email.py`) and removes Cognito's low default send cap.
+    // The domain (`<stage>.<region>.hellodj.bot`) is the DKIM-verified SES
+    // domain identity the WorkloadsStack provisions; `sesVerifiedDomain` tells
+    // CDK to grant the pool `ses:SendEmail` on it without a separate address
+    // verification.
+    const sesSenderDomain = stageHostname(stage, this.region);
+    const sesFromEmail = stageInviteSender(stage, this.region);
+
     this.userPool = new cognito.UserPool(this, 'UserPool', {
       userPoolName: `hellodj-${stage}`,
+      email: cognito.UserPoolEmail.withSES({
+        sesRegion: this.region,
+        fromEmail: sesFromEmail,
+        fromName: 'HelloDJ',
+        sesVerifiedDomain: sesSenderDomain,
+      }),
       // Registration: people can self-register (R8.3).
       selfSignUpEnabled: true,
       // Sign in with email; email is the recovery channel (R8.5).
@@ -128,9 +208,22 @@ export class AuthStack extends cdk.Stack {
       },
       // Account recovery via the verified email only (R8.5).
       accountRecovery: cognito.AccountRecovery.EMAIL_ONLY,
-      // Managed sign-up/recovery verification email.
+      // Managed sign-up/recovery verification email — branded HelloDJ HTML
+      // instead of the plain "The verification code to your new account
+      // is {####}" default.
       userVerification: {
         emailStyle: cognito.VerificationEmailStyle.CODE,
+        emailSubject: COGNITO_VERIFICATION_SUBJECT,
+        emailBody: COGNITO_VERIFICATION_EMAIL,
+      },
+      // Admin-invitation email (temporary password). The web-ui invite flow
+      // SUPPRESSES this and sends its own SES invite, but branding it ensures
+      // any account created outside that flow (e.g. a console AdminCreateUser)
+      // still gets a themed HTML email — never the unstyled default
+      // "Your username is X and temporary password is Y" (the reported bug).
+      userInvitation: {
+        emailSubject: COGNITO_INVITATION_SUBJECT,
+        emailBody: COGNITO_INVITATION_EMAIL,
       },
       passwordPolicy: {
         minLength: 12,
@@ -190,7 +283,12 @@ export class AuthStack extends cdk.Stack {
     this.userPoolClient = this.userPool.addClient('WebUiClient', {
       userPoolClientName: `hellodj-web-ui-${stage}`,
       generateSecret: false,
-      authFlows: { userSrp: true },
+      // `userPassword` enables ALLOW_USER_PASSWORD_AUTH so the web-ui's
+      // first-party login form can call InitiateAuth(USER_PASSWORD_AUTH)
+      // server-side (over TLS) instead of the Cognito hosted UI. `userSrp` is
+      // retained; the hosted-UI OAuth config below remains as a fallback.
+      // (custom-auth-forms R6.1.)
+      authFlows: { userSrp: true, userPassword: true },
       oAuth: {
         flows: { authorizationCodeGrant: true },
         scopes: [

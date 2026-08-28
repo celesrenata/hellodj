@@ -170,16 +170,22 @@ describe('web-ui tokenized-invite IAM + env wiring (task 15, R7.1, R7.4)', () =>
           Match.objectLike({
             Effect: 'Allow',
             Action: ['ses:SendEmail', 'ses:SendRawEmail'],
-            // Scoped to the stage's verified sender identity ARN only — match
-            // the `identity/invites@<stage>.<region>.hellodj.bot` suffix.
-            Resource: `arn:aws:ses:${TEST_REGION}:${TEST_ACCOUNT}:identity/${expectedSender}`,
+            // Scoped to the stage's verified sender DOMAIN identity ARN
+            // (`identity/<stage>.<region>.hellodj.bot`), with the actual From
+            // pinned to `invites@<domain>` via an ses:FromAddress condition.
+            Resource: `arn:aws:ses:${TEST_REGION}:${TEST_ACCOUNT}:identity/${expectedHostname}`,
+            Condition: {
+              'ForAllValues:StringEquals': {
+                'ses:FromAddress': expectedSender,
+              },
+            },
           }),
         ]),
       }),
     });
   });
 
-  test('the SES send grant resource matches the identity ARN suffix (R7.1)', () => {
+  test('the SES send grant resource matches the domain identity ARN suffix (R7.1)', () => {
     const { eksTemplate } = compose();
     eksTemplate.hasResourceProperties('AWS::IAM::Policy', {
       PolicyDocument: Match.objectLike({
@@ -187,7 +193,7 @@ describe('web-ui tokenized-invite IAM + env wiring (task 15, R7.1, R7.4)', () =>
           Match.objectLike({
             Action: ['ses:SendEmail', 'ses:SendRawEmail'],
             Resource: Match.stringLikeRegexp(
-              `identity/${expectedSender.replace(/\./g, '\\.')}$`,
+              `identity/${expectedHostname.replace(/\./g, '\\.')}$`,
             ),
           }),
         ]),
@@ -214,11 +220,24 @@ describe('web-ui tokenized-invite IAM + env wiring (task 15, R7.1, R7.4)', () =>
   });
 
   // -- Task 14 SES identity provisioning -----------------------------------
-  test('a stage SES EmailIdentity is provisioned for the sender (task 14)', () => {
+  test('a stage SES domain EmailIdentity is provisioned for the sender domain (task 14)', () => {
     const { workloadsTemplate } = compose();
+    // A DOMAIN identity for `<stage>.<region>.hellodj.bot` (verifies any
+    // mailbox on the domain, including `invites@`), not the bare email — an
+    // email identity sits Pending until a human clicks a mailed link.
     workloadsTemplate.resourceCountIs('AWS::SES::EmailIdentity', 1);
     workloadsTemplate.hasResourceProperties('AWS::SES::EmailIdentity', {
-      EmailIdentity: expectedSender,
+      EmailIdentity: expectedHostname,
+    });
+  });
+
+  test('Easy-DKIM CNAME records self-verify the domain identity (task 14)', () => {
+    const { workloadsTemplate } = compose();
+    // Easy DKIM issues three CNAME tokens; publishing them into the delegated
+    // hellodj.bot zone lets SES self-verify with no manual confirmation.
+    workloadsTemplate.resourceCountIs('AWS::Route53::RecordSet', 3);
+    workloadsTemplate.hasResourceProperties('AWS::Route53::RecordSet', {
+      Type: 'CNAME',
     });
   });
 

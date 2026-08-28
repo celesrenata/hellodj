@@ -34,7 +34,10 @@ from flask import Flask, redirect, session, url_for
 
 from admin_directory import AdminDirectory, build_admin_directory
 from auth import build_auth_blueprint
+from auth_ratelimit import RateLimiter
 from bootstrap import build_services
+from cognito_auth import build_cognito_auth
+from cognito_jwt import build_verifier
 from config_store import ConfigStore
 from guild_routes import build_guild_blueprint
 from invite_admin_routes import build_invite_admin_blueprint
@@ -107,6 +110,16 @@ def create_app(
         if admin_directory is not None
         else build_admin_directory()
     )
+    # First-party auth-form services: server-side Cognito calls, JWKS token
+    # verification, and a best-effort rate limiter. Each degrades to None when
+    # Cognito is unconfigured (auth routes then render "auth unavailable").
+    app.extensions["cognito_auth"] = build_cognito_auth()
+    app.extensions["cognito_jwt"] = build_verifier(
+        user_pool_id=os.getenv("HELLODJ_COGNITO_USER_POOL_ID", ""),
+        region=os.getenv("AWS_REGION", "us-east-1"),
+        client_id=os.getenv("COGNITO_CLIENT_ID", ""),
+    )
+    app.extensions["auth_rate_limiter"] = RateLimiter()
 
     app.register_blueprint(build_auth_blueprint())
     app.register_blueprint(build_pages_blueprint())

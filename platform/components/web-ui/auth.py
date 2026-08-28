@@ -18,11 +18,8 @@ Requirements: 8.1, 8.2, 8.3, 8.4, 8.5, 9.2, 9.5, 14.x
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import secrets as pysecrets
 import urllib.parse
-from typing import Any
 
 from flask import (
     Blueprint,
@@ -35,9 +32,14 @@ from flask import (
 from hellodj_platform_logic.auth_routing import route_auth
 from hellodj_platform_logic.types import AuthProvider, AuthPurpose, UserType
 
+from auth_forms import (
+    handle_login,
+    handle_login_challenge,
+    handle_recover,
+    handle_register,
+)
 from auth_oauth import (
     discord_id_from_code,
-    exchange_code_for_groups,
 )
 from source_oauth import (
     source_authorize_url,
@@ -53,14 +55,6 @@ DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize"
 def _new_state() -> str:
     """Return a URL-safe random CSRF/state token."""
     return pysecrets.token_urlsafe(32)
-
-
-def _pkce_pair() -> tuple[str, str]:
-    """Return a (verifier, challenge) PKCE pair using S256."""
-    verifier = pysecrets.token_urlsafe(64)
-    digest = hashlib.sha256(verifier.encode("ascii")).digest()
-    challenge = base64.urlsafe_b64encode(digest).decode("ascii").rstrip("=")
-    return verifier, challenge
 
 
 def build_auth_blueprint() -> Blueprint:
@@ -82,30 +76,39 @@ def build_auth_blueprint() -> Blueprint:
         assert provider is AuthProvider.DISCORD_OAUTH
         return _start_discord_oauth()
 
-    @bp.route("/admin")
+    @bp.route("/admin", methods=["GET", "POST"])
     def admin_login():  # type: ignore[unused-ignore]
-        """Start admin auth: routes to the Cognito hosted UI (R8.2)."""
+        """Admin auth via first-party form calling Cognito server-side (R8.2).
+
+        Routing still resolves to Cognito (the identity provider) — only the UI
+        surface is first-party now, so the hosted UI is no longer used.
+        """
         provider = route_auth(AuthPurpose.ADMIN_AUTH, UserType.ADMIN)
         assert provider is AuthProvider.COGNITO
-        return _start_cognito(AuthPurpose.ADMIN_AUTH)
+        return handle_login()
 
-    @bp.route("/register")
+    @bp.route("/admin/challenge", methods=["POST"])
+    def admin_login_challenge():  # type: ignore[unused-ignore]
+        """Complete a login challenge (new-password / MFA) (R1.3, R1.4)."""
+        return handle_login_challenge()
+
+    @bp.route("/register", methods=["GET", "POST"])
     def register():  # type: ignore[unused-ignore]
-        """Start initial registration: routes to Cognito (R8.3)."""
+        """Initial registration via first-party Cognito ``SignUp`` form (R8.3)."""
         provider = route_auth(
             AuthPurpose.INITIAL_REGISTRATION, UserType.ANONYMOUS
         )
         assert provider is AuthProvider.COGNITO
-        return _start_cognito(AuthPurpose.INITIAL_REGISTRATION)
+        return handle_register()
 
-    @bp.route("/recover")
+    @bp.route("/recover", methods=["GET", "POST"])
     def recover():  # type: ignore[unused-ignore]
-        """Start account recovery: routes to Cognito (R8.5)."""
+        """Account recovery via first-party Cognito ``ForgotPassword`` (R8.5)."""
         provider = route_auth(
             AuthPurpose.ACCOUNT_RECOVERY, UserType.REGISTERED
         )
         assert provider is AuthProvider.COGNITO
-        return _start_cognito(AuthPurpose.ACCOUNT_RECOVERY)
+        return handle_recover()
 
     @bp.route("/discord/callback")
     def discord_callback():  # type: ignore[unused-ignore]
@@ -135,29 +138,6 @@ def build_auth_blueprint() -> Blueprint:
             # No account is linked to this Discord identity (R3.2/R3.4): a
             # Discord login only works once the account has been linked.
             return redirect(url_for("pages.login", error="not_linked"))
-        return redirect(url_for("pages.dashboard"))
-
-    @bp.route("/cognito/callback")
-    def cognito_callback():  # type: ignore[unused-ignore]
-        """Cognito hosted-UI callback for admin/registration/recovery."""
-        state = request.args.get("state", "")
-        if not state or state != session.pop("cognito_state", None):
-            return redirect(url_for("pages.login", error="state_mismatch"))
-        # Exchange the authorization code for tokens and read the group claim
-        # so admin group membership drives the admin panel gate. The admin
-        # account is not a standard user — it administers all other accounts —
-        # so `is_admin` must reflect Cognito `admins` group membership.
-        code = request.args.get("code", "")
-        groups = exchange_code_for_groups(
-            code,
-            session.pop("cognito_verifier", ""),
-            _redirect_uri("auth.cognito_callback"),
-        )
-        session["user"] = {
-            "provider": AuthProvider.COGNITO.value,
-            "is_admin": "admins" in groups,
-            "groups": groups,
-        }
         return redirect(url_for("pages.dashboard"))
 
     @bp.route("/discord/link")
@@ -424,26 +404,6 @@ def _start_discord_oauth():
         "state": state,
     }
     return redirect(f"{DISCORD_AUTHORIZE_URL}?{urllib.parse.urlencode(params)}")
-
-
-def _start_cognito(purpose: AuthPurpose):
-    """Build the Cognito hosted-UI redirect (PKCE) for a Cognito purpose."""
-    state = _new_state()
-    verifier, challenge = _pkce_pair()
-    session["cognito_state"] = state
-    session["cognito_verifier"] = verifier
-    domain = current_app.config.get("COGNITO_DOMAIN", "")
-    endpoint = "signup" if purpose is AuthPurpose.INITIAL_REGISTRATION else "login"
-    params: dict[str, Any] = {
-        "client_id": current_app.config.get("COGNITO_CLIENT_ID", ""),
-        "response_type": "code",
-        "scope": "openid email profile",
-        "redirect_uri": _redirect_uri("auth.cognito_callback"),
-        "state": state,
-        "code_challenge": challenge,
-        "code_challenge_method": "S256",
-    }
-    return redirect(f"{domain}/{endpoint}?{urllib.parse.urlencode(params)}")
 
 
 def _redirect_uri(endpoint: str) -> str:
