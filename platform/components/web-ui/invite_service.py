@@ -6,6 +6,12 @@ a permanent password (FORCE_CHANGE_PASSWORD) on first login. We additionally
 record an Invite item in ``hellodj-core`` so the admin panel can list pending vs
 accepted invites and reject duplicates.
 
+The user pool is configured for **email alias** sign-in, so the Cognito
+``Username`` cannot be an email address (Cognito raises
+``InvalidParameterException`` otherwise). We therefore create the account with an
+opaque generated username and supply the email as the ``email`` attribute; the
+alias config lets the user sign in with that email.
+
 Data model: ``PK=INVITE#<email>``, ``SK=INVITE``, data={invited_by, status}.
 
 Requirements: 1.1, 1.2, 1.3, 1.4, 1.5
@@ -13,6 +19,7 @@ Requirements: 1.1, 1.2, 1.3, 1.4, 1.5
 
 from __future__ import annotations
 
+import uuid
 from typing import Any, Protocol
 
 from hellodj_platform_logic.data_access import CoreTable
@@ -67,12 +74,16 @@ class InviteService:
         if self._core.get(invite_pk(email_norm), INVITE_SK) is not None:
             raise InviteError(f"{email_norm} has already been invited")
 
+        # The pool uses email as an alias, so the Username must NOT be an email
+        # (Cognito rejects that with InvalidParameterException). Use an opaque
+        # username and attach the email as the verifiable alias attribute.
+        username = f"u-{uuid.uuid4().hex}"
         self._cognito.admin_create_user(
             UserPoolId=self._user_pool_id,
-            Username=email_norm,
+            Username=username,
             UserAttributes=[
                 {"Name": "email", "Value": email_norm},
-                {"Name": "email_verified", "Value": "false"},
+                {"Name": "email_verified", "Value": "true"},
             ],
             DesiredDeliveryMediums=["EMAIL"],
         )
@@ -80,9 +91,14 @@ class InviteService:
             invite_pk(email_norm),
             INVITE_SK,
             INVITE_ENTITY,
-            {"email": email_norm, "invited_by": invited_by, "status": "invited"},
+            {
+                "email": email_norm,
+                "username": username,
+                "invited_by": invited_by,
+                "status": "invited",
+            },
         )
-        return {"email": email_norm, "status": "invited"}
+        return {"email": email_norm, "username": username, "status": "invited"}
 
     def is_invited(self, email: str) -> bool:
         """Return whether an invite record exists for ``email``.

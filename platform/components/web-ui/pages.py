@@ -205,16 +205,23 @@ def build_pages_blueprint() -> Blueprint:
         email = request.form.get("email", "").strip()
         service = _invite_service()
         error = None
-        if service:
+        success = None
+        if not service:
+            error = "invites are not available (no directory configured)"
+        else:
             try:
                 service.invite(
                     email,
                     invited_by=(session.get("user") or {}).get("email", ""),
                 )
+                success = f"Invite sent to {email}."
             except Exception as exc:  # noqa: BLE001 - surface message to admin
                 error = str(exc)
         return render_template(
-            "partials/admin_user_list.html", users=_admin_users(), invite_error=error
+            "partials/admin_user_list.html",
+            users=_admin_users(),
+            invite_error=error,
+            invite_success=success,
         )
 
     @bp.route("/admin/users/search")

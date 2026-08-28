@@ -3,6 +3,9 @@
 {% if invite_error %}
   <p class="notice notice--danger" role="alert">{{ invite_error }}</p>
 {% endif %}
+{% if invite_success %}
+  <p class="notice notice--success" role="status">{{ invite_success }}</p>
+{% endif %}
 <div class="glass-panel data-table__wrap">
   <table class="data-table">
     <thead>
