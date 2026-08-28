@@ -442,12 +442,20 @@ export function getComponentBuildCommands(
         // (not silenced) so a broken push is visible in the build log, but they
         // don't fail the build (the image is already in ECR).
         `DRV=$(head -1 /tmp/${component}-drv-path.txt 2>/dev/null); ` +
+        // Write the full build closure (derivation closure + realized outputs)
+        // to a FILE, then feed it to `nix copy` via xargs. The closure is
+        // hundreds of store paths, so expanding it onto a single command line
+        // overflows ARG_MAX ("Argument list too long") and the push fails
+        // silently-ish. `xargs` chunks the paths across multiple `nix copy`
+        // invocations, staying under the limit. Fall back to the image path
+        // alone if the derivation couldn't be resolved.
         `if [ -n "$DRV" ]; then ` +
-          `CLOSURE=$(nix-store -qR --include-outputs "$DRV" 2>/dev/null); ` +
-        `else CLOSURE="$IMAGE_PATH"; fi; ` +
-        `nix copy --to '${NIX_CACHE_S3_URI}' --secret-key-files /tmp/nix-cache-key.sec $CLOSURE ` +
-          `&& echo "cache: pushed build closure for ${component}" ` +
-          `|| echo "WARN: cache push failed for ${component} (build still OK, image in ECR)"; ` +
+          `nix-store -qR --include-outputs "$DRV" 2>/dev/null > /tmp/${component}-closure.txt; ` +
+        `else echo "$IMAGE_PATH" > /tmp/${component}-closure.txt; fi; ` +
+        `if [ -s /tmp/${component}-closure.txt ] && ` +
+          `xargs -a /tmp/${component}-closure.txt nix copy --to '${NIX_CACHE_S3_URI}' --secret-key-files /tmp/nix-cache-key.sec; then ` +
+          `echo "cache: pushed build closure for ${component}"; ` +
+        `else echo "WARN: cache push failed for ${component} (build still OK, image in ECR)"; fi; ` +
         `nix-collect-garbage --delete-older-than 7d 2>/dev/null || true; ` +
       `else echo "image path not a file: $IMAGE_PATH"; cat /tmp/${component}-image-path.txt; exit 1; fi; ` +
     `else echo "no image built for ${component}"; cat /tmp/${component}-image-path.txt 2>/dev/null; exit 1; fi`,

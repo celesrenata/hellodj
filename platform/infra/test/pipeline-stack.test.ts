@@ -234,6 +234,10 @@ describe('PipelineStack helpers — promotion order and build-stage steps', () =
       expect(push).toBeDefined();
       // Pushes the include-outputs closure, not the bare image path.
       expect(push).toContain('nix-store -qR --include-outputs');
+      // The closure is passed via a FILE + xargs, never expanded onto one
+      // command line (that overflows ARG_MAX -> "Argument list too long").
+      expect(push).toContain('xargs -a');
+      expect(push).not.toMatch(/nix copy[^|]*\$CLOSURE/);
       // Push failures are surfaced in the log, not silently swallowed.
       expect(push).toContain('WARN: cache push failed');
       expect(push).not.toContain("2>/dev/null || true; nix-collect");
