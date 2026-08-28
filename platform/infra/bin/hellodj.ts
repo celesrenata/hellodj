@@ -163,6 +163,8 @@ const pipeline = new PipelineStack(app, 'hellodj-pipeline', {
     // Shared Flask session signing key so all web-ui replicas validate the
     // same signed session cookie (prevents OAuth-callback logout bounce).
     flaskSessionKey: auth.flaskSessionSecret.secretValue.unsafeUnwrap(),
+    // Cognito user pool id so the web-ui admin panel can manage all accounts.
+    cognitoUserPoolId: auth.userPool.userPoolId,
   },
 });
 

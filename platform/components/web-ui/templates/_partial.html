@@ -1,0 +1,13 @@
+{# HTMX partial layout: renders ONLY the content block (+ an out-of-band
+   heading + title swap), so an hx-get into #main-content does NOT nest the
+   whole sidebar shell inside itself. Pages extend base.html for a full load
+   and this layout for an HTMX navigation via `layout` in the render context. #}
+{% block content %}{% endblock %}
+
+{# Out-of-band swap of the page heading so it updates on HTMX navigation. #}
+<h1 class="content__title" id="content-title" hx-swap-oob="true">
+  {% block heading %}{% endblock %}
+</h1>
+
+{# Out-of-band update of the document title. #}
+<title hx-swap-oob="true">{% block title %}HelloDJ{% endblock %} · HelloDJ</title>

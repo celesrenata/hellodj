@@ -1,0 +1,26 @@
+{% extends layout|default("base.html") %}
+
+{% block title %}Admin{% endblock %}
+{% block heading %}Administration{% endblock %}
+
+{% block content %}
+<div class="glass-panel panel-section">
+  <h2 class="panel-section__title">User Accounts</h2>
+  <p class="panel-section__muted">
+    Manage every account on the platform: promote or demote administrators and
+    enable or disable accounts.
+  </p>
+
+  <label class="field__label" for="admin-user-search">Search users</label>
+  <input type="search" id="admin-user-search" name="q" class="field__input"
+         placeholder="Search by username or email…"
+         hx-get="{{ url_for('pages.admin_users_search') }}"
+         hx-trigger="input changed delay:300ms"
+         hx-target="#admin-user-list"
+         aria-label="Search users">
+
+  <div id="admin-user-list" class="admin-user-list">
+    {% include "partials/admin_user_list.html" %}
+  </div>
+</div>
+{% endblock %}

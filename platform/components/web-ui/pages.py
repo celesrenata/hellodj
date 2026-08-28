@@ -25,12 +25,20 @@ from flask import (
 
 __all__ = ["build_pages_blueprint"]
 
-#: Sidebar navigation model (icon key + label + endpoint) shared by every page.
+#: Base sidebar navigation model (icon key + label + endpoint). The admin entry
+#: is appended only for users in the Cognito ``admins`` group (see `_nav_for`).
 NAV_ITEMS = [
     {"key": "dashboard", "label": "Dashboard", "endpoint": "pages.dashboard"},
     {"key": "config", "label": "Config", "endpoint": "pages.config"},
     {"key": "guilds", "label": "Guilds", "endpoint": "pages.guilds"},
 ]
+
+#: The admin-only nav entry, shown to Cognito ``admins`` group members only.
+ADMIN_NAV_ITEM = {
+    "key": "admin",
+    "label": "Admin",
+    "endpoint": "pages.admin",
+}
 
 
 def _config_store():
@@ -38,9 +46,47 @@ def _config_store():
     return current_app.extensions.get("config_store")
 
 
+def _admin_directory():
+    """Return the app's AdminDirectory (Cognito user admin) or ``None``."""
+    return current_app.extensions.get("admin_directory")
+
+
 def _require_login() -> bool:
     """Return whether an authenticated session exists."""
     return bool(session.get("user"))
+
+
+def _is_admin() -> bool:
+    """Return whether the current session belongs to an administrator.
+
+    An administrator authenticated through Cognito and is a member of the
+    ``admins`` group; the group membership is captured on the session at login
+    (``user.is_admin``). This gates the admin panel and its routes — a regular
+    (Discord-OAuth) user never sees or reaches admin functionality.
+    """
+    user = session.get("user") or {}
+    return bool(user.get("is_admin"))
+
+
+def _nav_for_current_user() -> list[dict[str, Any]]:
+    """Return the nav items visible to the current user (admins get +Admin)."""
+    if _is_admin():
+        return [*NAV_ITEMS, ADMIN_NAV_ITEM]
+    return list(NAV_ITEMS)
+
+
+def _layout() -> str:
+    """Pick the template layout: partial for HTMX nav, full shell otherwise.
+
+    An HTMX navigation (`hx-get` into `#main-content`) sends the `HX-Request`
+    header. Returning the full `base.html` shell for those requests nests the
+    entire sidebar inside the content area (the reported nav-nesting bug), so
+    HTMX requests render `_partial.html` (content + out-of-band heading/title)
+    instead. A normal full-page load renders `base.html`.
+    """
+    if request.headers.get("HX-Request") == "true":
+        return "_partial.html"
+    return "base.html"
 
 
 def build_pages_blueprint() -> Blueprint:
@@ -62,7 +108,8 @@ def build_pages_blueprint() -> Blueprint:
         stats = _dashboard_stats()
         return render_template(
             "pages/dashboard.html",
-            nav_items=NAV_ITEMS,
+            layout=_layout(),
+            nav_items=_nav_for_current_user(),
             active="dashboard",
             stats=stats,
         )
@@ -76,7 +123,8 @@ def build_pages_blueprint() -> Blueprint:
         values = store.get_global() if store else {}
         return render_template(
             "pages/config.html",
-            nav_items=NAV_ITEMS,
+            layout=_layout(),
+            nav_items=_nav_for_current_user(),
             active="config",
             config=values,
             tidal=request.args.get("tidal"),
@@ -101,7 +149,8 @@ def build_pages_blueprint() -> Blueprint:
             return redirect(url_for("pages.login"))
         return render_template(
             "pages/guilds.html",
-            nav_items=NAV_ITEMS,
+            layout=_layout(),
+            nav_items=_nav_for_current_user(),
             active="guilds",
             guilds=_guild_list(),
         )
@@ -116,6 +165,71 @@ def build_pages_blueprint() -> Blueprint:
             g for g in _guild_list() if query in g["name"].lower()
         ]
         return render_template("partials/guild_list.html", guilds=matches)
+
+    # ----- Admin panel: manage all accounts (admins group only) ----------- #
+
+    @bp.route("/admin")
+    def admin():  # type: ignore[unused-ignore]
+        """Admin panel: list and manage all user accounts. Admin-only.
+
+        Unlike a standard user account (which only administers itself), an
+        administrator manages every account on the platform: listing users,
+        promoting/demoting admins, and disabling/enabling accounts. Regular
+        users are redirected to the dashboard — the panel is never exposed to
+        a non-admin (R8.2).
+        """
+        if not _require_login():
+            return redirect(url_for("pages.login"))
+        if not _is_admin():
+            return redirect(url_for("pages.dashboard"))
+        return render_template(
+            "pages/admin.html",
+            layout=_layout(),
+            nav_items=_nav_for_current_user(),
+            active="admin",
+            users=_admin_users(),
+        )
+
+    @bp.route("/admin/users/search")
+    def admin_users_search():  # type: ignore[unused-ignore]
+        """HTMX live-search partial over the user directory. Admin-only."""
+        if not _require_login():
+            return redirect(url_for("pages.login"))
+        if not _is_admin():
+            return redirect(url_for("pages.dashboard"))
+        query = request.args.get("q", "").strip().lower()
+        matches = [
+            u
+            for u in _admin_users()
+            if query in u["username"].lower() or query in u["email"].lower()
+        ]
+        return render_template("partials/admin_user_list.html", users=matches)
+
+    @bp.route("/admin/users/<username>/role", methods=["POST"])
+    def admin_set_role(username: str):  # type: ignore[unused-ignore]
+        """Promote/demote a user's admin role, then return the row. Admin-only."""
+        if not _require_login():
+            return redirect(url_for("pages.login"))
+        if not _is_admin():
+            return redirect(url_for("pages.dashboard"))
+        make_admin = request.form.get("admin") == "true"
+        directory = _admin_directory()
+        if directory:
+            directory.set_admin(username, make_admin)
+        return render_template("partials/admin_user_list.html", users=_admin_users())
+
+    @bp.route("/admin/users/<username>/enabled", methods=["POST"])
+    def admin_set_enabled(username: str):  # type: ignore[unused-ignore]
+        """Enable/disable an account, then return the list. Admin-only."""
+        if not _require_login():
+            return redirect(url_for("pages.login"))
+        if not _is_admin():
+            return redirect(url_for("pages.dashboard"))
+        enabled = request.form.get("enabled") == "true"
+        directory = _admin_directory()
+        if directory:
+            directory.set_enabled(username, enabled)
+        return render_template("partials/admin_user_list.html", users=_admin_users())
 
     return bp
 
@@ -143,3 +257,16 @@ def _dashboard_stats() -> list[dict[str, Any]]:
 def _guild_list() -> list[dict[str, Any]]:
     """Return the guild rows to render (empty until wired to live data)."""
     return []
+
+
+def _admin_users() -> list[dict[str, Any]]:
+    """Return the user directory rows for the admin panel.
+
+    Sourced from the Cognito-backed :class:`AdminDirectory` when configured;
+    degrades to an empty list (so template rendering still works in tests /
+    no-datastore mode).
+    """
+    directory = _admin_directory()
+    if not directory:
+        return []
+    return directory.list_users()

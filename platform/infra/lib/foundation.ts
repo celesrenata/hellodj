@@ -71,6 +71,13 @@ export interface FoundationRefs {
    * session loss). Optional.
    */
   readonly flaskSessionKey?: string;
+
+  /**
+   * The Cognito user pool id (from `AuthStack`), injected into the web-ui so
+   * the admin panel can manage all accounts via the Cognito admin APIs.
+   * Optional.
+   */
+  readonly cognitoUserPoolId?: string;
 }
 
 /**

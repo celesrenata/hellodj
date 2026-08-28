@@ -278,6 +278,14 @@ export interface WorkloadsStackProps extends cdk.StackProps {
   readonly cognitoClientId?: string;
 
   /**
+   * The Cognito user pool id (from `AuthStack`), injected into the web-ui
+   * container so the admin panel can manage all accounts via the Cognito admin
+   * APIs (list users, promote/demote admins, enable/disable). When unset the
+   * admin panel renders an empty directory (degraded mode).
+   */
+  readonly cognitoUserPoolId?: string;
+
+  /**
    * The Discord OAuth application client id (from `AuthStack` secrets/config),
    * injected into the web-ui container so day-to-day Discord login works. When
    * unset, the Discord login button produces an empty `client_id` (R8.4).
@@ -583,6 +591,33 @@ export class WorkloadsStack extends cdk.Stack {
         }),
       );
     }
+
+    // The web-ui admin panel manages every account through the Cognito admin
+    // APIs (list users, read/modify group membership, enable/disable). Grant
+    // its IRSA role least-privilege access to the shared user pool only. The
+    // admin panel itself is still gated to `admins`-group sessions in-app;
+    // this grants the pod the AWS permission to perform those actions once an
+    // admin requests them (R8.2 — admin administers all accounts).
+    if (spec.name === 'web-ui' && this.props.cognitoUserPoolId) {
+      sa.role.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          sid: 'CognitoAdminUserDirectory',
+          effect: iam.Effect.ALLOW,
+          actions: [
+            'cognito-idp:ListUsers',
+            'cognito-idp:AdminListGroupsForUser',
+            'cognito-idp:AdminAddUserToGroup',
+            'cognito-idp:AdminRemoveUserFromGroup',
+            'cognito-idp:AdminEnableUser',
+            'cognito-idp:AdminDisableUser',
+          ],
+          resources: [
+            `arn:aws:cognito-idp:${this.region}:${this.account}:userpool/` +
+              this.props.cognitoUserPoolId,
+          ],
+        }),
+      );
+    }
   }
 
   /** Resolve the Nix-built OCI image URI for a component. */
@@ -740,6 +775,15 @@ export class WorkloadsStack extends cdk.Stack {
         env.push({
           name: 'COGNITO_CLIENT_ID',
           value: this.props.cognitoClientId,
+        });
+      }
+      if (this.props.cognitoUserPoolId) {
+        // The admin panel manages all accounts via the Cognito admin APIs; it
+        // needs the user pool id to list/enable/disable users and manage the
+        // admins group.
+        env.push({
+          name: 'HELLODJ_COGNITO_USER_POOL_ID',
+          value: this.props.cognitoUserPoolId,
         });
       }
       if (this.props.discordClientId) {

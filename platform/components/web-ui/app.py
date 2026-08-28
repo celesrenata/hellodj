@@ -32,6 +32,7 @@ from typing import Any
 
 from flask import Flask, redirect, session, url_for
 
+from admin_directory import AdminDirectory, build_admin_directory
 from auth import build_auth_blueprint
 from config_store import ConfigStore
 from pages import build_pages_blueprint
@@ -59,6 +60,7 @@ def create_app(
     *,
     config_store: ConfigStore | None = None,
     secrets_provider: SecretsProvider | None = None,
+    admin_directory: AdminDirectory | None = None,
     overrides: dict[str, Any] | None = None,
 ) -> Flask:
     """Build and configure the web-ui Flask application.
@@ -82,6 +84,13 @@ def create_app(
 
     app.extensions["config_store"] = config_store
     app.extensions["secrets"] = secrets_provider
+    # The admin panel manages ALL accounts via Cognito; falls back to the
+    # env-built directory (or None → degraded/empty) when not injected.
+    app.extensions["admin_directory"] = (
+        admin_directory
+        if admin_directory is not None
+        else build_admin_directory()
+    )
 
     app.register_blueprint(build_auth_blueprint())
     app.register_blueprint(build_pages_blueprint())

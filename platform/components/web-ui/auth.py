@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import base64
 import hashlib
+import json
 import secrets as pysecrets
 import urllib.parse
 from typing import Any
@@ -118,7 +119,17 @@ def build_auth_blueprint() -> Blueprint:
         state = request.args.get("state", "")
         if not state or state != session.pop("cognito_state", None):
             return redirect(url_for("pages.login", error="state_mismatch"))
-        session["user"] = {"provider": AuthProvider.COGNITO.value}
+        # Exchange the authorization code for tokens and read the group claim
+        # so admin group membership drives the admin panel gate. The admin
+        # account is not a standard user — it administers all other accounts —
+        # so `is_admin` must reflect Cognito `admins` group membership.
+        code = request.args.get("code", "")
+        groups = _exchange_code_for_groups(code, session.pop("cognito_verifier", ""))
+        session["user"] = {
+            "provider": AuthProvider.COGNITO.value,
+            "is_admin": "admins" in groups,
+            "groups": groups,
+        }
         return redirect(url_for("pages.dashboard"))
 
     @bp.route("/tidal/callback")
@@ -191,6 +202,69 @@ def _redirect_uri(endpoint: str) -> str:
     if base:
         return base + url_for(endpoint)
     return url_for(endpoint, _external=True)
+
+
+def _exchange_code_for_groups(code: str, verifier: str) -> list[str]:
+    """Exchange the Cognito auth code for tokens and return its group claims.
+
+    Performs the authorization-code + PKCE token exchange against the Cognito
+    hosted-UI ``/oauth2/token`` endpoint, then decodes the ID token payload to
+    read the ``cognito:groups`` claim. The claim drives the admin gate: a user
+    in the ``admins`` group is an administrator (manages all accounts), any
+    other authenticated user is a standard user.
+
+    Returns an empty list when the exchange can't be performed (missing code,
+    unconfigured Cognito, or a network/parse error) so login still succeeds as
+    a non-admin rather than failing hard.
+    """
+    if not code:
+        return []
+    domain = current_app.config.get("COGNITO_DOMAIN", "").rstrip("/")
+    client_id = current_app.config.get("COGNITO_CLIENT_ID", "")
+    if not domain or not client_id:
+        return []
+    import json as _json
+    import urllib.request as _req
+
+    body = urllib.parse.urlencode(
+        {
+            "grant_type": "authorization_code",
+            "client_id": client_id,
+            "code": code,
+            "redirect_uri": _redirect_uri("auth.cognito_callback"),
+            "code_verifier": verifier,
+        }
+    ).encode("ascii")
+    request_obj = _req.Request(
+        f"{domain}/oauth2/token",
+        data=body,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        method="POST",
+    )
+    try:
+        with _req.urlopen(request_obj, timeout=8) as resp:  # noqa: S310
+            tokens = _json.loads(resp.read().decode("utf-8"))
+    except Exception:  # noqa: BLE001 - login degrades to non-admin on failure
+        return []
+    id_token = tokens.get("id_token", "")
+    return _groups_from_id_token(id_token)
+
+
+def _groups_from_id_token(id_token: str) -> list[str]:
+    """Return the ``cognito:groups`` claim from a JWT ID token payload.
+
+    Decodes the JWT payload segment only (no signature verification — the token
+    came directly from the Cognito token endpoint over TLS in this same
+    request, so it is trusted here for the group-membership read).
+    """
+    try:
+        payload_b64 = id_token.split(".")[1]
+        padded = payload_b64 + "=" * (-len(payload_b64) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
+    except Exception:  # noqa: BLE001
+        return []
+    groups = claims.get("cognito:groups", [])
+    return list(groups) if isinstance(groups, list) else []
 
 
 #: Importable blueprint instance for apps that prefer a module-level object.
