@@ -30,6 +30,7 @@ from flask import (
 
 from guild_admin_service import can_manage_guild
 from guild_sources import SUPPORTED_PROVIDERS
+from source_oauth import source_provider_configured
 
 __all__ = ["build_guild_blueprint"]
 
@@ -93,6 +94,13 @@ def build_guild_blueprint() -> Blueprint:
             return redirect(url_for("pages.guilds"))
         guild_admin = _svc("guild_admin")
         sources = _svc("guild_sources")
+        identity_svc = _svc("guild_identity_service")
+        # Which providers are wired for interactive OAuth (client id present).
+        # Unconfigured providers render a disabled "Needs setup" control rather
+        # than an active Connect link that would silently no-op (R2.1, R1.2).
+        providers_configured = {
+            p: source_provider_configured(p) for p in SUPPORTED_PROVIDERS
+        }
         return render_template(
             "pages/guild_detail.html",
             layout=_layout(),
@@ -102,6 +110,52 @@ def build_guild_blueprint() -> Blueprint:
             admins=guild_admin.list_admins(guild_id) if guild_admin else [],
             sources=sources.status(guild_id) if sources else [],
             providers=SUPPORTED_PROVIDERS,
+            providers_configured=providers_configured,
+            identity=(
+                identity_svc.get_identity(guild_id) if identity_svc else {}
+            ),
+            error=request.args.get("error", ""),
+            error_provider=request.args.get("provider", ""),
+        )
+
+    @bp.route("/guilds/<guild_id>/identity/nickname", methods=["POST"])
+    def set_bot_nickname(guild_id: str):  # type: ignore[unused-ignore]
+        """Persist the bot's desired server nickname. Ownership-gated (R2.7)."""
+        if not _require_login():
+            return redirect(url_for("pages.login"))
+        if not _can_manage(guild_id):
+            return redirect(url_for("pages.guilds"))
+        identity_svc = _svc("guild_identity_service")
+        nickname = request.form.get("nickname", "").strip()
+        if identity_svc is not None:
+            identity_svc.set_nickname(
+                guild_id, nickname, requested_by=_user().get("sub", "")
+            )
+        return _render_identity(guild_id, identity_svc)
+
+    @bp.route("/guilds/<guild_id>/identity/avatar", methods=["POST"])
+    def set_bot_avatar(guild_id: str):  # type: ignore[unused-ignore]
+        """Persist the bot's desired per-guild avatar. Ownership-gated (R2.8)."""
+        if not _require_login():
+            return redirect(url_for("pages.login"))
+        if not _can_manage(guild_id):
+            return redirect(url_for("pages.guilds"))
+        identity_svc = _svc("guild_identity_service")
+        upload = request.files.get("avatar")
+        upload_error = ""
+        if identity_svc is not None and upload is not None:
+            from bot_identity import AvatarValidationError  # noqa: PLC0415
+
+            try:
+                identity_svc.set_avatar(
+                    guild_id,
+                    upload.read(),
+                    requested_by=_user().get("sub", ""),
+                )
+            except AvatarValidationError as exc:
+                upload_error = str(exc)
+        return _render_identity(
+            guild_id, identity_svc, upload_error=upload_error
         )
 
     @bp.route("/guilds/<guild_id>/admins", methods=["POST"])
@@ -153,9 +207,29 @@ def build_guild_blueprint() -> Blueprint:
             "partials/guild_source_list.html",
             guild_id=guild_id,
             sources=sources.status(guild_id) if sources else [],
+            providers_configured={
+                p: source_provider_configured(p) for p in SUPPORTED_PROVIDERS
+            },
         )
 
     return bp
+
+
+def _render_identity(
+    guild_id: str, identity_svc: Any, *, upload_error: str = ""
+) -> str:
+    """Render the identity form partial with the current apply status.
+
+    Reused by both identity routes so the HTMX swap surfaces the bot-applier's
+    ``apply_status`` / ``apply_error`` (Pending / Applied / error) and any
+    upload-time validation error (R2.8, R2.9).
+    """
+    return render_template(
+        "partials/guild_identity_form.html",
+        guild_id=guild_id,
+        identity=identity_svc.get_identity(guild_id) if identity_svc else {},
+        upload_error=upload_error,
+    )
 
 
 # ---- shared helpers imported from pages to keep one nav/layout source ---- #

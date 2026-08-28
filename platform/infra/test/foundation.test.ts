@@ -358,6 +358,7 @@ describe('whole-app foundation singleton composition (task 5.4, R1.1-R1.7)', () 
           searchCacheTable: data.searchCacheTable,
           sessionTable: data.sessionTable,
           daxEndpoint: data.daxEndpoint,
+          assetsBucket: data.assetsBucket,
         },
         secrets: {
           discordBotToken: auth.discordBotTokenSecret,

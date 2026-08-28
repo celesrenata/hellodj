@@ -53,6 +53,7 @@ class BotClient:
         registry: CommandRegistry,
         guild_policy: GuildPolicy,
         deps: Any,
+        identity_applier: Any | None = None,
     ) -> None:
         """Initialise the client wrapper.
 
@@ -61,11 +62,17 @@ class BotClient:
             registry: Cog registry attached during setup.
             guild_policy: Policy applied on guild join/remove events.
             deps: Shared dependency container passed to cog factories.
+            identity_applier: Optional per-guild bot-identity applier. When
+                present, ``on_ready`` runs an initial ``apply_all_pending`` and
+                ``on_guild_join`` applies that guild — so a fresh join/reconnect
+                picks up any pending identity change without waiting for the
+                periodic watchdog. ``None`` disables the event-driven apply.
         """
         self._config = config
         self._registry = registry
         self._policy = guild_policy
         self._deps = deps
+        self._identity_applier = identity_applier
         self._bot: Any = None
         self._last_heartbeat_monotonic: float | None = None
 
@@ -102,6 +109,11 @@ class BotClient:
         async def on_ready() -> None:  # pragma: no cover - discord runtime
             self._last_heartbeat_monotonic = time.monotonic()
             log.info("gateway: READY as %s", getattr(bot.user, "name", "?"))
+            if self._identity_applier is not None:
+                try:
+                    await self._identity_applier.apply_all_pending()
+                except Exception as exc:  # noqa: BLE001 - never crash on_ready
+                    log.warning("gateway: initial identity apply failed: %s", exc)
 
         @bot.event
         async def on_resumed() -> None:  # pragma: no cover - discord runtime
@@ -113,6 +125,15 @@ class BotClient:
                 int(guild.id), getattr(guild, "name", "")
             )
             log.info("gateway: joined guild %s -> %s", guild.id, status.value)
+            if self._identity_applier is not None:
+                try:
+                    await self._identity_applier.apply_guild(int(guild.id))
+                except Exception as exc:  # noqa: BLE001 - never crash the event
+                    log.warning(
+                        "gateway: identity apply on join %s failed: %s",
+                        guild.id,
+                        exc,
+                    )
 
         @bot.event
         async def on_guild_remove(guild: Any) -> None:  # pragma: no cover
@@ -151,6 +172,17 @@ class BotClient:
         if self._bot is None:
             self.build()
         await self._bot.start(token)
+
+    def set_identity_applier(self, applier: Any) -> None:
+        """Attach the per-guild identity applier after the bot is built.
+
+        The applier needs :attr:`bot` (available only after :meth:`build`), while
+        the gateway's event handlers read ``self._identity_applier`` when they
+        fire (after :meth:`start`). Setting it here — before ``start`` — keeps the
+        event-driven initial apply / on-join apply wired without a construction
+        ordering problem.
+        """
+        self._identity_applier = applier
 
     async def close(self) -> None:
         """Close the gateway connection."""

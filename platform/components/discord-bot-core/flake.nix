@@ -33,6 +33,10 @@
           cp -r $src/discord_bot_core $out/app/discord_bot_core 2>/dev/null || true
           # Copy any top-level .py files
           find $src -maxdepth 1 -name '*.py' -exec cp {} $out/app/ \;
+          # Shared platform logic package (copied into source tree by pipeline)
+          if [ -d "$src/hellodj_platform_logic" ]; then
+            cp -r "$src/hellodj_platform_logic" $out/app/hellodj_platform_logic
+          fi
         '';
 
         image = pkgs.dockerTools.buildLayeredImage {

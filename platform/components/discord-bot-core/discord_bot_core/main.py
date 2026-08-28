@@ -20,15 +20,25 @@ from .commands.playback_cog import build_playback_cog
 from .commands.registry import CommandRegistry
 from .config import BotConfig
 from .gateway.client import BotClient
+from .identity.applier import IdentityApplier
+from .identity.store import build_identity_store
 from .playback.client import PlaybackClient
 from .policy.guild_policy import GuildPolicy
 from .secrets import TokenProvider
 from .watchdogs.gateway_health import GatewayHealthWatchdog
+from .watchdogs.identity_apply import IdentityApplyWatchdog
 from .watchdogs.token_refresh import TokenRefreshWatchdog
 
 log = logging.getLogger(__name__)
 
-__all__ = ["Dependencies", "build_secrets_client", "build_transport", "run"]
+__all__ = [
+    "Dependencies",
+    "build_identity_applier",
+    "build_s3_client",
+    "build_secrets_client",
+    "build_transport",
+    "run",
+]
 
 
 @dataclass
@@ -50,6 +60,36 @@ def build_secrets_client(region: str | None) -> Any:
     if region:
         return boto3.client("secretsmanager", region_name=region)
     return boto3.client("secretsmanager")
+
+
+def build_s3_client(region: str | None) -> Any:
+    """Create a boto3 S3 client for reading per-guild avatar bytes (lazy boto3)."""
+    import boto3
+
+    if region:
+        return boto3.client("s3", region_name=region)
+    return boto3.client("s3")
+
+
+def build_identity_applier(
+    config: BotConfig, gateway: BotClient
+) -> IdentityApplier | None:
+    """Build the per-guild identity applier when it is fully configured.
+
+    Returns ``None`` (identity apply disabled) unless both the core table name
+    and the assets bucket are set and the backing DynamoDB store can be built.
+    The applier reads persisted ``BOTIDENTITY`` items and applies them to
+    Discord via the gateway's underlying ``bot``.
+    """
+    if not config.core_table_name or not config.assets_bucket:
+        return None
+    store = build_identity_store(config.core_table_name, config.aws_region)
+    if store is None:
+        return None
+    s3 = build_s3_client(config.aws_region)
+    return IdentityApplier(
+        gateway.bot, store, s3, avatar_bucket=config.assets_bucket
+    )
 
 
 def build_transport(base_url: str) -> Any:
@@ -116,6 +156,18 @@ async def run(config: BotConfig | None = None) -> None:
     gateway = BotClient(cfg, registry, guild_policy, deps)
     gateway.build()
 
+    # Optional per-guild bot-identity apply: only when the core table + assets
+    # bucket are configured. The applier reads persisted BOTIDENTITY items and
+    # applies nickname/avatar changes to Discord; the watchdog polls it and the
+    # gateway runs it on ready / on guild join.
+    identity_applier = build_identity_applier(cfg, gateway)
+    identity_watchdog: IdentityApplyWatchdog | None = None
+    if identity_applier is not None:
+        gateway.set_identity_applier(identity_applier)
+        identity_watchdog = IdentityApplyWatchdog(
+            identity_applier, cfg.identity_apply_interval_s
+        )
+
     token_watchdog, health_watchdog = _build_watchdogs(
         cfg, token_provider, gateway
     )
@@ -123,9 +175,13 @@ async def run(config: BotConfig | None = None) -> None:
     token = token_provider.get()
     await token_watchdog.start()
     await health_watchdog.start()
+    if identity_watchdog is not None:
+        await identity_watchdog.start()
     try:
         await gateway.start(token)
     finally:
+        if identity_watchdog is not None:
+            await identity_watchdog.stop()
         await token_watchdog.stop()
         await health_watchdog.stop()
         await gateway.close()

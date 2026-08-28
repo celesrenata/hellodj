@@ -20,6 +20,38 @@ back to the optional Platform_Owner-controlled global secret (default name
 ``hellodj/<stage>/spotify``); if neither exists the provider is skipped
 gracefully (``None``).
 
+YouTube / YouTube_Music — per-guild capture, NO global fallback leaf
+--------------------------------------------------------------------
+
+``youtube`` and ``youtube_music`` intentionally have **no** entry in
+:data:`GLOBAL_FALLBACK_LEAVES`. This is a deliberate, load-bearing design choice
+that must NOT be changed:
+
+* A guild that HAS connected its own YouTube (a per-guild secret
+  ``hellodj/<stage>/guild/<gid>/youtube`` holding ``oauth_refresh_token`` +
+  ``pot_token`` + ``pot_visitor_data``) has those exact creds resolved here and
+  injected into Lavalink just-in-time, immediately before that guild's track is
+  resolved/played (see :class:`YouTubeCredentialInjector`).
+* A guild that has NO per-guild YouTube secret resolves to ``None`` and therefore
+  triggers NO per-guild swap — it plays through the **untouched** global
+  credential-store push (``bot.py:push_youtube_oauth`` → single ``POST /youtube``)
+  exactly as before this change (preservation 3.5). Adding a youtube global
+  fallback leaf here would break that separation, so ``GLOBAL_FALLBACK_LEAVES``
+  keeps ONLY ``tidal`` and ``spotify`` (3.7).
+
+SHARED-LAVALINK LIMITATION
+--------------------------
+
+The youtube-source plugin's ``POST /youtube`` replaces ALL credential fields on
+every call, so one shared Lavalink node can hold only ONE YouTube credential set
+at a time. :class:`YouTubeCredentialInjector` performs a just-in-time
+last-writer-wins swap serialized by a per-node :class:`asyncio.Lock` (held from
+the push through track resolution), which guarantees each *resolution* uses the
+correct guild's creds. It does NOT provide true concurrent per-guild isolation on
+a single node — two guilds resolving YouTube tracks at the very same instant
+still serialize on the node lock. The fully isolated answer (a node-per-guild
+Lavalink pool) is deferred (Design Risks #1).
+
 Resolution is cached per ``(guild_id, provider)`` with a bounded TTL and
 refreshed on expiry (R6.4). The cache key includes the guild id — combined with
 the guild-scoped secret name this guarantees one guild's tokens are never
@@ -41,9 +73,13 @@ from typing import Any, Protocol
 __all__ = [
     "GLOBAL_FALLBACK_LEAVES",
     "SUPPORTED_PROVIDERS",
+    "YOUTUBE_PROVIDERS",
     "GuildCredentialResolver",
     "SecretsReader",
+    "YouTubeCredentialInjector",
+    "YouTubePush",
     "guild_source_secret_name",
+    "youtube_oauth_payload",
 ]
 
 log = logging.getLogger(__name__)
@@ -51,6 +87,10 @@ log = logging.getLogger(__name__)
 #: The music providers a guild can own OAuth for. Kept in lock-step with the
 #: web-ui's ``guild_sources.SUPPORTED_PROVIDERS``.
 SUPPORTED_PROVIDERS = ("youtube", "youtube_music", "tidal", "spotify")
+
+#: The YouTube-family providers that use the per-guild ``POST /youtube`` swap.
+#: These are exactly the providers with NO global fallback leaf.
+YOUTUBE_PROVIDERS = ("youtube", "youtube_music")
 
 #: Default provider → global-secret leaf mapping for the optional fallback
 #: (R6.2, R5.5). The full global name is ``hellodj/<stage>/<leaf>``, matching
@@ -202,3 +242,167 @@ class GuildCredentialResolver:
             log.warning("guild_credentials: secret %s is not a JSON object", name)
             return None
         return parsed
+
+
+# ── YouTube per-guild just-in-time credential injection ─────────────────
+
+
+def youtube_oauth_payload(
+    tokens: dict[str, Any] | None,
+    *,
+    skip_initialization: bool = False,
+) -> dict[str, Any] | None:
+    """Build the ``POST /youtube`` payload from an explicit token dict.
+
+    This is the SINGLE payload builder shared by the bot's global push
+    (``bot.py:push_youtube_oauth``) and the per-guild just-in-time swap. It
+    encodes the load-bearing invariant that OAuth refresh token AND poToken +
+    visitorData are sent TOGETHER in ONE request — the youtube-source plugin
+    replaces ALL fields on each call, so splitting them would erase the first
+    (see hellodj-architecture "single POST /youtube request").
+
+    Parameters
+    ----------
+    tokens:
+        A dict that may contain ``oauth_refresh_token`` (or ``refresh_token``),
+        ``pot_token``, and ``pot_visitor_data``. Missing/empty fields are simply
+        omitted from the payload.
+    skip_initialization:
+        Value for the plugin's ``skipInitialization`` field.
+
+    Returns
+    -------
+    dict | None
+        The payload dict, or ``None`` when there is neither a refresh token nor a
+        complete poToken pair to push (caller should skip the request).
+    """
+    tokens = tokens or {}
+    refresh = (
+        tokens.get("oauth_refresh_token")
+        or tokens.get("refreshToken")
+        or tokens.get("refresh_token")
+        or ""
+    )
+    pot_token = tokens.get("pot_token") or tokens.get("poToken") or ""
+    pot_visitor = (
+        tokens.get("pot_visitor_data")
+        or tokens.get("visitorData")
+        or tokens.get("visitor_data")
+        or ""
+    )
+
+    if not refresh and not (pot_token and pot_visitor):
+        return None
+
+    payload: dict[str, Any] = {"skipInitialization": skip_initialization}
+    if refresh:
+        payload["refreshToken"] = refresh
+    if pot_token and pot_visitor:
+        payload["poToken"] = pot_token
+        payload["visitorData"] = pot_visitor
+    return payload
+
+
+class YouTubePush(Protocol):
+    """Seam for issuing the ``POST /youtube`` request to a Lavalink node.
+
+    Implemented for real by ``bot.py`` (an aiohttp POST to
+    ``{LAVALINK_URI}/youtube``); replaced by a fake in unit tests so the
+    injector is testable from ``bot/playback/`` without a live Lavalink or the
+    discord/wavelink stack. Returns whether the push succeeded.
+    """
+
+    async def __call__(self, payload: dict[str, Any]) -> bool: ...
+
+
+class YouTubeCredentialInjector:
+    """Just-in-time per-guild YouTube credential swap on a shared Lavalink node.
+
+    Before a guild's YouTube track is resolved/played, :meth:`inject_for_guild`
+    resolves that guild's own ``{oauth_refresh_token, pot_token,
+    pot_visitor_data}`` and pushes them via the single ``POST /youtube`` request
+    (last-writer-wins). Guilds WITHOUT a per-guild YouTube secret cause NO swap —
+    the caller falls through to the untouched global push (preservation 3.5).
+
+    The swap is serialized with a per-Lavalink-node :class:`asyncio.Lock` so a
+    concurrent resolution for another guild cannot interleave between the push
+    and the track resolution. The caller holds the returned lock context across
+    the push AND the subsequent resolve/play (see :meth:`swap_lock`).
+
+    Parameters
+    ----------
+    resolver:
+        A :class:`GuildCredentialResolver` used to fetch the per-guild secret.
+    push:
+        A :class:`YouTubePush` seam that issues the actual ``POST /youtube``.
+    """
+
+    def __init__(self, resolver: "GuildCredentialResolver", push: YouTubePush) -> None:
+        self._resolver = resolver
+        self._push = push
+        # node key -> lock. A single shared node uses one lock; a future
+        # node-per-guild pool would key by node uri.
+        self._locks: dict[str, "asyncio.Lock"] = {}
+
+    def swap_lock(self, node_key: str = "default") -> "asyncio.Lock":
+        """Return the per-node lock, creating it on first use.
+
+        The caller MUST hold this lock across the credential push AND the track
+        resolution so a concurrent per-guild swap cannot clobber the node's creds
+        mid-resolution (SHARED-LAVALINK LIMITATION).
+        """
+        import asyncio
+
+        lock = self._locks.get(node_key)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[node_key] = lock
+        return lock
+
+    def resolve_youtube(self, guild_id: str | int, provider: str) -> dict[str, Any] | None:
+        """Return a guild's per-guild YouTube tokens, or ``None`` if it has none.
+
+        Only youtube / youtube_music are per-guild-swappable; any other provider
+        returns ``None`` (its resolution/fallback is handled elsewhere).
+        """
+        if provider not in YOUTUBE_PROVIDERS:
+            return None
+        tokens = self._resolver.resolve(guild_id, provider)
+        if not tokens or not isinstance(tokens, dict):
+            return None
+        # Only treat it as a usable per-guild secret when a refresh token is
+        # present — matches the stored shape written by the web-ui.
+        if not (tokens.get("oauth_refresh_token") or tokens.get("refresh_token")):
+            return None
+        return tokens
+
+    async def inject_for_guild(self, guild_id: str | int, provider: str) -> bool:
+        """Resolve + push a guild's own YouTube creds if it has a per-guild secret.
+
+        Returns ``True`` when a per-guild swap was performed (this guild's creds
+        are now loaded on the node), ``False`` when the guild has no per-guild
+        secret and the caller should use the untouched global push (3.5).
+
+        NOTE: the caller is expected to hold :meth:`swap_lock` around this call
+        and the subsequent track resolution.
+        """
+        tokens = self.resolve_youtube(guild_id, provider)
+        if tokens is None:
+            return False
+        payload = youtube_oauth_payload(tokens, skip_initialization=False)
+        if payload is None:
+            return False
+        ok = await self._push(payload)
+        if ok:
+            log.info(
+                "guild_credentials: swapped per-guild YouTube creds for guild %s "
+                "(provider=%s) before playback",
+                guild_id, provider,
+            )
+        else:
+            log.warning(
+                "guild_credentials: per-guild YouTube cred swap POST failed for "
+                "guild %s (provider=%s)",
+                guild_id, provider,
+            )
+        return ok

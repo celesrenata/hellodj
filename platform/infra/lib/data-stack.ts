@@ -24,6 +24,10 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as dax from 'aws-cdk-lib/aws-dax';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as s3 from 'aws-cdk-lib/aws-s3';
+
+/** The default deployment stage used to derive the assets bucket name. */
+export const DEFAULT_ASSETS_STAGE = 'beta';
 
 /** Fixed table names used across the platform's runtime components. */
 export const CORE_TABLE_NAME = 'hellodj-core';
@@ -52,6 +56,21 @@ export interface DataStackProps extends cdk.StackProps {
    * multi-node replication factor can be supplied for higher availability.
    */
   readonly daxReplicationFactor?: number;
+
+  /**
+   * The deployment stage (`beta` / `staging` / `production`) used to derive
+   * the per-guild bot-avatar assets bucket name
+   * (`hellodj-assets-<stage>-<region>`), mirroring how `EdgeStack` names its
+   * web-static / HLS buckets. Defaults to {@link DEFAULT_ASSETS_STAGE} when
+   * unset so existing composers keep synthesizing.
+   */
+  readonly stage?: string;
+
+  /**
+   * The AWS region used to derive the assets bucket name. Defaults to the
+   * stack's resolved region (`this.region`) when unset.
+   */
+  readonly region?: string;
 }
 
 /**
@@ -76,6 +95,15 @@ export class DataStack extends cdk.Stack {
 
   /** Cluster discovery endpoint of the DAX cluster (host:port). */
   public readonly daxEndpoint: string;
+
+  /**
+   * Per-guild bot-avatar assets bucket (`hellodj-assets-<stage>-<region>`).
+   * The web-ui `BotIdentityService` writes avatar bytes here at key
+   * `guild/<gid>/bot-avatar/<hash>.<ext>` and the discord-bot-core reads them.
+   * Retained on stack removal because it holds user data (unlike the ephemeral
+   * HLS bucket, which auto-destroys).
+   */
+  public readonly assetsBucket: s3.Bucket;
 
   constructor(scope: Construct, id: string, props: DataStackProps) {
     super(scope, id, props);
@@ -186,6 +214,26 @@ export class DataStack extends cdk.Stack {
     this.daxEndpoint = this.daxCluster.attrClusterDiscoveryEndpoint;
 
     // -----------------------------------------------------------------------
+    // Per-guild bot-avatar assets bucket. The web-ui BotIdentityService writes
+    // avatar bytes to `guild/<gid>/bot-avatar/<hash>.<ext>` in the bucket named
+    // by env `HELLODJ_ASSETS_BUCKET`; the discord-bot-core reads them back.
+    //
+    // Naming mirrors EdgeStack's `hellodj-<purpose>-<stage>-<region>` scheme.
+    // Unlike the ephemeral HLS bucket, avatars are USER DATA, so the removal
+    // policy is RETAIN (never auto-destroyed on stack removal).
+    // -----------------------------------------------------------------------
+    const stage = props.stage ?? DEFAULT_ASSETS_STAGE;
+    const region = props.region ?? this.region;
+    this.assetsBucket = new s3.Bucket(this, 'AssetsBucket', {
+      bucketName: `hellodj-assets-${stage}-${region}`,
+      blockPublicAccess: s3.BlockPublicAccess.BLOCK_ALL,
+      encryption: s3.BucketEncryption.S3_MANAGED,
+      enforceSSL: true,
+      // Avatars are user data — never auto-destroy (differs from HLS).
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    // -----------------------------------------------------------------------
     // Outputs so component stacks can wire table names + DAX endpoint.
     // -----------------------------------------------------------------------
     new cdk.CfnOutput(this, 'CoreTableNameOutput', {
@@ -203,6 +251,11 @@ export class DataStack extends cdk.Stack {
     new cdk.CfnOutput(this, 'DaxEndpointOutput', {
       value: this.daxEndpoint,
       description: 'DAX cluster discovery endpoint fronting the hot tables.',
+    });
+    new cdk.CfnOutput(this, 'AssetsBucketNameOutput', {
+      value: this.assetsBucket.bucketName,
+      description:
+        'Name of the per-guild bot-avatar assets bucket (HELLODJ_ASSETS_BUCKET).',
     });
   }
 }

@@ -13,6 +13,7 @@ Env:
 * ``AWS_REGION``                   Region for boto3 clients.
 * ``INVITE_SENDER``                Verified SES sender identity for invites.
 * ``HELLODJ_PUBLIC_BASE_URL``      Site origin for the ``/invite/<token>`` link.
+* ``HELLODJ_ASSETS_BUCKET``        S3 bucket for per-guild bot-avatar bytes.
 """
 
 from __future__ import annotations
@@ -20,6 +21,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from bot_identity import BotIdentityService
 from config_store import ConfigStore
 from guild_admin_service import GuildAdminService
 from guild_sources import GuildSourcesService
@@ -83,6 +85,18 @@ def _ses_client() -> Any | None:
         return None
 
 
+def _s3_client() -> Any | None:
+    """Build an S3 client, or None when boto3 is unavailable."""
+    try:
+        import boto3
+
+        return boto3.client(
+            "s3", region_name=os.getenv("AWS_REGION", "us-east-1")
+        )
+    except Exception:  # noqa: BLE001
+        return None
+
+
 def _invite_email() -> InviteEmailService | None:
     """Build the branded SES invitation sender, or None when unconfigured.
 
@@ -105,8 +119,9 @@ def build_services() -> dict[str, Any]:
     """Return the runtime services keyed for ``app.extensions``.
 
     Keys: ``config_store``, ``user_profiles``, ``guild_admin``,
-    ``guild_sources``, ``invite_service``. Any service whose backing resource
-    is unavailable is ``None`` and the routes degrade gracefully.
+    ``guild_sources``, ``guild_identity_service``, ``invite_service``. Any
+    service whose backing resource is unavailable is ``None`` and the routes
+    degrade gracefully.
     """
     core = _core_table()
     stage = os.getenv("HELLODJ_STAGE", "beta")
@@ -117,6 +132,7 @@ def build_services() -> dict[str, Any]:
         "user_profiles": None,
         "guild_admin": None,
         "guild_sources": None,
+        "guild_identity_service": None,
         "invite_service": None,
     }
     if core is None:
@@ -131,6 +147,13 @@ def build_services() -> dict[str, Any]:
     if secrets is not None:
         services["guild_sources"] = GuildSourcesService(
             core, secrets, stage=stage
+        )
+
+    s3 = _s3_client()
+    avatar_bucket = os.getenv("HELLODJ_ASSETS_BUCKET", "").strip()
+    if s3 is not None and avatar_bucket:
+        services["guild_identity_service"] = BotIdentityService(
+            core, s3, stage=stage, avatar_bucket=avatar_bucket
         )
 
     cognito = _cognito_client()

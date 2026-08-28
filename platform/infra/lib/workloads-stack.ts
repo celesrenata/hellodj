@@ -45,6 +45,7 @@ import * as iam from 'aws-cdk-lib/aws-iam';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as ses from 'aws-cdk-lib/aws-ses';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import { Construct } from 'constructs';
 import {
   COMPONENT_WORKLOADS,
@@ -252,6 +253,13 @@ export interface WorkloadsDataRefs {
   readonly sessionTable: dynamodb.ITable;
   /** DAX cluster discovery endpoint (host:port), from `DataStack.daxEndpoint`. */
   readonly daxEndpoint: string;
+  /**
+   * Per-guild bot-avatar assets bucket (from `DataStack.assetsBucket`). The
+   * web-ui writes avatar bytes here (`guild/<gid>/bot-avatar/<hash>.<ext>`) and
+   * the discord-bot-core reads them; wired into components declaring the
+   * `assetsBucket` dependency as env `HELLODJ_ASSETS_BUCKET` + an IRSA grant.
+   */
+  readonly assetsBucket: s3.IBucket;
 }
 
 /** Secrets Manager entries the workloads wire to (from `AuthStack`). */
@@ -260,6 +268,18 @@ export interface WorkloadsSecretRefs {
   readonly tidalRefresh: secretsmanager.ISecret;
   readonly spotify: secretsmanager.ISecret;
   readonly ytCipher: secretsmanager.ISecret;
+  /**
+   * Google/YouTube OAuth client credentials ({client_id, client_secret}) the
+   * web-ui reads to complete the per-guild YouTube code→refresh-token
+   * exchange. Optional so foundations imported without it still synthesize.
+   */
+  readonly googleOauth?: secretsmanager.ISecret;
+  /**
+   * Discord OAuth client credentials ({client_id, client_secret}) the web-ui
+   * reads for the Discord-login callback token exchange. Optional so
+   * foundations imported without it still synthesize.
+   */
+  readonly discordOauth?: secretsmanager.ISecret;
 }
 
 /** Properties for {@link WorkloadsStack}. */
@@ -337,6 +357,33 @@ export interface WorkloadsStackProps extends cdk.StackProps {
   readonly discordClientId?: string;
 
   /**
+   * The Spotify OAuth application client id, injected into the web-ui
+   * container as `SPOTIFY_CLIENT_ID` so a per-guild Spotify connect builds a
+   * valid authorize URL instead of `source_authorize_url` returning `None`
+   * (the silent no-op, R2.6). Client *ids* are not sensitive, so this is a
+   * plain env value threaded via props (mirrors `discordClientId`); the client
+   * *secret* is injected via the `web-ui-oauth-secret` Kubernetes Secret.
+   * Additive, defaults to `""` when unset.
+   */
+  readonly spotifyClientId?: string;
+
+  /**
+   * The Google/YouTube OAuth application client id, injected into the web-ui
+   * container as `GOOGLE_CLIENT_ID` so a per-guild YouTube / YouTube Music
+   * connect builds a valid authorize URL (R2.6). Plain env value threaded via
+   * props; additive, defaults to `""` when unset.
+   */
+  readonly googleClientId?: string;
+
+  /**
+   * The Tidal OAuth application client id, injected into the web-ui container
+   * as `TIDAL_CLIENT_ID` so a per-guild Tidal connect keeps building a valid
+   * authorize URL (R2.6, preserve 3.1). Plain env value threaded via props;
+   * additive, defaults to `""` when unset.
+   */
+  readonly tidalClientId?: string;
+
+  /**
    * The shared Flask session signing key value (from an `AuthStack`-owned
    * Secrets Manager secret), placed into the per-stage `web-ui-flask-secret`
    * Kubernetes Secret so all web-ui replicas sign session cookies with the
@@ -347,6 +394,26 @@ export interface WorkloadsStackProps extends cdk.StackProps {
    * shared cluster's eks stack.
    */
   readonly flaskSessionKey?: string;
+
+  /**
+   * The Google/YouTube OAuth client *secret* value, placed into the per-stage
+   * `web-ui-oauth-secret` Kubernetes Secret and referenced by the web-ui
+   * container via `secretKeyRef` (mirrors the `web-ui-flask-secret` pattern).
+   * Threading the value here (rather than resolving it inline in the container
+   * env) keeps the secret out of any CloudFormation env literal on the
+   * Deployment manifest. Additive; when unset the Secret carries an empty
+   * value and `GOOGLE_CLIENT_SECRET` resolves to "".
+   */
+  readonly googleClientSecret?: string;
+
+  /**
+   * The Discord OAuth client *secret* value, placed into the per-stage
+   * `web-ui-oauth-secret` Kubernetes Secret and referenced by the web-ui
+   * container via `secretKeyRef` for the Discord-login callback token
+   * exchange. Additive; when unset the Secret carries an empty value and
+   * `DISCORD_CLIENT_SECRET` resolves to "".
+   */
+  readonly discordClientSecret?: string;
 
   /**
    * Override for the verified SES sender identity the web-ui sends branded
@@ -391,6 +458,16 @@ export class WorkloadsStack extends cdk.Stack {
    * web-ui replicas (prevents OAuth-callback session loss across pods).
    */
   public readonly webUiFlaskSecretManifest: eks.KubernetesManifest;
+
+  /**
+   * The Kubernetes Secret holding the web-ui's OAuth client *secrets*
+   * (`GOOGLE_CLIENT_SECRET`, `DISCORD_CLIENT_SECRET`), referenced by the
+   * web-ui container via `secretKeyRef` so the per-guild YouTube exchange and
+   * the Discord-login callback can complete without a secret value landing in
+   * a CloudFormation env literal on the Deployment (mirrors
+   * {@link webUiFlaskSecretManifest}).
+   */
+  public readonly webUiOauthSecretManifest: eks.KubernetesManifest;
 
   /**
    * The verified SES sender identity (`invites@<stage>.<region>.hellodj.bot`
@@ -509,6 +586,34 @@ export class WorkloadsStack extends cdk.Stack {
     );
     this.webUiFlaskSecretManifest.node.addDependency(this.namespaceManifest);
 
+    // Per-stage OAuth client-secret Secret for the web-ui, shared by all
+    // replicas. Holds the Google/YouTube + Discord OAuth client *secrets* the
+    // web-ui uses to complete the per-guild YouTube code→refresh-token
+    // exchange and the Discord-login callback token exchange. Referenced by
+    // the web-ui container via `secretKeyRef` (mirrors web-ui-flask-secret) so
+    // no client-secret value lands in a CloudFormation env literal on the
+    // Deployment manifest. Values are threaded via props from the
+    // AuthStack-owned Secrets Manager entries (created empty, populated
+    // out-of-band); an unset value renders an empty string so the env var
+    // resolves to "" until the secret is populated.
+    this.webUiOauthSecretManifest = this.cluster.addManifest(
+      `${this.stage}-WebUiOauthSecret`,
+      {
+        apiVersion: 'v1',
+        kind: 'Secret',
+        metadata: {
+          name: 'web-ui-oauth-secret',
+          namespace: this.namespace,
+        },
+        type: 'Opaque',
+        stringData: {
+          GOOGLE_CLIENT_SECRET: this.props.googleClientSecret ?? '',
+          DISCORD_CLIENT_SECRET: this.props.discordClientSecret ?? '',
+        },
+      },
+    );
+    this.webUiOauthSecretManifest.node.addDependency(this.namespaceManifest);
+
     // Render each component's workload. Every component gets its own manifests
     // so a single component can be upgraded independently (R15.1, R15.2).
     //
@@ -530,6 +635,9 @@ export class WorkloadsStack extends cdk.Stack {
       // must exist before the web-ui Deployment is applied.
       if (spec.name === 'web-ui') {
         manifest.node.addDependency(this.webUiFlaskSecretManifest);
+        // The web-ui also references the OAuth client-secret Secret via
+        // secretKeyRef, so it must exist before the web-ui Deployment applies.
+        manifest.node.addDependency(this.webUiOauthSecretManifest);
       }
       this.workloadManifests[spec.name] = manifest;
       previous = manifest;
@@ -677,6 +785,16 @@ export class WorkloadsStack extends cdk.Stack {
     if (deps.ytCipher) {
       this.props.secrets.ytCipher.grantRead(sa.role);
     }
+    if (deps.assetsBucket) {
+      // Per-guild bot-avatar assets bucket. Least privilege by role: the
+      // web-ui UPLOADS avatars (write), the discord-bot-core READS them back.
+      // `grantDependencies` only has the spec, so branch on the component name.
+      if (spec.name === 'web-ui') {
+        this.props.data.assetsBucket.grantReadWrite(sa.role);
+      } else {
+        this.props.data.assetsBucket.grantRead(sa.role);
+      }
+    }
     if (deps.aiTaskRole) {
       // The voice-pipeline reaches Bedrock/Transcribe/Polly through the shared
       // keyless AI task role from the auth stack. Rather than duplicate the
@@ -761,6 +879,22 @@ export class WorkloadsStack extends cdk.Stack {
           ],
         }),
       );
+
+      // Source OAuth client credentials (R2.6): the web-ui resolves the
+      // Google/YouTube + Discord OAuth client id/secret at runtime to complete
+      // the per-guild code→token exchange (YouTube) and the Discord-login
+      // callback. Grant READ on exactly those AuthStack secrets, scoped to
+      // their ARNs (least privilege). Spotify is included so the web-ui can
+      // read the Spotify client id/secret for the per-guild Spotify connect
+      // flow. The grants are guarded so a foundation imported without these
+      // optional secret handles still synthesizes.
+      if (this.props.secrets.googleOauth) {
+        this.props.secrets.googleOauth.grantRead(sa.role);
+      }
+      if (this.props.secrets.discordOauth) {
+        this.props.secrets.discordOauth.grantRead(sa.role);
+      }
+      this.props.secrets.spotify.grantRead(sa.role);
     }
 
     // Bot-side per-guild source resolution (R6.1, R7.2): the playback path
@@ -892,6 +1026,15 @@ export class WorkloadsStack extends cdk.Stack {
         value: this.props.secrets.ytCipher.secretArn,
       });
     }
+    if (deps.assetsBucket) {
+      // Both the web-ui (writer) and discord-bot-core (reader) resolve the
+      // per-guild bot-avatar bucket from this env var. Placed in the general
+      // (non-web-ui-specific) section so every component with the dep gets it.
+      env.push({
+        name: 'HELLODJ_ASSETS_BUCKET',
+        value: this.props.data.assetsBucket.bucketName,
+      });
+    }
     if (deps.aiTaskRole) {
       env.push({
         name: 'HELLODJ_AI_TASK_ROLE_ARN',
@@ -957,6 +1100,51 @@ export class WorkloadsStack extends cdk.Stack {
           value: this.props.discordClientId,
         });
       }
+      // Per-guild source OAuth client ids (R2.6). `app.py` reads these to build
+      // the Spotify / YouTube / Tidal authorize URLs; when empty,
+      // `source_authorize_url` returns None and the connect button silently
+      // no-ops (Defect 1, root cause 1a). Client *ids* are not sensitive, so
+      // they are plain env values threaded via props (mirroring
+      // `discordClientId`). They are pushed unconditionally with an empty-string
+      // default so the env var is always present (only its value is empty until
+      // the provider is configured), which is what lets the app distinguish a
+      // configured provider from an unconfigured one.
+      env.push({
+        name: 'SPOTIFY_CLIENT_ID',
+        value: this.props.spotifyClientId ?? '',
+      });
+      env.push({
+        name: 'GOOGLE_CLIENT_ID',
+        value: this.props.googleClientId ?? '',
+      });
+      env.push({
+        name: 'TIDAL_CLIENT_ID',
+        value: this.props.tidalClientId ?? '',
+      });
+      // OAuth client *secrets* injected via the per-stage `web-ui-oauth-secret`
+      // Kubernetes Secret (see `webUiOauthSecretManifest`), referenced by
+      // secretKeyRef so no secret value lands in a CloudFormation env literal
+      // (mirrors the FLASK_SECRET_KEY pattern). `GOOGLE_CLIENT_SECRET` lets the
+      // web-ui complete the per-guild YouTube code→refresh-token exchange;
+      // `DISCORD_CLIENT_SECRET` lets the Discord-login callback exchange run.
+      env.push({
+        name: 'GOOGLE_CLIENT_SECRET',
+        valueFrom: {
+          secretKeyRef: {
+            name: 'web-ui-oauth-secret',
+            key: 'GOOGLE_CLIENT_SECRET',
+          },
+        },
+      });
+      env.push({
+        name: 'DISCORD_CLIENT_SECRET',
+        valueFrom: {
+          secretKeyRef: {
+            name: 'web-ui-oauth-secret',
+            key: 'DISCORD_CLIENT_SECRET',
+          },
+        },
+      });
       // Tokenized invite flow wiring (R1.1, R1.3, R7.4). `INVITE_SENDER` is the
       // stage's verified SES sender identity the branded invitation email is
       // sent from; `INVITE_TOKEN_TTL` is how long a single-use link stays

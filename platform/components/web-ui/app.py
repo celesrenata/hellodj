@@ -95,6 +95,9 @@ def create_app(
     app.extensions["user_profiles"] = services["user_profiles"]
     app.extensions["guild_admin"] = services["guild_admin"]
     app.extensions["guild_sources"] = services["guild_sources"]
+    app.extensions["guild_identity_service"] = services[
+        "guild_identity_service"
+    ]
     app.extensions["invite_service"] = services["invite_service"]
     app.extensions["secrets"] = secrets_provider
     # The admin panel manages ALL accounts via Cognito; falls back to the
@@ -130,10 +133,22 @@ def _configure(app: Flask, overrides: dict[str, Any]) -> None:
         COGNITO_DOMAIN=os.getenv("COGNITO_DOMAIN", ""),
         COGNITO_CLIENT_ID=os.getenv("COGNITO_CLIENT_ID", ""),
         TIDAL_STREAM_URL=os.getenv("TIDAL_STREAM_URL", ""),
-        # Per-guild source OAuth client ids (secrets stay with the sidecars).
+        # Per-guild source OAuth client ids (Spotify/Tidal secrets stay with
+        # the sidecars; YouTube has no per-guild sidecar so the web-ui holds
+        # GOOGLE_CLIENT_SECRET and completes the code->refresh-token exchange).
         SPOTIFY_CLIENT_ID=os.getenv("SPOTIFY_CLIENT_ID", ""),
         TIDAL_CLIENT_ID=os.getenv("TIDAL_CLIENT_ID", ""),
         GOOGLE_CLIENT_ID=os.getenv("GOOGLE_CLIENT_ID", ""),
+        GOOGLE_CLIENT_SECRET=os.getenv("GOOGLE_CLIENT_SECRET", ""),
+        # Lazily resolved from Secrets Manager when the plain env is absent.
+        HELLODJ_GOOGLE_OAUTH_SECRET_ARN=os.getenv(
+            "HELLODJ_GOOGLE_OAUTH_SECRET_ARN", ""
+        ),
+        # In-cluster potoken-server (bgutil-ytdlp-pot-provider) POST /get_pot.
+        POTOKEN_SERVER_URL=os.getenv(
+            "POTOKEN_SERVER_URL",
+            f"http://potoken-server.hellodj-{stage}.svc.cluster.local:4416",
+        ),
     )
     app.config.update(overrides)
 

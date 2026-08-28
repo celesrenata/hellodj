@@ -78,6 +78,41 @@ export interface FoundationRefs {
    * Optional.
    */
   readonly cognitoUserPoolId?: string;
+
+  /**
+   * The Spotify OAuth client id, injected into the web-ui as
+   * `SPOTIFY_CLIENT_ID` so per-guild Spotify connect builds a valid authorize
+   * URL (R2.6). Optional, defaults to `""` downstream.
+   */
+  readonly spotifyClientId?: string;
+
+  /**
+   * The Google/YouTube OAuth client id, injected into the web-ui as
+   * `GOOGLE_CLIENT_ID` so per-guild YouTube / YouTube Music connect builds a
+   * valid authorize URL (R2.6). Optional, defaults to `""` downstream.
+   */
+  readonly googleClientId?: string;
+
+  /**
+   * The Tidal OAuth client id, injected into the web-ui as `TIDAL_CLIENT_ID`
+   * so per-guild Tidal connect keeps building a valid authorize URL (R2.6,
+   * preserve 3.1). Optional, defaults to `""` downstream.
+   */
+  readonly tidalClientId?: string;
+
+  /**
+   * The Google/YouTube OAuth client *secret* value, surfaced into the web-ui's
+   * `web-ui-oauth-secret` Kubernetes Secret and referenced via `secretKeyRef`
+   * (so no secret value lands in a CloudFormation env literal). Optional.
+   */
+  readonly googleClientSecret?: string;
+
+  /**
+   * The Discord OAuth client *secret* value, surfaced into the web-ui's
+   * `web-ui-oauth-secret` Kubernetes Secret and referenced via `secretKeyRef`
+   * for the Discord-login callback token exchange. Optional.
+   */
+  readonly discordClientSecret?: string;
 }
 
 /**

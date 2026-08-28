@@ -64,6 +64,7 @@ import * as eks from 'aws-cdk-lib/aws-eks';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as s3 from 'aws-cdk-lib/aws-s3';
 import {
   CodePipeline,
   CodePipelineSource,
@@ -77,6 +78,7 @@ import {
   CORE_TABLE_NAME,
   SEARCH_CACHE_TABLE_NAME,
   SESSION_TABLE_NAME,
+  DEFAULT_ASSETS_STAGE,
 } from './data-stack';
 
 // ---------------------------------------------------------------------------
@@ -410,6 +412,15 @@ export class HelloDjStage extends cdk.Stage {
         discordClientId: props.foundation.discordClientId,
         flaskSessionKey: props.foundation.flaskSessionKey,
         cognitoUserPoolId: props.foundation.cognitoUserPoolId,
+        // Per-guild source OAuth client ids/secrets (R2.6): thread the
+        // Spotify/Google/Tidal client ids as plain env and the Google/Discord
+        // client secrets into the web-ui-oauth-secret k8s Secret so the
+        // per-guild connect flows do not silently no-op.
+        spotifyClientId: props.foundation.spotifyClientId,
+        googleClientId: props.foundation.googleClientId,
+        tidalClientId: props.foundation.tidalClientId,
+        googleClientSecret: props.foundation.googleClientSecret,
+        discordClientSecret: props.foundation.discordClientSecret,
       },
     );
   }
@@ -864,6 +875,17 @@ export class PipelineStack extends cdk.Stack {
       // `PipelineStackProps.foundation.data.daxEndpoint` (cross-stack export),
       // which takes precedence over this import.
       daxEndpoint: `${SHARED_DAX_CLUSTER_NAME}.dax-clusters.${region}.amazonaws.com:8111`,
+      // Per-guild bot-avatar assets bucket (DataStack.assetsBucket), named
+      // `hellodj-assets-<stage>-<region>`. Like the table/daxEndpoint imports
+      // above, this fallback imports by the stable stage-independent name; the
+      // authoritative handle is supplied via
+      // `PipelineStackProps.foundation.data.assetsBucket` (cross-stack), which
+      // takes precedence over this import.
+      assetsBucket: s3.Bucket.fromBucketName(
+        this,
+        'SharedAssetsBucket',
+        `hellodj-assets-${DEFAULT_ASSETS_STAGE}-${region}`,
+      ),
     };
 
     // Stable, stage-independent secret names (design "Change 3b"). See
@@ -888,6 +910,18 @@ export class PipelineStack extends cdk.Stack {
         this,
         'SharedYtCipherSecret',
         `${SHARED_SECRET_PREFIX}/yt-cipher-secret`,
+      ),
+      // Source OAuth client credentials the web-ui reads to complete the
+      // per-guild YouTube exchange and the Discord-login callback (R2.6).
+      googleOauth: secretsmanager.Secret.fromSecretNameV2(
+        this,
+        'SharedGoogleOauthSecret',
+        `${SHARED_SECRET_PREFIX}/google-oauth`,
+      ),
+      discordOauth: secretsmanager.Secret.fromSecretNameV2(
+        this,
+        'SharedDiscordOauthSecret',
+        `${SHARED_SECRET_PREFIX}/discord-oauth`,
       ),
     };
 

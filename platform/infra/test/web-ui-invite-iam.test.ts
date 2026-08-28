@@ -83,6 +83,7 @@ describe('web-ui tokenized-invite IAM + env wiring (task 15, R7.1, R7.4)', () =>
         searchCacheTable: data.searchCacheTable,
         sessionTable: data.sessionTable,
         daxEndpoint: data.daxEndpoint,
+        assetsBucket: data.assetsBucket,
       },
       secrets: {
         discordBotToken: auth.discordBotTokenSecret,

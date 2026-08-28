@@ -43,6 +43,7 @@ from source_oauth import (
     source_authorize_url,
     source_tokens_from_request,
 )
+from source_token_exchange import compose_youtube_tokens, source_exchange_spotify
 
 __all__ = ["auth_bp", "build_auth_blueprint"]
 
@@ -258,8 +259,17 @@ def build_auth_blueprint() -> Blueprint:
         session["source_provider"] = provider
         authorize_url = source_authorize_url(provider, state, guild_id)
         if not authorize_url:
-            # Provider not wired for interactive OAuth: land back on the guild.
-            return redirect(url_for("guild.guild_detail", guild_id=guild_id))
+            # Provider not wired for interactive OAuth (empty client id): show a
+            # clear "needs setup" error on the guild page instead of a silent
+            # no-op (R2.1, R1.2).
+            return redirect(
+                url_for(
+                    "guild.guild_detail",
+                    guild_id=guild_id,
+                    error="provider_not_configured",
+                    provider=provider,
+                )
+            )
         return redirect(authorize_url)
 
     @bp.route("/sources/<guild_id>/<provider>/callback")
@@ -272,14 +282,62 @@ def build_auth_blueprint() -> Blueprint:
             return redirect(url_for("guild.guild_detail", guild_id=guild_id))
         if not _guild_source_authorized(guild_id):
             return redirect(url_for("pages.guilds"))
-        tokens = source_tokens_from_request(provider)
+        connected_by = (session.get("user") or {}).get("sub", "")
         sources = current_app.extensions.get("guild_sources")
+        if provider in ("youtube", "youtube_music"):
+            # YouTube has no per-guild sidecar: the web-ui completes the
+            # code->refresh-token exchange and attaches a PoToken so the guild
+            # secret holds the {oauth_refresh_token, pot_token,
+            # pot_visitor_data} the playback path needs (R2.3, R2.4).
+            tokens = compose_youtube_tokens(
+                provider,
+                request.args.get("code", ""),
+                guild_id,
+                connected_by=connected_by,
+            )
+            if not tokens:
+                # Refresh token missing or potoken-server down: surface a clear
+                # error instead of a silent no-op / partial secret.
+                session.pop("source_guild", None)
+                session.pop("source_provider", None)
+                return redirect(
+                    url_for(
+                        "guild.guild_detail",
+                        guild_id=guild_id,
+                        error="youtube_connect_failed",
+                        provider=provider,
+                    )
+                )
+        elif provider == "spotify":
+            # Spotify has no per-guild sidecar for the exchange: the web-ui
+            # completes the code->refresh-token exchange with the resolved
+            # Spotify client id/secret and stores the refresh-token-centric
+            # shape the bot's global Spotify fallback also uses (R2.2). Tidal
+            # stays on the sidecar forward path (tidal_callback), untouched.
+            tokens = source_exchange_spotify(
+                request.args.get("code", ""), guild_id
+            )
+            if not tokens:
+                # Exchange failed (no refresh token / client secret unavailable):
+                # surface a clear error rather than a silent no-op.
+                session.pop("source_guild", None)
+                session.pop("source_provider", None)
+                return redirect(
+                    url_for(
+                        "guild.guild_detail",
+                        guild_id=guild_id,
+                        error="spotify_connect_failed",
+                        provider=provider,
+                    )
+                )
+        else:
+            tokens = source_tokens_from_request(provider)
         if sources and tokens:
             sources.store_tokens(
                 guild_id,
                 provider,
                 tokens,
-                connected_by=(session.get("user") or {}).get("sub", ""),
+                connected_by=connected_by,
             )
         session.pop("source_guild", None)
         session.pop("source_provider", None)

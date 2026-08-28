@@ -138,6 +138,108 @@ LAVALINK_PORT = cfg.int("lavalink.port", 2124)
 LAVALINK_PASSWORD = cfg("lavalink.password", "SleepingOnTrains")
 LAVALINK_URI = f"http://{LAVALINK_HOST}:{LAVALINK_PORT}"
 
+# ── Per-guild source credential resolution (SaaS multi-tenant) ─────────────
+# Deployment stage used to address the isolated per-guild Secrets Manager
+# secrets ``hellodj/<stage>/guild/<gid>/<provider>`` (shared verbatim with the
+# web-ui writer). Defaults to "beta" for local/dev where the SaaS layout is not
+# in play; the guild resolver simply resolves nothing (None) when no such
+# secret exists, so a guild without its own YouTube secret keeps using the
+# untouched global push path below (preservation 3.5).
+HELLODJ_STAGE = os.getenv("HELLODJ_STAGE", "beta")
+
+
+async def _youtube_post(payload: dict) -> bool:
+    """Issue the single ``POST /youtube`` to Lavalink with a prebuilt payload.
+
+    This is the shared transport used by BOTH the global push
+    (:func:`push_youtube_oauth`) and the per-guild just-in-time swap
+    (:class:`playback.guild_credentials.YouTubeCredentialInjector`). It sends the
+    payload as-is in ONE request — the youtube-source plugin replaces ALL fields
+    on each call, so OAuth + poToken must travel together (never split).
+    Returns whether the push succeeded.
+    """
+    url = f"{LAVALINK_URI}/youtube"
+    try:
+        async with aiohttp.ClientSession() as _session:
+            async with _session.post(
+                url,
+                json=payload,
+                headers={"Authorization": LAVALINK_PASSWORD},
+                timeout=aiohttp.ClientTimeout(total=15),
+            ) as resp:
+                body = await resp.text()
+                if resp.status in (200, 204):
+                    log.info(
+                        "youtube-auth: pushed %s to Lavalink %s (status=%s)",
+                        "+".join(
+                            k for k in ("refreshToken", "poToken") if payload.get(k)
+                        ) or "payload",
+                        url, resp.status,
+                    )
+                    return True
+                log.warning(
+                    "youtube-auth: Lavalink push failed (status=%s) body=%s",
+                    resp.status, body,
+                )
+    except Exception as exc:  # noqa: BLE001 - network failure → skip, never crash
+        log.warning("youtube-auth: push to Lavalink failed: %s", exc)
+    return False
+
+
+# Lazily-constructed per-guild resolver + injector (built at Lavalink connect
+# time so the boto3 client is only created in the SaaS deployment). player.py
+# reaches these via :func:`get_youtube_injector`.
+_guild_cred_resolver = None
+_yt_cred_injector = None
+
+
+def get_youtube_injector():
+    """Return the process-wide :class:`YouTubeCredentialInjector`, or ``None``.
+
+    ``player.py`` calls this from the YouTube branch of ``_resolve_and_play`` to
+    perform a just-in-time per-guild credential swap. Returns ``None`` when the
+    per-guild resolver could not be constructed (e.g. boto3 unavailable in local
+    dev) so the caller falls through to the untouched global push path (3.5).
+    """
+    return _yt_cred_injector
+
+
+def _build_guild_credential_resolver():
+    """Construct the per-guild resolver + injector once (idempotent).
+
+    Uses a boto3 secretsmanager client scoped to :data:`HELLODJ_STAGE`. On any
+    failure (boto3 missing, no credentials) it logs and leaves both as ``None``
+    so per-guild YouTube swaps are simply skipped and the global path is used.
+    """
+    global _guild_cred_resolver, _yt_cred_injector
+    if _yt_cred_injector is not None:
+        return
+    try:
+        import boto3  # lazy — only present/needed in the SaaS deployment
+        from playback.guild_credentials import (
+            GuildCredentialResolver,
+            YouTubeCredentialInjector,
+        )
+
+        client = boto3.client("secretsmanager")
+        _guild_cred_resolver = GuildCredentialResolver(client, stage=HELLODJ_STAGE)
+        _yt_cred_injector = YouTubeCredentialInjector(
+            _guild_cred_resolver, _youtube_post
+        )
+        bot.guild_cred_resolver = _guild_cred_resolver
+        bot.youtube_cred_injector = _yt_cred_injector
+        log.info(
+            "guild_credentials: per-guild YouTube resolver/injector wired "
+            "(stage=%s)", HELLODJ_STAGE,
+        )
+    except Exception as exc:  # noqa: BLE001 - non-fatal: fall back to global path
+        _guild_cred_resolver = None
+        _yt_cred_injector = None
+        log.info(
+            "guild_credentials: per-guild resolver unavailable (%s) — YouTube "
+            "playback uses the global push path for all guilds", exc,
+        )
+
 # ── YouTube poToken (Proof of Origin) ───────────────────────
 # Optional values supplied to the youtube-source plugin to defeat YouTube's
 # bot-detection ("Sign in to confirm you're not a bot" / "The page needs to be
@@ -207,6 +309,11 @@ async def connect_lavalink():
     await wavelink.Pool.connect(nodes=[node], client=bot)
     log.info("HelloDJ connected to Lavalink at %s", LAVALINK_URI)
 
+    # Wire the per-guild YouTube credential resolver/injector so the play path
+    # can perform a just-in-time last-writer-wins credential swap for guilds
+    # that have connected their own YouTube account. Non-fatal on failure.
+    _build_guild_credential_resolver()
+
     # Push any stored YouTube OAuth refresh token to the youtube-source plugin.
     # The plugin's REST endpoint (/youtube) is served by Lavalink's own Spring
     # server on the same port, authenticated with the Lavalink password.
@@ -239,16 +346,33 @@ async def connect_lavalink():
 
 
 async def push_youtube_oauth() -> bool:
-    """Push YouTube OAuth + poToken to Lavalink in a SINGLE request.
+    """Push the GLOBAL YouTube OAuth + poToken to Lavalink in a SINGLE request.
 
     The youtube-source plugin's POST /youtube replaces ALL fields each call,
     so we must send both refreshToken AND poToken together.
+
+    The payload is built by the SHARED builder
+    :func:`playback.guild_credentials.youtube_oauth_payload` — the exact same
+    builder the per-guild just-in-time swap uses — so the global path and the
+    per-guild path encode the "OAuth + poToken travel together" invariant in one
+    place. This is the untouched global path used by every guild that has NOT
+    connected its own per-guild YouTube secret (preservation 3.5).
     """
+    from playback.guild_credentials import youtube_oauth_payload
+
     token = cfg("youtube.oauth_refresh_token") or cfg("youtube.refresh_token") or oauth_store.get_youtube_refresh_token()
     pot_token = cfg("youtube.pot_token", "")
     pot_visitor_data = cfg("youtube.pot_visitor_data", "")
 
-    if not token and not pot_token:
+    payload = youtube_oauth_payload(
+        {
+            "oauth_refresh_token": token,
+            "pot_token": pot_token,
+            "pot_visitor_data": pot_visitor_data,
+        },
+        skip_initialization=False,
+    )
+    if payload is None:
         log.info("youtube-oauth: no refresh token or poToken — skipping push")
         return False
 
@@ -259,41 +383,7 @@ async def push_youtube_oauth() -> bool:
             _creds.set("youtube.oauth_refresh_token", token)
             _creds.set("youtube.refresh_token", token)
 
-    url = f"{LAVALINK_URI}/youtube"
-    payload = {"skipInitialization": False}
-    if token:
-        payload["refreshToken"] = token
-    if pot_token and pot_visitor_data:
-        payload["poToken"] = pot_token
-        payload["visitorData"] = pot_visitor_data
-
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(
-                url,
-                json=payload,
-                headers={"Authorization": LAVALINK_PASSWORD},
-                timeout=aiohttp.ClientTimeout(total=15),
-            ) as resp:
-                body = await resp.text()
-                if resp.status in (200, 204):
-                    parts = []
-                    if token:
-                        parts.append("oauth")
-                    if pot_token:
-                        parts.append("poToken")
-                    log.info(
-                        "youtube-auth: pushed %s to Lavalink %s (status=%s)",
-                        "+".join(parts), url, resp.status,
-                    )
-                    return True
-                log.warning(
-                    "youtube-auth: Lavalink push failed (status=%s) body=%s",
-                    resp.status, body,
-                )
-    except Exception as exc:
-        log.warning("youtube-auth: push to Lavalink failed: %s", exc)
-    return False
+    return await _youtube_post(payload)
 
 
 async def push_youtube_pot() -> bool:

@@ -35,6 +35,28 @@ def set_bot(bot) -> None:
     global _bot_ref
     _bot_ref = bot
 
+
+def _get_youtube_injector():
+    """Return the process-wide per-guild YouTube credential injector, or None.
+
+    Reached lazily via the bot object (set by ``bot.py`` once the Lavalink pool
+    connects) with a fallback to ``bot.get_youtube_injector()``. Returns ``None``
+    when the per-guild resolver was not constructed (e.g. local dev without
+    boto3/AWS creds) so the YouTube branch of ``_resolve_and_play`` falls through
+    to the untouched global push path (preservation 3.5). Never raises.
+    """
+    injector = getattr(_bot_ref, "youtube_cred_injector", None)
+    if injector is not None:
+        return injector
+    try:
+        import bot as _bot_module  # lazy to avoid a circular import at load
+        getter = getattr(_bot_module, "get_youtube_injector", None)
+        if getter is not None:
+            return getter()
+    except Exception:
+        return None
+    return None
+
 # ── track-start callback (visualizer integration) ───────────
 # A fire-and-forget callback invoked when a new track starts playing.
 # The VisualizerRegistry subscribes here during setup — player.py MUST NOT
@@ -1554,21 +1576,60 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
         }
         source = source_map.get(sp, TrackSource.YouTube)
 
-        # For URLs, try to parse directly; for search, use Playable.search
-        if sp == "tidal":
-            tidal_query = f"tdsearch:{title}" if not (url and ("http://" in url or "https://" in url)) else (url or title)
-            tracks = await Playable.search(tidal_query, source=None)
-            if not tracks:
-                tracks = await Playable.search(title or url, source=TrackSource.YouTube)
-        elif url and ("http://" in url or "https://" in url):
-            # Direct URL — try to get as a Playable
-            tracks = await Playable.search(url, source=source)
-        else:
-            tracks = await Playable.search(title, source=source)
+        # ── per-guild YouTube just-in-time credential swap (R2.5) ──────────
+        # For a guild that has connected its OWN YouTube account, resolve that
+        # guild's {oauth_refresh_token, pot_token, pot_visitor_data} and push
+        # them to Lavalink via the single POST /youtube IMMEDIATELY before we
+        # resolve/play this track (last-writer-wins). We hold the injector's
+        # per-node lock across BOTH the push AND the track resolution so a
+        # concurrent swap for another guild cannot clobber the node's creds
+        # mid-resolution (SHARED-LAVALINK LIMITATION — one shared node holds one
+        # YouTube cred set at a time; true concurrent per-guild isolation on a
+        # single node is out of scope, deferred to a node-per-guild pool).
+        #
+        # Guilds WITHOUT a per-guild YouTube secret trigger NO swap and fall
+        # through to the untouched global push_youtube_oauth path (3.5). Non-
+        # YouTube providers (tidal/spotify) are unaffected — their fallback
+        # leaves are handled elsewhere (3.7).
+        _yt_swap_lock = None
+        if sp in ("youtube", "youtube_music"):
+            injector = _get_youtube_injector()
+            if injector is not None:
+                _yt_swap_lock = injector.swap_lock()
 
-        if not tracks:
-            # Fallback to YouTube
-            tracks = await Playable.search(title or url, source=TrackSource.YouTube)
+        async def _resolve_youtube_tracks():
+            # For URLs, try to parse directly; for search, use Playable.search
+            if sp == "tidal":
+                tidal_query = f"tdsearch:{title}" if not (url and ("http://" in url or "https://" in url)) else (url or title)
+                _tracks = await Playable.search(tidal_query, source=None)
+                if not _tracks:
+                    _tracks = await Playable.search(title or url, source=TrackSource.YouTube)
+            elif url and ("http://" in url or "https://" in url):
+                # Direct URL — try to get as a Playable
+                _tracks = await Playable.search(url, source=source)
+            else:
+                _tracks = await Playable.search(title, source=source)
+
+            if not _tracks:
+                # Fallback to YouTube
+                _tracks = await Playable.search(title or url, source=TrackSource.YouTube)
+            return _tracks
+
+        if _yt_swap_lock is not None:
+            injector = _get_youtube_injector()
+            async with _yt_swap_lock:
+                # Swap in this guild's own YouTube creds (no-op if it has none).
+                try:
+                    await injector.inject_for_guild(guild_id, sp)
+                except Exception as _swap_exc:
+                    log.warning(
+                        "_resolve_and_play: per-guild YouTube cred swap failed "
+                        "for guild %s (%s) — continuing with current node creds",
+                        guild_id, _swap_exc,
+                    )
+                tracks = await _resolve_youtube_tracks()
+        else:
+            tracks = await _resolve_youtube_tracks()
 
         if not tracks:
             log.warning("No track found for %s in guild %s", title, guild_id)

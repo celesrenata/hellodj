@@ -53,16 +53,20 @@ describe('AuthStack (Cognito + Secrets + IAM)', () => {
   });
 
   test('stores the service + session secrets in Secrets Manager (R8.6)', () => {
-    // Four external service secrets plus the auto-generated web-ui Flask
-    // session signing key (shared across replicas to prevent OAuth-callback
-    // session loss).
-    template.resourceCountIs('AWS::SecretsManager::Secret', 5);
+    // Four external service secrets, the two source-OAuth client-credential
+    // secrets (Google/YouTube + Discord OAuth, used by the web-ui to complete
+    // the per-guild YouTube exchange + Discord-login callback, R2.6), plus the
+    // auto-generated web-ui Flask session signing key (shared across replicas
+    // to prevent OAuth-callback session loss).
+    template.resourceCountIs('AWS::SecretsManager::Secret', 7);
 
     for (const leaf of [
       'discord-bot-token',
       'tidal-refresh',
       'spotify',
       'yt-cipher-secret',
+      'google-oauth',
+      'discord-oauth',
       'web-ui-flask-session',
     ]) {
       template.hasResourceProperties('AWS::SecretsManager::Secret', {

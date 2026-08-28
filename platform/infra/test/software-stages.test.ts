@@ -100,6 +100,7 @@ function composeApp(): ComposedApp {
         searchCacheTable: data.searchCacheTable,
         sessionTable: data.sessionTable,
         daxEndpoint: data.daxEndpoint,
+        assetsBucket: data.assetsBucket,
       },
       secrets: {
         discordBotToken: auth.discordBotTokenSecret,

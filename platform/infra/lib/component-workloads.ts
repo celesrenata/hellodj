@@ -47,6 +47,13 @@ export interface ComponentDependencies {
   /** Reads the yt-cipher shared secret. */
   readonly ytCipher?: boolean;
   /**
+   * Uses the per-guild bot-avatar assets S3 bucket. The web-ui WRITES avatar
+   * bytes (`guild/<gid>/bot-avatar/<hash>.<ext>`); the discord-bot-core READS
+   * them. `WorkloadsStack` grants the right access per component and injects
+   * `HELLODJ_ASSETS_BUCKET` into the container env.
+   */
+  readonly assetsBucket?: boolean;
+  /**
    * Needs the keyless Bedrock/Transcribe/Polly AI task role (voice-pipeline).
    * When set, the component's pod runs as the shared `aiTaskRole` from the
    * auth stack instead of a component-scoped role (design "Secrets": AI via
@@ -170,7 +177,13 @@ export const COMPONENT_WORKLOADS: ComponentWorkloadSpec[] = [
     resources: LIGHT_RESOURCES,
     // Gateway scales by shard count, not CPU; keep a fixed small floor.
     hpa: { minReplicas: 1, maxReplicas: 3 },
-    dependencies: { coreTable: true, sessionTable: true, discordBotToken: true },
+    dependencies: {
+      coreTable: true,
+      sessionTable: true,
+      discordBotToken: true,
+      // Reads per-guild bot-avatar bytes the web-ui uploaded to S3.
+      assetsBucket: true,
+    },
   },
   {
     name: 'playback-orchestrator',
@@ -294,6 +307,8 @@ export const COMPONENT_WORKLOADS: ComponentWorkloadSpec[] = [
       discordBotToken: true,
       tidalRefresh: true,
       spotify: true,
+      // Writes per-guild bot-avatar bytes to S3 for the bot to read.
+      assetsBucket: true,
     },
     // Catch-all web entry point routed behind the ALB/CloudFront at `/`
     // (R18.4). Declared after `/activity` so the more-specific activity rule

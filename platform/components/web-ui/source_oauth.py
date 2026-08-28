@@ -20,6 +20,7 @@ from flask import current_app, request, url_for
 
 __all__ = [
     "source_authorize_url",
+    "source_provider_configured",
     "redirect_uri_for_source",
     "source_tokens_from_request",
 ]
@@ -27,6 +28,30 @@ __all__ = [
 _SPOTIFY_AUTHORIZE = "https://accounts.spotify.com/authorize"
 _GOOGLE_AUTHORIZE = "https://accounts.google.com/o/oauth2/v2/auth"
 _TIDAL_AUTHORIZE = "https://login.tidal.com/authorize"
+
+#: Which app-config client-id key gates each provider's interactive OAuth. A
+#: provider is "configured" (offerable as connectable) when its client id is
+#: present in ``current_app.config``. YouTube / YouTube Music share the Google
+#: client id.
+_PROVIDER_CLIENT_ID_KEY = {
+    "spotify": "SPOTIFY_CLIENT_ID",
+    "youtube": "GOOGLE_CLIENT_ID",
+    "youtube_music": "GOOGLE_CLIENT_ID",
+    "tidal": "TIDAL_CLIENT_ID",
+}
+
+
+def source_provider_configured(provider: str) -> bool:
+    """Return whether ``provider`` has the client id needed to start OAuth.
+
+    Mirrors the client-id checks in :func:`source_authorize_url`: a provider is
+    configured when the relevant client id is present in ``current_app.config``.
+    Unknown providers are never configured.
+    """
+    key = _PROVIDER_CLIENT_ID_KEY.get(provider)
+    if key is None:
+        return False
+    return bool(current_app.config.get(key, ""))
 
 
 def redirect_uri_for_source(provider: str, guild_id: str) -> str:
@@ -63,13 +88,19 @@ def source_authorize_url(provider: str, state: str, guild_id: str) -> str | None
         client_id = current_app.config.get("GOOGLE_CLIENT_ID", "")
         if not client_id:
             return None
+        # Playback needs an OFFLINE refresh token for the guild's own YouTube
+        # account, so request the full youtube scope with access_type=offline
+        # and prompt=consent (Google only reliably returns a refresh token when
+        # consent is re-prompted). The refresh token is exchanged server-side
+        # by :mod:`source_token_exchange` on callback.
         return _GOOGLE_AUTHORIZE + "?" + urllib.parse.urlencode(
             {
                 "client_id": client_id,
                 "response_type": "code",
                 "redirect_uri": redirect_uri,
-                "scope": "https://www.googleapis.com/auth/youtube.readonly",
+                "scope": "https://www.googleapis.com/auth/youtube",
                 "access_type": "offline",
+                "prompt": "consent",
                 "state": state,
             }
         )

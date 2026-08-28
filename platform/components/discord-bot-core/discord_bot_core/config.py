@@ -24,6 +24,7 @@ _DEFAULT_TOKEN_REFRESH_INTERVAL_S = 300.0
 _DEFAULT_GATEWAY_HEALTH_INTERVAL_S = 30.0
 _DEFAULT_GATEWAY_STALL_TIMEOUT_S = 90.0
 _DEFAULT_COMMAND_PREFIX = "!hellodj "
+_DEFAULT_IDENTITY_APPLY_INTERVAL_S = 300.0
 
 
 def _env_float(source: dict[str, str], name: str, default: float) -> float:
@@ -56,6 +57,13 @@ class BotConfig:
             the gateway is considered stalled and a reconnect is forced.
         aws_region: AWS region for the Secrets Manager client (``None`` uses the
             boto3 default resolution chain).
+        core_table_name: DynamoDB ``hellodj-core`` table name holding per-guild
+            ``BOTIDENTITY`` items. Empty (default) disables per-guild identity
+            apply — the feature is optional and no-network when unconfigured.
+        assets_bucket: S3 bucket the web-ui uploaded per-guild bot-avatar bytes
+            to. Empty (default) disables identity apply.
+        identity_apply_interval_s: How often the identity-apply watchdog polls
+            for and applies pending per-guild identity changes.
     """
 
     discord_token_secret_id: str
@@ -65,6 +73,9 @@ class BotConfig:
     gateway_health_interval_s: float = _DEFAULT_GATEWAY_HEALTH_INTERVAL_S
     gateway_stall_timeout_s: float = _DEFAULT_GATEWAY_STALL_TIMEOUT_S
     aws_region: str | None = None
+    core_table_name: str = ""
+    assets_bucket: str = ""
+    identity_apply_interval_s: float = _DEFAULT_IDENTITY_APPLY_INTERVAL_S
 
     @classmethod
     def from_env(cls, env: dict[str, str] | None = None) -> BotConfig:
@@ -113,4 +124,11 @@ class BotConfig:
                 _DEFAULT_GATEWAY_STALL_TIMEOUT_S,
             ),
             aws_region=(source.get("AWS_REGION") or None),
+            core_table_name=source.get("HELLODJ_CORE_TABLE", "").strip(),
+            assets_bucket=source.get("HELLODJ_ASSETS_BUCKET", "").strip(),
+            identity_apply_interval_s=_env_float(
+                source,
+                "HELLODJ_IDENTITY_APPLY_INTERVAL_S",
+                _DEFAULT_IDENTITY_APPLY_INTERVAL_S,
+            ),
         )

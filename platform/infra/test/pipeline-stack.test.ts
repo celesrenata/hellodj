@@ -312,6 +312,7 @@ describe('pipeline software-only stages — shape + zero-foundation (task 7.4, R
         searchCacheTable: data.searchCacheTable,
         sessionTable: data.sessionTable,
         daxEndpoint: data.daxEndpoint,
+        assetsBucket: data.assetsBucket,
       },
       secrets: {
         discordBotToken: auth.discordBotTokenSecret,

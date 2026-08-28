@@ -1,0 +1,56 @@
+{# Per-guild bot identity: nickname + avatar, with apply status readback. #}
+{% set status = identity.apply_status|default('none') %}
+<div class="glass-panel panel-section">
+  <div class="field-row" style="justify-content: space-between; align-items: center;">
+    <span class="panel-section__muted">Apply status</span>
+    {% if status == 'applied' %}
+      <span class="badge badge--ok">Applied</span>
+    {% elif status == 'pending' %}
+      <span class="badge badge--muted">Pending</span>
+    {% elif status == 'error' %}
+      <span class="badge badge--danger">Error</span>
+    {% else %}
+      <span class="badge badge--muted">Not set</span>
+    {% endif %}
+  </div>
+
+  {% if status == 'error' and identity.apply_error %}
+    <p class="panel-section__muted" role="alert">
+      Could not apply: {{ identity.apply_error }}
+    </p>
+  {% endif %}
+  {% if upload_error %}
+    <p class="panel-section__muted" role="alert">{{ upload_error }}</p>
+  {% endif %}
+
+  <form class="field-row"
+        hx-post="{{ url_for('guild.set_bot_nickname', guild_id=guild_id) }}"
+        hx-target="#guild-identity-form">
+    <label class="field">
+      <span class="field__label">Server nickname</span>
+      <input class="field__input" name="nickname" type="text" maxlength="32"
+             value="{{ identity.nickname|default('') }}"
+             placeholder="e.g. DJ Vinyl" aria-label="Bot server nickname">
+    </label>
+    <button type="submit" class="btn btn-primary">Save nickname</button>
+  </form>
+
+  <form class="field-row"
+        hx-post="{{ url_for('guild.set_bot_avatar', guild_id=guild_id) }}"
+        hx-target="#guild-identity-form" hx-encoding="multipart/form-data">
+    <label class="field">
+      <span class="field__label">Server avatar</span>
+      <input class="field__input" name="avatar" type="file"
+             accept="image/png,image/jpeg,image/gif"
+             aria-label="Bot server avatar (PNG, JPG, or GIF, max 256 KB)">
+      <span class="field__hint">PNG, JPG, or GIF · max 256 KB · square recommended</span>
+    </label>
+    <button type="submit" class="btn btn-primary">Upload avatar</button>
+  </form>
+
+  {% if identity.avatar_present %}
+    <p class="panel-section__muted">
+      Current avatar version: <code>{{ identity.avatar_version }}</code>
+    </p>
+  {% endif %}
+</div>

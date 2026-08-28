@@ -1,0 +1,20 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../Lavalink"
+		},
+		{
+			"path": "../lavaplayer"
+		},
+		{
+			"path": "../LavaSrc"
+		},
+		{
+			"path": "../youtube-source"
+		}
+	],
+	"settings": {}
+}

@@ -71,6 +71,24 @@ export class AuthStack extends cdk.Stack {
   public readonly ytCipherSecret: secretsmanager.Secret;
 
   /**
+   * Secrets Manager entry: Google / YouTube OAuth client credentials, holding
+   * `{client_id, client_secret}`. Used by the web-ui to complete the per-guild
+   * YouTube / YouTube Music code→refresh-token exchange (there is no per-guild
+   * YouTube sidecar to own the client secret). Created empty and populated
+   * out-of-band like the other source secrets.
+   */
+  public readonly googleOauthSecret: secretsmanager.Secret;
+
+  /**
+   * Secrets Manager entry: Discord OAuth client credentials, holding
+   * `{client_id, client_secret}`. This is the OAuth *client secret* for the
+   * web-ui Discord-login callback token exchange — distinct from
+   * {@link discordBotTokenSecret}, which is the *bot* token. Created empty and
+   * populated out-of-band like the other source secrets.
+   */
+  public readonly discordOauthSecret: secretsmanager.Secret;
+
+  /**
    * Secrets Manager entry: the Flask session signing key shared by all web-ui
    * replicas. A stable, shared key is required so an OAuth login started on
    * one pod and its callback landing on another pod validate the same signed
@@ -224,6 +242,35 @@ export class AuthStack extends cdk.Stack {
       secretName: secretName('yt-cipher-secret'),
       description: 'HelloDJ yt-cipher shared secret (API_TOKEN).',
     });
+
+    // Google/YouTube OAuth client credentials ({client_id, client_secret}).
+    // The web-ui completes the per-guild YouTube code→refresh-token exchange
+    // itself (no per-guild YouTube sidecar), so it needs the client secret.
+    // Created empty; populated out-of-band like the other source secrets.
+    this.googleOauthSecret = new secretsmanager.Secret(
+      this,
+      'GoogleOauthSecret',
+      {
+        secretName: secretName('google-oauth'),
+        description:
+          'HelloDJ Google/YouTube OAuth client credentials ' +
+          '({client_id, client_secret}).',
+      },
+    );
+
+    // Discord OAuth client credentials ({client_id, client_secret}) for the
+    // web-ui Discord-login callback token exchange. Distinct from the bot
+    // token secret above. Created empty; populated out-of-band.
+    this.discordOauthSecret = new secretsmanager.Secret(
+      this,
+      'DiscordOauthSecret',
+      {
+        secretName: secretName('discord-oauth'),
+        description:
+          'HelloDJ Discord OAuth client credentials ' +
+          '({client_id, client_secret}) for the web-ui login callback.',
+      },
+    );
 
     // The Flask session signing key shared by all web-ui replicas. Unlike the
     // source/service tokens above (created empty, populated out-of-band), this

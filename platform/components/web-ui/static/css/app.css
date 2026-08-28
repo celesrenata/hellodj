@@ -205,6 +205,11 @@ body {
 }
 .btn-ghost:hover { border-color: var(--color-border-hover); }
 .btn-block { width: 100%; margin-bottom: 12px; }
+.btn-disabled, .btn:disabled {
+  background: var(--color-surface-2); color: var(--color-text-muted);
+  border-color: var(--color-border); cursor: not-allowed;
+}
+.btn-disabled:hover, .btn:disabled:hover { border-color: var(--color-border); }
 
 /* Tabs. */
 .tabs { display: flex; gap: 4px; margin-bottom: 20px; }

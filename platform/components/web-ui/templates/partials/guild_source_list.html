@@ -21,9 +21,13 @@
                       hx-post="{{ url_for('guild.disconnect_source', guild_id=guild_id, provider=source.provider) }}"
                       hx-target="#guild-source-list"
                       hx-confirm="Disconnect {{ source.provider }} for this guild?">Disconnect</button>
-            {% else %}
+            {% elif (providers_configured|default({})).get(source.provider) %}
               <a class="btn btn-primary btn-sm"
                  href="{{ url_for('auth.source_connect', guild_id=guild_id, provider=source.provider) }}">Connect</a>
+            {% else %}
+              <button class="btn btn-disabled btn-sm" type="button" disabled
+                      aria-disabled="true"
+                      title="{{ source.provider|replace('_', ' ')|title }} is not configured on this server yet. An administrator needs to set up its OAuth client id.">Needs setup</button>
             {% endif %}
           </td>
         </tr>

@@ -81,6 +81,11 @@ const edge = new EdgeStack(app, 'hellodj-edge', {
 const data = new DataStack(app, 'hellodj-data', {
   env,
   vpc: network.vpc,
+  // Stage/region name the per-guild bot-avatar assets bucket
+  // (`hellodj-assets-<stage>-<region>`), mirroring the edge stack's bucket
+  // naming. The web-ui writes avatars here and the discord-bot-core reads them.
+  stage: config.stage,
+  region: config.region,
 });
 
 // Cognito + OAuth secrets + keyless AI IAM roles (task 10.2). Provisions the
@@ -149,12 +154,20 @@ const pipeline = new PipelineStack(app, 'hellodj-pipeline', {
       searchCacheTable: data.searchCacheTable,
       sessionTable: data.sessionTable,
       daxEndpoint: data.daxEndpoint,
+      // Per-guild bot-avatar assets bucket the web-ui writes and the bot reads.
+      assetsBucket: data.assetsBucket,
     },
     secrets: {
       discordBotToken: auth.discordBotTokenSecret,
       tidalRefresh: auth.tidalRefreshSecret,
       spotify: auth.spotifySecret,
       ytCipher: auth.ytCipherSecret,
+      // Source OAuth client credentials the web-ui reads to complete the
+      // per-guild YouTube code→refresh-token exchange and the Discord-login
+      // callback token exchange (R2.6). Created empty by AuthStack, populated
+      // out-of-band.
+      googleOauth: auth.googleOauthSecret,
+      discordOauth: auth.discordOauthSecret,
     },
     aiTaskRole: auth.aiTaskRole,
     // web-ui Cognito hosted-UI client id so the admin/register/recover

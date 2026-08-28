@@ -324,6 +324,7 @@ describe('WorkloadsStack endpoint-isolation wiring (task 8.2, R5.1-R5.5, R2.5, R
           searchCacheTable: data.searchCacheTable,
           sessionTable: data.sessionTable,
           daxEndpoint: data.daxEndpoint,
+          assetsBucket: data.assetsBucket,
         },
         secrets: {
           discordBotToken: auth.discordBotTokenSecret,
