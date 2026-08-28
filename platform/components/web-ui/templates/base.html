@@ -46,6 +46,9 @@
             <span class="nav-item__label" x-show="!collapsed">Logout</span>
           </button>
         </form>
+        <div class="sidebar__owner" x-show="!collapsed">
+          {% include "partials/owner_attribution.html" %}
+        </div>
       </div>
     </aside>
 

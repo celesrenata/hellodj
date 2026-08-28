@@ -59,7 +59,7 @@
         # Application source tree assembled for the image.
         appSrc = pkgs.runCommand "hellodj-web-ui-src" { src = ./.; } ''
           mkdir -p $out/app/static/css $out/app/static/js $out/app/static/icons
-          cp $src/app.py $src/auth.py $src/pages.py $src/config_store.py $src/secrets_store.py $out/app/
+          cp $src/app.py $src/auth.py $src/pages.py $src/config_store.py $src/secrets_store.py $src/admin_directory.py $out/app/
           cp -r $src/templates $out/app/templates
           # Copy static assets except css/js we're replacing with compiled versions
           cp -r $src/static/icons/* $out/app/static/icons/ 2>/dev/null || true

@@ -1,0 +1,21 @@
+{#
+  Project ownership attribution.
+
+  The owner's name is rendered human-readable in the browser but is
+  crawler/scraper-resistant in the DOM source:
+
+  * The characters are stored REVERSED and displayed left-to-right via CSS
+    `unicode-bidi: bidi-override; direction: rtl`, so the visible text reads
+    correctly while the raw text node is reversed.
+  * Several letters are HTML numeric character references, so a naive text
+    grab of the markup does not yield the plaintext name.
+  * `user-select: none` (via the class) discourages copy, and the value is
+    duplicated nowhere else in plaintext.
+
+  Net effect: a person sees "Celes Hillyerd"; a crawler reading the HTML sees
+  a reversed, partially entity-encoded string that does not match the name.
+#}
+<p class="owner-attribution" aria-label="Project owner">
+  <span class="owner-attribution__label">Owned &amp; operated by</span>
+  <span class="owner-attribution__name" translate="no">dr&#101;yll&#105;H s&#101;l&#101;C</span>
+</p>
