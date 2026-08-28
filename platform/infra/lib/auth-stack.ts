@@ -143,6 +143,22 @@ export class AuthStack extends cdk.Stack {
     // Web-ui client for the Cognito hosted-UI admin/registration/recovery
     // flows. Public client (no secret) suitable for the browser-side
     // authorization-code + PKCE flow the Flask web-ui drives.
+    // The web-ui hosted-UI callback for each stage. The Flask app's Cognito
+    // flow redirects to `<stage>.<region>.hellodj.bot/auth/cognito/callback`;
+    // Cognito rejects any redirect_uri not in this list (redirect_mismatch),
+    // so every stage's callback + logout URL must be registered here (R8.2).
+    const region = this.region;
+    const cognitoCallbackUrls = [
+      `https://beta.${region}.hellodj.bot/auth/cognito/callback`,
+      `https://staging.${region}.hellodj.bot/auth/cognito/callback`,
+      `https://production.${region}.hellodj.bot/auth/cognito/callback`,
+    ];
+    const cognitoLogoutUrls = [
+      'https://beta.' + region + '.hellodj.bot/',
+      'https://staging.' + region + '.hellodj.bot/',
+      'https://production.' + region + '.hellodj.bot/',
+    ];
+
     this.userPoolClient = this.userPool.addClient('WebUiClient', {
       userPoolClientName: `hellodj-web-ui-${stage}`,
       generateSecret: false,
@@ -154,6 +170,8 @@ export class AuthStack extends cdk.Stack {
           cognito.OAuthScope.EMAIL,
           cognito.OAuthScope.PROFILE,
         ],
+        callbackUrls: cognitoCallbackUrls,
+        logoutUrls: cognitoLogoutUrls,
       },
       preventUserExistenceErrors: true,
     });
