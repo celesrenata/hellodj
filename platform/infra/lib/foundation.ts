@@ -63,6 +63,14 @@ export interface FoundationRefs {
    * container so day-to-day Discord login works (R8.4). Optional.
    */
   readonly discordClientId?: string;
+
+  /**
+   * The shared Flask session signing key value (from an `AuthStack`-owned
+   * Secrets Manager secret), placed into the web-ui's Kubernetes Secret so all
+   * replicas sign session cookies with the same key (prevents OAuth-callback
+   * session loss). Optional.
+   */
+  readonly flaskSessionKey?: string;
 }
 
 /**

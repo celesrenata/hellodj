@@ -52,15 +52,18 @@ describe('AuthStack (Cognito + Secrets + IAM)', () => {
     });
   });
 
-  test('stores the four service secrets in Secrets Manager (R8.6)', () => {
-    // Exactly four secrets, and each expected name is present.
-    template.resourceCountIs('AWS::SecretsManager::Secret', 4);
+  test('stores the service + session secrets in Secrets Manager (R8.6)', () => {
+    // Four external service secrets plus the auto-generated web-ui Flask
+    // session signing key (shared across replicas to prevent OAuth-callback
+    // session loss).
+    template.resourceCountIs('AWS::SecretsManager::Secret', 5);
 
     for (const leaf of [
       'discord-bot-token',
       'tidal-refresh',
       'spotify',
       'yt-cipher-secret',
+      'web-ui-flask-session',
     ]) {
       template.hasResourceProperties('AWS::SecretsManager::Secret', {
         Name: `hellodj/beta/${leaf}`,

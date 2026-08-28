@@ -408,6 +408,7 @@ export class HelloDjStage extends cdk.Stage {
         aiTaskRole: props.foundation.aiTaskRole,
         cognitoClientId: props.foundation.cognitoClientId,
         discordClientId: props.foundation.discordClientId,
+        flaskSessionKey: props.foundation.flaskSessionKey,
       },
     );
   }

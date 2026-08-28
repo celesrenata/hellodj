@@ -160,6 +160,9 @@ const pipeline = new PipelineStack(app, 'hellodj-pipeline', {
     // web-ui Cognito hosted-UI client id so the admin/register/recover
     // buttons build a valid hosted-UI redirect (R8.2, R8.3, R8.5).
     cognitoClientId: auth.userPoolClient.userPoolClientId,
+    // Shared Flask session signing key so all web-ui replicas validate the
+    // same signed session cookie (prevents OAuth-callback logout bounce).
+    flaskSessionKey: auth.flaskSessionSecret.secretValue.unsafeUnwrap(),
   },
 });
 

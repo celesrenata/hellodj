@@ -283,6 +283,18 @@ export interface WorkloadsStackProps extends cdk.StackProps {
    * unset, the Discord login button produces an empty `client_id` (R8.4).
    */
   readonly discordClientId?: string;
+
+  /**
+   * The shared Flask session signing key value (from an `AuthStack`-owned
+   * Secrets Manager secret), placed into the per-stage `web-ui-flask-secret`
+   * Kubernetes Secret so all web-ui replicas sign session cookies with the
+   * SAME key. Without a shared key, an OAuth login started on one pod and its
+   * callback landing on another pod can't validate the signed cookie and the
+   * user is bounced back to /login. Passing the value from AuthStack (rather
+   * than generating it here) avoids a cross-stack dependency cycle with the
+   * shared cluster's eks stack.
+   */
+  readonly flaskSessionKey?: string;
 }
 
 /**
@@ -303,6 +315,12 @@ export class WorkloadsStack extends cdk.Stack {
 
   /** The ALB Ingress manifest routing web-ui (`/`) and activity (`/activity/`). */
   public readonly ingressManifest: eks.KubernetesManifest;
+
+  /**
+   * The Kubernetes Secret holding the shared Flask session signing key for the
+   * web-ui replicas (prevents OAuth-callback session loss across pods).
+   */
+  public readonly webUiFlaskSecretManifest: eks.KubernetesManifest;
 
   /** The deployment stage this stack's workloads belong to. */
   public readonly stage: string;
@@ -355,6 +373,34 @@ export class WorkloadsStack extends cdk.Stack {
       },
     });
 
+    // Per-stage Flask session signing secret for the web-ui, as a Kubernetes
+    // Secret shared by all web-ui replicas. A per-replica random key (the
+    // app's fallback when FLASK_SECRET_KEY is unset) breaks the OAuth flow:
+    // the login request and its callback can hit different pods, and a cookie
+    // signed by one pod's key fails validation on another, dropping the CSRF
+    // state and bouncing the user back to /login. A single shared, stable key
+    // fixes it. The value comes from the AuthStack-owned Secrets Manager
+    // secret (threaded via props) so referencing it here does NOT create a
+    // cross-stack dependency cycle with the shared cluster's eks stack.
+    this.webUiFlaskSecretManifest = this.cluster.addManifest(
+      `${this.stage}-WebUiFlaskSecret`,
+      {
+        apiVersion: 'v1',
+        kind: 'Secret',
+        metadata: {
+          name: 'web-ui-flask-secret',
+          namespace: this.namespace,
+        },
+        type: 'Opaque',
+        stringData: {
+          FLASK_SECRET_KEY:
+            this.props.flaskSessionKey ??
+            'PLACEHOLDER-set-via-flaskSessionKey-prop',
+        },
+      },
+    );
+    this.webUiFlaskSecretManifest.node.addDependency(this.namespaceManifest);
+
     // Render each component's workload. Every component gets its own manifests
     // so a single component can be upgraded independently (R15.1, R15.2).
     //
@@ -372,6 +418,11 @@ export class WorkloadsStack extends cdk.Stack {
     for (const spec of COMPONENT_WORKLOADS) {
       const manifest = this.addComponent(spec, previous);
       manifest.node.addDependency(this.namespaceManifest);
+      // The web-ui references the Flask session Secret via secretKeyRef, so it
+      // must exist before the web-ui Deployment is applied.
+      if (spec.name === 'web-ui') {
+        manifest.node.addDependency(this.webUiFlaskSecretManifest);
+      }
       this.workloadManifests[spec.name] = manifest;
       previous = manifest;
     }
@@ -663,6 +714,21 @@ export class WorkloadsStack extends cdk.Stack {
       env.push({
         name: 'HELLODJ_COOKIE_SECURE',
         value: '1',
+      });
+      // Flask session signing key MUST be shared across all web-ui replicas,
+      // otherwise a login started on one pod and its OAuth callback landing on
+      // another pod can't validate the signed session cookie (the state token
+      // is lost) and the user is bounced back to /login. Sourced from a
+      // per-stage Kubernetes Secret so the value is stable across restarts and
+      // identical for every replica (see `webUiFlaskSecretManifest`).
+      env.push({
+        name: 'FLASK_SECRET_KEY',
+        valueFrom: {
+          secretKeyRef: {
+            name: 'web-ui-flask-secret',
+            key: 'FLASK_SECRET_KEY',
+          },
+        },
       });
       env.push({
         name: 'COGNITO_DOMAIN',

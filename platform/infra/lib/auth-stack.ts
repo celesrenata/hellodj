@@ -71,6 +71,16 @@ export class AuthStack extends cdk.Stack {
   public readonly ytCipherSecret: secretsmanager.Secret;
 
   /**
+   * Secrets Manager entry: the Flask session signing key shared by all web-ui
+   * replicas. A stable, shared key is required so an OAuth login started on
+   * one pod and its callback landing on another pod validate the same signed
+   * session cookie (otherwise the CSRF state is lost and the user is bounced
+   * back to /login). Auto-generated once; surfaced to the web-ui via a
+   * Kubernetes Secret in the workloads stack.
+   */
+  public readonly flaskSessionSecret: secretsmanager.Secret;
+
+  /**
    * IAM role for the voice-pipeline (and any AI-consuming workload) granting
    * least-privilege, keyless access to Bedrock, Transcribe, and Polly.
    */
@@ -214,6 +224,27 @@ export class AuthStack extends cdk.Stack {
       secretName: secretName('yt-cipher-secret'),
       description: 'HelloDJ yt-cipher shared secret (API_TOKEN).',
     });
+
+    // The Flask session signing key shared by all web-ui replicas. Unlike the
+    // source/service tokens above (created empty, populated out-of-band), this
+    // one is auto-generated: it is an internal session key, not an external
+    // credential, so a random generated value is exactly what's needed. The
+    // workloads stack surfaces the value into a per-stage Kubernetes Secret the
+    // web-ui reads via FLASK_SECRET_KEY (prevents OAuth-callback session loss
+    // across replicas).
+    this.flaskSessionSecret = new secretsmanager.Secret(
+      this,
+      'FlaskSessionSecret',
+      {
+        secretName: secretName('web-ui-flask-session'),
+        description:
+          'HelloDJ web-ui Flask session signing key (shared across replicas).',
+        generateSecretString: {
+          passwordLength: 64,
+          excludePunctuation: true,
+        },
+      },
+    );
 
     // ----- IAM task role for managed AI (keyless) ------------------------
     //
