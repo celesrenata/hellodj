@@ -10,6 +10,11 @@ import sys
 import os
 import argparse
 
+# Suppress tqdm globally (the 100k-line firehose comes from tqdm progress bars)
+os.environ['TQDM_DISABLE'] = '1'
+os.environ['TQDM_MIN_INTERVAL'] = '999999'
+os.environ['TQDM_POSITION'] = '-1'
+
 # ---------------------------------------------------------------------------
 # Auto-detect Linux distro / CUDA library paths before any imports
 # ---------------------------------------------------------------------------
