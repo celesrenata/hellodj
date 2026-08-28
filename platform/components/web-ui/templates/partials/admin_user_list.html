@@ -1,5 +1,8 @@
 {# Admin user directory table + row actions (promote/demote, enable/disable).
    Swapped as an HTMX partial into #admin-user-list. #}
+{% if invite_error %}
+  <p class="notice notice--danger" role="alert">{{ invite_error }}</p>
+{% endif %}
 <div class="glass-panel data-table__wrap">
   <table class="data-table">
     <thead>

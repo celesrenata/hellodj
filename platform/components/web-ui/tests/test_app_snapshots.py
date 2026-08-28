@@ -108,8 +108,12 @@ def test_dashboard_renders_and_extends_shell(client) -> None:
     assert 'class="dashboard-grid"' in html
     assert "Active Guilds" in html
     assert "Now Playing" in html
-    # Active nav state on the dashboard item.
-    assert 'aria-current="page"' in html
+    # Active nav state is computed client-side (Alpine) from the current path so
+    # it updates on HTMX navigation without re-rendering the shell. The shell
+    # therefore carries the Alpine binding + the isActive() helper rather than a
+    # server-rendered aria-current.
+    assert ':aria-current="isActive(' in html
+    assert "isActive(href)" in html
 
 
 def test_config_page_renders_and_extends_shell(client) -> None:
