@@ -245,6 +245,45 @@ export const PER_GUILD_SOURCE_READERS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * Bot-path components that host the `UserEntitlementResolver`
+ * (admin-entitlements-panel spec, task 6). The resolver reads a user's
+ * entitlement + AI-pricing items on the `hellodj-core` single table and writes
+ * (increments) the user's AI-cost tally item when metering an AI request
+ * (R14.1, R10.1). `discord-bot-core` constructs the resolver once at startup
+ * and the cogs enforce through it, so it is the component that needs this
+ * fine-grained core-table access.
+ *
+ * These components already receive broad `grantReadWriteData` on the core
+ * table via their `coreTable` dependency; this set drives an ADDITIONAL,
+ * explicit, self-documenting least-privilege statement scoped by
+ * `dynamodb:LeadingKeys` to exactly the entitlement/pricing/tally partitions,
+ * so the entitlements access is auditable in its own right (R10.3, R14.1).
+ */
+export const ENTITLEMENT_RESOLVER_COMPONENTS: ReadonlySet<string> = new Set([
+  'discord-bot-core',
+]);
+
+/**
+ * The DynamoDB partition-key prefix every per-user entitlement item lives
+ * under on the `hellodj-core` single table — the entitlement record
+ * (`SK=ENTITLEMENT`), the AI-cost tally (`SK=AITALLY`), and the append-only
+ * audit entries (`SK=AUDIT#...`) all share `PK=USER#<sub>`. DynamoDB's
+ * `dynamodb:LeadingKeys` condition scopes item-level access to this partition
+ * shape (the leading `USER#` value), mirroring the storage-key helpers in the
+ * web-ui `entitlement_service.py`.
+ */
+export const ENTITLEMENT_USER_PK_PREFIX = 'USER#';
+
+/**
+ * The fixed partition key of the shared AI-pricing configuration item
+ * (`PK=CONFIG#AIPRICING`, `SK=CONFIG`) on the `hellodj-core` table. The bot
+ * resolver reads this item to apply the per-model Bedrock unit price + markup
+ * when metering AI cost; ops update prices by editing this item, so pricing is
+ * data, not code (R10.3).
+ */
+export const ENTITLEMENT_AIPRICING_PK = 'CONFIG#AIPRICING';
+
+/**
  * Data/DAX/secret resources the workloads wire to. Pass the sibling stacks'
  * exposed props (from `DataStack` / `AuthStack`).
  */
@@ -984,6 +1023,62 @@ export class WorkloadsStack extends cdk.Stack {
             `arn:aws:secretsmanager:${this.region}:${this.account}:secret:` +
               `hellodj/${this.stage}/guild/*`,
           ],
+        }),
+      );
+    }
+
+    // Bot-side user-entitlement resolution + AI-cost metering
+    // (admin-entitlements-panel, tasks 6/14; R14.1, R10.1, R10.3). The
+    // `discord-bot-core` resolver READS a user's entitlement item + the shared
+    // AI-pricing item to decide what a user may do and how much an AI call
+    // costs, and WRITES (increments) the user's AI-cost tally item when
+    // metering a permitted AI request. It already holds broad
+    // `grantReadWriteData` via its `coreTable` dependency, so this ADDITIONAL
+    // statement is an explicit, auditable least-privilege declaration scoped by
+    // `dynamodb:LeadingKeys` to exactly the entitlement/tally partitions
+    // (`USER#*`) and the pricing partition (`CONFIG#AIPRICING`) — it documents
+    // and pins the entitlements access in its own right rather than relying on
+    // the blanket table grant.
+    if (ENTITLEMENT_RESOLVER_COMPONENTS.has(spec.name)) {
+      const coreTableArn = this.props.data.coreTable.tableArn;
+      // READ on the per-user entitlement/tally partitions and the shared
+      // pricing item. `LeadingKeys` restricts item access to rows whose
+      // partition key begins with `USER#` OR equals `CONFIG#AIPRICING`.
+      sa.role.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          sid: 'EntitlementResolverRead',
+          effect: iam.Effect.ALLOW,
+          actions: [
+            'dynamodb:GetItem',
+            'dynamodb:BatchGetItem',
+            'dynamodb:Query',
+          ],
+          resources: [coreTableArn],
+          conditions: {
+            'ForAllValues:StringLike': {
+              'dynamodb:LeadingKeys': [
+                `${ENTITLEMENT_USER_PK_PREFIX}*`,
+                ENTITLEMENT_AIPRICING_PK,
+              ],
+            },
+          },
+        }),
+      );
+      // WRITE on the per-user AI-cost tally item. DynamoDB item-level access is
+      // scoped by partition key (`dynamodb:LeadingKeys`), so the write is
+      // pinned to the `USER#*` partitions that hold the `AITALLY` item; the
+      // resolver only ever updates that tally, never another user's data store.
+      sa.role.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          sid: 'EntitlementResolverTallyWrite',
+          effect: iam.Effect.ALLOW,
+          actions: ['dynamodb:UpdateItem', 'dynamodb:PutItem'],
+          resources: [coreTableArn],
+          conditions: {
+            'ForAllValues:StringLike': {
+              'dynamodb:LeadingKeys': [`${ENTITLEMENT_USER_PK_PREFIX}*`],
+            },
+          },
         }),
       );
     }

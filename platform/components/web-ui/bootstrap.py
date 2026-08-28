@@ -23,6 +23,7 @@ from typing import Any
 
 from bot_identity import BotIdentityService
 from config_store import ConfigStore
+from entitlement_service import EntitlementService
 from guild_admin_service import GuildAdminService
 from guild_sources import GuildSourcesService
 from invite_email import InviteEmailService
@@ -119,9 +120,9 @@ def build_services() -> dict[str, Any]:
     """Return the runtime services keyed for ``app.extensions``.
 
     Keys: ``config_store``, ``user_profiles``, ``guild_admin``,
-    ``guild_sources``, ``guild_identity_service``, ``invite_service``. Any
-    service whose backing resource is unavailable is ``None`` and the routes
-    degrade gracefully.
+    ``guild_sources``, ``guild_identity_service``, ``invite_service``,
+    ``entitlement_service``. Any service whose backing resource is unavailable
+    is ``None`` and the routes degrade gracefully.
     """
     core = _core_table()
     stage = os.getenv("HELLODJ_STAGE", "beta")
@@ -134,6 +135,7 @@ def build_services() -> dict[str, Any]:
         "guild_sources": None,
         "guild_identity_service": None,
         "invite_service": None,
+        "entitlement_service": None,
     }
     if core is None:
         return services
@@ -142,6 +144,7 @@ def build_services() -> dict[str, Any]:
     services["config_store"] = ConfigStore(core)
     services["user_profiles"] = user_profiles
     services["guild_admin"] = GuildAdminService(core)
+    services["entitlement_service"] = EntitlementService(core)
 
     secrets = _secrets_client()
     if secrets is not None:

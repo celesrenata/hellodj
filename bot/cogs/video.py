@@ -50,6 +50,46 @@ log = logging.getLogger(__name__)
 # Grace period in seconds — how long to wait before stopping when all viewers leave
 _GRACE_PERIOD_SECONDS: float = 30.0
 
+# User-facing decline message when the video-activities capability is not granted
+# (R6.2). Kept as a constant so the phrasing is consistent across entry points.
+_VIDEO_NOT_PERMITTED = (
+    "🔒 Video activities are not enabled for your account. "
+    "Ask an administrator to grant the video activities capability."
+)
+
+
+def _video_activities_allowed(user_id: int) -> bool:
+    """Resolve the acting user's effective entitlements and return the video flag.
+
+    Enforces the ``video_activities`` entitlement (R6). Resolution is delegated
+    to the process-wide :class:`UserEntitlementResolver`
+    (``bot.get_user_entitlements``), which merges the user's explicit record over
+    the secure defaults and fails safe to the restrictive defaults on any
+    datastore/lookup failure or unlinked Discord id (R14.3).
+
+    Fails safe to ``False`` (decline) when the resolver is unavailable
+    (``None``) or raises, so the capability is never granted without a positive
+    entitlement (R13, R14.3). The caller ALWAYS returns a response either way so
+    the request never fails silently (R6.3).
+    """
+    try:
+        import bot as _bot
+
+        resolver = _bot.get_user_entitlements()
+    except Exception:  # noqa: BLE001 - resolver import/access failure → decline
+        return False
+
+    if resolver is None:
+        # No resolver wired (e.g. datastore unconfigured): restrictive default.
+        return False
+
+    try:
+        effective = resolver.effective_for_discord(user_id)
+    except Exception:  # noqa: BLE001 - resolution failure → restrictive default
+        return False
+
+    return bool(effective.get("video_activities", False))
+
 
 class VideoCog(commands.Cog, name="Video"):
     """Video streaming backend — Activity-based video playback via /play mode:video|music_video."""
@@ -251,6 +291,14 @@ class VideoCog(commands.Cog, name="Video"):
         if not await self._check_legacy_allowed(interaction, "play"):
             return
 
+        # Entitlement gate (R6.2/R6.3/R6.4): decline when video activities are
+        # not permitted for the acting user, ALWAYS returning a response so the
+        # request never fails silently. Fails safe to decline on any resolution
+        # failure or when no resolver is wired (R14.3).
+        if not _video_activities_allowed(interaction.user.id):
+            await interaction.response.send_message(_VIDEO_NOT_PERMITTED, ephemeral=True)
+            return
+
         # Pre-checks
         voice_err = self._check_voice(interaction)
         if voice_err:
@@ -402,6 +450,14 @@ class VideoCog(commands.Cog, name="Video"):
     # ── video music_video (internal — called by PlaybackRouter) ──
 
     async def video_music_video(self, interaction: discord.Interaction, query: str) -> None:
+        # Entitlement gate (R6.2/R6.3/R6.4): decline when video activities are
+        # not permitted for the acting user, ALWAYS returning a response so the
+        # request never fails silently. Fails safe to decline on any resolution
+        # failure or when no resolver is wired (R14.3).
+        if not _video_activities_allowed(interaction.user.id):
+            await interaction.response.send_message(_VIDEO_NOT_PERMITTED, ephemeral=True)
+            return
+
         # Pre-checks
         voice_err = self._check_voice(interaction)
         if voice_err:

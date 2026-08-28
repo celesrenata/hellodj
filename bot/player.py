@@ -57,6 +57,176 @@ def _get_youtube_injector():
         return None
     return None
 
+
+# ── per-user source entitlement gate (R3.2/R3.3/R3.4) ────────
+#
+# Sources map to the entitlement ``sources`` keys 1:1 (design "Bot enforcement"
+# table, source-gate row): youtube→youtube, youtube_music→youtube_music,
+# soundcloud→soundcloud, spotify→spotify, tidal→tidal.
+_SOURCE_ENTITLEMENT_KEY = {
+    "youtube": "youtube",
+    "youtube_music": "youtube_music",
+    "soundcloud": "soundcloud",
+    "spotify": "spotify",
+    "tidal": "tidal",
+}
+
+# Human-facing source names for the decline message.
+_SOURCE_DISPLAY_NAME = {
+    "youtube": "YouTube",
+    "youtube_music": "YouTube Music",
+    "soundcloud": "SoundCloud",
+    "spotify": "Spotify",
+    "tidal": "Tidal",
+}
+
+
+def _source_allowed_for_user(discord_id, provider: str) -> bool:
+    """Return whether the acting user may play from ``provider`` (R3.2/R3.3).
+
+    Resolves the acting Discord user's effective entitlements via the
+    process-wide :class:`UserEntitlementResolver` (``bot.get_user_entitlements``)
+    and checks the source flag. Enforcement mirrors the web-ui's
+    ``entitlements_core.source_allowed``: a source is permitted iff its key is
+    ``True`` in the effective ``sources`` map, which is applied automatically
+    without any additional per-request approval (R3.3).
+
+    Fails safe to the restrictive defaults (SoundCloud only) when the resolver
+    is unavailable, the user is unlinked, or the datastore lookup fails (R14.3):
+    the resolver itself returns ``DEFAULT_ENTITLEMENTS`` on any such failure, and
+    a missing resolver here is treated the same way — an unknown/unmapped
+    provider is never granted.
+    """
+    key = _SOURCE_ENTITLEMENT_KEY.get(provider)
+    if key is None:
+        # Unknown provider — not in the governed source set; do not grant.
+        return False
+
+    try:
+        import bot as _bot_module  # lazy to avoid a circular import at load
+
+        resolver = _bot_module.get_user_entitlements()
+        if resolver is not None:
+            effective = resolver.effective_for_discord(discord_id)
+        else:
+            # No resolver wired (e.g. local dev without boto3/AWS): apply the
+            # restrictive default set rather than granting the capability.
+            from playback.user_entitlements import DEFAULT_ENTITLEMENTS
+
+            effective = DEFAULT_ENTITLEMENTS
+    except Exception as exc:  # noqa: BLE001 - fail safe to restrictive defaults
+        log.warning(
+            "source entitlement resolution failed for provider=%s user=%s "
+            "(%s) — applying restrictive defaults", provider, discord_id, exc,
+        )
+        try:
+            from playback.user_entitlements import DEFAULT_ENTITLEMENTS
+
+            effective = DEFAULT_ENTITLEMENTS
+        except Exception:  # noqa: BLE001 - module unavailable → deny non-default
+            # entitlements module itself unavailable — deny non-default sources.
+            return provider == "soundcloud"
+
+    sources = effective.get("sources", {}) if isinstance(effective, dict) else {}
+    return bool(sources.get(key, False))
+
+
+# ── per-user high-bitrate audio gate (R5.2/R5.3) ─────────────
+#
+# The Discord voice stream's audio bitrate is governed by the voice channel's
+# ``bitrate`` (bps): Lavalink/Discord encode Opus up to that ceiling. Capping a
+# user's audio at 96 kbps therefore means capping the voice channel bitrate at
+# 96000 bps at stream initiation when ``audio_above_96k`` is disabled. This is
+# enforced only at stream START (before ``player.play``); a stream already in
+# progress keeps its current bitrate until it restarts (R5.2). When the flag is
+# enabled the channel bitrate is left untouched so bitrates above 96 kbps are
+# permitted (R5.3).
+_AUDIO_96K_CAP_BPS = 96_000
+
+
+def _audio_above_96k_allowed_for_user(discord_id) -> bool:
+    """Return whether the acting user may stream audio above 96 kbps (R5.3).
+
+    Resolves the acting Discord user's effective entitlements via the
+    process-wide :class:`UserEntitlementResolver` (``bot.get_user_entitlements``)
+    and reads the ``audio_above_96k`` flag. Fails safe to the restrictive
+    default (``False`` → capped) when the resolver is unavailable, the user is
+    unlinked, or the datastore lookup fails (R14.3): the resolver returns
+    ``DEFAULT_ENTITLEMENTS`` on any such failure, and a missing resolver here is
+    treated the same way — the capability is never granted without a positive
+    resolution.
+    """
+    try:
+        import bot as _bot_module  # lazy to avoid a circular import at load
+
+        resolver = _bot_module.get_user_entitlements()
+        if resolver is not None:
+            effective = resolver.effective_for_discord(discord_id)
+        else:
+            # No resolver wired (e.g. local dev without boto3/AWS): apply the
+            # restrictive default set rather than granting the capability.
+            from playback.user_entitlements import DEFAULT_ENTITLEMENTS
+
+            effective = DEFAULT_ENTITLEMENTS
+    except Exception as exc:  # noqa: BLE001 - fail safe to restrictive defaults
+        log.warning(
+            "audio>96k entitlement resolution failed for user=%s (%s) — "
+            "applying restrictive default (capped)", discord_id, exc,
+        )
+        return False
+
+    if not isinstance(effective, dict):
+        return False
+    return bool(effective.get("audio_above_96k", False))
+
+
+async def _enforce_bitrate_cap_at_start(
+    player: wavelink.Player, guild_id: int, discord_id
+) -> None:
+    """Cap the voice channel bitrate at 96 kbps at stream START when disabled.
+
+    Enforcement point for R5.2/R5.3 (design "Bot enforcement" table, audio>96k
+    row): the player track build / node request path. Called immediately before
+    ``player.play(track)`` so the cap is applied only at stream initiation — a
+    stream already in progress keeps its current bitrate until it restarts
+    (R5.2). When ``audio_above_96k`` is enabled the channel bitrate is left
+    untouched (R5.3).
+
+    The cap only ever LOWERS the channel bitrate: if the channel is already at
+    or below 96 kbps nothing is changed, so an already-restricted channel is not
+    perturbed and the edit is skipped. Any failure to edit the channel (missing
+    permission, transient API error) is logged and swallowed — a failed cap must
+    never crash the play path; the source stream still starts.
+    """
+    if _audio_above_96k_allowed_for_user(discord_id):
+        # Flag enabled — permit bitrates above 96 kbps; leave the channel as-is.
+        return
+
+    channel = getattr(player, "channel", None) or get_state(guild_id).get(
+        "voice_channel"
+    )
+    current_bitrate = getattr(channel, "bitrate", None)
+    if channel is None or current_bitrate is None:
+        # Cannot inspect/adjust the channel bitrate — nothing to cap.
+        return
+    if current_bitrate <= _AUDIO_96K_CAP_BPS:
+        # Already at or below the cap — no change needed at stream start.
+        return
+
+    try:
+        await channel.edit(bitrate=_AUDIO_96K_CAP_BPS)
+        log.info(
+            "_enforce_bitrate_cap_at_start: capped guild=%d channel bitrate "
+            "%d→%d bps (audio_above_96k disabled for user=%s)",
+            guild_id, current_bitrate, _AUDIO_96K_CAP_BPS, discord_id,
+        )
+    except Exception as exc:  # noqa: BLE001 - a failed cap must not crash play
+        log.warning(
+            "_enforce_bitrate_cap_at_start: could not cap bitrate for guild=%d "
+            "(%s) — stream starts at current channel bitrate", guild_id, exc,
+        )
+
+
 # ── track-start callback (visualizer integration) ───────────
 # A fire-and-forget callback invoked when a new track starts playing.
 # The VisualizerRegistry subscribes here during setup — player.py MUST NOT
@@ -1506,6 +1676,39 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
               source_provider=sp, queue_len=len(state["queue"]))
     resolve_start = time.monotonic()
 
+    # ── per-user source entitlement gate (R3.2/R3.3/R3.4) ──────────────
+    # Enforce that the acting user is permitted to play from this source
+    # BEFORE any resolution happens (covers both the direct-stream and the
+    # LavasRC/source-map paths below). The acting Discord user is taken from
+    # the queue entry when present; an absent requester (or an unlinked/failed
+    # lookup) fails safe to the restrictive defaults (SoundCloud only, R14.3).
+    acting_user = entry.get("requester_id") or entry.get("requested_by")
+    if not _source_allowed_for_user(acting_user, sp):
+        display = _SOURCE_DISPLAY_NAME.get(sp, sp)
+        log.info(
+            "_resolve_and_play: source %r not permitted for user=%s guild=%d "
+            "— declining", sp, acting_user, guild_id,
+        )
+        dbg.event("resolve_declined", guild_id=guild_id, title=title,
+                  source_provider=sp, reason="source_not_permitted")
+        text_channel = state.get("text_channel")
+        if text_channel is not None:
+            try:
+                await text_channel.send(
+                    f"⛔ Playback from **{display}** is not permitted for you. "
+                    f"Ask an administrator to enable this source."
+                )
+            except Exception as send_exc:  # noqa: BLE001 - decline is best-effort
+                log.debug(
+                    "_resolve_and_play: failed to send source decline: %s",
+                    send_exc,
+                )
+        # Skip this track and continue with the rest of the queue.
+        state["current"] = None
+        persist(guild_id)
+        await _play_next_from_queue(guild_id)
+        return
+
     try:
         # ── Direct stream resolution (bypass YouTube mirroring) ────────────
         # For Spotify/Tidal: try our stream services first. If they return a
@@ -1554,6 +1757,11 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
                         # Mark the current entry with the real source for embeds
                         if state.get("current"):
                             state["current"]["source"] = sp
+                        # Cap audio bitrate at 96 kbps at stream START when the
+                        # acting user lacks the high-bitrate entitlement (R5.2).
+                        await _enforce_bitrate_cap_at_start(
+                            player, guild_id, acting_user
+                        )
                         await player.play(track)
                         # Ensure not paused (may have been paused before video transition)
                         if player.paused:
@@ -1661,6 +1869,10 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
                   resolved_length=getattr(track, "length", None),
                   source_provider=sp,
                   elapsed_ms=(time.monotonic() - resolve_start) * 1000)
+        # Cap audio bitrate at 96 kbps at stream START when the acting user
+        # lacks the high-bitrate entitlement (R5.2); a stream already in
+        # progress keeps its bitrate until it restarts.
+        await _enforce_bitrate_cap_at_start(player, guild_id, acting_user)
         await player.play(track)
         # Ensure playback is not paused (player may have been paused before video transition)
         if player.paused:

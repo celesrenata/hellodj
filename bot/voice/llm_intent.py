@@ -65,15 +65,46 @@ class LLMIntentExtractor:
     def __init__(self):
         self._client = OllamaClient()
 
-    async def extract(self, transcript: str) -> list[dict[str, Any]]:
+    async def extract(
+        self, transcript: str, *, discord_id: str | int | None = None
+    ) -> list[dict[str, Any]]:
         """Extract Command_Objects from a transcript.
 
         Returns a list of validated Command_Objects.
         Falls back to keyword classification on any failure.
+
+        AI integration gate (R9): this is an AI-backed request path (the Ollama
+        LLM intent extractor). When ``discord_id`` is supplied, the acting user's
+        ``ai_integration`` entitlement is enforced BEFORE the model is called: if
+        it is disabled (or unresolved/unlinked, which defaults to disabled) the
+        request is declined WITHOUT incurring cost (R9.2) and an empty command
+        list is returned — the model is never called, so a non-permitted request
+        is blocked entirely rather than allowed to proceed (R9.3). When permitted,
+        the cost is metered IMMEDIATELY at permit time (R9.4/R10.1). When
+        ``discord_id`` is ``None`` (no acting-user context, e.g. a non-voice
+        caller) the gate is skipped and the extractor behaves as before.
         """
         # Requirement 3.7: empty transcript → empty array
         if not transcript or not transcript.strip():
             return []
+
+        # R9 gate: enforce AI integration + meter cost before calling the model.
+        if discord_id is not None:
+            from .ai_gate import gate_ai_request
+
+            try:
+                from bot import get_user_entitlements
+
+                resolver = get_user_entitlements()
+            except Exception:  # noqa: BLE001 - no resolver wired → restrictive
+                resolver = None
+            decision = gate_ai_request(resolver, discord_id)
+            if not decision.permitted:
+                log.info(
+                    "llm_intent: AI integration declined for discord %s (%s)",
+                    discord_id, decision.reason,
+                )
+                return []
 
         try:
             response = await asyncio.wait_for(

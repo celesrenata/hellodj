@@ -1,0 +1,46 @@
+{# Entitlement change history partial (R15.3). Displays the recorded audit
+   entries in reverse-chronological order (the service returns them newest-first
+   via the AUDIT# prefix query, reversed). Each entry records which administrator
+   made the change, the affected field, the old and new values, and the time
+   (R15.1). An entry whose paired entitlement write could not be committed is
+   marked "orphaned" (the change was not applied).
+
+   Context: history (list of dicts, newest-first). #}
+<div id="entitlement-history">
+  <div class="glass-panel data-table__wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col">When</th>
+          <th scope="col">Field</th>
+          <th scope="col">Old</th>
+          <th scope="col">New</th>
+          <th scope="col">By admin</th>
+          <th scope="col">Status</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for entry in history %}
+          <tr>
+            <td><code>{{ entry.get('at', '') }}</code></td>
+            <td>{{ entry.get('field', '') }}</td>
+            <td>{{ entry.get('old') }}</td>
+            <td>{{ entry.get('new') }}</td>
+            <td><code>{{ entry.get('admin_sub', '') }}</code></td>
+            <td>
+              {% if entry.get('apply_status') == 'orphaned' %}
+                <span class="badge badge--danger" title="The entitlement write failed; this change was not applied.">Orphaned</span>
+              {% else %}
+                <span class="badge badge--ok">Applied</span>
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td class="data-table__empty" colspan="6">No changes recorded yet.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>

@@ -5,6 +5,9 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Complete registration · HelloDJ</title>
   <link rel="stylesheet" href="{{ static_hash('css/app.css') }}">
+  <!-- Alpine.js drives the live password checklist + confirm match + the
+       debounced username-availability fetch (served locally in prod). -->
+  <script defer src="{{ static_hash('js/alpine.min.js') }}"></script>
 </head>
 <body class="bg-surface-0 text-text-secondary login-body">
   <canvas id="bg-shader" class="fixed inset-0 -z-10 w-full h-full pointer-events-none" aria-hidden="true"></canvas>
@@ -14,36 +17,81 @@
       <h1 class="login-card__title">Welcome to HelloDJ</h1>
       <p class="login-card__subtitle">Complete your registration to continue</p>
 
-      {% if error %}
-      <p class="notice notice--danger" role="alert">{{ error }}</p>
-      {% endif %}
+      <div aria-live="polite">
+        {% if error %}
+        <p class="notice notice--danger" role="alert">{{ error }}</p>
+        {% endif %}
+      </div>
 
-      <form class="invite-form" method="post"
-            action="{{ url_for('pages.invite_register', token=token) }}">
-        <div class="form-field">
-          <label class="form-field__label" for="invite-email">Email</label>
-          <input class="form-field__input" id="invite-email" name="email"
-                 type="email" value="{{ email }}" readonly
-                 aria-readonly="true" autocomplete="email">
-        </div>
+      <form class="auth-form" method="post"
+            action="{{ url_for('invite_public.invite_register', token=token) }}"
+            x-data="inviteRegister({
+              checkUrl: '{{ url_for('invite_public.invite_username_available', token=token) }}'
+            })"
+            @submit="onSubmit($event)">
 
-        <div class="form-field">
-          <label class="form-field__label" for="invite-password">Password</label>
-          <input class="form-field__input" id="invite-password" name="password"
-                 type="password" required autocomplete="new-password"
-                 aria-required="true" minlength="8">
-        </div>
+        <label class="field">
+          <span class="field__label">Email</span>
+          <input class="field__input" name="email" type="email"
+                 value="{{ email }}" readonly aria-readonly="true"
+                 autocomplete="email">
+        </label>
 
-        <div class="form-field">
-          <label class="form-field__label" for="invite-password-confirm">
-            Confirm password
-          </label>
-          <input class="form-field__input" id="invite-password-confirm"
-                 name="password_confirm" type="password" required
-                 autocomplete="new-password" aria-required="true" minlength="8">
-        </div>
+        <label class="field">
+          <span class="field__label">Username</span>
+          <input class="field__input" name="username" type="text"
+                 x-model="username" @input.debounce.300ms="checkUsername()"
+                 autocomplete="username" required minlength="3" maxlength="32"
+                 :aria-invalid="usernameState === 'taken' || usernameState === 'invalid'"
+                 aria-describedby="username-status">
+          <p class="field__hint" id="username-status" aria-live="polite"
+             :class="{
+               'field__hint--ok': usernameState === 'available',
+               'field__hint--bad': usernameState === 'taken' || usernameState === 'invalid'
+             }">
+            <span x-show="usernameState === 'idle'">3–32 characters: letters, numbers, and . _ -</span>
+            <span x-show="usernameState === 'checking'">Checking availability…</span>
+            <span x-show="usernameState === 'available'">✓ Username is available</span>
+            <span x-show="usernameState === 'taken'">✗ That username is taken</span>
+            <span x-show="usernameState === 'invalid'" x-text="usernameError"></span>
+          </p>
+        </label>
 
-        <button class="btn btn-primary btn-block" type="submit">
+        <label class="field">
+          <span class="field__label">Password</span>
+          <input class="field__input" name="password" type="password"
+                 x-model="password" autocomplete="new-password" required
+                 aria-describedby="password-rules">
+        </label>
+
+        <ul class="pw-rules" id="password-rules" aria-live="polite">
+          {% for rule in password_rules %}
+          <li class="pw-rule" :class="rules.{{ rule.id }} && 'pw-rule--met'">
+            <span class="pw-rule__mark" aria-hidden="true"
+                  x-text="rules.{{ rule.id }} ? '✓' : '○'"></span>
+            <span>{{ rule.label }}</span>
+          </li>
+          {% endfor %}
+        </ul>
+
+        <label class="field">
+          <span class="field__label">Confirm password</span>
+          <input class="field__input" name="password_confirm" type="password"
+                 x-model="confirm" autocomplete="new-password" required
+                 :aria-invalid="confirm.length > 0 && !passwordsMatch"
+                 aria-describedby="confirm-status">
+          <p class="field__hint" id="confirm-status" aria-live="polite"
+             :class="{
+               'field__hint--ok': confirm.length > 0 && passwordsMatch,
+               'field__hint--bad': confirm.length > 0 && !passwordsMatch
+             }">
+            <span x-show="confirm.length > 0 && passwordsMatch">✓ Passwords match</span>
+            <span x-show="confirm.length > 0 && !passwordsMatch">✗ Passwords do not match</span>
+          </p>
+        </label>
+
+        <button class="btn btn-primary btn-block" type="submit"
+                :disabled="!canSubmit">
           Create account
         </button>
       </form>
@@ -51,5 +99,71 @@
       {% include "partials/owner_attribution.html" %}
     </div>
   </main>
+
+  <script>
+    // Alpine component: live username availability, password-rule checklist,
+    // and confirm-match. The rule predicates mirror register_policy.PASSWORD_RULES
+    // (same ids) so the client checklist and the server enforcement never drift.
+    function inviteRegister(opts) {
+      return {
+        checkUrl: opts.checkUrl,
+        username: '{{ username|default('', true)|e }}',
+        password: '',
+        confirm: '',
+        usernameState: 'idle', // idle | checking | available | taken | invalid
+        usernameError: '',
+        get rules() {
+          const p = this.password;
+          return {
+            length: p.length >= 12,
+            upper: /[A-Z]/.test(p),
+            lower: /[a-z]/.test(p),
+            number: /[0-9]/.test(p),
+            symbol: /[^A-Za-z0-9]/.test(p),
+          };
+        },
+        get passwordOk() {
+          const r = this.rules;
+          return r.length && r.upper && r.lower && r.number && r.symbol;
+        },
+        get passwordsMatch() {
+          return this.password.length > 0 && this.password === this.confirm;
+        },
+        get canSubmit() {
+          return this.usernameState === 'available'
+            && this.passwordOk && this.passwordsMatch;
+        },
+        async checkUsername() {
+          const u = this.username.trim();
+          if (u.length < 3) { this.usernameState = 'idle'; return; }
+          this.usernameState = 'checking';
+          try {
+            const resp = await fetch(
+              this.checkUrl + '?u=' + encodeURIComponent(u),
+              { headers: { 'Accept': 'application/json' } }
+            );
+            const data = await resp.json();
+            if (!data.valid) {
+              this.usernameState = 'invalid';
+              this.usernameError = data.error || 'Invalid username';
+            } else if (data.available) {
+              this.usernameState = 'available';
+            } else {
+              this.usernameState = 'taken';
+            }
+          } catch (e) {
+            // Network hiccup: don't block; server re-validates on submit.
+            this.usernameState = 'idle';
+          }
+        },
+        onSubmit(ev) {
+          if (!this.canSubmit) { ev.preventDefault(); }
+        },
+        init() {
+          if (this.username.trim().length >= 3) { this.checkUsername(); }
+        },
+      };
+    }
+  </script>
 </body>
 </html>

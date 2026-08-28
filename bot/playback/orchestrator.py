@@ -23,7 +23,14 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
-__all__ = ["BotInstance", "InstanceOrchestrator"]
+__all__ = ["BotInstance", "InstanceOrchestrator", "QuotaExceededError"]
+
+
+class QuotaExceededError(Exception):
+    """Adding/activating a bot instance would exceed a user quota (R11.2/R12.3).
+
+    Carries a clear, user-facing message stating the entitlement limit reached.
+    """
 
 # Limits defined by requirements
 _MIN_INSTANCES = 2
@@ -49,6 +56,10 @@ class BotInstance:
     guild_id: int | None = None
     last_health_check: float = field(default_factory=time.time)
     display_name: str = ""
+    # Owning-user Discord id, recorded at assignment so the orchestrator can
+    # count a user's per-guild bot instances and distinct guilds for
+    # entitlement-quota enforcement (R11/R12). None for legacy (userless) calls.
+    user_id: int | None = None
 
 
 class InstanceOrchestrator:
@@ -175,19 +186,32 @@ class InstanceOrchestrator:
         self._initialized = True
 
     async def assign_instance(
-        self, guild_id: int, channel_id: int
+        self,
+        guild_id: int,
+        channel_id: int,
+        user_id: int | None = None,
     ) -> BotInstance | None:
         """Find and assign an available instance to a channel.
+
+        Both the *add-instance* and *activate-in-guild* path. With an owning
+        ``user_id``, per-user entitlement quotas are enforced first (R11/R12):
+        the per-guild bot limit (``effective_max_bots_per_guild``, R11.2-R11.4)
+        and, for a guild the user is not already active in, the ``max_guilds``
+        limit (R12.3/R12.4); a rejection raises :class:`QuotaExceededError`. No
+        ``user_id`` (legacy callers) → no quota.
 
         Returns the assigned BotInstance, or None if all instances are busy.
         Does not reassign if an instance is already serving this channel.
         """
-        # Check if an instance is already connected to this channel
+        # Reuse the instance already serving this channel, if any.
         existing = self.get_instance_for_channel(guild_id, channel_id)
         if existing is not None:
             return existing
 
-        # Pick the first available instance
+        # Enforce per-user entitlement quotas before consuming an instance.
+        if user_id is not None:
+            self._enforce_quotas(guild_id, user_id)
+
         instance = self._get_available_instance()
         if instance is None:
             return None
@@ -195,12 +219,14 @@ class InstanceOrchestrator:
         instance.status = "connected"
         instance.guild_id = guild_id
         instance.channel_id = channel_id
+        instance.user_id = user_id
         log.info(
-            "Assigned instance %d (%s) to guild=%d channel=%d",
+            "Assigned instance %d (%s) to guild=%d channel=%d user=%s",
             instance.index,
             instance.display_name,
             guild_id,
             channel_id,
+            user_id,
         )
         return instance
 
@@ -283,9 +309,10 @@ class InstanceOrchestrator:
                         instance.display_name,
                     )
                 instance.status = "unhealthy"
-                # Clear channel assignment for unhealthy instances
+                # Clear assignment for unhealthy instances
                 instance.channel_id = None
                 instance.guild_id = None
+                instance.user_id = None
 
     @property
     def instances(self) -> list[BotInstance]:
@@ -312,6 +339,79 @@ class InstanceOrchestrator:
             if instance.status == "available":
                 return instance
         return None
+
+    # -- entitlement quota enforcement (R11/R12) --
+    def _user_bot_count_in_guild(self, guild_id: int, user_id: int) -> int:
+        """Count the user's *connected* bot instances in one guild (R11.2)."""
+        return sum(
+            1
+            for inst in self._instances
+            if inst.status == "connected"
+            and inst.guild_id == guild_id
+            and inst.user_id == user_id
+        )
+
+    def _user_active_guilds(self, user_id: int) -> set[int]:
+        """Distinct guilds the user has connected instances in (R12.4)."""
+        return {
+            inst.guild_id
+            for inst in self._instances
+            if inst.status == "connected"
+            and inst.user_id == user_id
+            and inst.guild_id is not None
+        }
+
+    def _enforce_quotas(self, guild_id: int, user_id: int) -> None:
+        """Reject an assignment that would exceed the user's quotas (R11/R12).
+
+        Resolves effective entitlements (fail-safe defaults, R14.3) and applies
+        the shared pure helpers, raising :class:`QuotaExceededError` when reached.
+        """
+        effective = self._resolve_effective(user_id)
+        from playback.user_entitlements import (
+            effective_max_bots_per_guild,
+            quota_reached,
+        )
+
+        # Guild limit (R12.3/R12.4): only a NEW guild grows the distinct count.
+        active_guilds = self._user_active_guilds(user_id)
+        if guild_id not in active_guilds:
+            max_guilds = int(effective.get("max_guilds", 1))
+            if quota_reached(len(active_guilds), max_guilds):
+                raise QuotaExceededError(
+                    f"Guild limit reached: you may operate in at most "
+                    f"{max_guilds} guild(s)."
+                )
+
+        # Per-guild bot limit (add-instance path, R11.2/R11.4).
+        per_guild_limit = effective_max_bots_per_guild(effective)
+        current = self._user_bot_count_in_guild(guild_id, user_id)
+        if quota_reached(current, per_guild_limit):
+            raise QuotaExceededError(
+                f"Per-guild bot limit reached: you may run at most "
+                f"{per_guild_limit} bot instance(s) in this guild."
+            )
+
+    def _resolve_effective(self, user_id: int) -> dict:
+        """Resolve the owning user's effective entitlements (fail-safe, R14.3).
+
+        On any failure applies restrictive DEFAULT_ENTITLEMENTS (limits = 1).
+        """
+        try:
+            import bot as _bot_module  # lazy to avoid a circular import at load
+
+            resolver = _bot_module.get_user_entitlements()
+            if resolver is not None:
+                return resolver.effective_for_discord(user_id)
+        except Exception as exc:  # noqa: BLE001 - fail safe to restrictive
+            log.warning(
+                "quota entitlement resolution failed for user=%s (%s) — "
+                "applying restrictive defaults", user_id, exc,
+            )
+
+        from playback.user_entitlements import DEFAULT_ENTITLEMENTS
+
+        return DEFAULT_ENTITLEMENTS
 
     async def _connect_instance(self, instance: BotInstance) -> None:
         """Log in a secondary bot client (non-blocking start).
@@ -379,6 +479,7 @@ class InstanceOrchestrator:
         instance.status = "available"
         instance.channel_id = None
         instance.guild_id = None
+        instance.user_id = None
 
     async def _check_instance_health(self, instance: BotInstance) -> bool:
         """Check if an instance's client is responsive.

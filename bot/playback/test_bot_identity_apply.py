@@ -43,9 +43,11 @@ if _BOT_DIR not in sys.path:
 import discord  # discord.py 2.7.1 is installed in the env
 from bot_identity_apply import (
     BOTIDENTITY_SK,
+    ApplyOutcome,
     DesiredIdentity,
     IdentityApplier,
     avatar_data_uri,
+    filter_by_entitlements,
     plan_apply,
 )
 
@@ -170,6 +172,48 @@ class FakeBot:
         return list(self._guilds.values())
 
 
+class FakeResolver:
+    """Fake :class:`UserEntitlementResolver` for the identity gate (R4.3/R4.4).
+
+    ``effective_for_sub`` returns a per-sub effective-entitlement mapping so a
+    test can permit or withhold the ``custom_avatar`` / ``custom_name`` flags.
+    Defaults to permissive (both flags on) so the pre-existing apply-path tests
+    exercise application; the gate-specific tests pass a restrictive mapping.
+    """
+
+    def __init__(self, effective_by_sub: dict[str, dict[str, Any]] | None = None,
+                 *, default: dict[str, Any] | None = None) -> None:
+        self._by_sub = dict(effective_by_sub or {})
+        self._default = default if default is not None else {
+            "custom_avatar": True, "custom_name": True,
+        }
+        self.calls: list[str] = []
+
+    def effective_for_sub(self, sub: str) -> dict[str, Any]:
+        self.calls.append(sub)
+        return dict(self._by_sub.get(sub, self._default))
+
+
+class RaisingResolver:
+    """Fake resolver whose ``effective_for_sub`` always raises.
+
+    Models a datastore/lookup failure so the gate must fail safe and withhold
+    BOTH gated fields (R4.3/R4.4, restrictive-default convention).
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def effective_for_sub(self, sub: str) -> dict[str, Any]:
+        self.calls.append(sub)
+        raise RuntimeError("datastore unavailable")
+
+
+#: Cognito sub stamped onto the apply-path fixtures as the identity owner so the
+#: gate resolves a (permissive) entitlement set for them.
+_OWNER = "owner-sub"
+
+
 class FakeRoute:
     """Captured raw REST route (stands in for ``discord.http.Route``)."""
 
@@ -197,13 +241,20 @@ def _run(coro: Any) -> Any:
     return asyncio.run(coro)
 
 
-def _applier(bot: FakeBot, store: FakeStore, s3: FakeS3) -> IdentityApplier:
+def _applier(
+    bot: FakeBot,
+    store: FakeStore,
+    s3: FakeS3,
+    *,
+    resolver: Any | None = None,
+) -> IdentityApplier:
     return IdentityApplier(
         bot,
         store,
         s3,
         avatar_bucket=BUCKET,
         route_factory=_route_factory,
+        entitlement_resolver=resolver if resolver is not None else FakeResolver(),
         time_fn=lambda: 1730000000,
     )
 
@@ -245,7 +296,10 @@ class TestPlanApply:
 
 class TestApplyNickname:
     def test_sets_nickname_and_writes_applied_status(self):
-        store = FakeStore({"1": {"nickname": "DJ Vinyl", "desired_at": 5}})
+        store = FakeStore(
+            {"1": {"nickname": "DJ Vinyl", "desired_at": 5,
+                   "requested_by": _OWNER}}
+        )
         guild = FakeGuild(1)
         bot = FakeBot({1: guild}, FakeHTTP())
         s3 = FakeS3()
@@ -265,7 +319,7 @@ class TestApplyNickname:
         ).desired_version()
 
     def test_reapply_is_noop_once_applied(self):
-        store = FakeStore({"1": {"nickname": "DJ Vinyl"}})
+        store = FakeStore({"1": {"nickname": "DJ Vinyl", "requested_by": _OWNER}})
         guild = FakeGuild(1)
         bot = FakeBot({1: guild}, FakeHTTP())
         applier = _applier(bot, store, FakeS3())
@@ -287,7 +341,7 @@ class TestApplyAvatar:
         key = "guild/1/bot-avatar/abc.png"
         store = FakeStore(
             {"1": {"avatar_present": True, "avatar_key": key,
-                   "avatar_version": "abc"}}
+                   "avatar_version": "abc", "requested_by": _OWNER}}
         )
         http = FakeHTTP()
         bot = FakeBot({1: FakeGuild(1)}, http)
@@ -314,7 +368,8 @@ class TestApplyAvatar:
         key = "guild/1/bot-avatar/abc.png"
         store = FakeStore(
             {"1": {"nickname": "DJ", "avatar_present": True,
-                   "avatar_key": key, "avatar_version": "abc"}}
+                   "avatar_key": key, "avatar_version": "abc",
+                   "requested_by": _OWNER}}
         )
         http = FakeHTTP()
         guild = FakeGuild(1)
@@ -334,7 +389,8 @@ class TestApplyAvatar:
 class TestForbiddenClearError:
     def test_nickname_forbidden_records_error_and_no_version_advance(self):
         store = FakeStore(
-            {"1": {"nickname": "DJ Vinyl", "applied_version": ""}}
+            {"1": {"nickname": "DJ Vinyl", "applied_version": "",
+                   "requested_by": _OWNER}}
         )
         guild = FakeGuild(1, forbid_nick=True)
         bot = FakeBot({1: guild}, FakeHTTP())
@@ -354,7 +410,8 @@ class TestForbiddenClearError:
         key = "guild/1/bot-avatar/abc.png"
         store = FakeStore(
             {"1": {"avatar_present": True, "avatar_key": key,
-                   "avatar_version": "abc", "applied_version": ""}}
+                   "avatar_version": "abc", "applied_version": "",
+                   "requested_by": _OWNER}}
         )
         http = FakeHTTP(forbid=True)
         bot = FakeBot({1: FakeGuild(1)}, http)
@@ -392,8 +449,8 @@ class TestApplierPolling:
     def test_apply_all_pending_iterates_guild_cache(self):
         store = FakeStore(
             {
-                "1": {"nickname": "One"},
-                "2": {"nickname": "Two"},
+                "1": {"nickname": "One", "requested_by": _OWNER},
+                "2": {"nickname": "Two", "requested_by": _OWNER},
             }
         )
         bot = FakeBot({1: FakeGuild(1), 2: FakeGuild(2)}, FakeHTTP())
@@ -404,6 +461,179 @@ class TestApplierPolling:
         assert set(results) == {"1", "2"}
         assert results["1"].status == "applied"
         assert results["2"].status == "applied"
+
+
+# ── entitlement gating (admin-entitlements-panel R4.3, R4.4) ────────────────
+
+
+class TestFilterByEntitlementsPure:
+    """The pure gate: withhold gated fields per the owner's effective flags."""
+
+    def test_both_applied_when_both_flags_on(self):
+        out = ApplyOutcome(changed=True, apply_nickname=True, apply_avatar=True,
+                           applied_version="v")
+        gated = filter_by_entitlements(
+            out, {"custom_avatar": True, "custom_name": True}
+        )
+        assert gated.apply_nickname is True
+        assert gated.apply_avatar is True
+        # Input is not mutated (side-effect free).
+        assert out.apply_nickname is True and out.apply_avatar is True
+
+    def test_avatar_withheld_when_custom_avatar_off(self):
+        out = ApplyOutcome(changed=True, apply_nickname=True, apply_avatar=True)
+        gated = filter_by_entitlements(
+            out, {"custom_avatar": False, "custom_name": True}
+        )
+        assert gated.apply_avatar is False  # R4.3
+        assert gated.apply_nickname is True
+
+    def test_nickname_withheld_when_custom_name_off(self):
+        out = ApplyOutcome(changed=True, apply_nickname=True, apply_avatar=True)
+        gated = filter_by_entitlements(
+            out, {"custom_avatar": True, "custom_name": False}
+        )
+        assert gated.apply_nickname is False  # R4.4
+        assert gated.apply_avatar is True
+
+    def test_both_withheld_when_effective_none(self):
+        """Fail-safe: no resolvable owner → withhold BOTH gated fields."""
+        out = ApplyOutcome(changed=True, apply_nickname=True, apply_avatar=True)
+        gated = filter_by_entitlements(out, None)
+        assert gated.apply_nickname is False
+        assert gated.apply_avatar is False
+
+    def test_missing_flags_default_restricted(self):
+        """Absent flags in the effective map default to restricted (False)."""
+        out = ApplyOutcome(changed=True, apply_nickname=True, apply_avatar=True)
+        gated = filter_by_entitlements(out, {})
+        assert gated.apply_nickname is False
+        assert gated.apply_avatar is False
+
+
+class TestApplyGuildEntitlementGate:
+    """End-to-end gate through ``apply_guild`` with a fake resolver."""
+
+    def test_avatar_rejected_when_custom_avatar_off(self):
+        """A custom avatar set is rejected when ``custom_avatar`` is off (R4.3)."""
+        key = "guild/1/bot-avatar/abc.png"
+        store = FakeStore(
+            {"1": {"nickname": "DJ", "avatar_present": True, "avatar_key": key,
+                   "avatar_version": "abc", "requested_by": _OWNER}}
+        )
+        http = FakeHTTP()
+        guild = FakeGuild(1)
+        bot = FakeBot({1: guild}, http)
+        resolver = FakeResolver(
+            {_OWNER: {"custom_avatar": False, "custom_name": True}}
+        )
+        applier = _applier(bot, store, FakeS3({key: _PNG}), resolver=resolver)
+
+        outcome = _run(applier.apply_guild("1"))
+
+        # Avatar withheld — no REST PATCH issued.
+        assert outcome.apply_avatar is False
+        assert http.requests == []
+        # Nickname still applied (custom_name on).
+        assert guild.me.nick == "DJ"
+        assert outcome.status == "applied"
+
+    def test_name_rejected_when_custom_name_off(self):
+        """A custom name set is rejected when ``custom_name`` is off (R4.4)."""
+        key = "guild/1/bot-avatar/abc.png"
+        store = FakeStore(
+            {"1": {"nickname": "DJ", "avatar_present": True, "avatar_key": key,
+                   "avatar_version": "abc", "requested_by": _OWNER}}
+        )
+        http = FakeHTTP()
+        guild = FakeGuild(1)
+        bot = FakeBot({1: guild}, http)
+        resolver = FakeResolver(
+            {_OWNER: {"custom_avatar": True, "custom_name": False}}
+        )
+        applier = _applier(bot, store, FakeS3({key: _PNG}), resolver=resolver)
+
+        outcome = _run(applier.apply_guild("1"))
+
+        # Nickname withheld — guild.me.edit never called.
+        assert outcome.apply_nickname is False
+        assert guild.me.nick is None
+        # Avatar still applied (custom_avatar on).
+        assert len(http.requests) == 1
+        assert outcome.status == "applied"
+
+    def test_both_withheld_marks_applied_and_no_side_effects(self):
+        """Both flags off → nothing applied, item marked applied (no re-poll)."""
+        key = "guild/1/bot-avatar/abc.png"
+        store = FakeStore(
+            {"1": {"nickname": "DJ", "avatar_present": True, "avatar_key": key,
+                   "avatar_version": "abc", "requested_by": _OWNER}}
+        )
+        http = FakeHTTP()
+        guild = FakeGuild(1)
+        bot = FakeBot({1: guild}, http)
+        resolver = FakeResolver(
+            {_OWNER: {"custom_avatar": False, "custom_name": False}}
+        )
+        applier = _applier(bot, store, FakeS3({key: _PNG}), resolver=resolver)
+
+        outcome = _run(applier.apply_guild("1"))
+
+        assert outcome.apply_nickname is False
+        assert outcome.apply_avatar is False
+        assert guild.me.nick is None
+        assert http.requests == []
+        # Marked applied + version advanced so a later poll is a no-op.
+        assert store.data["1"]["apply_status"] == "applied"
+        assert store.data["1"]["applied_version"] == DesiredIdentity(
+            nickname="DJ", avatar_present=True, avatar_version="abc"
+        ).desired_version()
+
+    def test_no_requested_by_fails_safe_withholds_both(self):
+        """An item without ``requested_by`` withholds both (fail-safe deny)."""
+        key = "guild/1/bot-avatar/abc.png"
+        store = FakeStore(
+            {"1": {"nickname": "DJ", "avatar_present": True, "avatar_key": key,
+                   "avatar_version": "abc"}}  # no requested_by
+        )
+        http = FakeHTTP()
+        guild = FakeGuild(1)
+        bot = FakeBot({1: guild}, http)
+        # Even a permissive resolver must not be consulted without an owner sub.
+        resolver = FakeResolver(default={"custom_avatar": True,
+                                          "custom_name": True})
+        applier = _applier(bot, store, FakeS3({key: _PNG}), resolver=resolver)
+
+        outcome = _run(applier.apply_guild("1"))
+
+        assert outcome.apply_nickname is False
+        assert outcome.apply_avatar is False
+        assert resolver.calls == []  # no owner → resolver never called
+        assert guild.me.nick is None
+        assert http.requests == []
+        assert store.data["1"]["apply_status"] == "applied"
+
+    def test_resolution_failure_fails_safe_withholds_both(self):
+        """A resolver failure withholds both gated fields (R14.3 fail-safe)."""
+        key = "guild/1/bot-avatar/abc.png"
+        store = FakeStore(
+            {"1": {"nickname": "DJ", "avatar_present": True, "avatar_key": key,
+                   "avatar_version": "abc", "requested_by": _OWNER}}
+        )
+        http = FakeHTTP()
+        guild = FakeGuild(1)
+        bot = FakeBot({1: guild}, http)
+        resolver = RaisingResolver()
+        applier = _applier(bot, store, FakeS3({key: _PNG}), resolver=resolver)
+
+        outcome = _run(applier.apply_guild("1"))
+
+        assert resolver.calls == [_OWNER]  # attempted, then failed → deny
+        assert outcome.apply_nickname is False
+        assert outcome.apply_avatar is False
+        assert guild.me.nick is None
+        assert http.requests == []
+        assert store.data["1"]["apply_status"] == "applied"
 
 
 def test_botidentity_sk_matches_web_ui_writer():

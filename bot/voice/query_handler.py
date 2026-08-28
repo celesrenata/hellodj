@@ -253,22 +253,59 @@ class QueryHandler:
     def available(self) -> bool:
         return bool(self._api_key)
 
-    async def handle_query(self, query: str) -> str:
+    async def handle_query(
+        self, query: str, *, discord_id: str | int | None = None
+    ) -> str:
         """Process a general query and return a TTS-friendly response.
 
         Uses LLM function-calling to determine which tools to invoke.
+
+        AI integration gate (R9): the general-query path is AI-backed (an
+        OpenAI-compatible LLM with tool calling). When ``discord_id`` is
+        supplied, the acting user's ``ai_integration`` entitlement is enforced
+        BEFORE any model/tool work: if it is disabled (or unresolved/unlinked,
+        which defaults to disabled) the request is declined WITHOUT incurring
+        cost (R9.2) and a decline message is returned — no model or tool is ever
+        called, so a non-permitted request is blocked entirely (R9.3). When
+        permitted, cost is metered IMMEDIATELY at permit time (R9.4/R10.1) and an
+        over-cap warning is surfaced without hard-blocking (R10.5). When
+        ``discord_id`` is ``None`` the gate is skipped (unchanged behaviour).
         """
+        # R9 gate: enforce AI integration + meter cost before any model/tool.
+        over_cap_warning: str | None = None
+        if discord_id is not None:
+            from .ai_gate import gate_ai_request
+
+            try:
+                from bot import get_user_entitlements
+
+                resolver = get_user_entitlements()
+            except Exception:  # noqa: BLE001 - no resolver wired → restrictive
+                resolver = None
+            decision = gate_ai_request(resolver, discord_id)
+            if not decision.permitted:
+                log.info(
+                    "query_handler: AI integration declined for discord %s (%s)",
+                    discord_id, decision.reason,
+                )
+                return decision.reason
+            over_cap_warning = decision.warning
+
         if not self._api_key:
             return "I'm not connected to an AI service right now."
 
         # Use a simple pattern-based routing to avoid LLM latency
         # for common queries (fast path)
         fast_response = await self._fast_path(query)
-        if fast_response:
-            return fast_response
+        if not fast_response:
+            # Full LLM path with tool calling
+            fast_response = await self._llm_path(query)
 
-        # Full LLM path with tool calling
-        return await self._llm_path(query)
+        # Surface the over-cap warning (R10.5) alongside the answer without
+        # blocking the request.
+        if over_cap_warning:
+            return f"{over_cap_warning} {fast_response}".strip()
+        return fast_response
 
     async def _fast_path(self, query: str) -> str | None:
         """Try to handle common queries without LLM overhead."""

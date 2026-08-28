@@ -1,0 +1,93 @@
+{# AI usage section partial (R10). Re-rendered by the AI cap route
+   (POST /admin/entitlements/<sub>/ai/markup -> entitlements.entitlement_ai_markup)
+   and the reset route (POST /admin/entitlements/<sub>/ai/reset ->
+   entitlements.entitlement_ai_reset) into #entitlement-ai. Shows the accumulated
+   AI cost tally (R10.4), the configured markup (ops-edited in the shared pricing
+   item) and per-user spend cap, an over-cap warning (R10.5 — warn, never block),
+   and a reset control (R10.6).
+
+   Context passed by _render_ai: sub, effective, tally, pricing, over_cap, saved,
+   error. #}
+{% set currency = tally.get('currency') or pricing.get('currency') or 'USD' %}
+{% set accumulated = tally.get('accumulated_cost', 0.0) %}
+{% set cap = effective.get('ai_spend_cap') %}
+{% set markup = pricing.get('markup', 1.0) %}
+
+<div id="entitlement-ai">
+  {% if saved %}
+    <p class="notice notice--success" role="status">AI settings saved.</p>
+  {% endif %}
+  {% if error %}
+    <p class="notice notice--danger" role="alert">{{ error }}</p>
+  {% endif %}
+
+  {# Over-cap warning: surfaced, but does NOT hard-block AI requests (R10.5). #}
+  {% if over_cap %}
+    <p class="notice notice--info" role="status">
+      This user is at or over their AI spend cap
+      ({{ '%.4f'|format(accumulated) }} / {{ '%.4f'|format(cap) }} {{ currency }}).
+      AI requests are still permitted — the cap is a warning, not a hard block.
+    </p>
+  {% endif %}
+
+  <div class="glass-panel data-table__wrap">
+    <table class="data-table">
+      <tbody>
+        <tr>
+          <td>Accumulated AI cost</td>
+          <td>
+            <strong>{{ '%.4f'|format(accumulated) }} {{ currency }}</strong>
+            {% if over_cap %}
+              <span class="badge badge--danger">over cap</span>
+            {% endif %}
+          </td>
+        </tr>
+        <tr>
+          <td>Markup</td>
+          <td>
+            {{ '%.0f'|format(markup * 100) }}%
+            (effective cost = {{ '%.2f'|format(1 + markup) }}× Bedrock)
+            <span class="field__hint">Global; ops-edited in the shared pricing item.</span>
+          </td>
+        </tr>
+        <tr>
+          <td>Spend cap</td>
+          <td>
+            {% if cap is not none %}
+              {{ '%.4f'|format(cap) }} {{ currency }}
+            {% else %}
+              <span class="badge badge--muted">No cap</span>
+            {% endif %}
+          </td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <form class="config-form" style="margin-top: 16px;"
+        hx-post="{{ url_for('entitlements.entitlement_ai_markup', sub=sub) }}"
+        hx-target="#entitlement-ai" hx-swap="outerHTML">
+    <div class="field">
+      <label class="field__label" for="ai-cap">Spend cap ({{ currency }})</label>
+      <input class="field__input" id="ai-cap" name="ai_spend_cap"
+             type="number" min="0" step="0.01"
+             value="{{ cap if cap is not none else '' }}"
+             placeholder="Leave blank for no cap"
+             aria-describedby="hint-cap">
+      <p class="field__hint" id="hint-cap">
+        Warn when the tally reaches this amount. Blank means no cap. The cap
+        never hard-blocks AI requests.
+      </p>
+    </div>
+    <div class="config-form__actions">
+      <button type="submit" class="btn btn-primary">Save spend cap</button>
+    </div>
+  </form>
+
+  <form style="margin-top: 12px;"
+        hx-post="{{ url_for('entitlements.entitlement_ai_reset', sub=sub) }}"
+        hx-target="#entitlement-ai" hx-swap="outerHTML"
+        hx-confirm="Reset this user's accumulated AI cost tally to zero?">
+    <button type="submit" class="btn btn-danger btn-sm">Reset AI tally</button>
+  </form>
+</div>

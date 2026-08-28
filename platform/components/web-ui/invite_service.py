@@ -7,22 +7,12 @@ never logged or stored in plaintext (R7.4). The account itself is created later,
 CONFIRMED, when the invitee registers via the link — not here — so this step
 sends no Cognito temp-password email.
 
-We record an Invite item in ``hellodj-core`` so the admin panel can list pending
-vs accepted invites, and so the public ``/invite/<token>`` route can resolve an
-invite by its hashed token in one indexed GSI1 lookup without knowing the email.
-
-Data model (hellodj-core single table):
-
-* ``PK=INVITE#<email>``  ``SK=INVITE``
-  ``GSI1PK=INVITETOKEN#<tokenHash>``  ``GSI1SK=INVITE`` — data={email,
-  invited_by, token_hash, expires_at, status (invited|accepted|expired|revoked),
-  created_at}
-
-On registration (``register``) the winning token consumer creates a CONFIRMED
-Cognito account (``admin_create_user`` with ``MessageAction=SUPPRESS`` +
-``admin_set_user_password(..., Permanent=True)``) so Cognito sends no email, and
-persists the user's profile bound to the Cognito subject, recording
-``invited_by`` (R2.2, R2.6).
+We record an Invite item in ``hellodj-core`` (``PK=INVITE#<email>`` ``SK=INVITE``,
+``GSI1PK=INVITETOKEN#<tokenHash>``) so the admin panel can list invites and the
+public ``/invite/<token>`` route resolves one by hashed token in a single GSI1
+lookup. On registration (``register``) the winning consumer creates a CONFIRMED
+Cognito account (``MessageAction=SUPPRESS`` + ``admin_set_user_password``) so
+Cognito sends no email, and binds the profile to the Cognito subject (R2.2, R2.6).
 
 Requirements: 1.1, 1.2, 1.3, 1.5, 2.2, 2.3, 2.5, 2.6, 7.4
 """
@@ -43,6 +33,7 @@ from hellodj_platform_logic.data_access.errors import (
 )
 
 import invite_admin
+import register_policy
 from invite_email import InviteEmailError, InviteEmailService
 from user_profile import PROFILE_SK, UserProfileService, user_pk
 
@@ -149,15 +140,11 @@ class InviteService:
     """Mint single-use Invite_Tokens and track their status in ``hellodj-core``.
 
     The Cognito client detects an already-registered email at invite time
-    (R1.5) and, at registration time, creates the CONFIRMED account
-    (``admin_create_user`` + ``admin_set_user_password``) so Cognito sends no
-    temp-password email. When a :class:`UserProfileService` is supplied the
-    newly created account's profile is persisted bound to its Cognito subject
-    (R2.2, R2.6).
-
-    When an :class:`InviteEmailService` is supplied, :meth:`invite` sends the
-    branded link and rolls the record back on send failure (R1.1); with no
-    sender wired it degrades to recording the invite without an email.
+    (R1.5) and, at registration, creates the CONFIRMED account so Cognito sends
+    no temp-password email; a supplied :class:`UserProfileService` binds the new
+    account's profile to its Cognito subject (R2.2, R2.6). A supplied
+    :class:`InviteEmailService` sends the branded link and rolls the record back
+    on send failure (R1.1); with none wired it records the invite without email.
     """
 
     def __init__(
@@ -233,16 +220,14 @@ class InviteService:
                 f"{email_norm} already has a pending invite"
             ) from error
 
-        # Register a pointer in the shared index partition so the admin panel
-        # can enumerate this invite (see INVITE_INDEX_PK). Best-effort: an
-        # existing pointer from a prior invite of the same email is fine — the
-        # invite record itself is the source of truth read back during listing.
+        # Pointer in the shared index partition so the admin panel can enumerate
+        # this invite (see INVITE_INDEX_PK); best-effort (the invite record is
+        # the source of truth read back during listing).
         self._put_index_pointer(email_norm)
 
-        # Send the branded invitation email carrying the /invite/<raw_token>
-        # link. If sending fails, roll back the just-created invite record so a
-        # retry starts clean and no half-created invite lingers (R1.1). When no
-        # email sender is wired, the invite is recorded without an email.
+        # Send the branded /invite/<raw_token> link; on failure roll the invite
+        # record back so a retry starts clean (R1.1). With no sender wired the
+        # invite is recorded without an email.
         if self._invite_email is not None:
             try:
                 self._invite_email.send(email_norm, raw_token)
@@ -399,43 +384,52 @@ class InviteService:
             ) from error
         return dict(committed["data"])
 
-    def register(self, raw_token: str) -> dict[str, Any]:
+    def register(
+        self,
+        raw_token: str,
+        *,
+        display_name: str | None = None,
+        password: str | None = None,
+    ) -> dict[str, Any]:
         """Consume a valid token and create the CONFIRMED Cognito account.
 
-        First :meth:`consume` flips the invite ``invited -> accepted``
-        atomically (single-use, R2.5); no account is created unless the consume
-        wins the race, so a bad/expired/used token raises
-        :class:`InviteConsumedError` *before* any Cognito call (R2.3).
-
-        The account is created with ``admin_create_user``
-        (``MessageAction=SUPPRESS`` so Cognito emails nothing, a random UUID
-        username, and a verified ``email`` attribute) then
-        ``admin_set_user_password(..., Permanent=True)`` — a CONFIRMED account
-        with no temporary password (R2.2). The user's profile is persisted
-        bound to the Cognito subject, recording ``invited_by`` (R2.6).
-
-        Returns the created account descriptor: ``email``, ``sub`` (Cognito
-        subject), ``username``, and ``invited_by``. The registration step
-        itself grants no session — the user links Discord next (R2.4).
+        :meth:`consume` flips ``invited -> accepted`` atomically first (R2.5),
+        so a bad/expired/used token raises :class:`InviteConsumedError` before
+        any Cognito call (R2.3). The account's ``Username`` is an opaque UUID;
+        the chosen ``display_name`` (if any) is stored as ``preferred_username``
+        and the chosen ``password`` becomes the account password
+        (``Permanent=True``), validated against
+        :func:`register_policy.validate_password` first — raising
+        ``PasswordPolicyError`` before any Cognito write (a random password is
+        used when omitted — Discord-only login). ``MessageAction=SUPPRESS``
+        keeps Cognito silent; the ``email`` is created verified (R2.2), the
+        profile is bound to the subject (R2.6), and no session is granted — the
+        user links Discord next (R2.4).
         """
+        if password is not None:
+            register_policy.validate_password(password)
         invite = self.consume(raw_token)
         email = invite["email"]
         invited_by = invite.get("invited_by", "")
 
         username = str(uuid.uuid4())
+        attributes = [
+            {"Name": "email", "Value": email},
+            {"Name": "email_verified", "Value": "true"},
+        ]
+        chosen = register_policy.normalize_username(display_name or "")
+        if chosen:
+            attributes.append({"Name": "preferred_username", "Value": chosen})
         created = self._cognito.admin_create_user(
             UserPoolId=self._user_pool_id,
             Username=username,
             MessageAction="SUPPRESS",
-            UserAttributes=[
-                {"Name": "email", "Value": email},
-                {"Name": "email_verified", "Value": "true"},
-            ],
+            UserAttributes=attributes,
         )
         self._cognito.admin_set_user_password(
             UserPoolId=self._user_pool_id,
             Username=username,
-            Password=secrets.token_urlsafe(24),
+            Password=password or secrets.token_urlsafe(24),
             Permanent=True,
         )
 
@@ -447,8 +441,17 @@ class InviteService:
             "email": email,
             "sub": sub,
             "username": username,
+            "display_name": chosen,
             "invited_by": invited_by,
         }
+
+    def display_name_available(self, display_name: str) -> bool:
+        """Return whether a chosen ``display_name`` is free (best-effort hint)."""
+        return not register_policy.username_taken(
+            self._cognito,
+            user_pool_id=self._user_pool_id,
+            username=display_name,
+        )
 
     def _record_invited_by(self, sub: str, invited_by: str) -> None:
         """Stamp ``invited_by`` onto the just-ensured profile, best-effort."""
@@ -466,10 +469,8 @@ class InviteService:
 
     def _get_by_token(self, raw_token: str) -> dict[str, Any] | None:
         """Resolve the raw invite item by token hash via GSI1, or ``None``."""
-        token_hash = hash_token(raw_token)
-        rows = self._core.query_gsi1(
-            token_gsi1pk(token_hash), sk_prefix=INVITE_SK
-        )
+        gsi1pk = token_gsi1pk(hash_token(raw_token))
+        rows = self._core.query_gsi1(gsi1pk, sk_prefix=INVITE_SK)
         return rows[0] if rows else None
 
     def _is_valid(self, data: Mapping[str, Any]) -> bool:
@@ -478,9 +479,8 @@ class InviteService:
         Expiry uses :func:`invite_admin.is_unexpired` (accepts the ``Decimal``
         live DynamoDB returns for Number attrs).
         """
-        return data.get("status") == "invited" and invite_admin.is_unexpired(
-            data.get("expires_at")
-        )
+        exp = data.get("expires_at")
+        return data.get("status") == "invited" and invite_admin.is_unexpired(exp)
 
     def _is_registered(self, email_norm: str) -> bool:
         """Return whether a Cognito account already exists for ``email``.

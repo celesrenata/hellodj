@@ -32,7 +32,22 @@ This module does NOT touch ``bot/cogs/video.py``'s global ``self.bot.user.avatar
 read (the DVD-visualizer avatar) — that is the bot's GLOBAL account avatar and is
 independent of per-guild identity (R3.6, preserved).
 
-Requirements: 2.7, 2.8, 2.9
+Entitlement gating (admin-entitlements-panel R4.3, R4.4)
+--------------------------------------------------------
+
+Custom bot identity is a GATED capability: a custom avatar is applied only when
+the owning user's ``custom_avatar`` entitlement is on (R4.3) and a custom name
+(server nickname) only when ``custom_name`` is on (R4.4). The owning user is the
+Cognito ``sub`` the web-ui stored as ``requested_by`` on the ``BOTIDENTITY``
+item; :class:`IdentityApplier` resolves that sub's effective entitlements via the
+process-wide :class:`playback.user_entitlements.UserEntitlementResolver` before
+applying either field. Gating **fails safe (reject)**: no resolver, no
+``requested_by`` sub, or a resolution failure withholds BOTH gated fields (both
+flags default restricted). The pure :func:`filter_by_entitlements` applies the
+two flags to the plan so the decision is unit-testable without Discord or a
+datastore.
+
+Requirements: 2.7, 2.8, 2.9, 4.3, 4.4
 """
 
 from __future__ import annotations
@@ -52,6 +67,7 @@ __all__ = [
     "S3Reader",
     "avatar_content_type",
     "avatar_data_uri",
+    "filter_by_entitlements",
     "plan_apply",
 ]
 
@@ -129,6 +145,11 @@ class DesiredIdentity:
     applied_at: int = 0
     apply_status: str = "none"
     applied_version: str = ""
+    #: The Cognito subject of the user who authored this identity change (the
+    #: web-ui persists it as ``requested_by``). The applier resolves THIS sub's
+    #: effective entitlements to gate custom avatar/name (R4.3/R4.4). Empty when
+    #: the item predates identity gating — treated as "no owner" → fail-safe deny.
+    requested_by: str = ""
 
     @classmethod
     def from_data(cls, data: dict[str, Any] | None) -> DesiredIdentity:
@@ -143,6 +164,7 @@ class DesiredIdentity:
             applied_at=int(d.get("applied_at", 0) or 0),
             apply_status=str(d.get("apply_status", "none") or "none"),
             applied_version=str(d.get("applied_version", "") or ""),
+            requested_by=str(d.get("requested_by", "") or ""),
         )
 
     def desired_version(self) -> str:
@@ -185,6 +207,33 @@ def plan_apply(desired: DesiredIdentity) -> ApplyOutcome:
     )
 
 
+def filter_by_entitlements(
+    outcome: ApplyOutcome, effective: dict[str, Any] | None
+) -> ApplyOutcome:
+    """Withhold gated identity fields per the owning user's entitlements — PURE.
+
+    Clears ``apply_avatar`` when ``custom_avatar`` is off (R4.3) and
+    ``apply_nickname`` when ``custom_name`` is off (R4.4), reading both flags off
+    the owning user's resolved ``effective`` entitlements. Fails safe (reject):
+    ``effective is None`` (applier could not resolve the owner — no resolver, no
+    ``requested_by`` sub, or a lookup failure) withholds BOTH fields, matching
+    the restrictive default (both flags default ``False``). The input ``outcome``
+    is not mutated; a copy is returned so the decision is side-effect free.
+    """
+    e = effective or {}
+    avatar_ok = bool(e.get("custom_avatar", False))
+    name_ok = bool(e.get("custom_name", False))
+    return ApplyOutcome(
+        changed=outcome.changed,
+        apply_nickname=outcome.apply_nickname and name_ok,
+        apply_avatar=outcome.apply_avatar and avatar_ok,
+        status=outcome.status,
+        apply_error=outcome.apply_error,
+        applied_version=outcome.applied_version,
+        errors=list(outcome.errors),
+    )
+
+
 def avatar_content_type(avatar_key: str) -> str:
     """Return the image media type for a stored avatar S3 key (by extension)."""
     ext = avatar_key.rsplit(".", 1)[-1].lower() if "." in avatar_key else ""
@@ -218,6 +267,12 @@ class IdentityApplier:
         Callable building the raw REST route object for the member PATCH —
         defaults to ``discord.http.Route`` (imported lazily). Injected so tests
         can supply a fake without the discord stack.
+    entitlement_resolver:
+        The process-wide :class:`UserEntitlementResolver` used to gate the custom
+        avatar/name capability (R4.3/R4.4). Injected so tests can supply a fake.
+        When ``None``, the applier reaches it lazily via
+        ``bot.get_user_entitlements()``; if that too is unavailable, gating fails
+        safe and BOTH gated fields are withheld.
     time_fn:
         Injectable epoch-seconds clock (defaults to ``time.time``).
     """
@@ -230,6 +285,7 @@ class IdentityApplier:
         *,
         avatar_bucket: str,
         route_factory: Any | None = None,
+        entitlement_resolver: Any | None = None,
         time_fn: Any = time.time,
     ) -> None:
         self._bot = bot
@@ -237,6 +293,7 @@ class IdentityApplier:
         self._s3 = s3_client
         self._bucket = avatar_bucket
         self._route_factory = route_factory
+        self._resolver = entitlement_resolver
         self._now = time_fn
 
     # -- public entry points ------------------------------------------------
@@ -261,6 +318,27 @@ class IdentityApplier:
             # pending so a later poll / on_guild_join retries; do not error.
             log.debug("identity-apply: guild %s not in cache, skipping", gid)
             outcome.changed = False
+            return outcome
+
+        # Gate custom identity on the owning user's entitlements (R4.3/R4.4). A
+        # withheld field is a policy denial, not an error: the version advances
+        # (see _write_back) so a denied field is not re-polled; a later grant
+        # re-triggers via a new desired_at/version from the web-ui.
+        effective = self._resolve_owner_entitlements(desired.requested_by)
+        outcome = filter_by_entitlements(outcome, effective)
+        if not (outcome.apply_nickname or outcome.apply_avatar):
+            # Nothing left after gating: mark handled (idempotent), do not re-poll.
+            log.info(
+                "identity-apply: guild %s identity change withheld by "
+                "entitlements (custom avatar/name not permitted)", gid,
+            )
+            self._store.set_apply_status(
+                gid,
+                status=STATUS_APPLIED,
+                applied_at=int(self._now()),
+                apply_error="",
+                applied_version=outcome.applied_version,
+            )
             return outcome
 
         forbidden = self._forbidden_type()
@@ -356,14 +434,47 @@ class IdentityApplier:
             applied_version=outcome.applied_version,
         )
 
+    # -- entitlement gating (fail-safe) -------------------------------------
+
+    def _resolve_owner_entitlements(self, requested_by: str) -> dict[str, Any] | None:
+        """Resolve the owner's effective entitlements, or ``None`` (deny).
+
+        The owner is the Cognito ``sub`` stored as ``requested_by``. Returns that
+        sub's effective entitlements via the process-wide
+        :class:`UserEntitlementResolver`; returns ``None`` (a full deny in
+        :func:`filter_by_entitlements`) when there is no sub, no resolver, or
+        resolution raises (restrictive-default convention, R14.3).
+        """
+        if not requested_by:
+            return None  # No owner recorded (predates gating): fail safe.
+
+        # Reach the process-wide resolver lazily when not injected, matching the
+        # other gates (``bot.get_user_entitlements``). Any failure → deny.
+        resolver = self._resolver
+        if resolver is None:
+            try:
+                import bot as _bot_module  # lazy to avoid a circular import
+
+                getter = getattr(_bot_module, "get_user_entitlements", None)
+                resolver = getter() if getter is not None else None
+            except Exception:  # noqa: BLE001 - no resolver → deny
+                resolver = None
+        if resolver is None:
+            return None
+
+        try:
+            return resolver.effective_for_sub(requested_by)
+        except Exception as exc:  # noqa: BLE001 - resolution failure → deny
+            log.debug(
+                "identity-apply: entitlement resolution failed for sub %s (%s)",
+                requested_by, exc,
+            )
+            return None
+
     # -- discord seam helpers (lazy import) ---------------------------------
 
     def _make_route(self, guild_id: str) -> Any:
-        """Build the raw REST route for the member-avatar PATCH.
-
-        Uses the injected ``route_factory`` when provided (tests), else
-        ``discord.http.Route`` lazily so this module imports without discord.
-        """
+        """Build the raw REST route for the member-avatar PATCH (lazy discord)."""
         if self._route_factory is not None:
             return self._route_factory(
                 "PATCH", "/guilds/{guild_id}/members/@me", guild_id=guild_id
@@ -376,12 +487,7 @@ class IdentityApplier:
 
     @staticmethod
     def _forbidden_type() -> type[BaseException]:
-        """Return ``discord.Forbidden`` (lazy), or a sentinel if unavailable.
-
-        Keeping the import lazy lets the module load in a discord-less test env;
-        tests that exercise the permission-denied path inject a fake that raises
-        their own ``Forbidden`` and pass it via ``route_factory``/fakes.
-        """
+        """Return ``discord.Forbidden`` (lazy), or a sentinel if unavailable."""
         try:
             import discord
 

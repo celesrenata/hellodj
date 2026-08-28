@@ -27,6 +27,52 @@ from debug import get_debug_logger
 log = logging.getLogger(__name__)
 dbg = get_debug_logger("voice_cmd")
 
+
+def _get_user_entitlements():
+    """Return the process-wide per-user entitlement resolver, or ``None``.
+
+    Reached lazily via ``bot.get_user_entitlements()`` (set at bot startup). The
+    lazy ``import bot`` avoids a circular import at module load. Returns ``None``
+    when the resolver was not constructed (e.g. local dev without boto3/AWS
+    creds); callers MUST treat ``None`` as "apply restrictive defaults" so a
+    governed capability (here, wake-word/voice activation, R8) is never granted
+    without a resolver. Never raises.
+    """
+    try:
+        import bot as _bot_module  # lazy to avoid a circular import at load
+        getter = getattr(_bot_module, "get_user_entitlements", None)
+        if getter is not None:
+            return getter()
+    except Exception:  # noqa: BLE001 - resolver unavailable → defaults
+        return None
+    return None
+
+
+def _wakeword_allowed(user_id: int) -> bool:
+    """Return whether the acting Discord user may use wake-word/voice (R8).
+
+    Resolves the user's effective entitlements via the process-wide resolver and
+    returns the ``wakeword`` flag. Fails safe (restrictive) — returns ``False``
+    when the resolver is unavailable (``None``) or resolution raises, because the
+    secure default for ``wakeword`` is disabled (R8.2, R14.3). When ``True`` the
+    caller proceeds and the existing pipeline requires a wake-word activation
+    before processing any voice input (R8.3).
+    """
+    resolver = _get_user_entitlements()
+    if resolver is None:
+        # No resolver → apply the restrictive default (wake-word disabled).
+        return False
+    try:
+        effective = resolver.effective_for_discord(user_id)
+    except Exception as exc:  # noqa: BLE001 - datastore failure → defaults
+        log.debug(
+            "voice entitlement resolution failed for user %s (%s) — "
+            "blocking voice activation (restrictive default)", user_id, exc,
+        )
+        return False
+    return bool(effective.get("wakeword", False))
+
+
 # ── confirmation keywords ─────────────────────────────────────────────────
 
 CONFIRM_WORDS = {"confirm", "yes", "proceed", "do it", "yeah", "yep", "sure", "go ahead"}
@@ -173,6 +219,22 @@ class VoiceCommandOrchestrator:
             log.warning("Wake word detected but user %s not in any guild voice", user_id)
             return
 
+        # Wake-word / voice-activation entitlement gate (R8). This is the single
+        # funnel through which every voice command passes — there is no separate
+        # push-to-talk path (on_voice_receive → tick → wake detection is the only
+        # activation route). Blocking here when the user's ``wakeword`` capability
+        # is disabled therefore blocks ALL voice commands regardless of input
+        # method (R8.2). When enabled, the interaction proceeds and the pipeline
+        # requires the wake-word activation before processing voice input (R8.3).
+        # Fails safe to the restrictive default (blocked) when entitlements
+        # cannot be resolved.
+        if not _wakeword_allowed(user_id):
+            log.info(
+                "Ignoring wake word from user %s in guild %s — voice activation "
+                "not permitted by entitlements", user_id, guild_id,
+            )
+            return
+
         # Blacklist gate — revoked/blacklisted users must NOT trigger wake word.
         if _blacklist.is_blacklisted(guild_id, user_id):
             log.info(
@@ -250,8 +312,12 @@ class VoiceCommandOrchestrator:
 
         session.member = member
 
-        # Extract commands via LLM (falls back to keyword classifier on failure)
-        commands = await self.llm_intent.extract(transcript)
+        # Extract commands via LLM (falls back to keyword classifier on failure).
+        # Pass the acting user so the AI integration entitlement is enforced and
+        # cost is metered at permit time (R9).
+        commands = await self.llm_intent.extract(
+            transcript, discord_id=session.user_id
+        )
         if not commands:
             await self._speak(session, guild, "I didn't understand that.")
             session.state = VoiceCommandSession.IDLE
@@ -1174,7 +1240,12 @@ class VoiceCommandOrchestrator:
         self, session: VoiceCommandSession, guild: discord.Guild, member: discord.Member
     ) -> None:
         """Execute a general query via LLM + MCP."""
-        response = await self.query.handle_query(session.transcript)
+        # Pass the acting user so the AI integration entitlement is enforced and
+        # cost is metered at permit time (R9); a disabled user is declined
+        # without cost.
+        response = await self.query.handle_query(
+            session.transcript, discord_id=session.user_id
+        )
         await self._speak(session, guild, response)
 
     # ── TTS helper ───────────────────────────────────────────────────────

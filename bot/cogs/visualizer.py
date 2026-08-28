@@ -36,6 +36,45 @@ log = logging.getLogger(__name__)
 # projectM preset directory (bundled in Docker image, NOT under /app/data which is a PVC mount)
 PROJECTM_PRESET_DIR = Path("/app/presets/projectm")
 
+# User-facing decline message when the visualizations capability is not granted
+# (R7.2). Kept as a constant so the phrasing is consistent.
+_VISUALIZATIONS_NOT_PERMITTED = (
+    "🔒 Visualizations are not enabled for your account. "
+    "Ask an administrator to grant the visualizations capability."
+)
+
+
+def _visualizations_allowed(user_id: int) -> bool:
+    """Resolve the acting user's effective entitlements and return the viz flag.
+
+    Enforces the ``visualizations`` entitlement (R7). Resolution is delegated to
+    the process-wide :class:`UserEntitlementResolver`
+    (``bot.get_user_entitlements``), which merges the user's explicit record over
+    the secure defaults and fails safe to the restrictive defaults on any
+    datastore/lookup failure or unlinked Discord id (R14.3).
+
+    Fails safe to ``False`` (decline) when the resolver is unavailable
+    (``None``) or raises, so the capability is never granted without a positive
+    entitlement (R13, R14.3).
+    """
+    try:
+        import bot as _bot
+
+        resolver = _bot.get_user_entitlements()
+    except Exception:  # noqa: BLE001 - resolver import/access failure → decline
+        return False
+
+    if resolver is None:
+        # No resolver wired (e.g. datastore unconfigured): restrictive default.
+        return False
+
+    try:
+        effective = resolver.effective_for_discord(user_id)
+    except Exception:  # noqa: BLE001 - resolution failure → restrictive default
+        return False
+
+    return bool(effective.get("visualizations", False))
+
 
 # ---------------------------------------------------------------------------
 # Subgroups
@@ -237,6 +276,17 @@ class VisualizerCog(commands.Cog, name="Visualizer"):
     async def engine(self, interaction: discord.Interaction, engine: str) -> None:
         """Set the visualizer engine for the current guild."""
         guild_id = interaction.guild_id
+
+        # Entitlement gate (R7.2/R7.3): starting a visualizer requires the
+        # visualizations capability for the acting user. Turning the visualizer
+        # OFF is never gated (it removes, not starts, a visualization). Fails
+        # safe to decline on any resolution failure or when no resolver is wired
+        # (R14.3).
+        if engine != "off" and not _visualizations_allowed(interaction.user.id):
+            await interaction.response.send_message(
+                _VISUALIZATIONS_NOT_PERMITTED, ephemeral=True
+            )
+            return
 
         try:
             guild_settings.set_visualizer_engine(guild_id, engine)

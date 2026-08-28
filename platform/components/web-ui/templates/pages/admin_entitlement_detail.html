@@ -1,0 +1,81 @@
+{% extends layout|default("base.html") %}
+
+{# Per-user entitlement view (R2.1). Shows the user's identity plus the current
+   value of every entitlement flag and quota, the AI cost tally (R10.4), and the
+   reverse-chronological change history (R15.3). When the user has no stored
+   record the effective values are the secure defaults and are marked as such
+   (R2.2, is_default). Tabs organize flags, quotas, AI, and history; each
+   mutating control re-renders its own HTMX partial in place.
+
+   Context: sub, user, effective, is_default, tally, pricing, history. #}
+
+{% block title %}Entitlements · {{ user.get('username', sub) }}{% endblock %}
+{% block heading %}Entitlements · {{ user.get('username', sub) }}{% endblock %}
+
+{% block content %}
+<div class="glass-panel panel-section">
+  <div class="field-row" style="justify-content: space-between; align-items: center;">
+    <div>
+      <h2 class="panel-section__title">{{ user.get('username') or sub }}</h2>
+      <p class="panel-section__muted">
+        {% if user.get('email') %}{{ user.email }} · {% endif %}
+        <code>{{ sub }}</code>
+      </p>
+    </div>
+    <a class="btn btn-ghost btn-sm"
+       href="{{ url_for('entitlements.entitlements_index') }}"
+       hx-get="{{ url_for('entitlements.entitlements_index') }}"
+       hx-target="#main-content" hx-push-url="true">← All users</a>
+  </div>
+
+  {% if is_default %}
+    <p class="notice notice--info" role="status">
+      This user has no stored entitlement record. The values below are the
+      secure defaults (not explicitly set). Changing any value creates an
+      explicit record for this user.
+    </p>
+  {% endif %}
+</div>
+
+<div class="glass-panel panel-section" x-data="{ tab: 'flags' }">
+  <div class="tabs" role="tablist">
+    <button class="tab" :class="tab === 'flags' && 'tab--active'"
+            @click="tab = 'flags'" role="tab">Flags &amp; sources</button>
+    <button class="tab" :class="tab === 'quotas' && 'tab--active'"
+            @click="tab = 'quotas'" role="tab">Quotas</button>
+    <button class="tab" :class="tab === 'ai' && 'tab--active'"
+            @click="tab = 'ai'" role="tab">AI usage</button>
+    <button class="tab" :class="tab === 'history' && 'tab--active'"
+            @click="tab = 'history'" role="tab">History</button>
+  </div>
+
+  <div x-show="tab === 'flags'" x-transition role="tabpanel">
+    {% include "partials/entitlement_flags.html" %}
+  </div>
+
+  <div x-show="tab === 'quotas'" x-transition role="tabpanel">
+    <h3 class="panel-section__title">Per-guild &amp; guild quotas</h3>
+    <p class="panel-section__muted">
+      Bound this user's footprint. Each value must be at least 1.
+    </p>
+    {% include "partials/entitlement_quotas.html" %}
+  </div>
+
+  <div x-show="tab === 'ai'" x-transition role="tabpanel">
+    <h3 class="panel-section__title">AI usage &amp; cost</h3>
+    <p class="panel-section__muted">
+      Metered per request as Bedrock cost × (1 + markup). The spend cap warns
+      but never hard-blocks.
+    </p>
+    {% include "partials/entitlement_ai.html" %}
+  </div>
+
+  <div x-show="tab === 'history'" x-transition role="tabpanel">
+    <h3 class="panel-section__title">Change history</h3>
+    <p class="panel-section__muted">
+      Every entitlement change, newest first: who, what field, old → new, and when.
+    </p>
+    {% include "partials/entitlement_history.html" %}
+  </div>
+</div>
+{% endblock %}

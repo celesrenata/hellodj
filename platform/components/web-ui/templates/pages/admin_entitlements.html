@@ -1,0 +1,78 @@
+{% extends layout|default("base.html") %}
+
+{# Admin entitlements user picker (R1.1, R2.1). Enumerates platform accounts
+   from the Cognito directory; the admin picks a user to open that user's
+   per-user entitlement view. This is part of the administrative control plane,
+   distinct from the self-service Dashboard/Config/Guilds pages. #}
+
+{% block title %}Entitlements{% endblock %}
+{% block heading %}Entitlements{% endblock %}
+
+{% block content %}
+<div class="glass-panel panel-section">
+  <h2 class="panel-section__title">Govern a user</h2>
+  <p class="panel-section__muted">
+    Select an account to review and change what that user is allowed to do with
+    the bot: playback sources, custom identity, high-bitrate audio, video
+    activities, visualizations, wake-word, AI integration, and per-guild / guild
+    quotas. New users start from a conservative secure-by-default set until you
+    grant a capability.
+  </p>
+
+  <label class="field__label" for="entitlement-user-search">Search users</label>
+  <input type="search" id="entitlement-user-search" name="q" class="field__input"
+         placeholder="Filter by username or email…"
+         aria-label="Filter users"
+         x-data
+         @input.debounce.200ms="
+           const q = $event.target.value.trim().toLowerCase();
+           $refs.userTable.querySelectorAll('tbody tr[data-user]').forEach(row => {
+             row.style.display = row.dataset.user.includes(q) ? '' : 'none';
+           });
+         ">
+
+  <div class="glass-panel data-table__wrap" x-ref="userTable">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col">User</th>
+          <th scope="col">Email</th>
+          <th scope="col">Status</th>
+          <th scope="col">Entitlements</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for user in users %}
+          <tr data-user="{{ (user.username ~ ' ' ~ user.email)|lower }}">
+            <td>{{ user.username }}</td>
+            <td>{{ user.email }}</td>
+            <td>
+              <span class="badge badge--{{ 'ok' if user.enabled else 'muted' }}">
+                {{ user.status }}
+              </span>
+            </td>
+            <td>
+              {% if user.sub %}
+                <a class="btn btn-primary btn-sm"
+                   href="{{ url_for('entitlements.entitlement_detail', sub=user.sub) }}"
+                   hx-get="{{ url_for('entitlements.entitlement_detail', sub=user.sub) }}"
+                   hx-target="#main-content" hx-push-url="true">Manage</a>
+              {% else %}
+                <button class="btn btn-disabled btn-sm" type="button" disabled
+                        aria-disabled="true"
+                        title="This account has no stable subject id yet.">
+                  Unavailable
+                </button>
+              {% endif %}
+            </td>
+          </tr>
+        {% else %}
+          <tr>
+            <td class="data-table__empty" colspan="4">No accounts found.</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+</div>
+{% endblock %}

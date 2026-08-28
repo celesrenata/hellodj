@@ -40,8 +40,10 @@ from bootstrap import build_services
 from cognito_auth import build_cognito_auth
 from cognito_jwt import build_verifier
 from config_store import ConfigStore
+from entitlement_routes import build_entitlement_blueprint
 from guild_routes import build_guild_blueprint
 from invite_admin_routes import build_invite_admin_blueprint
+from invite_public_routes import build_invite_public_blueprint
 from pages import build_pages_blueprint
 from secrets_store import SecretsProvider
 
@@ -104,6 +106,8 @@ def create_app(
         "guild_identity_service"
     ]
     app.extensions["invite_service"] = services["invite_service"]
+    # Per-user entitlement control plane (admin-only); None in degraded mode.
+    app.extensions["entitlement_service"] = services["entitlement_service"]
     app.extensions["secrets"] = secrets_provider
     # The admin panel manages ALL accounts via Cognito; falls back to the
     # env-built directory (or None → degraded/empty) when not injected.
@@ -125,8 +129,10 @@ def create_app(
 
     app.register_blueprint(build_auth_blueprint())
     app.register_blueprint(build_pages_blueprint())
+    app.register_blueprint(build_invite_public_blueprint())
     app.register_blueprint(build_guild_blueprint())
     app.register_blueprint(build_invite_admin_blueprint())
+    app.register_blueprint(build_entitlement_blueprint())
 
     _register_static_hash(app)
     _register_health(app)

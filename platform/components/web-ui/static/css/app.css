@@ -188,6 +188,25 @@ body {
 }
 .field__input:focus { border-color: var(--color-border-hover); }
 .field__hint { color: var(--color-text-muted); font-size: 0.8rem; margin: 6px 0 0; }
+.field__hint--ok { color: var(--color-success); }
+.field__hint--bad { color: var(--color-danger); }
+
+/* Live password requirement checklist (invite registration). */
+.pw-rules {
+  list-style: none; margin: 0 0 16px; padding: 12px 14px;
+  background: var(--color-surface-2); border: 1px solid var(--color-border);
+  border-radius: 10px; display: grid; gap: 6px;
+}
+.pw-rule {
+  display: flex; align-items: center; gap: 8px;
+  color: var(--color-text-muted); font-size: 0.85rem;
+  transition: color 0.15s ease;
+}
+.pw-rule--met { color: var(--color-success); }
+.pw-rule__mark {
+  display: inline-flex; width: 1.1em; justify-content: center;
+  font-weight: 700;
+}
 
 /* Buttons. */
 .btn {
@@ -288,6 +307,11 @@ body {
 .owner-attribution__name {
   unicode-bidi: bidi-override;
   direction: rtl;
+  /* Keep the reversed name on ONE line: when it wraps, RTL line layout places
+     the word tokens in visually-swapped order (e.g. "Hillyerd" above "Celes"),
+     so nowrap preserves the intended "Celes Hillyerd" reading at any width. */
+  white-space: nowrap;
+  display: inline-block;
   user-select: none;
   -webkit-user-select: none;
   color: var(--color-text-secondary);

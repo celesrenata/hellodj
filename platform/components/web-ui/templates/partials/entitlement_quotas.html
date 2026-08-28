@@ -1,0 +1,52 @@
+{# Entitlement quota form partial (R11, R12). Re-rendered by the quota route
+   (POST /admin/entitlements/<sub>/quotas -> entitlements.entitlement_quota)
+   into #entitlement-quotas. Sets the per-guild bot limit and the max-guilds
+   limit. Each value must be at least 1; a value < 1 (or non-integer) is
+   rejected and rendered in the field-level validation slot beneath the fields
+   without persisting (R12.2). On the rejection re-render the effective values
+   are the last-saved ones (the rejected value is not stored).
+
+   Context passed by _render_quotas: sub, effective, is_default, saved, error. #}
+<div id="entitlement-quotas">
+  {% if saved %}
+    <p class="notice notice--success" role="status">Quotas saved.</p>
+  {% endif %}
+
+  <form class="config-form"
+        hx-post="{{ url_for('entitlements.entitlement_quota', sub=sub) }}"
+        hx-target="#entitlement-quotas" hx-swap="outerHTML">
+    <div class="field">
+      <label class="field__label" for="q-max-bots">Max bots per guild</label>
+      <input class="field__input" id="q-max-bots" name="max_bots_per_guild"
+             type="number" min="1" step="1"
+             value="{{ effective.get('max_bots_per_guild', 1) }}"
+             aria-describedby="hint-max-bots"
+             {% if error %}aria-invalid="true"{% endif %}>
+      <p class="field__hint" id="hint-max-bots">
+        How many bot instances this user may run in a single guild. At least 1.
+      </p>
+    </div>
+
+    <div class="field">
+      <label class="field__label" for="q-max-guilds">Max guilds</label>
+      <input class="field__input" id="q-max-guilds" name="max_guilds"
+             type="number" min="1" step="1"
+             value="{{ effective.get('max_guilds', 1) }}"
+             aria-describedby="hint-max-guilds"
+             {% if error %}aria-invalid="true"{% endif %}>
+      <p class="field__hint" id="hint-max-guilds">
+        How many distinct guilds this user may operate the bot in. At least 1.
+      </p>
+    </div>
+
+    {# Field-level validation error slot (R12.2). The route surfaces a value
+       < 1 (or non-integer) here without persisting the rejected value. #}
+    {% if error %}
+      <p class="notice notice--danger field__error" role="alert">{{ error }}</p>
+    {% endif %}
+
+    <div class="config-form__actions">
+      <button type="submit" class="btn btn-primary">Save quotas</button>
+    </div>
+  </form>
+</div>

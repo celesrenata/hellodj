@@ -192,6 +192,52 @@ async def _youtube_post(payload: dict) -> bool:
 _guild_cred_resolver = None
 _yt_cred_injector = None
 
+# Process-wide per-user entitlement resolver (built at startup alongside the
+# guild credential resolver). Cogs reach it via :func:`get_user_entitlements`.
+_user_entitlement_resolver = None
+
+
+def get_user_entitlements():
+    """Return the process-wide :class:`UserEntitlementResolver`, or ``None``.
+
+    The bot cogs call this before permitting an entitlement-governed action
+    (source playback, video/visualizer, wake-word, AI, quotas). It resolves the
+    acting Discord user's effective entitlements (explicit record merged over
+    secure defaults, cached with a bounded TTL) and fails safe to the restrictive
+    defaults on any datastore/lookup failure.
+
+    Returns ``None`` when the resolver could not be constructed (e.g. boto3
+    unavailable in local dev). Cogs treat ``None`` as "apply restrictive
+    defaults" so a governed capability is never granted without a resolver.
+    """
+    return _user_entitlement_resolver
+
+
+def _build_user_entitlement_resolver():
+    """Construct the per-user entitlement resolver once (idempotent, non-fatal).
+
+    Mirrors :func:`_build_guild_credential_resolver`: on any failure (boto3
+    missing, no credentials, package unavailable) it logs and leaves the resolver
+    as ``None`` so entitlement gates fall back to restrictive defaults rather
+    than crashing the bot.
+    """
+    global _user_entitlement_resolver
+    if _user_entitlement_resolver is not None:
+        return
+    try:
+        from playback.user_entitlements import build_user_entitlement_resolver
+
+        _user_entitlement_resolver = build_user_entitlement_resolver()
+        bot.user_entitlement_resolver = _user_entitlement_resolver
+        if _user_entitlement_resolver is not None:
+            log.info("user_entitlements: per-user resolver wired")
+    except Exception as exc:  # noqa: BLE001 - non-fatal: gates use defaults
+        _user_entitlement_resolver = None
+        log.info(
+            "user_entitlements: resolver unavailable (%s) — entitlement gates "
+            "fall back to restrictive defaults", exc,
+        )
+
 
 def get_youtube_injector():
     """Return the process-wide :class:`YouTubeCredentialInjector`, or ``None``.
@@ -313,6 +359,11 @@ async def connect_lavalink():
     # can perform a just-in-time last-writer-wins credential swap for guilds
     # that have connected their own YouTube account. Non-fatal on failure.
     _build_guild_credential_resolver()
+
+    # Wire the per-user entitlement resolver so the cogs can enforce per-user
+    # capabilities/quotas at runtime (source/video/viz/wake-word/AI/quota gates)
+    # and meter AI cost. Fails safe to restrictive defaults; non-fatal on failure.
+    _build_user_entitlement_resolver()
 
     # Push any stored YouTube OAuth refresh token to the youtube-source plugin.
     # The plugin's REST endpoint (/youtube) is served by Lavalink's own Spring
