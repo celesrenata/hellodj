@@ -486,6 +486,15 @@ export interface HelloDjStageProps extends cdk.StageProps {
    * `<stage>.<region>.hellodj.bot`.
    */
   readonly region: string;
+
+  /**
+   * Per-component image tag override passed through to the {@link WorkloadsStack}
+   * (component name → tag). When set to the resolved commit-hash tags, every
+   * pipeline run deploys an IMMUTABLE, changing image reference so Kubernetes
+   * rolls the pods automatically — no manual `kubectl rollout restart`. When
+   * unset the stack falls back to `latest`.
+   */
+  readonly imageTags?: Record<string, string>;
 }
 
 /**
@@ -544,6 +553,9 @@ export class HelloDjStage extends cdk.Stage {
         tidalClientId: props.foundation.tidalClientId,
         googleClientSecret: props.foundation.googleClientSecret,
         discordClientSecret: props.foundation.discordClientSecret,
+        // Immutable per-component image tags so each pipeline run changes the
+        // pod spec and Kubernetes rolls automatically (no manual restart).
+        imageTags: props.imageTags,
       },
     );
   }
@@ -596,6 +608,17 @@ export interface PipelineStackProps extends cdk.StackProps {
    * When unset, the OAuth-token `gitHub()` source is used.
    */
   readonly connectionArn?: string;
+
+  /**
+   * The resolved immutable image tag (the source commit hash) that every
+   * deploy stage references, so each pipeline run changes the pod spec and
+   * Kubernetes rolls the workloads automatically. Sourced at synth time from
+   * `CODEBUILD_RESOLVED_SOURCE_VERSION` (the Synth CodeBuild step runs on the
+   * same source revision the ComponentBuilds tag their images with) or the
+   * `hellodj:imageTag` context. When unset, the workloads fall back to
+   * `latest` (requiring a manual restart to pick up a new image).
+   */
+  readonly imageTag?: string;
 }
 
 /** Placeholder source repo used when no real repository is wired in yet. */
@@ -886,6 +909,15 @@ export class PipelineStack extends cdk.Stack {
     const region = props.env?.region ?? this.region;
     const foundation = props.foundation ?? this.importFoundationRefs(region);
 
+    // Map every component to the resolved immutable tag (the source commit) so
+    // each pipeline run produces a changed pod spec and Kubernetes rolls the
+    // workloads automatically. Undefined tag → the workloads keep `latest`.
+    const imageTags = props.imageTag
+      ? Object.fromEntries(
+          PLATFORM_COMPONENTS.map((name) => [name, props.imageTag as string]),
+        )
+      : undefined;
+
     this.stages = [];
     this.stageNames = [];
 
@@ -902,6 +934,7 @@ export class PipelineStack extends cdk.Stack {
         env: props.env,
         foundation,
         region,
+        imageTags,
       });
       // Manual verification gate before promoting PAST beta (R11.x): beta
       // deploys automatically once synth + component builds pass, but staging

@@ -220,12 +220,15 @@ export function stageEndpoint(stage: string, region: string): StageEndpoint {
  * intentionally obvious in the rendered manifest so a placeholder never
  * silently ships to a real environment.
  *
- * NOTE: The pipeline pushes `:latest` on every successful build, so `latest`
- * is the operational default. The TODO placeholder was never injected at
- * runtime — CDK Pipelines synthesizes templates BEFORE the build steps run,
- * making dynamic tag injection impossible without a parameter store or
- * post-synth mechanism. Using `latest` + `imagePullPolicy: Always` is the
- * correct approach for a continuously-deployed pipeline.
+ * NOTE: `latest` is only the FALLBACK. The pipeline now injects an immutable
+ * per-component tag (the source commit hash) via {@link imageTags}, resolved at
+ * synth time from `CODEBUILD_RESOLVED_SOURCE_VERSION` in `bin/hellodj.ts` — the
+ * Synth CodeBuild step runs on the SAME revision the ComponentBuilds tag their
+ * images with, so the commit is available at synth and no parameter store /
+ * post-synth mechanism is needed. A changing, immutable tag makes each pipeline
+ * run alter the pod spec so Kubernetes rolls the workloads automatically (no
+ * manual `kubectl rollout restart`). When no tag is injected (local synth), this
+ * `latest` + `imagePullPolicy: Always` default keeps the stack synthesizable.
  */
 export const PLACEHOLDER_IMAGE_TAG = 'latest';
 

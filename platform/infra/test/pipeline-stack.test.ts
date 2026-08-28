@@ -599,6 +599,27 @@ describe('pipeline software-only stages — shape + zero-foundation (task 7.4, R
     }
   });
 
+  test('an injected imageTag flows into every stage as the immutable component tag (auto-rollout)', () => {
+    const commit = 'abc123def4567890abc123def4567890abc12345';
+    const app = new cdk.App();
+    const { foundation } = composeFoundation(app);
+    const stage = new HelloDjStage(app, 'hellodj-beta-stage', {
+      promotionStage: 'beta',
+      env: COMPOSE_ENV,
+      foundation,
+      region: REGION,
+      imageTags: Object.fromEntries(
+        PLATFORM_COMPONENTS.map((name) => [name, commit]),
+      ),
+    });
+    // Every component's container image URI is pinned to the commit tag (not
+    // `:latest`), so each pipeline run changes the pod spec and K8s rolls.
+    const manifestText = collectAppManifestTexts(app).join('\n');
+    expect(manifestText).toContain(`web-ui:${commit}`);
+    expect(manifestText).not.toContain('web-ui:latest');
+    void stage;
+  });
+
   describe.each([...PROMOTION_ORDER])(
     'stage %s WorkloadsStack — zero foundation + namespaced manifests (R3.4, R3.5)',
     (stage) => {

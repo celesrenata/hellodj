@@ -144,9 +144,22 @@ const analytics = new AnalyticsStack(app, 'hellodj-analytics', {
 // sequential stages + halt-on-failure realize promotion.promote() ordering
 // (Requirements 11.1-11.4, 15.2). Build-stage gate hook points for tasks
 // 18.2-18.4 are left in `pipeline-stack.ts`.
+// Resolve the immutable image tag for this synth. The pipeline's Synth
+// CodeBuild step runs on the SAME source revision the ComponentBuilds tag their
+// images with, so `CODEBUILD_RESOLVED_SOURCE_VERSION` (the commit hash) is the
+// tag every deploy stage should reference — a changing, immutable tag makes
+// Kubernetes roll the pods on every pipeline run (no manual restart). A
+// `hellodj:imageTag` context value overrides for local/manual synth; when
+// neither is set the workloads fall back to `latest`.
+const resolvedImageTag =
+  process.env.CODEBUILD_RESOLVED_SOURCE_VERSION ||
+  (app.node.tryGetContext('hellodj:imageTag') as string | undefined) ||
+  undefined;
+
 const pipeline = new PipelineStack(app, 'hellodj-pipeline', {
   env,
   vpc: network.vpc,
+  imageTag: resolvedImageTag,
   foundation: {
     cluster: eks.cluster,
     data: {
