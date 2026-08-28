@@ -175,12 +175,28 @@ export class EdgeStack extends cdk.Stack {
           : cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
       },
       additionalBehaviors: {
-        // Static assets: long-lived, cache-optimized.
+        // Static assets (CSS/JS/images/fonts) are BAKED INTO the web-ui
+        // container image (Nix build) and served by Flask from
+        // `/opt-app/static/`, NOT uploaded to the S3 web-static bucket. Route
+        // `/static/*` to the ALB (Flask) origin so they resolve; without a
+        // real ALB origin (static-only mode) fall back to the S3 bucket.
+        // The response is still edge-cached: the app stamps a `?v=<hash>`
+        // cache-buster on every asset URL, so CACHING_OPTIMIZED is safe.
         'static/*': {
-          origin: webStaticOrigin,
+          origin: defaultOrigin,
           viewerProtocolPolicy:
             cloudfront.ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
           cachePolicy: cloudfront.CachePolicy.CACHING_OPTIMIZED,
+          // When served from the ALB (Flask), the ALB routes by Host header to
+          // the correct per-stage Ingress rule. CACHING_OPTIMIZED does NOT
+          // forward the Host header, so the ALB can't match the host-scoped
+          // web-ui rule and returns its default 404. Forward all viewer
+          // headers (incl. Host) to the ALB origin so `/static/*` reaches the
+          // web-ui pod. For the S3 fallback (static-only mode) this is
+          // harmless. The `?v=<hash>` cache-buster still gives edge caching.
+          originRequestPolicy: albDnsName
+            ? cloudfront.OriginRequestPolicy.ALL_VIEWER
+            : undefined,
           allowedMethods: cloudfront.AllowedMethods.ALLOW_GET_HEAD_OPTIONS,
         },
         // HLS segments: cache-optimized, GET/HEAD only.

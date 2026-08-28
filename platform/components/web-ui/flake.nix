@@ -68,6 +68,9 @@
           # Vendored JS from fetchurl
           cp ${htmxJs} $out/app/static/js/htmx.min.js
           cp ${alpineJs} $out/app/static/js/alpine.min.js
+          # First-party app JS (glue: toasts, theme, bg shader) — referenced by
+          # base.html; must be bundled or the page 404s on /static/js/app.js.
+          cp $src/static/js/app.js $out/app/static/js/app.js 2>/dev/null || true
           # Shared platform logic package (copied into source tree by pipeline)
           if [ -d "$src/hellodj_platform_logic" ]; then
             cp -r "$src/hellodj_platform_logic" $out/app/hellodj_platform_logic
