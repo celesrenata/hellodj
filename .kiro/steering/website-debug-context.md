@@ -155,9 +155,31 @@ path, not the main invite.
    web-ui env + IRSA changes.
 4. **Component source changes** (web-ui `*.py`, templates, flake.nix, bot code)
    DO take effect on a plain CodeCommit push (pipeline rebuilds the image).
-5. **`:latest` + imagePullPolicy: Always** — but a running pod won't re-pull a
-   new `:latest` until it restarts. After the pipeline pushes a new image:
-   `KUBECONFIG=/tmp/hellodj-eks-kubeconfig kubectl rollout restart deploy/web-ui -n hellodj-beta`
+5. **Rolling pods after an image rebuild (READ THIS).** The workloads'
+   Kubernetes manifests live in the **`hellodj-eks`** foundation stack (via
+   `cluster.addManifest`), NOT in the per-stage `WorkloadsStack` the pipeline
+   deploys. This is DELIBERATE: `selfMutation` is OFF because applying manifests
+   through the EKS kubectl handler Lambda inside a self-mutating pipeline
+   triggers cross-stack custom-resource failures (see
+   `.kiro/specs/cdk-standalone-package/design.md`). Consequences:
+   - A `git push` rebuilds the component **images** (pipeline → ECR) but does
+     NOT roll the pods — the pipeline never deploys `hellodj-eks`.
+   - `bin/hellodj.ts` bakes an **immutable commit-hash image tag** into the
+     `hellodj-eks` manifests (from `CODEBUILD_RESOLVED_SOURCE_VERSION` at synth,
+     or `-c hellodj:imageTag=<sha>`), so re-applying the manifests changes the
+     pod spec and K8s rolls automatically — no `kubectl rollout restart` needed.
+   - To roll pods after a push, re-apply the manifests with:
+     `platform/tools/deploy_workloads.sh` (from HEAD; verifies the ECR image
+     exists, pins the tag via context, clean env + private cdk.out — avoids the
+     stale-`CODEBUILD_RESOLVED_SOURCE_VERSION` footgun that once shipped a
+     non-existent `web-ui:<garbage>` tag and ImagePullBackOff'd the pods).
+     Under the hood this is `cdk deploy hellodj-eks -c hellodj:imageTag=<HEAD>`.
+   - `kubectl rollout restart` still works as a last-resort manual re-pull of
+     `:latest`, but the wrapper is preferred (immutable tag + auto-roll).
+   - TAG RESOLUTION is hardened in `bin/hellodj.ts`: explicit `-c
+     hellodj:imageTag` ALWAYS wins; `CODEBUILD_RESOLVED_SOURCE_VERSION` is only
+     trusted when it matches `^[0-9a-f]{40}$` (a real commit SHA), so a stray
+     shell export can't poison the manifest tag.
 6. **Pipeline backlog**: rapid pushes queue multiple executions on OLD revisions.
    Stop stale ones and start fresh on HEAD:
    `aws codepipeline stop-pipeline-execution --pipeline-name hellodj-pipeline --pipeline-execution-id <id> --abandon --region us-east-1`

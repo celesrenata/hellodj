@@ -148,12 +148,25 @@ const analytics = new AnalyticsStack(app, 'hellodj-analytics', {
 // CodeBuild step runs on the SAME source revision the ComponentBuilds tag their
 // images with, so `CODEBUILD_RESOLVED_SOURCE_VERSION` (the commit hash) is the
 // tag every deploy stage should reference — a changing, immutable tag makes
-// Kubernetes roll the pods on every pipeline run (no manual restart). A
-// `hellodj:imageTag` context value overrides for local/manual synth; when
-// neither is set the workloads fall back to `latest`.
+// Kubernetes roll the pods when the manifests are applied (no manual restart).
+//
+// Resolution order (hardened against a stale local shell export — a bad value
+// once shipped a non-existent `web-ui:<garbage>` tag and ImagePullBackOff'd the
+// pods):
+//   1. An EXPLICIT `-c hellodj:imageTag=...` context value ALWAYS wins (this is
+//      how a local `cdk deploy hellodj-eks` pins the exact HEAD commit).
+//   2. Otherwise `CODEBUILD_RESOLVED_SOURCE_VERSION`, but ONLY when it is a real
+//      40-hex git commit SHA (what CodeBuild sets in the pipeline). A stray/
+//      truncated shell export is ignored rather than baked into a manifest.
+//   3. Otherwise undefined → the workloads fall back to `latest`.
+const COMMIT_SHA_RE = /^[0-9a-f]{40}$/;
+const contextImageTag = app.node.tryGetContext('hellodj:imageTag') as
+  | string
+  | undefined;
+const envImageTag = process.env.CODEBUILD_RESOLVED_SOURCE_VERSION;
 const resolvedImageTag =
-  process.env.CODEBUILD_RESOLVED_SOURCE_VERSION ||
-  (app.node.tryGetContext('hellodj:imageTag') as string | undefined) ||
+  (contextImageTag && contextImageTag.trim()) ||
+  (envImageTag && COMMIT_SHA_RE.test(envImageTag) ? envImageTag : undefined) ||
   undefined;
 
 const pipeline = new PipelineStack(app, 'hellodj-pipeline', {
