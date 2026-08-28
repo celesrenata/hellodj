@@ -23,6 +23,7 @@ Requirements: 1.1, 7.4
 from __future__ import annotations
 
 import html
+import logging
 from typing import Any, Protocol
 
 __all__ = [
@@ -31,6 +32,8 @@ __all__ = [
     "InviteEmailError",
     "INVITE_SUBJECT",
 ]
+
+log = logging.getLogger(__name__)
 
 #: Subject line for the branded invitation email.
 INVITE_SUBJECT = "You're invited to HelloDJ"
@@ -149,6 +152,19 @@ class InviteEmailService:
                 },
             )
         except Exception as error:  # noqa: BLE001 - normalize to a clean error
+            # Log enough to DEBUG the failure server-side — the exception class
+            # and (for botocore ClientErrors) the SES error code — but never the
+            # recipient, link, or raw token (R7.4). The admin-facing message
+            # stays generic.
+            code = ""
+            response = getattr(error, "response", None)
+            if isinstance(response, dict):
+                code = response.get("Error", {}).get("Code", "")
+            log.warning(
+                "invitation email send failed: %s%s",
+                type(error).__name__,
+                f" ({code})" if code else "",
+            )
             # Deliberately omit the exception detail from the message path that
             # could echo the recipient/link; never include the raw token.
             raise InviteEmailError(

@@ -24,6 +24,7 @@ Requirements: 6.5, 8.1, 8.2, 8.3, 8.4, 8.5, 9.2, 14.1, 14.2, 14.3, 14.4
 from __future__ import annotations
 
 import hashlib
+import logging
 import os
 from collections.abc import Callable
 from functools import wraps
@@ -81,6 +82,7 @@ def create_app(
     Returns:
         A configured :class:`flask.Flask` instance.
     """
+    _configure_logging()
     app = Flask(
         __name__,
         static_folder=str(STATIC_DIR),
@@ -129,6 +131,26 @@ def create_app(
     _register_static_hash(app)
     _register_health(app)
     return app
+
+
+def _configure_logging() -> None:
+    """Send app logs to stdout at ``LOG_LEVEL`` (default INFO).
+
+    Without this the web-ui had no logging config, so module-level ``log.*``
+    calls (e.g. the invite-email SES failure warning) never surfaced under
+    gunicorn's sync worker — making send failures undiagnosable. Idempotent:
+    only configures the root logger once.
+    """
+    level_name = os.getenv("LOG_LEVEL", "INFO").upper()
+    level = getattr(logging, level_name, logging.INFO)
+    root = logging.getLogger()
+    if not root.handlers:
+        logging.basicConfig(
+            level=level,
+            format="%(asctime)s %(levelname)s %(name)s %(message)s",
+        )
+    else:
+        root.setLevel(level)
 
 
 def _configure(app: Flask, overrides: dict[str, Any]) -> None:
