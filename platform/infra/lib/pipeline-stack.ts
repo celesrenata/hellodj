@@ -164,18 +164,24 @@ export const NIX_CACHE_PUBLIC_KEY =
   'hellodj-nix-cache:OZtAgL5UxJUnnl//7W/On1SReSVdGkcFHKQFJUk1IDo=';
 
 /**
- * Install commands that provision Nix + Python tooling in the CodeBuild env.
- * These run once before any build/gate command and configure:
- *   - Nix with flakes + the S3 binary cache as a substituter
- *   - ruff (PEP 8 linter)
- *   - AWS git credential helper for CodeCommit
+ * Provision Nix FIRST, wired to the S3 binary cache, and decrypt the cache
+ * signing key. This is the ONLY tooling a per-component `nix build` needs, so
+ * it is factored out so component build steps can run it WITHOUT the heavier
+ * Node/ruff installs the synth step needs.
+ *
+ * Order matters: Nix is installed and configured before anything else so that
+ * the very first store operation already sees the S3 substituter (a Nix build
+ * kicked off before `nix.conf` is written can't pull from the cache). The steps
+ * configure:
+ *   - Nix (multi-user, flakes) installed on local disk (S3 cache = persistence)
+ *   - the S3 binary cache as a trusted substituter (`require-sigs = false`)
+ *   - sops + the KMS-decrypted signing key so `nix copy` can PUSH built closures
+ *   - the AWS git credential helper so flake inputs can resolve CodeCommit forks
  */
-export function getInstallCommands(): string[] {
+export function getNixInstallCommands(): string[] {
   return [
-    // AL2023 ARM64 ships Node 18 by default; CDK needs >= 20.
-    // Node 22 is available as a namespaced package in AL2023.
-    'dnf install -y nodejs22 && alternatives --set node /usr/bin/node22 || ln -sf /usr/bin/node22 /usr/local/bin/node',
     // Install Nix on local disk (fast). S3 cache handles persistence.
+    // Done FIRST so the substituter is configured before any store op runs.
     'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
     // Source nix-daemon env for the rest of the build.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
@@ -190,12 +196,51 @@ export function getInstallCommands(): string[] {
     `echo 'trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ${NIX_CACHE_PUBLIC_KEY}' >> /etc/nix/nix.conf`,
     `echo 'require-sigs = false' >> /etc/nix/nix.conf`,
     'systemctl restart nix-daemon 2>/dev/null || true',
-    // Decrypt the Nix cache signing key from sops (KMS-backed).
+    // Decrypt the Nix cache signing key from sops (KMS-backed) — needed to
+    // PUSH built closures back to the cache (`nix copy --secret-key-files`).
     'curl -fsSL -o /usr/local/bin/sops https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.arm64 && chmod +x /usr/local/bin/sops',
     `sops --decrypt --input-type binary --output-type binary $CODEBUILD_SRC_DIR/platform/secrets/nix-cache-key.sec.enc > /tmp/nix-cache-key.sec`,
-    // AWS git credential helper for CodeCommit (R2.2/R2.3).
+    // AWS git credential helper for CodeCommit (R2.2/R2.3) — flake inputs may
+    // reference the CodeCommit fork repos.
     'git config --global credential.helper "!aws codecommit credential-helper $@"',
     'git config --global credential.UseHttpPath true',
+  ];
+}
+
+/**
+ * Install commands for a **per-component** build step.
+ *
+ * A component build does exactly one thing: `nix build .#...image` then
+ * `docker load`/`push` + `nix copy`. That path needs ONLY Nix (with the S3
+ * cache), sops (to sign the pushed closure), and the git credential helper — it
+ * does NOT need Node.js or ruff. Node 22 exists only for `cdk synth`; ruff only
+ * for the PEP 8 / style gate — both are synth-step concerns. Installing them on
+ * all 12 parallel component projects is pure wasted time (`dnf install
+ * nodejs22` + `pip install ruff` add a slow, cache-miss-prone step to every
+ * component build for zero benefit).
+ *
+ * So a component build is just {@link getNixInstallCommands} — Nix first, then
+ * pass straight to the build with nothing else installed.
+ */
+export function getComponentInstallCommands(): string[] {
+  return getNixInstallCommands();
+}
+
+/**
+ * Install commands for the **synth** build step.
+ *
+ * The synth step runs `cdk synth` (needs Node >= 20) and the repo-wide gates
+ * (`ruff` for PEP 8), on top of the shared Nix tooling. Nix is installed FIRST
+ * (via {@link getNixInstallCommands}) so the substituter is live before any
+ * store op, then Node and ruff are layered on for the CDK + gate work.
+ */
+export function getInstallCommands(): string[] {
+  return [
+    // Nix first (cache substituter live before any store op).
+    ...getNixInstallCommands(),
+    // AL2023 ARM64 ships Node 18 by default; CDK needs >= 20.
+    // Node 22 is available as a namespaced package in AL2023.
+    'dnf install -y nodejs22 && alternatives --set node /usr/bin/node22 || ln -sf /usr/bin/node22 /usr/local/bin/node',
     // Install ruff for the PEP 8 / style gate (R13.2).
     'pip install ruff==0.16.4',
   ];
@@ -306,16 +351,38 @@ export function getComponentBuildCommands(
     // Run the dependency gate (ARM64 compatibility check).
     `cd $CODEBUILD_SRC_DIR/platform && python3 tools/gate_dependencies.py --component ${component}`,
     // Copy shared platform logic into the component source tree so the Nix
-    // flake can see it (flakes only access git-tracked files within their root).
+    // flake can see it (flakes only access git-tracked files within their root)
+    // and COMMIT it so a PURE flake eval hashes it — see below for why this is
+    // what makes the S3 cache actually hit.
+    //
+    // CACHE-MISS ROOT CAUSE (why builds "didn't pull from cache"):
+    // The previous approach copied hellodj_platform_logic into the working tree
+    // then built with `--impure`. `--impure` makes `src = ./.` hash the LIVE
+    // working tree, so the source derivation captured whatever mtimes/index
+    // state the `cp -r` + `git add` produced that run. That varies run-to-run,
+    // so the flake's source store path (and therefore the image output path)
+    // differed every execution — the closure pushed by run N was keyed to a
+    // path run N+1 never asks for, so there was nothing to substitute and the
+    // cache always missed. The fix: make the source content-addressed and
+    // stable by COMMITTING the copied files, then build WITHOUT `--impure` so
+    // Nix hashes the committed git tree (identical inputs => identical output
+    // path => the S3 cache hits).
     `cd $CODEBUILD_SRC_DIR/platform/components/${component} && ` +
       `if [ -d $CODEBUILD_SRC_DIR/platform/components/hellodj_platform_logic ]; then ` +
+        `rm -rf ./hellodj_platform_logic && ` +
         `cp -r $CODEBUILD_SRC_DIR/platform/components/hellodj_platform_logic ./hellodj_platform_logic && ` +
+        // Normalize mtimes so a pure git tree hash is stable across runs.
+        `find ./hellodj_platform_logic -exec touch -d '2020-01-01T00:00:00Z' {} + 2>/dev/null || true; ` +
         `git add -f hellodj_platform_logic 2>/dev/null || true; ` +
+        // Commit so a PURE flake eval (no --impure) sees the files and hashes a
+        // stable git tree. Local, throwaway identity; never pushed.
+        `git -c user.email=ci@hellodj -c user.name=ci commit -q -m 'ci: vendor platform_logic' 2>/dev/null || true; ` +
       `fi`,
     // Build the Nix OCI image for aarch64-linux natively (CodeBuild is ARM64).
-    // --impure is needed because the platform_logic copy above introduces
-    // paths that aren't in the flake's original git history.
-    `cd $CODEBUILD_SRC_DIR/platform/components/${component} && nix build .#packages.aarch64-linux.image --impure --no-link --print-out-paths > /tmp/${component}-image-path.txt || echo "SKIP: nix build failed for ${component}"`,
+    // NO --impure: the committed git tree above is a stable, content-addressed
+    // input, so identical source => identical store path => the S3 binary cache
+    // substitutes the prebuilt closure instead of rebuilding from scratch.
+    `cd $CODEBUILD_SRC_DIR/platform/components/${component} && nix build .#packages.aarch64-linux.image --no-link --print-out-paths > /tmp/${component}-image-path.txt || echo "SKIP: nix build failed for ${component}"`,
     // Load + tag + push to ECR, then push closure to S3 Nix cache.
     // Use the Nix-built image name (hellodj-<component>:nix) to avoid picking
     // up stale images from other components in docker images.
@@ -611,7 +678,8 @@ export class PipelineStack extends cdk.Stack {
     for (const component of PLATFORM_COMPONENTS) {
       const step = new CodeBuildStep(`build-${component}`, {
         input: source,
-        installCommands: getInstallCommands(),
+        // Component builds only `nix build` + push — no Node/ruff needed.
+        installCommands: getComponentInstallCommands(),
         commands: getComponentBuildCommands(component),
       });
       this.componentBuildSteps[component] = step;

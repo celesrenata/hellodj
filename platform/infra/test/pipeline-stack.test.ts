@@ -11,6 +11,9 @@ import {
   PLATFORM_COMPONENTS,
   getBuildCommands,
   getComponentBuildCommands,
+  getInstallCommands,
+  getComponentInstallCommands,
+  getNixInstallCommands,
 } from '../lib/pipeline-stack';
 import { FoundationRefs } from '../lib/foundation';
 import { NetworkStack } from '../lib/network-stack';
@@ -137,6 +140,59 @@ describe('PipelineStack helpers — promotion order and build-stage steps', () =
       expect(
         commands.some((c) => c.includes('docker push') || c.includes('ECR push')),
       ).toBe(true);
+    }
+  });
+
+  test('Nix is installed FIRST, before any other tooling', () => {
+    // The S3 substituter must be configured before the first store op; Nix
+    // therefore leads every install script (component and synth).
+    const nix = getNixInstallCommands();
+    expect(nix[0]).toContain('install.determinate.systems/nix');
+
+    // Synth install layers Node/ruff AFTER the shared Nix block.
+    const synth = getInstallCommands();
+    const nixIdx = synth.findIndex((c) => c.includes('install.determinate.systems/nix'));
+    const nodeIdx = synth.findIndex((c) => c.includes('nodejs22'));
+    const ruffIdx = synth.findIndex((c) => c.includes('pip install ruff'));
+    expect(nixIdx).toBe(0);
+    expect(nodeIdx).toBeGreaterThan(nixIdx);
+    expect(ruffIdx).toBeGreaterThan(nixIdx);
+  });
+
+  test('component install SKIPS Node and ruff (speed: only Nix is needed)', () => {
+    // A per-component build is just `nix build` + push, so it must not pay for
+    // Node.js or ruff installs (those are synth-only). This is the build-speed
+    // win: drop `dnf install nodejs22` and `pip install ruff` from all 12
+    // parallel component projects.
+    const componentInstall = getComponentInstallCommands();
+    expect(componentInstall.some((c) => c.includes('nodejs22'))).toBe(false);
+    expect(componentInstall.some((c) => c.includes('pip install ruff'))).toBe(false);
+    // But it still installs Nix (first) and the sops signing key for the push.
+    expect(componentInstall[0]).toContain('install.determinate.systems/nix');
+    expect(componentInstall.some((c) => c.includes('sops'))).toBe(true);
+    expect(
+      componentInstall.some((c) => c.includes('nix-cache-key.sec')),
+    ).toBe(true);
+    // The git credential helper for CodeCommit flake inputs is retained.
+    expect(
+      componentInstall.some((c) => c.includes('codecommit credential-helper')),
+    ).toBe(true);
+  });
+
+  test('component build is cache-friendly: no --impure, stable committed source', () => {
+    // Cache-miss fix: building with --impure hashed the live working tree, so
+    // the vendored platform_logic copy made the source derivation differ every
+    // run and the S3 cache never hit. The build now commits a mtime-normalized
+    // copy and drops --impure so the git tree hash (and output path) is stable.
+    for (const component of PLATFORM_COMPONENTS) {
+      const commands = getComponentBuildCommands(component);
+      const build = commands.find((c) => c.includes('nix build'));
+      expect(build).toBeDefined();
+      expect(build).not.toContain('--impure');
+      // Source is made deterministic: mtimes normalized + committed.
+      const vendor = commands.find((c) => c.includes('hellodj_platform_logic'));
+      expect(vendor).toContain("touch -d '2020-01-01T00:00:00Z'");
+      expect(vendor).toContain('git -c user.email=ci@hellodj');
     }
   });
 });
