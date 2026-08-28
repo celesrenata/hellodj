@@ -12,12 +12,15 @@ uppercase + lowercase + number + symbol). Cognito enforces it authoritatively at
 ``admin_set_user_password``; we validate first only to surface a clean,
 enumerated error instead of a raw Cognito ``InvalidPasswordException``.
 
-The chosen display name is stored as the Cognito ``preferred_username``
-attribute (the immutable account ``Username`` stays an opaque UUID). Because
-``preferred_username`` is not a pool alias attribute, Cognito does not itself
-enforce uniqueness, so :func:`username_taken` checks availability with a
-filtered ``list_users`` lookup — best-effort for the live "as you type" hint,
-re-checked at registration time.
+The chosen name becomes the account's Cognito ``Username`` (so the user can sign
+in with it — the pool signs in by ``username``, and its ``AliasAttributes`` are
+immutable so ``preferred_username`` cannot be made an alias on the existing
+pool). The name is also mirrored into the ``preferred_username`` attribute for
+display. Cognito enforces ``Username`` uniqueness natively at account-create
+time; :func:`username_taken` runs a filtered ``list_users`` lookup on the
+mirrored ``preferred_username`` so the registration page can show a live "as you
+type" availability hint before the authoritative Cognito check at
+``admin_create_user`` (which raises ``UsernameExistsException`` on a collision).
 
 Requirements: 2.2
 """
@@ -122,9 +125,12 @@ def username_taken(
 ) -> bool:
     """Return whether ``username`` is already used as a ``preferred_username``.
 
-    Best-effort: a filtered ``list_users`` lookup. A lookup failure degrades to
-    ``False`` (treat as available) so a transient Cognito error never blocks the
-    live hint; registration re-validates authoritatively.
+    Best-effort: a filtered ``list_users`` lookup on the mirrored
+    ``preferred_username`` for the live "as you type" hint. A lookup failure
+    degrades to ``False`` (treat as available) so a transient Cognito error
+    never blocks the hint; registration re-validates authoritatively (Cognito
+    raises ``UsernameExistsException`` on a real collision, since the chosen
+    name is the account ``Username``).
     """
     name = normalize_username(username)
     if not name:

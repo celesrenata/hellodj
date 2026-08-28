@@ -390,9 +390,15 @@ def _admin_users() -> list[dict[str, Any]]:
 
 
 def _email_for_username(username: str) -> str:
-    """Return the email attribute of a directory user, or '' if unknown."""
+    """Return the email attribute of a directory user, or '' if unknown.
+
+    ``username`` here is the Cognito ``Username`` (the opaque login id the
+    admin routes address the account by), so match it against the row's
+    ``login`` — the display ``username`` field is now the friendly name
+    (preferred_username / email), not the login id.
+    """
     for row in _admin_users():
-        if row.get("username") == username:
+        if row.get("login") == username or row.get("username") == username:
             return row.get("email", "") or ""
     return ""
 

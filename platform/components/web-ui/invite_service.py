@@ -22,7 +22,6 @@ from __future__ import annotations
 import hashlib
 import secrets
 import time
-import uuid
 from collections.abc import Mapping
 from typing import Any, Protocol
 
@@ -35,12 +34,14 @@ from hellodj_platform_logic.data_access.errors import (
 import invite_admin
 import register_policy
 from invite_email import InviteEmailError, InviteEmailService
+from invite_registration import UsernameTakenError, create_confirmed_account
 from user_profile import PROFILE_SK, UserProfileService, user_pk
 
 __all__ = [
     "InviteService",
     "InviteError",
     "InviteConsumedError",
+    "UsernameTakenError",
     "invite_pk",
     "token_gsi1pk",
     "hash_token",
@@ -100,20 +101,6 @@ def token_gsi1pk(token_hash: str) -> str:
 def invite_index_sk(email: str) -> str:
     """Return the sort key for an invite's pointer item in the index partition."""
     return f"EMAIL#{email.strip().lower()}"
-
-
-def _cognito_subject(created: Mapping[str, Any]) -> str | None:
-    """Extract the Cognito ``sub`` from an ``admin_create_user`` response.
-
-    The subject is the stable account identifier the user profile is bound to.
-    Returns ``None`` when the response omits it (e.g. a minimal fake), letting
-    the caller fall back to the username.
-    """
-    attributes = created.get("User", {}).get("Attributes", [])
-    for attribute in attributes:
-        if attribute.get("Name") == "sub":
-            return attribute.get("Value")
-    return None
 
 
 class _NotConsumableError(Exception):
@@ -395,45 +382,45 @@ class InviteService:
 
         :meth:`consume` flips ``invited -> accepted`` atomically first (R2.5),
         so a bad/expired/used token raises :class:`InviteConsumedError` before
-        any Cognito call (R2.3). The account's ``Username`` is an opaque UUID;
-        the chosen ``display_name`` (if any) is stored as ``preferred_username``
-        and the chosen ``password`` becomes the account password
-        (``Permanent=True``), validated against
-        :func:`register_policy.validate_password` first — raising
-        ``PasswordPolicyError`` before any Cognito write (a random password is
-        used when omitted — Discord-only login). ``MessageAction=SUPPRESS``
-        keeps Cognito silent; the ``email`` is created verified (R2.2), the
-        profile is bound to the subject (R2.6), and no session is granted — the
-        user links Discord next (R2.4).
+        any Cognito call (R2.3). The chosen ``display_name`` becomes the account
+        ``Username`` (so the user can sign in with it — the pool's alias
+        attributes are immutable, ruling out a ``preferred_username`` alias) and
+        is mirrored into ``preferred_username`` for display; a random UUID
+        username is used when no name is chosen (Discord-only login). The chosen
+        ``password`` becomes the account password (``Permanent=True``),
+        validated against :func:`register_policy.validate_password` first —
+        raising ``PasswordPolicyError`` before any Cognito write.
+        ``MessageAction=SUPPRESS`` keeps Cognito silent; the ``email`` is created
+        verified (R2.2), the profile is bound to the subject (R2.6), and no
+        session is granted — the user links Discord next (R2.4).
+
+        The chosen name's availability is checked BEFORE the token is consumed
+        and raises :class:`UsernameTakenError` on a collision, leaving the invite
+        reusable so the invitee can pick another name; a same-instant race that
+        slips past the pre-check surfaces the same error from the
+        ``admin_create_user`` ``UsernameExistsException`` (token already consumed
+        in that rare case).
         """
         if password is not None:
             register_policy.validate_password(password)
+        chosen = register_policy.normalize_username(display_name or "")
+        # Availability pre-check BEFORE consuming the single-use token, so a
+        # taken name lets the invitee retry on the same link (R2.2). The
+        # authoritative uniqueness check is Cognito's alias guard inside
+        # create_confirmed_account (raises UsernameTakenError on a race).
+        if chosen and self._is_display_name_taken(chosen):
+            raise UsernameTakenError(f"the name {chosen!r} is already taken")
         invite = self.consume(raw_token)
         email = invite["email"]
         invited_by = invite.get("invited_by", "")
 
-        username = str(uuid.uuid4())
-        attributes = [
-            {"Name": "email", "Value": email},
-            {"Name": "email_verified", "Value": "true"},
-        ]
-        chosen = register_policy.normalize_username(display_name or "")
-        if chosen:
-            attributes.append({"Name": "preferred_username", "Value": chosen})
-        created = self._cognito.admin_create_user(
-            UserPoolId=self._user_pool_id,
-            Username=username,
-            MessageAction="SUPPRESS",
-            UserAttributes=attributes,
+        username, sub = create_confirmed_account(
+            self._cognito,
+            user_pool_id=self._user_pool_id,
+            email=email,
+            chosen_name=chosen,
+            password=password,
         )
-        self._cognito.admin_set_user_password(
-            UserPoolId=self._user_pool_id,
-            Username=username,
-            Password=password or secrets.token_urlsafe(24),
-            Permanent=True,
-        )
-
-        sub = _cognito_subject(created) or username
         if self._user_profiles is not None:
             self._user_profiles.ensure(sub, email=email)
             self._record_invited_by(sub, invited_by)
@@ -447,7 +434,16 @@ class InviteService:
 
     def display_name_available(self, display_name: str) -> bool:
         """Return whether a chosen ``display_name`` is free (best-effort hint)."""
-        return not register_policy.username_taken(
+        return not self._is_display_name_taken(display_name)
+
+    def _is_display_name_taken(self, display_name: str) -> bool:
+        """Return whether ``display_name`` is already a ``preferred_username``.
+
+        Best-effort filtered ``list_users`` lookup (degrades to "available" on a
+        transient error); the authoritative check is Cognito's alias-uniqueness
+        at ``admin_create_user`` in :meth:`register`.
+        """
+        return register_policy.username_taken(
             self._cognito,
             user_pool_id=self._user_pool_id,
             username=display_name,

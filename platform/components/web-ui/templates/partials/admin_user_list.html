@@ -31,13 +31,13 @@
             {% if user.is_admin %}
               <span class="badge badge--brand">Admin</span>
               <button class="btn btn-ghost btn-sm"
-                      hx-post="{{ url_for('pages.admin_set_role', username=user.username) }}"
+                      hx-post="{{ url_for('pages.admin_set_role', username=user.login) }}"
                       hx-vals='{"admin": "false"}'
                       hx-target="#admin-user-list">Demote</button>
             {% else %}
               <span class="badge badge--muted">User</span>
               <button class="btn btn-ghost btn-sm"
-                      hx-post="{{ url_for('pages.admin_set_role', username=user.username) }}"
+                      hx-post="{{ url_for('pages.admin_set_role', username=user.login) }}"
                       hx-vals='{"admin": "true"}'
                       hx-target="#admin-user-list">Make admin</button>
             {% endif %}
@@ -45,18 +45,18 @@
           <td>
             {% if user.enabled %}
               <button class="btn btn-ghost btn-sm"
-                      hx-post="{{ url_for('pages.admin_set_enabled', username=user.username) }}"
+                      hx-post="{{ url_for('pages.admin_set_enabled', username=user.login) }}"
                       hx-vals='{"enabled": "false"}'
                       hx-confirm="Disable {{ user.username }}?"
                       hx-target="#admin-user-list">Disable</button>
             {% else %}
               <button class="btn btn-primary btn-sm"
-                      hx-post="{{ url_for('pages.admin_set_enabled', username=user.username) }}"
+                      hx-post="{{ url_for('pages.admin_set_enabled', username=user.login) }}"
                       hx-vals='{"enabled": "true"}'
                       hx-target="#admin-user-list">Enable</button>
             {% endif %}
             <button class="btn btn-danger btn-sm"
-                    hx-post="{{ url_for('pages.admin_delete_user', username=user.username) }}"
+                    hx-post="{{ url_for('pages.admin_delete_user', username=user.login) }}"
                     hx-confirm="Permanently delete {{ user.username }}? This cannot be undone."
                     hx-target="#admin-user-list">Delete</button>
           </td>

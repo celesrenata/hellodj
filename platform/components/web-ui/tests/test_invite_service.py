@@ -1,19 +1,17 @@
 """Tests for the Invite_Token model + lifecycle in ``invite_service``.
 
-Task 1 covers minting (opaque token, only the hash persisted, TTL + GSI1 keys)
-and duplicate rejection: a pending invite for the same email, and an
-already-registered Cognito email (R1.1, R1.2, R1.3, R1.5, R7.4).
-
-Task 2 covers token validation + single-use consume: ``resolve_by_token``
-returns a still-valid invite and rejects unknown/expired/consumed tokens with
-the fixed outcome, and ``consume`` flips ``invited -> accepted`` exactly once
-even under concurrent attempts (R2.2, R2.3, R2.5).
+Covers minting (opaque token, only the hash persisted, TTL + GSI1 keys),
+duplicate rejection (pending invite / already-registered email), token
+validation + single-use consume (``resolve_by_token`` and ``consume`` flipping
+``invited -> accepted`` exactly once under concurrency), and the ``register``
+orchestration (delegates the Cognito create to ``invite_registration``; the
+account-attribute contract lives in ``tests/test_invite_registration.py``).
+Requirements: R1.1-R1.5, R2.2, R2.3, R2.5, R7.4.
 """
 
 from __future__ import annotations
 
 import time
-import uuid
 from typing import Any
 
 import pytest
@@ -25,6 +23,7 @@ from invite_service import (
     InviteConsumedError,
     InviteError,
     InviteService,
+    UsernameTakenError,
     hash_token,
     invite_pk,
     token_gsi1pk,
@@ -386,36 +385,21 @@ def _reg_service(
     return svc, core, cog, profiles
 
 
-def _is_valid_uuid(value: str) -> bool:
-    try:
-        uuid.UUID(value)
-    except (ValueError, AttributeError, TypeError):
-        return False
-    return True
-
-
 def test_register_creates_confirmed_account_with_no_email() -> None:
+    # InviteService.register delegates the account create to
+    # invite_registration.create_confirmed_account (unit-tested there); this
+    # asserts the integration: one suppressed account + permanent password, and
+    # the returned identity. The attribute-level create contract lives in
+    # tests/test_invite_registration.py.
     svc, _, cognito, _ = _reg_service()
     raw = svc.invite("nina@example.com", invited_by="owner@x.io")["raw_token"]
 
     account = svc.register(raw)
 
-    # Exactly one account created, with a suppressed (no-email) message action.
     assert len(cognito.created) == 1
-    create = cognito.created[0]
-    assert create["MessageAction"] == "SUPPRESS"
-    # Username is an opaque UUID, not the email.
-    assert _is_valid_uuid(create["Username"])
-    assert create["Username"] != "nina@example.com"
-    # Email attribute is set and marked verified.
-    attrs = {a["Name"]: a["Value"] for a in create["UserAttributes"]}
-    assert attrs["email"] == "nina@example.com"
-    assert attrs["email_verified"] == "true"
-    # A permanent password is set so the account is CONFIRMED, no temp password.
+    assert cognito.created[0]["MessageAction"] == "SUPPRESS"
     assert len(cognito.passwords) == 1
-    pwd = cognito.passwords[0]
-    assert pwd["Permanent"] is True
-    assert pwd["Username"] == create["Username"]
+    assert cognito.passwords[0]["Permanent"] is True
     assert account["email"] == "nina@example.com"
     assert account["sub"] == "sub-1"
 
@@ -480,3 +464,35 @@ def test_register_without_profile_service_still_creates_account() -> None:
 
     assert len(cognito.created) == 1
     assert account["email"] == "ravi@example.com"
+
+
+# -- chosen username is a sign-in alias: pre-check leaves token reusable ----
+
+
+class _TakenNameCognito(_FakeCognito):
+    """``list_users`` reports the taken ``preferred_username`` as unavailable."""
+
+    def __init__(self, taken_name: str) -> None:
+        super().__init__()
+        self._taken_name = taken_name.lower()
+
+    def list_users(self, **kwargs: Any) -> dict[str, Any]:
+        if f'"{self._taken_name}"' in kwargs.get("Filter", ""):
+            return {"Users": [{"Username": "u-existing"}]}
+        return super().list_users(**kwargs)
+
+
+def test_register_rejects_taken_display_name_without_consuming_token() -> None:
+    """A taken chosen name raises UsernameTakenError and leaves the token."""
+    core = CoreTable(_FakeTable())
+    cognito = _TakenNameCognito("celes")
+    svc = InviteService(core, cognito, user_pool_id="pool-1")
+    raw = svc.invite("celes@frameshift.net", invited_by="owner@x.io")["raw_token"]
+
+    with pytest.raises(UsernameTakenError, match="already taken"):
+        svc.register(raw, display_name="celes", password="Sup3rSecret!!xy")
+
+    # Nothing created and the single-use token stays reusable (retry-able).
+    assert len(cognito.created) == 0
+    stored = core.get(invite_pk("celes@frameshift.net"), INVITE_SK)
+    assert stored["data"]["status"] == "invited"

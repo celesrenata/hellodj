@@ -21,9 +21,20 @@
        x-data="{
          collapsed: false,
          path: window.location.pathname,
-         isActive(href) {
+         navHrefs: [{% for item in nav_items %}'{{ url_for(item.endpoint) }}'{% if not loop.last %}, {% endif %}{% endfor %}],
+         matches(href) {
            if (href === '/') return this.path === '/';
            return this.path === href || this.path.startsWith(href + '/');
+         },
+         isActive(href) {
+           if (!this.matches(href)) return false;
+           // When multiple nav hrefs match by prefix (e.g. /admin and
+           // /admin/entitlements), only the most specific (longest) one is
+           // active so a sibling page does not also highlight its path-prefix.
+           const best = this.navHrefs
+             .filter(h => this.matches(h))
+             .reduce((a, b) => (b.length > a.length ? b : a), href);
+           return href === best;
          }
        }"
        @htmx:push-url.window="path = window.location.pathname"

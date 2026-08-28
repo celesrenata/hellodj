@@ -108,17 +108,32 @@ class AdminDirectory:
         )
 
     def _row(self, user: dict[str, Any]) -> dict[str, Any]:
-        """Normalize a Cognito user object into a template-friendly row."""
-        username = user.get("Username", "")
+        """Normalize a Cognito user object into a template-friendly row.
+
+        The pool creates invited accounts with an opaque UUID ``Username`` and
+        stores the name the invitee picked as the ``preferred_username``
+        attribute. The raw ``Username`` is therefore an internal id, not a
+        display name — prefer ``preferred_username`` (then ``email``) for the
+        shown name, and only fall back to the raw ``Username`` when neither
+        attribute exists. The stable Cognito ``sub`` attribute is surfaced as
+        ``sub`` so per-user entitlements (keyed by subject, spanning web-ui and
+        bot) can be linked from the picker. ``login`` keeps the raw Cognito
+        ``Username`` for the admin actions that address the account by it
+        (enable/disable, group membership, delete).
+        """
+        login = user.get("Username", "")
         attrs = {
             a["Name"]: a["Value"] for a in user.get("Attributes", [])
         }
+        display = attrs.get("preferred_username") or attrs.get("email") or login
         return {
-            "username": username,
+            "username": display,
+            "login": login,
+            "sub": attrs.get("sub", ""),
             "email": attrs.get("email", ""),
             "status": user.get("UserStatus", ""),
             "enabled": bool(user.get("Enabled", True)),
-            "is_admin": self._is_admin(username),
+            "is_admin": self._is_admin(login),
         }
 
     def _is_admin(self, username: str) -> bool:

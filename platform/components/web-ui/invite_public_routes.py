@@ -42,7 +42,7 @@ from flask import (
 )
 
 import register_policy
-from invite_service import InviteConsumedError
+from invite_service import InviteConsumedError, UsernameTakenError
 
 __all__ = ["build_invite_public_blueprint", "INVITE_USED_MESSAGE"]
 
@@ -141,7 +141,9 @@ def _submit(service: Any, token: str):
     username). On success the invitee is sent into Discord linking with **no**
     authenticated session (R2.4). A malformed username, password mismatch, or
     policy failure re-renders the form (retaining the username, showing the
-    error); a token that no longer resolves shows the used/expired page (R2.5).
+    error); an already-taken username re-renders the form (the single-use token
+    is left intact so the invitee can retry with a different name); a token that
+    no longer resolves shows the used/expired page (R2.5).
     """
     username = request.form.get("username", "")
     password = request.form.get("password", "")
@@ -173,6 +175,11 @@ def _submit(service: Any, token: str):
         return _rerender(
             "Password does not meet the requirements: " + ", ".join(exc.unmet)
         )
+    except UsernameTakenError:
+        # The chosen name collides with an existing sign-in alias. The token is
+        # NOT consumed (pre-checked), so the invitee can pick another name and
+        # resubmit on the same link.
+        return _rerender("That username is already taken. Please choose another.")
     except InviteConsumedError:
         return _used()
 

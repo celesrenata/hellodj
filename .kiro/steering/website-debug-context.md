@@ -55,6 +55,46 @@ identity provider (the `auth_routing.py` invariant is unchanged — this is a
 presentation change to the Cognito-routed purposes only). Key pieces in
 `platform/components/web-ui/`:
 
+### Invited user could not log in with their chosen name (fixed 2026-08-28)
+
+Reported bug: a new (invited) user `celes` could not log in. Root cause (facts):
+the invite flow (`invite_service.register` → `invite_registration.create_confirmed_account`)
+created the Cognito account with an **opaque UUID `Username`** and stored the
+name the invitee picked as the `preferred_username` attribute. The pool has
+`AliasAttributes: ["email"]`, so `preferred_username` is NOT a sign-in alias —
+the ONLY usable login identifier was the email. But the login form prompts
+"Username or email", so the user typed `celes` (their chosen name) and it never
+resolved. Verified via `initiate-auth`: signing in with the email returned
+`NotAuthorizedException` (account reachable, wrong password) while the chosen
+name could not resolve.
+
+DEAD END (do not retry): making `preferred_username` a sign-in alias via
+`auth-stack.ts` `signInAliases: { preferredUsername: true }`. `AliasAttributes`
+is **IMMUTABLE** on an existing pool — `cdk deploy hellodj-auth` fails with
+`Invalid request provided: Updates are not allowed for property -
+AliasAttributes.` (the update rolls back cleanly). Changing it needs pool
+REPLACEMENT, which destroys all users. Not acceptable.
+
+Fix (application-side, no infra change): `invite_registration.create_confirmed_account`
+now uses the invitee's **chosen name as the Cognito `Username`** (the pool signs
+in by `username`, so the name works for login), mirrors it into
+`preferred_username` for display, and falls back to a UUID username only when no
+name is chosen (Discord-only login). `register_policy` already forbids
+email-shaped names, so the email-alias `Username` constraint is satisfied.
+Cognito enforces `Username` uniqueness natively; a create-time
+`UsernameExistsException` maps to `UsernameTakenError`, and
+`InviteService.register` pre-checks availability BEFORE consuming the single-use
+token (a taken name lets the invitee retry on the same link). The account-create
+mechanics were extracted from `invite_service.py` into `invite_registration.py`
+to stay under the 500-line ceiling. Deploys via the CI/CD pipeline (web-ui source
+change → CodeCommit push → image rebuild), NOT `cdk deploy`.
+
+EXISTING accounts created before this fix (e.g. `celes`, username
+`76039644-...`) keep their UUID username — Cognito usernames are immutable — so
+they can only log in with their **email**. To let such a user log in with their
+chosen name, delete + re-invite so the new flow recreates the account with
+`Username = <chosen name>`.
+
 - `cognito_auth.py` — `CognitoAuth`: server-side `InitiateAuth`
   (`USER_PASSWORD_AUTH`), `RespondToAuthChallenge` (NEW_PASSWORD_REQUIRED /
   SOFTWARE_TOKEN_MFA), `SignUp`/`ConfirmSignUp`, `ForgotPassword`/

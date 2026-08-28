@@ -200,7 +200,13 @@ export class AuthStack extends cdk.Stack {
       }),
       // Registration: people can self-register (R8.3).
       selfSignUpEnabled: true,
-      // Sign in with email; email is the recovery channel (R8.5).
+      // Sign in with the account username OR email; email is the recovery
+      // channel (R8.5). NOTE: `AliasAttributes`/`UsernameAttributes` are
+      // IMMUTABLE on an existing pool — they cannot be changed by an update
+      // (only pool replacement, which would destroy all users). So the invite
+      // flow makes the user-chosen name the actual Cognito `Username` (a
+      // sign-in identifier via `username: true`), NOT a `preferred_username`
+      // alias — see invite_registration.create_confirmed_account.
       signInAliases: { email: true, username: true },
       autoVerify: { email: true },
       standardAttributes: {
