@@ -217,6 +217,28 @@ describe('PipelineStack helpers — promotion order and build-stage steps', () =
       expect(vendor).toContain('git -c user.email=ci@hellodj');
     }
   });
+
+  test('component build pushes the FULL build closure to S3, not just the image', () => {
+    // The image is a flattened .tar.gz with an empty reference set, so pushing
+    // only the image output caches nothing useful for the build (repeat builds
+    // rebuild python-env/src/layers). The build must resolve the derivation and
+    // push `nix-store -qR --include-outputs <drv>` — every intermediate output
+    // — so the next build substitutes them from S3 instead of rebuilding.
+    for (const component of PLATFORM_COMPONENTS) {
+      const commands = getComponentBuildCommands(component);
+      // Captures the derivation path for closure resolution.
+      expect(
+        commands.some((c) => c.includes('nix path-info --derivation')),
+      ).toBe(true);
+      const push = commands.find((c) => c.includes('nix copy --to'));
+      expect(push).toBeDefined();
+      // Pushes the include-outputs closure, not the bare image path.
+      expect(push).toContain('nix-store -qR --include-outputs');
+      // Push failures are surfaced in the log, not silently swallowed.
+      expect(push).toContain('WARN: cache push failed');
+      expect(push).not.toContain("2>/dev/null || true; nix-collect");
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------

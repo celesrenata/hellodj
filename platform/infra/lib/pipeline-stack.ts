@@ -407,7 +407,15 @@ export function getComponentBuildCommands(
     // NO --impure: the committed git tree above is a stable, content-addressed
     // input, so identical source => identical store path => the S3 binary cache
     // substitutes the prebuilt closure instead of rebuilding from scratch.
+    //
+    // Capture the DERIVATION path too (`--print-out-paths` on the .drv). The
+    // final image is a flattened `.tar.gz` with an EMPTY reference set, so
+    // pushing only the image output caches nothing useful for the *build* — the
+    // next build still rebuilds python-env, src, layers, etc. To make repeat
+    // builds fast we must push the full BUILD closure (every intermediate
+    // derivation's realized output), which we resolve from the .drv below.
     `cd $CODEBUILD_SRC_DIR/platform/components/${component} && nix build .#packages.aarch64-linux.image --no-link --print-out-paths > /tmp/${component}-image-path.txt || echo "SKIP: nix build failed for ${component}"`,
+    `cd $CODEBUILD_SRC_DIR/platform/components/${component} && nix path-info --derivation .#packages.aarch64-linux.image > /tmp/${component}-drv-path.txt 2>/dev/null || true`,
     // Load + tag + push to ECR, then push closure to S3 Nix cache.
     // Use the Nix-built image name (hellodj-<component>:nix) to avoid picking
     // up stale images from other components in docker images.
@@ -425,7 +433,21 @@ export function getComponentBuildCommands(
         `docker push "$REPO:$CODEBUILD_RESOLVED_SOURCE_VERSION"; ` +
         `docker push "$REPO:latest"; ` +
         `echo "pushed $REPO:$CODEBUILD_RESOLVED_SOURCE_VERSION"; ` +
-        `nix copy --to '${NIX_CACHE_S3_URI}' --secret-key-files /tmp/nix-cache-key.sec "$IMAGE_PATH" 2>/dev/null || true; ` +
+        // Push the FULL BUILD CLOSURE to the S3 cache, not just the image.
+        // `nix-store -qR --include-outputs <drv>` = the derivation closure PLUS
+        // every realized output in it (python-env, src, customisation-layer,
+        // layers.json, the image, ...). Copying that set means the NEXT build
+        // substitutes those intermediate outputs from S3 instead of rebuilding
+        // — that is what actually makes repeat builds fast. Errors are LOGGED
+        // (not silenced) so a broken push is visible in the build log, but they
+        // don't fail the build (the image is already in ECR).
+        `DRV=$(head -1 /tmp/${component}-drv-path.txt 2>/dev/null); ` +
+        `if [ -n "$DRV" ]; then ` +
+          `CLOSURE=$(nix-store -qR --include-outputs "$DRV" 2>/dev/null); ` +
+        `else CLOSURE="$IMAGE_PATH"; fi; ` +
+        `nix copy --to '${NIX_CACHE_S3_URI}' --secret-key-files /tmp/nix-cache-key.sec $CLOSURE ` +
+          `&& echo "cache: pushed build closure for ${component}" ` +
+          `|| echo "WARN: cache push failed for ${component} (build still OK, image in ECR)"; ` +
         `nix-collect-garbage --delete-older-than 7d 2>/dev/null || true; ` +
       `else echo "image path not a file: $IMAGE_PATH"; cat /tmp/${component}-image-path.txt; exit 1; fi; ` +
     `else echo "no image built for ${component}"; cat /tmp/${component}-image-path.txt 2>/dev/null; exit 1; fi`,
