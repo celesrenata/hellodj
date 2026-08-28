@@ -1268,6 +1268,18 @@ export class WorkloadsStack extends cdk.Stack {
           value: this.props.discordClientId,
         });
       }
+      // Discord OAuth client *secret* is resolved lazily from the
+      // `hellodj/<stage>/discord-oauth` Secrets Manager secret at callback time
+      // (the web-ui SA is granted READ above), so the secret value never lands
+      // in a k8s manifest / CloudFormation literal. Inject only its ARN as env
+      // (mirrors the intended Google/Spotify lazy-resolution pattern). The app
+      // still falls back to the `DISCORD_CLIENT_SECRET` k8s Secret when set.
+      if (this.props.secrets.discordOauth) {
+        env.push({
+          name: 'HELLODJ_DISCORD_OAUTH_SECRET_ARN',
+          value: this.props.secrets.discordOauth.secretArn,
+        });
+      }
       // Per-guild source OAuth client ids (R2.6). `app.py` reads these to build
       // the Spotify / YouTube / Tidal authorize URLs; when empty,
       // `source_authorize_url` returns None and the connect button silently

@@ -186,6 +186,18 @@ const pipeline = new PipelineStack(app, 'hellodj-pipeline', {
     // web-ui Cognito hosted-UI client id so the admin/register/recover
     // buttons build a valid hosted-UI redirect (R8.2, R8.3, R8.5).
     cognitoClientId: auth.userPoolClient.userPoolClientId,
+    // Discord OAuth application client id (non-sensitive) injected as plain env
+    // so the web-ui Discord link/login authorize URL carries a real
+    // `client_id` (without it the authorize URL is `client_id=` and Discord
+    // rejects it — R8.4). Overridable via `-c hellodj:discordClientId=...`;
+    // defaults to the shared HelloDJ Discord application id. The matching
+    // client SECRET is NOT threaded here (never in git / the cloud assembly);
+    // it is stored in the `hellodj/<stage>/discord-oauth` Secrets Manager
+    // secret and consumed at runtime.
+    discordClientId:
+      (app.node.tryGetContext('hellodj:discordClientId') as
+        | string
+        | undefined) ?? '1534778518137995325',
     // Shared Flask session signing key so all web-ui replicas validate the
     // same signed session cookie (prevents OAuth-callback logout bounce).
     flaskSessionKey: auth.flaskSessionSecret.secretValue.unsafeUnwrap(),

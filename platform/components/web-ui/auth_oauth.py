@@ -81,8 +81,12 @@ def discord_id_from_code(code: str, redirect_uri: str) -> str | None:
     """
     if not code:
         return None
-    client_id = current_app.config.get("DISCORD_CLIENT_ID", "")
-    client_secret = current_app.config.get("DISCORD_CLIENT_SECRET", "")
+    # Resolve id+secret from plain env first, then lazily from the
+    # `discord-oauth` Secrets Manager secret (keeps the secret out of the k8s
+    # manifest). Imported lazily to avoid a circular import at module load.
+    from source_token_exchange import discord_client_credentials  # noqa: PLC0415
+
+    client_id, client_secret = discord_client_credentials()
     if not client_id or not client_secret:
         return None
     token_body = urllib.parse.urlencode(

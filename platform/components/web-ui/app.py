@@ -185,6 +185,13 @@ def _configure(app: Flask, overrides: dict[str, Any]) -> None:
         HELLODJ_GOOGLE_OAUTH_SECRET_ARN=os.getenv(
             "HELLODJ_GOOGLE_OAUTH_SECRET_ARN", ""
         ),
+        # Discord OAuth client secret is NOT injected as plain env (never in the
+        # k8s manifest / cloud assembly); it is resolved lazily from the
+        # `hellodj/<stage>/discord-oauth` Secrets Manager secret at callback
+        # time (mirrors the Google/Spotify pattern).
+        HELLODJ_DISCORD_OAUTH_SECRET_ARN=os.getenv(
+            "HELLODJ_DISCORD_OAUTH_SECRET_ARN", ""
+        ),
         # In-cluster potoken-server (bgutil-ytdlp-pot-provider) POST /get_pot.
         POTOKEN_SERVER_URL=os.getenv(
             "POTOKEN_SERVER_URL",

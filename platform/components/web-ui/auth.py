@@ -166,7 +166,7 @@ def build_auth_blueprint() -> Blueprint:
         state = _new_state()
         session["discord_link_state"] = state
         params = {
-            "client_id": current_app.config.get("DISCORD_CLIENT_ID", ""),
+            "client_id": _discord_client_id(),
             "response_type": "code",
             "scope": "identify",
             "redirect_uri": _redirect_uri("auth.discord_link_callback"),
@@ -415,12 +415,26 @@ def _establish_discord_session(discord_id: str) -> None:
 
 
 
+def _discord_client_id() -> str:
+    """Return the Discord OAuth client id (plain env, else the secret ARN).
+
+    Resolves via :func:`source_token_exchange.discord_client_credentials` so the
+    authorize URL carries a real ``client_id`` even when only the
+    ``hellodj/<stage>/discord-oauth`` Secrets Manager secret is configured (not
+    the plain env). Imported lazily to avoid a circular import at module load.
+    """
+    from source_token_exchange import discord_client_credentials  # noqa: PLC0415
+
+    client_id, _secret = discord_client_credentials()
+    return client_id
+
+
 def _start_discord_oauth():
     """Build the Discord authorize redirect with CSRF state."""
     state = _new_state()
     session["discord_state"] = state
     params = {
-        "client_id": current_app.config.get("DISCORD_CLIENT_ID", ""),
+        "client_id": _discord_client_id(),
         "response_type": "code",
         "scope": "identify",
         "redirect_uri": _redirect_uri("auth.discord_callback"),

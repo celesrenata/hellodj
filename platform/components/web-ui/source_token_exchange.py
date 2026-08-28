@@ -45,6 +45,7 @@ __all__ = [
     "source_exchange_spotify",
     "fetch_guild_potoken",
     "compose_youtube_tokens",
+    "discord_client_credentials",
 ]
 
 _GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
@@ -126,6 +127,32 @@ def _resolve_google_secret(arn: str) -> dict[str, Any]:
     ``{client_id, client_secret}`` JSON secret). Returns ``{}`` on any failure.
     """
     return _resolve_secret_json(arn)
+
+
+def discord_client_credentials() -> tuple[str, str]:
+    """Return ``(client_id, client_secret)`` for the Discord OAuth exchange.
+
+    Prefers the plain ``DISCORD_CLIENT_ID`` / ``DISCORD_CLIENT_SECRET`` env
+    config; when the secret is absent but ``HELLODJ_DISCORD_OAUTH_SECRET_ARN``
+    is configured, resolves the ``{client_id, client_secret}`` JSON lazily from
+    Secrets Manager (mirrors :func:`_google_client_credentials`). This keeps the
+    Discord client secret out of the k8s manifest / cloud assembly — only its
+    ARN is wired as env. Returns empty strings when neither source yields one.
+    """
+    cfg = current_app.config
+    client_id = cfg.get("DISCORD_CLIENT_ID", "") or ""
+    client_secret = cfg.get("DISCORD_CLIENT_SECRET", "") or ""
+    if client_id and client_secret:
+        return client_id, client_secret
+
+    arn = cfg.get("HELLODJ_DISCORD_OAUTH_SECRET_ARN", "") or ""
+    if not arn:
+        return client_id, client_secret
+    resolved = _resolve_secret_json(arn)
+    return (
+        client_id or str(resolved.get("client_id", "")),
+        client_secret or str(resolved.get("client_secret", "")),
+    )
 
 
 # ── Spotify client id/secret resolution (env first, then Secrets Manager) ───
