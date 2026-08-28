@@ -16,8 +16,7 @@ Data model (hellodj-core single table):
 * ``PK=INVITE#<email>``  ``SK=INVITE``
   ``GSI1PK=INVITETOKEN#<tokenHash>``  ``GSI1SK=INVITE``
   data={email, invited_by, token_hash, expires_at, status, created_at}
-
-``status`` is one of ``invited`` | ``accepted`` | ``expired`` | ``revoked``.
+  ``status`` is one of ``invited`` | ``accepted`` | ``expired`` | ``revoked``.
 
 On registration (``register``) the winning token consumer creates a CONFIRMED
 Cognito account (``admin_create_user`` with ``MessageAction=SUPPRESS`` +
@@ -198,11 +197,17 @@ class InviteService:
         if not email_norm or "@" not in email_norm:
             raise InviteError("a valid email is required")
 
-        existing = self._core.get(invite_pk(email_norm), INVITE_SK)
-        if existing is not None and self._is_pending(existing):
-            raise InviteError(f"{email_norm} already has a pending invite")
         if self._is_registered(email_norm):
             raise InviteError(f"{email_norm} is already registered")
+
+        existing = self._core.get(invite_pk(email_norm), INVITE_SK)
+        if existing is not None and invite_admin.blocks_new_invite(existing):
+            raise InviteError(f"{email_norm} already has a pending invite")
+        # A stale record (terminal/expired/old-flow) does not block; clear it so
+        # put_new succeeds and a deleted account can be re-invited (R1.5).
+        if existing is not None:
+            self._core.delete(invite_pk(email_norm), INVITE_SK)
+            self._core.delete(INVITE_INDEX_PK, invite_index_sk(email_norm))
 
         raw_token = secrets.token_urlsafe(32)
         token_hash = hash_token(raw_token)
@@ -259,9 +264,9 @@ class InviteService:
         }
 
     def is_invited(self, email: str) -> bool:
-        """Return whether a pending invite record exists for ``email``."""
+        """Return whether a pending (``invited``) invite record exists."""
         item = self._core.get(invite_pk(email), INVITE_SK)
-        return item is not None and self._is_pending(item)
+        return bool(item) and item.get("data", {}).get("status") == "invited"
 
     def list_invites(self) -> list[dict[str, Any]]:
         """Return every recorded invite with an effective display status (R1.4).
@@ -476,11 +481,6 @@ class InviteService:
             return False
         expires_at = data.get("expires_at")
         return isinstance(expires_at, int) and expires_at > int(time.time())
-
-    @staticmethod
-    def _is_pending(item: dict[str, Any]) -> bool:
-        """Return whether an invite item is still in the ``invited`` status."""
-        return item.get("data", {}).get("status") == "invited"
 
     def _is_registered(self, email_norm: str) -> bool:
         """Return whether a Cognito account already exists for ``email``.

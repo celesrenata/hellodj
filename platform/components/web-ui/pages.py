@@ -303,8 +303,14 @@ def build_pages_blueprint() -> Blueprint:
         if not directory:
             error = "user management is not available (no directory configured)"
         else:
+            # Resolve the account's email BEFORE deletion so we can also clear
+            # any lingering invite record — deleting the Cognito user alone
+            # leaves the invite stuck "pending" and blocks re-inviting the same
+            # address (the two live in separate systems).
+            email = _email_for_username(username)
             try:
                 directory.delete_user(username)
+                _delete_invite_for(email)
                 success = f"Account {username} deleted."
             except Exception as exc:  # noqa: BLE001 - surface message to admin
                 error = str(exc)
@@ -407,6 +413,33 @@ def _admin_users() -> list[dict[str, Any]]:
     if not directory:
         return []
     return directory.list_users()
+
+
+def _email_for_username(username: str) -> str:
+    """Return the email attribute of a directory user, or '' if unknown."""
+    for row in _admin_users():
+        if row.get("username") == username:
+            return row.get("email", "") or ""
+    return ""
+
+
+def _delete_invite_for(email: str) -> None:
+    """Best-effort delete of any invite record for ``email``.
+
+    Called after deleting a Cognito account so a lingering invite (any status,
+    including a legacy old-flow record) doesn't block re-inviting the address.
+    Idempotent and non-fatal: a missing record or absent invite service is a
+    no-op, and any failure here must not fail the account deletion.
+    """
+    if not email:
+        return
+    service = _invite_service()
+    if not service:
+        return
+    try:
+        service.delete(email)
+    except Exception:  # noqa: BLE001 - cleanup is best-effort
+        pass
 
 
 def _admin_invites() -> list[dict[str, Any]]:

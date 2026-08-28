@@ -169,3 +169,23 @@ def effective_status(data: Mapping[str, Any]) -> str:
         if not (isinstance(expires_at, int) and expires_at > int(time.time())):
             return "expired"
     return status
+
+
+def blocks_new_invite(item: Mapping[str, Any]) -> bool:
+    """Return whether an existing invite record should block a fresh invite.
+
+    Only a *live new-flow* invite blocks: status ``invited``, carrying a
+    ``token_hash`` (minted by the tokenized flow), and not past ``expires_at``.
+    Terminal records (``accepted``/``revoked``/``expired``), already-expired
+    invites, and legacy *old-flow* records (no ``token_hash`` — their link
+    predates the tokenized route) do NOT block: they are stale and get replaced.
+    This prevents a deleted account or an old-flow leftover from permanently
+    blocking re-invites (R1.5).
+    """
+    data = item.get("data", {})
+    if data.get("status") != "invited":
+        return False
+    if not data.get("token_hash"):
+        return False
+    expires_at = data.get("expires_at")
+    return isinstance(expires_at, int) and expires_at > int(time.time())
