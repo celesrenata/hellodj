@@ -169,33 +169,58 @@ export const NIX_CACHE_PUBLIC_KEY =
  * it is factored out so component build steps can run it WITHOUT the heavier
  * Node/ruff installs the synth step needs.
  *
- * Order matters: Nix is installed and configured before anything else so that
- * the very first store operation already sees the S3 substituter (a Nix build
- * kicked off before `nix.conf` is written can't pull from the cache). The steps
- * configure:
- *   - Nix (multi-user, flakes) installed on local disk (S3 cache = persistence)
- *   - the S3 binary cache as a trusted substituter (`require-sigs = false`)
+ * The S3 binary cache is baked into the install via repeated `--extra-conf` so
+ * the Nix daemon BOOTS already knowing the substituter — no post-install
+ * nix.conf edit and no daemon restart (both of which failed silently on the
+ * systemd-less CodeBuild container and were the reason builds never read from
+ * the S3 bucket). The steps configure:
+ *   - Nix (root-only, `--init none`) with the S3 cache as a trusted substituter
  *   - sops + the KMS-decrypted signing key so `nix copy` can PUSH built closures
  *   - the AWS git credential helper so flake inputs can resolve CodeCommit forks
  */
 export function getNixInstallCommands(): string[] {
+  // The S3 binary cache configuration, baked into the Nix install so the
+  // daemon BOOTS with it (see below for why appending post-install failed).
+  //
+  //   * `extra-substituters` / `extra-trusted-substituters`: read our closures
+  //     from the S3 cache (and trust a root-driven client to request it).
+  //   * `trusted-public-keys`: the public halves for narinfo verification.
+  //   * `require-sigs = false`: don't reject cached closures if the signing key
+  //     rotates or the public-key constant drifts — safe, the bucket is
+  //     IAM-gated and we own it.
+  //   * `extra-trusted-users = root`: CodeBuild runs as root.
+  const cacheConf = [
+    `extra-substituters = ${NIX_CACHE_S3_URI}`,
+    `extra-trusted-substituters = ${NIX_CACHE_S3_URI}`,
+    'extra-trusted-users = root',
+    `trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ${NIX_CACHE_PUBLIC_KEY}`,
+    'require-sigs = false',
+  ];
+  // One repeated `--extra-conf "<line>"` per setting.
+  const extraConf = cacheConf.map((line) => `--extra-conf "${line}"`).join(' ');
+
   return [
-    // Install Nix on local disk (fast). S3 cache handles persistence.
-    // Done FIRST so the substituter is configured before any store op runs.
-    'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | sh -s -- install --no-confirm',
-    // Source nix-daemon env for the rest of the build.
+    // CACHE-MISS ROOT CAUSE #2 (why builds still "didn't read from the S3
+    // bucket" even after the source-determinism fix): the previous install
+    // APPENDED the substituter lines to /etc/nix/nix.conf AFTER install, then
+    // ran `systemctl restart nix-daemon`. Two problems:
+    //   1. CodeBuild containers have no systemd, so the restart was a silent
+    //      no-op (`|| true`) — the ALREADY-RUNNING Determinate daemon kept its
+    //      boot-time config WITHOUT our S3 substituter, so `nix build` (which
+    //      substitutes via the daemon) only ever saw cache.nixos.org and built
+    //      our own closures locally.
+    //   2. Determinate Nix MANAGES /etc/nix/nix.conf and documents that the
+    //      ONLY supported override is /etc/nix/nix.custom.conf — appending to
+    //      nix.conf is unsupported and can be clobbered.
+    // Fix: pass the cache config to the installer via repeated `--extra-conf`
+    // so the daemon BOOTS with the S3 substituter configured — no post-install
+    // edit, no daemon restart. `--init none` = root-only Nix (CodeBuild is
+    // root), which is the supported container mode (no systemd to manage a
+    // daemon), avoiding the socket-activation restart problem entirely.
+    'curl --proto "=https" --tlsv1.2 -sSf -L https://install.determinate.systems/nix | ' +
+      `sh -s -- install linux --init none --no-confirm ${extraConf}`,
+    // Source Nix env for the rest of the build.
     '. /nix/var/nix/profiles/default/etc/profile.d/nix-daemon.sh',
-    // Configure Nix daemon: wire the S3 binary cache as a substituter.
-    // `require-sigs = false` bypasses narinfo signature verification — safe
-    // because we own the S3 bucket and access is IAM-gated. Without this, Nix
-    // rejects cached closures if the signing key rotates or the public key
-    // constant drifts (which is exactly what happened).
-    `echo 'extra-substituters = ${NIX_CACHE_S3_URI}' >> /etc/nix/nix.conf`,
-    `echo 'extra-trusted-substituters = ${NIX_CACHE_S3_URI}' >> /etc/nix/nix.conf`,
-    `echo 'extra-trusted-users = root' >> /etc/nix/nix.conf`,
-    `echo 'trusted-public-keys = cache.nixos.org-1:6NCHdD59X431o0gWypbMrAURkbJ16ZPMQFGspcDShjY= ${NIX_CACHE_PUBLIC_KEY}' >> /etc/nix/nix.conf`,
-    `echo 'require-sigs = false' >> /etc/nix/nix.conf`,
-    'systemctl restart nix-daemon 2>/dev/null || true',
     // Decrypt the Nix cache signing key from sops (KMS-backed) — needed to
     // PUSH built closures back to the cache (`nix copy --secret-key-files`).
     'curl -fsSL -o /usr/local/bin/sops https://github.com/getsops/sops/releases/download/v3.9.4/sops-v3.9.4.linux.arm64 && chmod +x /usr/local/bin/sops',

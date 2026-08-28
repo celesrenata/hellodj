@@ -143,6 +143,28 @@ describe('PipelineStack helpers — promotion order and build-stage steps', () =
     }
   });
 
+  test('Nix install bakes the S3 cache config in at install time (no post-install nix.conf edit / daemon restart)', () => {
+    // Regression guard: appending substituters to /etc/nix/nix.conf after
+    // install + `systemctl restart nix-daemon` silently no-op'd on the
+    // systemd-less CodeBuild container, so the daemon never learned the S3
+    // cache and builds read only from cache.nixos.org. The config must instead
+    // be passed to the installer via --extra-conf so the daemon boots with it.
+    const nix = getNixInstallCommands();
+    const install = nix[0];
+    expect(install).toContain('install.determinate.systems/nix');
+    // Baked in at install: substituter, trust, and no-sigs — via --extra-conf.
+    expect(install).toContain('--extra-conf');
+    expect(install).toContain('extra-substituters = s3://hellodj-nix-cache');
+    expect(install).toContain('extra-trusted-substituters = s3://hellodj-nix-cache');
+    expect(install).toContain('require-sigs = false');
+    expect(install).toContain('extra-trusted-users = root');
+    // Root-only container mode (no systemd daemon to restart).
+    expect(install).toContain('--init none');
+    // The broken post-install approach must be gone entirely.
+    expect(nix.some((c) => c.includes('systemctl'))).toBe(false);
+    expect(nix.some((c) => c.includes('>> /etc/nix/nix.conf'))).toBe(false);
+  });
+
   test('Nix is installed FIRST, before any other tooling', () => {
     // The S3 substituter must be configured before the first store op; Nix
     // therefore leads every install script (component and synth).
