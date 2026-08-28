@@ -22,6 +22,11 @@
         pythonDeps = ps: with ps; [
           boto3
           botocore
+          # Envelope-decryption for the token-refresh watchdog: token_crypto
+          # (AES-GCM via `cryptography`) is imported transitively by the shared
+          # SourceCredentialService the watchdog reuses to decrypt/refresh
+          # source credentials (unified-oauth-and-token-watchdog Task 8).
+          cryptography
         ];
 
         pythonEnv = python.withPackages pythonDeps;
@@ -47,6 +52,14 @@
           # Shared platform logic package (copied into source tree by pipeline)
           if [ -d "$src/hellodj_platform_logic" ]; then
             cp -r "$src/hellodj_platform_logic" $out/app/hellodj_platform_logic
+          fi
+          # Shared, dependency-light credential store the token-refresh watchdog
+          # reuses. It is authored as a web-ui module but imports only
+          # hellodj_platform_logic, so it is safe to place beside the app here
+          # (the pipeline copies it into the source tree next to the shared
+          # package). One identity/store spans web-ui, watchdog, and bot.
+          if [ -f "$src/source_credential_service.py" ]; then
+            cp "$src/source_credential_service.py" $out/app/source_credential_service.py
           fi
         '';
 

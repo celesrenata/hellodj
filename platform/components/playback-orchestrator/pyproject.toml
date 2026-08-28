@@ -11,6 +11,9 @@ readme = "README.md"
 # (see [tool.setuptools] below) so IaC and runtime share one source of truth.
 dependencies = [
     "boto3>=1.34",
+    # Envelope-decryption for the token-refresh watchdog (AES-GCM via the shared
+    # token_crypto, imported transitively through SourceCredentialService).
+    "cryptography>=42",
     # Shared pure-logic + data-access layer. Installed editable from the
     # monorepo (`pip install -e ../hellodj_platform_logic`) or made importable
     # via PYTHONPATH=components. Pinned here as a namespace reference (R15).

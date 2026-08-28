@@ -24,6 +24,7 @@ import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as dax from 'aws-cdk-lib/aws-dax';
 import * as ec2 from 'aws-cdk-lib/aws-ec2';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 
 /** The default deployment stage used to derive the assets bucket name. */
@@ -36,6 +37,16 @@ export const SESSION_TABLE_NAME = 'hellodj-session';
 
 /** The GSI defined on the core single table (design "Core single-table"). */
 export const CORE_GSI1_NAME = 'GSI1';
+
+/**
+ * Derive the dedicated source-credentials KMS CMK alias for a stage:
+ * `alias/hellodj-source-creds-<stage>` (unified-oauth-and-token-watchdog R3.5).
+ * The alias gives the key a stable, human-readable handle the workloads wire
+ * as `HELLODJ_SOURCE_CREDS_KMS_KEY_ID` and grant against.
+ */
+export function sourceCredsKeyAlias(stage: string): string {
+  return `alias/hellodj-source-creds-${stage}`;
+}
 
 /** Properties for {@link DataStack}. */
 export interface DataStackProps extends cdk.StackProps {
@@ -89,6 +100,19 @@ export class DataStack extends cdk.Stack {
 
   /** DAX cluster fronting the hot tables to minimize read latency (R7.6). */
   public readonly daxCluster: dax.CfnCluster;
+
+  /**
+   * Dedicated customer-managed KMS key (CMK) for application-layer envelope
+   * encryption of source-credential token blobs
+   * (unified-oauth-and-token-watchdog R3.5). Distinct from the core table's
+   * AWS_MANAGED at-rest encryption (R3.1, unchanged): the web-ui/watchdog wrap
+   * a per-item data key with this CMK before the token JSON is stored, so a
+   * broad table read or a PITR export never yields a plaintext refresh token
+   * (R3.2). Key rotation is enabled. Grants are scoped in `WorkloadsStack` to
+   * exactly the components that read/write tokens (R3.3, R9.x). Exported so the
+   * workloads stack can grant + wire `HELLODJ_SOURCE_CREDS_KMS_KEY_ID`.
+   */
+  public readonly sourceCredsKey: kms.Key;
 
   /** Security group applied to the DAX cluster nodes. */
   public readonly daxSecurityGroup: ec2.SecurityGroup;
@@ -234,6 +258,31 @@ export class DataStack extends cdk.Stack {
     });
 
     // -----------------------------------------------------------------------
+    // Source-credentials CMK (unified-oauth-and-token-watchdog R3.5). A
+    // dedicated customer-managed key used for application-layer ENVELOPE
+    // encryption of source-credential token blobs stored on `hellodj-core`:
+    // the web-ui/watchdog call `kms:GenerateDataKey` to mint a per-item data
+    // key, AES-GCM-encrypt the token JSON with it, and store the CMK-wrapped
+    // data key beside the ciphertext; readers `kms:Decrypt` the wrapped key to
+    // recover the blob. This is a SECOND layer on top of the table's
+    // AWS_MANAGED at-rest encryption (R3.1, unchanged above), so a broad table
+    // read or a PITR export never exposes a plaintext refresh token (R3.2).
+    //
+    // Key rotation is enabled (annual automatic rotation). The CMK is RETAINed
+    // on stack removal — destroying it would make every stored credential
+    // permanently undecryptable. Grants are scoped to exactly the token
+    // read/write components in `WorkloadsStack` (R3.3, R9.x); no broad key
+    // policy is added here.
+    this.sourceCredsKey = new kms.Key(this, 'SourceCredsKey', {
+      alias: sourceCredsKeyAlias(stage),
+      description:
+        `HelloDJ source-credential envelope-encryption CMK (${stage}). ` +
+        'Wraps per-item data keys for token blobs on hellodj-core.',
+      enableKeyRotation: true,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
+    // -----------------------------------------------------------------------
     // Outputs so component stacks can wire table names + DAX endpoint.
     // -----------------------------------------------------------------------
     new cdk.CfnOutput(this, 'CoreTableNameOutput', {
@@ -256,6 +305,12 @@ export class DataStack extends cdk.Stack {
       value: this.assetsBucket.bucketName,
       description:
         'Name of the per-guild bot-avatar assets bucket (HELLODJ_ASSETS_BUCKET).',
+    });
+    new cdk.CfnOutput(this, 'SourceCredsKmsKeyIdOutput', {
+      value: this.sourceCredsKey.keyId,
+      description:
+        'Key id of the source-credential envelope-encryption CMK ' +
+        '(HELLODJ_SOURCE_CREDS_KMS_KEY_ID).',
     });
   }
 }

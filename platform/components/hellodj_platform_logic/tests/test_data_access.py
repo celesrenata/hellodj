@@ -61,10 +61,20 @@ class FakeTable:
     throttling error so backoff/retry can be exercised.
     """
 
-    def __init__(self, key_attrs: tuple[str, ...], throttle_first: int = 0) -> None:
+    def __init__(
+        self,
+        key_attrs: tuple[str, ...],
+        throttle_first: int = 0,
+        *,
+        scan_page_size: int | None = None,
+    ) -> None:
         self._key_attrs = key_attrs
         self._items: dict[tuple, dict[str, Any]] = {}
         self._throttle_remaining = throttle_first
+        # When set, ``scan`` returns at most this many items per call and a
+        # ``LastEvaluatedKey`` so pagination is exercised. Insertion order is
+        # used as the deterministic scan order.
+        self._scan_page_size = scan_page_size
 
     def _pk(self, source: dict[str, Any]) -> tuple:
         return tuple(source[attr] for attr in self._key_attrs)
@@ -112,6 +122,59 @@ class FakeTable:
             and (prefix is None or str(it.get("GSI1SK", "")).startswith(prefix))
         ]
         return {"Items": items}
+
+    def scan(self, **kwargs: Any) -> dict[str, Any]:
+        self._maybe_throttle()
+        names = kwargs.get("ExpressionAttributeNames", {})
+        values = kwargs.get("ExpressionAttributeValues", {})
+        # Apply the tiny ``#et = :et`` entityType filter the layer emits.
+        filter_expr = kwargs.get("FilterExpression")
+        ordered = list(self._items.values())
+        if filter_expr is not None:
+            assert filter_expr == "#et = :et"
+            wanted = values[":et"]
+            ordered = [it for it in ordered if it.get("entityType") == wanted]
+        # Paginate deterministically using the key tuple as the cursor.
+        start = kwargs.get("ExclusiveStartKey")
+        if start is not None:
+            start_pk = self._pk(start)
+            cursor = [self._pk(it) for it in ordered].index(start_pk) + 1
+            ordered = ordered[cursor:]
+        last_key: dict[str, Any] | None = None
+        if self._scan_page_size is not None and len(ordered) > self._scan_page_size:
+            ordered = ordered[: self._scan_page_size]
+            tail = ordered[-1]
+            last_key = {attr: tail[attr] for attr in self._key_attrs}
+        projection = kwargs.get("ProjectionExpression")
+        items = [self._project(it, projection, names) for it in ordered]
+        response: dict[str, Any] = {"Items": items}
+        if last_key is not None:
+            response["LastEvaluatedKey"] = last_key
+        return response
+
+    @staticmethod
+    def _project(
+        item: dict[str, Any],
+        projection: str | None,
+        names: dict[str, str],
+    ) -> dict[str, Any]:
+        """Return only the attributes named by a ProjectionExpression."""
+        if not projection:
+            return dict(item)
+        out: dict[str, Any] = {}
+        for raw in (part.strip() for part in projection.split(",")):
+            resolved = names.get(raw, raw)
+            if "." in raw:
+                # Nested "#d.expires_at" style: resolve each segment.
+                top_alias, sub = raw.split(".", 1)
+                top = names.get(top_alias, top_alias)
+                sub_name = names.get(sub, sub)
+                nested = item.get(top)
+                if isinstance(nested, dict) and sub_name in nested:
+                    out.setdefault(top, {})[sub_name] = nested[sub_name]
+            elif resolved in item:
+                out[resolved] = item[resolved]
+        return out
 
 
 class ExplodingTable(FakeTable):
@@ -263,6 +326,77 @@ def test_core_query_gsi1_with_prefix() -> None:
 
     assert len(users) == 1
     assert users[0]["PK"] == "USER#1"
+
+
+def _seed_source_credential(
+    ddb: FakeTable,
+    sub: str,
+    provider: str,
+    *,
+    expires_at: int,
+    refresh_status: str,
+) -> None:
+    """Insert a SourceCredential item with an encrypted blob into the fake."""
+    ddb._items[(f"USER#{sub}", f"SOURCECRED#{provider}")] = {
+        "PK": f"USER#{sub}",
+        "SK": f"SOURCECRED#{provider}",
+        "entityType": "SourceCredential",
+        "data": {
+            "connected": True,
+            "expires_at": expires_at,
+            "refresh_status": refresh_status,
+            "scope": "read",
+            "enc_blob": "SECRET-CIPHERTEXT",
+            "enc_key": "WRAPPED-KEY",
+            "kms_key_id": "cmk-1",
+        },
+        "version": 1,
+    }
+
+
+def test_core_scan_entity_projects_status_and_excludes_enc_blob() -> None:
+    core, ddb = _core()
+    _seed_source_credential(ddb, "1", "spotify", expires_at=100, refresh_status="ok")
+    # A non-matching entityType must be filtered out of the enumeration.
+    core.put_new("GUILD#1", "META", "Guild", {"name": "hd"})
+
+    items = list(core.scan_entity("SourceCredential"))
+
+    assert len(items) == 1
+    item = items[0]
+    assert item["PK"] == "USER#1"
+    assert item["SK"] == "SOURCECRED#spotify"
+    assert item["entityType"] == "SourceCredential"
+    # Only the two status fields are projected out of ``data``.
+    assert item["data"] == {"expires_at": 100, "refresh_status": "ok"}
+    # The token material is never returned by the enumeration projection.
+    assert "enc_blob" not in item["data"]
+    assert "enc_key" not in item["data"]
+    assert "kms_key_id" not in item["data"]
+
+
+def test_core_scan_entity_paginates_across_pages() -> None:
+    ddb = FakeTable(("PK", "SK"), scan_page_size=2)
+    core = CoreTable(ddb, None, backoff=_FAST_BACKOFF)
+    for index in range(5):
+        _seed_source_credential(
+            ddb, str(index), "tidal", expires_at=index, refresh_status="ok"
+        )
+
+    items = list(core.scan_entity("SourceCredential"))
+
+    # All five items are yielded despite the 2-per-page scan limit.
+    assert len(items) == 5
+    assert {item["PK"] for item in items} == {f"USER#{i}" for i in range(5)}
+    # Every yielded item is key-projected (no ciphertext leaked across pages).
+    assert all("enc_blob" not in item["data"] for item in items)
+
+
+def test_core_scan_entity_empty_when_no_matches() -> None:
+    core, ddb = _core()
+    core.put_new("GUILD#1", "META", "Guild", {"name": "hd"})
+
+    assert list(core.scan_entity("SourceCredential")) == []
 
 
 # -- SearchCacheTable --------------------------------------------------------

@@ -81,6 +81,28 @@ class UserProfileService:
         # GSI1 keys set (delete + put_new) to (re)establish the reverse index.
         self._relink(sub, discord_id, self.get(sub))
 
+    def unlink_discord(self, sub: str) -> None:
+        """Reset (unlink) a user's Discord link, clearing the GSI1 index (R8.4).
+
+        Rewrites the profile item WITHOUT the Discord id or the ``DISCORD#``
+        GSI1 reverse-index keys, so a later Discord OAuth login no longer
+        resolves this account and the user can re-link (or link a different
+        Discord identity). Idempotent: unlinking an already-unlinked (or
+        absent) profile leaves a clean, unlinked profile item. Never touches
+        any other user's item.
+        """
+        current = self.get(sub)
+        data = {
+            key: value
+            for key, value in current.items()
+            if key not in ("discord_id",)
+        }
+        data["discord_linked"] = False
+        # Delete + recreate WITHOUT the Discord GSI1 keys so the reverse index
+        # is cleared deterministically (mirrors ``_relink`` in reverse).
+        self._core.delete(user_pk(sub), PROFILE_SK)
+        self._core.put_new(user_pk(sub), PROFILE_SK, USER_ENTITY, data)
+
     def _relink(
         self, sub: str, discord_id: str, current: dict[str, Any]
     ) -> None:

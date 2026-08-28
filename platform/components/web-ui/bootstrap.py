@@ -14,6 +14,7 @@ Env:
 * ``INVITE_SENDER``                Verified SES sender identity for invites.
 * ``HELLODJ_PUBLIC_BASE_URL``      Site origin for the ``/invite/<token>`` link.
 * ``HELLODJ_ASSETS_BUCKET``        S3 bucket for per-guild bot-avatar bytes.
+* ``HELLODJ_SOURCE_CREDS_KMS_KEY_ID`` CMK for envelope-encrypting source tokens.
 """
 
 from __future__ import annotations
@@ -28,6 +29,7 @@ from guild_admin_service import GuildAdminService
 from guild_sources import GuildSourcesService
 from invite_email import InviteEmailService
 from invite_service import InviteService
+from source_credential_service import SourceCredentialService
 from user_profile import UserProfileService
 
 __all__ = ["build_services"]
@@ -69,6 +71,18 @@ def _secrets_client() -> Any | None:
 
         return boto3.client(
             "secretsmanager", region_name=os.getenv("AWS_REGION", "us-east-1")
+        )
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _kms_client() -> Any | None:
+    """Build a KMS client, or None when boto3 is unavailable."""
+    try:
+        import boto3
+
+        return boto3.client(
+            "kms", region_name=os.getenv("AWS_REGION", "us-east-1")
         )
     except Exception:  # noqa: BLE001
         return None
@@ -120,9 +134,9 @@ def build_services() -> dict[str, Any]:
     """Return the runtime services keyed for ``app.extensions``.
 
     Keys: ``config_store``, ``user_profiles``, ``guild_admin``,
-    ``guild_sources``, ``guild_identity_service``, ``invite_service``,
-    ``entitlement_service``. Any service whose backing resource is unavailable
-    is ``None`` and the routes degrade gracefully.
+    ``guild_sources``, ``source_credentials``, ``guild_identity_service``,
+    ``invite_service``, ``entitlement_service``. Any service whose backing
+    resource is unavailable is ``None`` and the routes degrade gracefully.
     """
     core = _core_table()
     stage = os.getenv("HELLODJ_STAGE", "beta")
@@ -133,6 +147,7 @@ def build_services() -> dict[str, Any]:
         "user_profiles": None,
         "guild_admin": None,
         "guild_sources": None,
+        "source_credentials": None,
         "guild_identity_service": None,
         "invite_service": None,
         "entitlement_service": None,
@@ -150,6 +165,17 @@ def build_services() -> dict[str, Any]:
     if secrets is not None:
         services["guild_sources"] = GuildSourcesService(
             core, secrets, stage=stage
+        )
+
+    # Unified per-user source-credential store (encrypted DynamoDB). Requires
+    # both a KMS client and a CMK id; degrades to None (like every other
+    # service) when either is unconfigured so new writes simply don't happen
+    # and the legacy per-guild secret path remains the fallback (R2.6).
+    kms = _kms_client()
+    kms_key_id = os.getenv("HELLODJ_SOURCE_CREDS_KMS_KEY_ID", "").strip()
+    if kms is not None and kms_key_id:
+        services["source_credentials"] = SourceCredentialService(
+            core, kms, kms_key_id
         )
 
     s3 = _s3_client()

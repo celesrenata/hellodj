@@ -113,6 +113,67 @@ All secrets are stored in an **encrypted SQLite database** (`/app/data/hellodj.d
 
 The config.py `Config` class does NOT fall back to env vars. It reads exclusively from the SQLite credential store. The `_KEY_TO_ENV` mapping exists only for documentation/migration reference.
 
+### AWS platform: Unified source-credential store (DynamoDB + envelope encryption)
+
+> Applies to the **AWS EKS** deployment only (spec:
+> `unified-oauth-and-token-watchdog`). The on-prem encrypted-SQLite store above
+> is unchanged.
+
+On AWS, per-user source OAuth credentials (YouTube, YouTube Music, Spotify,
+Tidal — Discord is identity-only, SoundCloud is search-only) are **no longer**
+stored as one Secrets Manager secret per guild+provider. They live as **one
+DynamoDB item per user+provider** on the existing `hellodj-core` table:
+
+- `PK = USER#<sub>`, `SK = SOURCECRED#<provider>`, `entityType = SourceCredential`.
+- **Plaintext status fields** the UI and watchdog read without a KMS call:
+  `connected`, `connected_at`, `updated_at`, `expires_at`, `scope`,
+  `last_refresh_at`, `refresh_status` (`ok`/`failed`), `refresh_error`.
+- **Token blob** (`{access_token, refresh_token, expires_at, scope, …}`) stored
+  ONLY as `enc_blob` (base64 AES-GCM ciphertext) + `enc_key` (KMS-wrapped data
+  key) + `kms_key_id`. Never plaintext tokens; tokens are never logged.
+
+**Double encryption at rest (R3):** the table keeps its KMS at-rest encryption
+AND the token blob is **application-layer envelope-encrypted** so a broad table
+read or a PITR export never exposes a refresh token. The shared implementation
+is `hellodj_platform_logic.token_crypto` (`encrypt_blob`/`decrypt_blob`, an
+injectable `KmsClient` Protocol → unit-testable with a fake KMS). Envelope flow:
+`kms.generate_data_key(AES_256)` → AES-GCM the blob with the plaintext data key
+→ discard the plaintext key → store ciphertext + KMS-wrapped key.
+
+**Source-credentials CMK:** a dedicated customer-managed KMS key
+`alias/hellodj-source-creds-<stage>` (key rotation enabled), created in
+`data-stack.ts` and exported as `sourceCredsKey`. Its id is wired to the granted
+components as `HELLODJ_SOURCE_CREDS_KMS_KEY_ID`. This is the ONLY new persistent
+AWS resource the spec adds (no new table).
+
+**Least-privilege KMS matrix** (`SOURCE_CREDENTIAL_KMS_COMPONENTS` in
+`workloads-stack.ts`, Property 9 / R9.4) — ONLY these components hold any grant
+on the CMK:
+
+| Component | Core table | CMK grant |
+|---|---|---|
+| `web-ui` (writer) | RW | GenerateDataKey + Encrypt (write path) + Decrypt (flow completion) |
+| `playback-orchestrator` (watchdog) | RW | GenerateDataKey + Encrypt + Decrypt (must decrypt to refresh) |
+| `discord-bot-core`, `tidal-stream`, `spotify-stream` (readers) | Read | Decrypt only (read-only on tokens) |
+
+No other component (including `lavalink`) gets a CMK grant. The legacy
+`hellodj/<stage>/guild/*` Secrets Manager read grant is retained during
+migration; new writes go to DynamoDB.
+
+**Unified refresh contract** (`hellodj_platform_logic.source_refresh`):
+generalizes the Tidal refresh shape into a provider-agnostic `RefreshClient`
+Protocol + pure `needs_refresh`/`apply_refresh` (fast-path if not expired,
+preserve prior refresh token when the provider doesn't rotate, treat an
+already-expired result as failure). Concrete clients: `GoogleRefreshClient`
+(youtube/youtube_music), `SpotifyRefreshClient`, and `TidalRefreshClient` — a
+thin adapter that delegates to the EXISTING `tidal_refresh.refresh_tidal`
+first-party single-app-id logic UNCHANGED (no regression; its property tests
+still pass).
+
+**Default playback source is `youtube`** — `player.py` `DEFAULT_SOURCE` +
+`resolve_source()` treat an unset/empty source_provider as YouTube; the web-ui
+config form preselects it.
+
 ## Lavalink Config Rendering (Init Container)
 
 The init container uses `render_lavalink_config.py` running in the **bot image** (which has Python + cryptography installed). It:
@@ -239,11 +300,51 @@ The bot runs a Discord Activity (Embedded App) for video streaming, whiteboard, 
 
 | Task | Interval | What it does |
 |------|----------|--------------|
-| `_token_refresh_watchdog` | 5 min | Refreshes Tidal token + re-pushes YouTube OAuth+PoToken to Lavalink |
+| `_token_refresh_watchdog` | 5 min | Refreshes Tidal token + re-pushes YouTube OAuth+PoToken to Lavalink. **On AWS this in-process loop is complemented/superseded by the durable watchdog** (see below) for stored source creds — the in-bot loop dies on a pod bounce, the durable one does not. |
 | `_potoken_refresh_task` | 1 hour (configurable) | Fetches fresh poToken from bgutil server, stores in cred DB, pushes to Lavalink |
 | `_gateway_health_watchdog` | 30s checks | Detects gateway READY stalls, force-reconnects, escalates to pod restart |
 | `_guild_policy_watchdog` | periodic | Re-checks guild authorization as admins join/leave |
 | `_orchestrator_health_loop` | 30s | Health checks for multi-instance bot orchestrator |
+
+### AWS platform: durable token-refresh watchdog (playback-orchestrator)
+
+> Spec: `unified-oauth-and-token-watchdog` (R5). AWS EKS only.
+
+Because the bot's in-process `_token_refresh_watchdog` dies whenever the bot pod
+bounces, the AWS platform runs a **durable** token-refresh watchdog inside the
+standing `playback-orchestrator` container — which already holds a run loop +
+DynamoDB access and survives a bot bounce. `__main__.main()` starts it on a
+**daemon thread alongside the health server** (`/healthz` on `PORT`, default
+8080) via `watchdog_bootstrap.start_watchdog_thread()`.
+
+- `token_watchdog.TokenWatchdog.tick()` — one pass: enumerate `SourceCredential`
+  items whose `expires_at` is within the near-expiry threshold (via
+  `CoreTable.scan_entity`, a paginated, key-projected scan that never pulls
+  `enc_blob`), refresh each via the matching `RefreshClient`, and write back the
+  new envelope-encrypted blob + `last_refresh_at` + `refresh_status` with an
+  optimistic-lock update (multi-replica safe).
+- **Per-item isolation:** one item's refresh failure sets
+  `refresh_status=failed` (prior blob intact) and continues; the loop/container
+  never crashes.
+- **Degraded mode:** when no datastore / KMS / provider clients are configured
+  the watchdog logs `degraded: watchdog disabled` and does NOT start — the
+  health server still comes up.
+- **Env (playback-orchestrator):** `HELLODJ_SOURCE_CREDS_KMS_KEY_ID`,
+  `TOKEN_WATCHDOG_INTERVAL` (default 300s), `TOKEN_WATCHDOG_THRESHOLD` (default
+  600s), `HELLODJ_GOOGLE_OAUTH_SECRET_ARN` + provider client id/secret envs.
+
+**Playback readers** (`bot/playback/guild_credentials.py`) resolve the
+`USER#<sub>`/`SOURCECRED#<provider>` item and decrypt via `token_crypto` with
+the reader's KMS decrypt grant, falling back to the legacy per-guild Secrets
+Manager secret when the DynamoDB item is absent. The YouTube just-in-time
+`POST /youtube` all-fields-together swap (OAuth + poToken + visitorData) and the
+per-node `asyncio.Lock` serialization + bounded TTL cache are preserved.
+
+**Migration backfill** (`platform/components/migration`, one-shot Job
+`python -m migration_job.backfill_main`): reads existing
+`hellodj/<stage>/guild/*` secrets and writes encrypted `SourceCredential` items;
+idempotent; logs counts (no token material). Run after the CMK + IAM are
+deployed.
 
 ## LavasRC Provider Configuration
 

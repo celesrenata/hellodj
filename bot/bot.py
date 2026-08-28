@@ -268,7 +268,15 @@ def _build_guild_credential_resolver():
         )
 
         client = boto3.client("secretsmanager")
-        _guild_cred_resolver = GuildCredentialResolver(client, stage=HELLODJ_STAGE)
+        # Unified per-user DynamoDB credential store is consulted FIRST; the
+        # per-guild Secrets Manager secret remains the migration fallback
+        # (R6.1/R6.5). ``None`` (no boto3/DynamoDB/KMS) → legacy-only.
+        from playback.guild_credentials import build_dynamo_credential_resolver
+
+        _dynamo_cred_resolver = build_dynamo_credential_resolver()
+        _guild_cred_resolver = GuildCredentialResolver(
+            client, stage=HELLODJ_STAGE, dynamo_resolver=_dynamo_cred_resolver
+        )
         _yt_cred_injector = YouTubeCredentialInjector(
             _guild_cred_resolver, _youtube_post
         )

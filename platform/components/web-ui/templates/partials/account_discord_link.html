@@ -1,0 +1,30 @@
+{# Discord link control: shows linked/not-linked and offers enable + reset.
+
+   Enable starts the existing Discord OAuth link flow (auth.discord_link).
+   Reset (unlink) clears the link via an HTMX POST that re-renders this
+   partial, so the account page reflects the change without a full reload
+   (R8.4). No token value is ever rendered. #}
+<div id="account-discord-link">
+  {% if profile.discord_linked %}
+    <p class="panel-section__muted">
+      Linked to Discord id <code>{{ profile.discord_id }}</code>. You can sign
+      in with Discord.
+    </p>
+    <div class="field-row">
+      <a class="btn btn-ghost btn-sm"
+         href="{{ url_for('auth.discord_link') }}">Re-link a different Discord account</a>
+      <button class="btn btn-danger btn-sm"
+              hx-post="{{ url_for('guild.account_discord_reset') }}"
+              hx-target="#account-discord-link"
+              hx-confirm="Unlink your Discord account? You will not be able to sign in with Discord until you link again.">Reset link</button>
+    </div>
+  {% else %}
+    <p class="panel-section__muted">
+      Link your Discord account to sign in with Discord and to be recognized as
+      a guild administrator.
+    </p>
+    <a class="btn btn-primary" href="{{ url_for('auth.discord_link') }}">
+      Enable Discord link
+    </a>
+  {% endif %}
+</div>

@@ -1,0 +1,67 @@
+{# Per-user source connection status + connect/disconnect (unified store).
+
+   Renders one row per OAuth provider (youtube, youtube_music, spotify, tidal —
+   NO SoundCloud, it is search-only, R1.7). Each row shows the plaintext status
+   from SourceCredentialService.status_for (connected, last-refresh, refresh
+   status) and NEVER a token value (R8.3). The action column offers Connect
+   (active only when the provider's OAuth client id is configured, else a
+   disabled "Needs setup" control, R1.2) or Disconnect (HTMX partial, R8.2). #}
+<div class="glass-panel data-table__wrap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th scope="col">Source</th>
+        <th scope="col">Status</th>
+        <th scope="col">Last refresh</th>
+        <th scope="col"></th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for provider in providers %}
+        {% set status = (source_status|default({})).get(provider) %}
+        <tr>
+          <td>{{ provider|replace('_', ' ')|title }}</td>
+          <td>
+            {% if status and status.connected %}
+              <span class="badge badge--ok">Connected</span>
+              {% if status.refresh_status == 'failed' %}
+                <span class="badge badge--danger"
+                      title="{{ status.refresh_error }}">Refresh failed</span>
+              {% elif status.refresh_status == 'ok' %}
+                <span class="badge badge--muted">Refresh ok</span>
+              {% endif %}
+            {% else %}
+              <span class="badge badge--muted">Not connected</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if status and status.connected and status.last_refresh_at %}
+              <time class="panel-section__muted"
+                    datetime="{{ status.last_refresh_at }}">
+                {{ status.last_refresh_at }}
+              </time>
+            {% else %}
+              <span class="panel-section__muted">&mdash;</span>
+            {% endif %}
+          </td>
+          <td>
+            {% if status and status.connected %}
+              <button class="btn btn-ghost btn-sm"
+                      hx-post="{{ url_for('guild.account_disconnect_source', provider=provider) }}"
+                      hx-target="#account-source-list"
+                      hx-confirm="Disconnect {{ provider|replace('_', ' ')|title }} from your account?">Disconnect</button>
+            {% elif (providers_configured|default({})).get(provider) %}
+              <a class="btn btn-primary btn-sm"
+                 href="{{ url_for('pages.guilds') }}"
+                 title="Connect {{ provider|replace('_', ' ')|title }} from a guild you manage.">Connect</a>
+            {% else %}
+              <button class="btn btn-disabled btn-sm" type="button" disabled
+                      aria-disabled="true"
+                      title="{{ provider|replace('_', ' ')|title }} is not set up on this platform yet. An administrator needs to configure its OAuth client id.">Needs setup</button>
+            {% endif %}
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

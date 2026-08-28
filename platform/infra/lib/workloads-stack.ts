@@ -43,6 +43,7 @@ import * as cdk from 'aws-cdk-lib';
 import * as eks from 'aws-cdk-lib/aws-eks';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import * as route53 from 'aws-cdk-lib/aws-route53';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as ses from 'aws-cdk-lib/aws-ses';
@@ -126,6 +127,23 @@ export function stageInviteSender(stage: string, region: string): string {
  * link stays valid before it is treated as expired (R1.3).
  */
 export const DEFAULT_INVITE_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
+
+/**
+ * Default token-refresh watchdog tick interval (5 minutes) injected as
+ * `TOKEN_WATCHDOG_INTERVAL`, mirroring the watchdog loop's default cadence
+ * (unified-oauth-and-token-watchdog R5.2).
+ */
+export const DEFAULT_TOKEN_WATCHDOG_INTERVAL_SECONDS = 5 * 60;
+
+/**
+ * Default token-refresh near-expiry threshold (10 minutes) injected as
+ * `TOKEN_WATCHDOG_THRESHOLD`: a credential expiring within this window is
+ * refreshed on the next tick (R5.2).
+ */
+export const DEFAULT_TOKEN_WATCHDOG_THRESHOLD_SECONDS = 10 * 60;
+
+/** The default in-cluster PoToken provider port (bgutil provider). */
+export const POTOKEN_SERVER_PORT = 4416;
 
 /**
  * A single stage's isolated endpoint on the shared GPU host — the TypeScript
@@ -248,6 +266,52 @@ export const PER_GUILD_SOURCE_READERS: ReadonlySet<string> = new Set([
 ]);
 
 /**
+ * The web-ui component name (the single writer/authorizer of source
+ * credentials). It holds the WRITE path on the source-credentials CMK
+ * (`kms:GenerateDataKey` + `kms:Encrypt`) plus `kms:Decrypt` where it completes
+ * an OAuth flow that needs the plaintext token (R9.1).
+ */
+export const SOURCE_CREDENTIAL_WRITER = 'web-ui';
+
+/**
+ * The watchdog component name (`playback-orchestrator`). The durable
+ * token-refresh watchdog runs as a background loop inside this standing
+ * container; it must READ/WRITE credential items and KMS
+ * encrypt+decrypt to refresh a token and re-wrap the new blob (R9.2).
+ */
+export const SOURCE_CREDENTIAL_WATCHDOG = 'playback-orchestrator';
+
+/**
+ * The playback readers (bot + streaming sidecars) that resolve a user's source
+ * credential at play time. They hold `kms:Decrypt` on the source-credentials
+ * CMK (READ-ONLY on tokens) plus core-table read (R9.3). `lavalink` is
+ * deliberately EXCLUDED: it receives its config pre-rendered by
+ * `config-renderer` and never decrypts token blobs itself, so it does not hold
+ * the CMK decrypt grant.
+ */
+export const SOURCE_CREDENTIAL_READERS: ReadonlySet<string> = new Set([
+  'discord-bot-core',
+  'tidal-stream',
+  'spotify-stream',
+]);
+
+/**
+ * The complete set of components that hold ANY grant on the source-credentials
+ * CMK (unified-oauth-and-token-watchdog R9.4). This is the authoritative,
+ * self-documenting least-privilege matrix for the CMK: the web-ui (writer +
+ * complete-flow decrypt), the playback-orchestrator watchdog (enc+dec), and
+ * the playback readers (decrypt-only). Correctness Property 9 requires that
+ * ONLY components in this set hold the CMK decrypt grant — nothing else can
+ * decrypt a token blob. Any component absent from this set gets no CMK grant
+ * at all.
+ */
+export const SOURCE_CREDENTIAL_KMS_COMPONENTS: ReadonlySet<string> = new Set([
+  SOURCE_CREDENTIAL_WRITER,
+  SOURCE_CREDENTIAL_WATCHDOG,
+  ...SOURCE_CREDENTIAL_READERS,
+]);
+
+/**
  * Bot-path components that host the `UserEntitlementResolver`
  * (admin-entitlements-panel spec, task 6). The resolver reads a user's
  * entitlement + AI-pricing items on the `hellodj-core` single table and writes
@@ -303,6 +367,17 @@ export interface WorkloadsDataRefs {
    * `assetsBucket` dependency as env `HELLODJ_ASSETS_BUCKET` + an IRSA grant.
    */
   readonly assetsBucket: s3.IBucket;
+
+  /**
+   * The source-credentials envelope-encryption CMK (from
+   * `DataStack.sourceCredsKey`, unified-oauth-and-token-watchdog R3.5). The
+   * web-ui + watchdog encrypt/generate-data-key against it, the watchdog +
+   * playback readers decrypt against it, and each granted component is wired
+   * `HELLODJ_SOURCE_CREDS_KMS_KEY_ID`. Optional so foundations imported without
+   * it still synthesize (degraded mode: no CMK → no grant/env; the watchdog
+   * runs disabled).
+   */
+  readonly sourceCredsKey?: kms.IKey;
 }
 
 /** Secrets Manager entries the workloads wire to (from `AuthStack`). */
@@ -457,6 +532,45 @@ export interface WorkloadsStackProps extends cdk.StackProps {
    * `DISCORD_CLIENT_SECRET` resolves to "".
    */
   readonly discordClientSecret?: string;
+
+  /**
+   * The in-cluster PoToken provider URL, injected into the web-ui container as
+   * `POTOKEN_SERVER_URL` (unified-oauth-and-token-watchdog Task 10). The web-ui
+   * / YouTube connect flow uses it alongside the OAuth swap. When unset it
+   * defaults to the in-namespace `potoken-server` Service DNS
+   * (`http://potoken-server.<namespace>.svc.cluster.local:4416`), so the env is
+   * always present and resolves to the running provider by default.
+   */
+  readonly potokenServerUrl?: string;
+
+  /**
+   * The token-refresh watchdog tick interval (seconds), injected into the
+   * `playback-orchestrator` container as `TOKEN_WATCHDOG_INTERVAL`
+   * (unified-oauth-and-token-watchdog R5.2). Defaults to
+   * {@link DEFAULT_TOKEN_WATCHDOG_INTERVAL_SECONDS} (5 minutes) so IaC and the
+   * watchdog loop agree on the cadence.
+   */
+  readonly tokenWatchdogIntervalSeconds?: number;
+
+  /**
+   * The token-refresh watchdog near-expiry threshold (seconds), injected into
+   * the `playback-orchestrator` container as `TOKEN_WATCHDOG_THRESHOLD`
+   * (R5.2) — a credential whose access token expires within this window is
+   * refreshed on the next tick. Defaults to
+   * {@link DEFAULT_TOKEN_WATCHDOG_THRESHOLD_SECONDS} (10 minutes).
+   */
+  readonly tokenWatchdogThresholdSeconds?: number;
+
+  /**
+   * The Spotify OAuth client *secret* value, placed into the per-stage
+   * `web-ui-oauth-secret` Kubernetes Secret and referenced by the web-ui
+   * container via `secretKeyRef`, so the per-guild Spotify connect flow can
+   * complete its code→token exchange without a secret value landing in a
+   * CloudFormation env literal (mirrors {@link googleClientSecret}). Additive;
+   * when unset the Secret carries an empty value and `SPOTIFY_CLIENT_SECRET`
+   * resolves to "".
+   */
+  readonly spotifyClientSecret?: string;
 
   /**
    * Override for the verified SES sender identity the web-ui sends branded
@@ -711,6 +825,10 @@ export class WorkloadsStack extends cdk.Stack {
         stringData: {
           GOOGLE_CLIENT_SECRET: this.props.googleClientSecret ?? '',
           DISCORD_CLIENT_SECRET: this.props.discordClientSecret ?? '',
+          // Spotify client secret for the per-guild Spotify connect exchange
+          // (unified-oauth-and-token-watchdog). Kept in the same k8s Secret so
+          // no value lands in a manifest literal; empty until populated.
+          SPOTIFY_CLIENT_SECRET: this.props.spotifyClientSecret ?? '',
         },
       },
     );
@@ -1030,6 +1148,71 @@ export class WorkloadsStack extends cdk.Stack {
       );
     }
 
+    // Source-credentials CMK grants (unified-oauth-and-token-watchdog R3.3,
+    // R9.1-R9.4). The token blobs stored on `hellodj-core` are envelope-
+    // encrypted with a dedicated CMK; the least-privilege matrix is documented
+    // by {@link SOURCE_CREDENTIAL_KMS_COMPONENTS} and realized here:
+    //
+    //   * web-ui (writer): GenerateDataKey + Encrypt (write path) AND Decrypt
+    //     (it completes some OAuth flows that need the plaintext token) — R9.1.
+    //   * playback-orchestrator (watchdog): GenerateDataKey + Encrypt + Decrypt
+    //     — it decrypts to refresh, then re-wraps the new blob — R9.2.
+    //   * playback readers (bot + sidecars): Decrypt only (read-only on
+    //     tokens) — R9.3.
+    //
+    // Correctness Property 9 / R9.4: ONLY components in
+    // SOURCE_CREDENTIAL_KMS_COMPONENTS receive a decrypt grant — everything
+    // else (including `lavalink`, which never decrypts a blob itself) gets no
+    // CMK grant at all. The grant is guarded on the CMK being threaded so a
+    // foundation imported without it still synthesizes (degraded mode).
+    const sourceCredsKey = this.props.data.sourceCredsKey;
+    if (sourceCredsKey && SOURCE_CREDENTIAL_KMS_COMPONENTS.has(spec.name)) {
+      if (
+        spec.name === SOURCE_CREDENTIAL_WRITER ||
+        spec.name === SOURCE_CREDENTIAL_WATCHDOG
+      ) {
+        // web-ui (writer) + playback-orchestrator (watchdog): full envelope
+        // path. `grantEncryptDecrypt` grants Encrypt, Decrypt, ReEncrypt* AND
+        // GenerateDataKey* — exactly the actions envelope encryption needs to
+        // mint + wrap a per-item data key (write) and unwrap it (decrypt to
+        // refresh / complete a flow). R9.1 / R9.2.
+        sourceCredsKey.grantEncryptDecrypt(sa.role);
+      } else {
+        // playback readers (bot + sidecars): decrypt only — read-only on
+        // tokens (R9.3). `grantDecrypt` grants only `kms:Decrypt`.
+        sourceCredsKey.grantDecrypt(sa.role);
+      }
+    }
+
+    // Watchdog provider-secret reads (unified-oauth-and-token-watchdog R9.2).
+    // The playback-orchestrator watchdog builds Google/Spotify/Tidal refresh
+    // clients, so it needs READ on those provider credential secrets to obtain
+    // each client secret at runtime (resolved via IRSA — only the ARN is in
+    // env). Scoped to exactly those secret ARNs (least privilege). Guarded on
+    // the optional google-oauth handle so an imported foundation without it
+    // still synthesizes.
+    if (spec.name === SOURCE_CREDENTIAL_WATCHDOG) {
+      if (this.props.secrets.googleOauth) {
+        this.props.secrets.googleOauth.grantRead(sa.role);
+      }
+      this.props.secrets.spotify.grantRead(sa.role);
+      this.props.secrets.tidalRefresh.grantRead(sa.role);
+    }
+
+    // Playback readers also need to READ the credential item off `hellodj-core`
+    // to fetch the wrapped blob before decrypting (R9.3). `discord-bot-core`
+    // already holds broad `grantReadWriteData` via its `coreTable` dependency;
+    // the streaming sidecars (`tidal-stream` / `spotify-stream`) do not declare
+    // that dependency, so grant them explicit READ on the core table here so a
+    // sidecar can resolve + decrypt a user's credential at play time without
+    // gaining write access.
+    if (
+      SOURCE_CREDENTIAL_READERS.has(spec.name) &&
+      !spec.dependencies.coreTable
+    ) {
+      this.props.data.coreTable.grantReadData(sa.role);
+    }
+
     // Bot-side user-entitlement resolution + AI-cost metering
     // (admin-entitlements-panel, tasks 6/14; R14.1, R10.1, R10.3). The
     // `discord-bot-core` resolver READS a user's entitlement item + the shared
@@ -1210,6 +1393,87 @@ export class WorkloadsStack extends cdk.Stack {
       });
     }
 
+    // Source-credentials CMK key id (unified-oauth-and-token-watchdog R3.5).
+    // Every component that reads/writes envelope-encrypted token blobs — the
+    // web-ui, the playback-orchestrator watchdog, and the playback readers —
+    // resolves the CMK from `HELLODJ_SOURCE_CREDS_KMS_KEY_ID` and uses it with
+    // `token_crypto`. Pushed only for components in the documented KMS matrix
+    // and only when the CMK is threaded (degraded mode: absent → the watchdog
+    // stays disabled and the web-ui renders "Needs setup"). This is the env
+    // half of the least-privilege grant added in `grantDependencies`.
+    if (
+      this.props.data.sourceCredsKey &&
+      SOURCE_CREDENTIAL_KMS_COMPONENTS.has(spec.name)
+    ) {
+      env.push({
+        name: 'HELLODJ_SOURCE_CREDS_KMS_KEY_ID',
+        value: this.props.data.sourceCredsKey.keyId,
+      });
+    }
+
+    // Token-refresh watchdog wiring (unified-oauth-and-token-watchdog R5.1,
+    // R5.2, R9.2). The durable watchdog runs as a background loop inside the
+    // standing `playback-orchestrator` container. It reads/writes credential
+    // items on `hellodj-core` (broad RW granted via its `coreTable` dependency)
+    // and decrypts/re-wraps token blobs with the source-credentials CMK
+    // (`HELLODJ_SOURCE_CREDS_KMS_KEY_ID`, pushed above). Here we add the loop
+    // cadence and the per-provider credentials it needs to build refresh
+    // clients: the non-sensitive client *ids* as plain env, and the client
+    // *secret* ARNs (resolved at runtime via IRSA — the SA is granted READ on
+    // those secrets) so no secret value lands in a CloudFormation env literal.
+    if (spec.name === SOURCE_CREDENTIAL_WATCHDOG) {
+      env.push({
+        name: 'TOKEN_WATCHDOG_INTERVAL',
+        value: String(
+          this.props.tokenWatchdogIntervalSeconds ??
+            DEFAULT_TOKEN_WATCHDOG_INTERVAL_SECONDS,
+        ),
+      });
+      env.push({
+        name: 'TOKEN_WATCHDOG_THRESHOLD',
+        value: String(
+          this.props.tokenWatchdogThresholdSeconds ??
+            DEFAULT_TOKEN_WATCHDOG_THRESHOLD_SECONDS,
+        ),
+      });
+      // Provider OAuth client ids (non-sensitive) as plain env, so the watchdog
+      // can construct the Google/Spotify/Tidal refresh clients. Pushed
+      // unconditionally with an empty-string default so the env is always
+      // present (a provider with an empty id is treated as unconfigured).
+      env.push({ name: 'GOOGLE_CLIENT_ID', value: this.props.googleClientId ?? '' });
+      env.push({ name: 'SPOTIFY_CLIENT_ID', value: this.props.spotifyClientId ?? '' });
+      env.push({ name: 'TIDAL_CLIENT_ID', value: this.props.tidalClientId ?? '' });
+      // Provider client *secret* ARNs (resolved at runtime via IRSA). The
+      // watchdog reads the secret VALUE through its role, not from env, so the
+      // secret never lands in a manifest literal (mirrors the web-ui lazy
+      // pattern). Only the ARN is injected. Guarded on the optional handles.
+      if (this.props.secrets.googleOauth) {
+        env.push({
+          name: 'HELLODJ_GOOGLE_OAUTH_SECRET_ARN',
+          value: this.props.secrets.googleOauth.secretArn,
+        });
+      }
+      env.push({
+        name: 'HELLODJ_SPOTIFY_SECRET_ARN',
+        value: this.props.secrets.spotify.secretArn,
+      });
+      env.push({
+        name: 'HELLODJ_TIDAL_REFRESH_SECRET_ARN',
+        value: this.props.secrets.tidalRefresh.secretArn,
+      });
+      // Tidal first-party refresh routes through the existing single-app-id
+      // token endpoint + callback (R4.5, preserve). Injected so the watchdog's
+      // Tidal adapter builds the same first-party client the sidecar uses.
+      env.push({
+        name: 'TIDAL_TOKEN_URL',
+        value: 'https://auth.tidal.com/v1/oauth2/token',
+      });
+      env.push({
+        name: 'TIDAL_CALLBACK_URL',
+        value: `https://${this.stageEndpoint.hostname}/tidal/callback`,
+      });
+    }
+
     // web-ui auth wiring: the Flask app reads these to build the Cognito
     // hosted-UI (admin/register/recover) and Discord OAuth (login) redirects.
     // Without them the "Administrator sign in" button redirects to a broken
@@ -1280,6 +1544,26 @@ export class WorkloadsStack extends cdk.Stack {
           value: this.props.secrets.discordOauth.secretArn,
         });
       }
+      // Google/YouTube OAuth secret ARN (unified-oauth-and-token-watchdog
+      // Task 10). The web-ui resolves the Google client secret lazily via IRSA
+      // to complete the YouTube code→refresh-token exchange; inject only the
+      // ARN (mirrors the Discord lazy pattern) so the secret value never lands
+      // in a manifest literal. Guarded on the optional handle.
+      if (this.props.secrets.googleOauth) {
+        env.push({
+          name: 'HELLODJ_GOOGLE_OAUTH_SECRET_ARN',
+          value: this.props.secrets.googleOauth.secretArn,
+        });
+      }
+      // In-cluster PoToken provider URL (Task 10). Used alongside the YouTube
+      // OAuth swap. Defaults to the in-namespace `potoken-server` Service DNS
+      // so the env is always present and resolves to the running provider.
+      env.push({
+        name: 'POTOKEN_SERVER_URL',
+        value:
+          this.props.potokenServerUrl ??
+          `http://potoken-server.${this.namespace}.svc.cluster.local:${POTOKEN_SERVER_PORT}`,
+      });
       // Per-guild source OAuth client ids (R2.6). `app.py` reads these to build
       // the Spotify / YouTube / Tidal authorize URLs; when empty,
       // `source_authorize_url` returns None and the connect button silently
@@ -1322,6 +1606,18 @@ export class WorkloadsStack extends cdk.Stack {
           secretKeyRef: {
             name: 'web-ui-oauth-secret',
             key: 'DISCORD_CLIENT_SECRET',
+          },
+        },
+      });
+      // Spotify client secret for the per-guild Spotify connect code→token
+      // exchange (unified-oauth-and-token-watchdog), referenced via secretKeyRef
+      // into the same `web-ui-oauth-secret` so no value lands in a CFN literal.
+      env.push({
+        name: 'SPOTIFY_CLIENT_SECRET',
+        valueFrom: {
+          secretKeyRef: {
+            name: 'web-ui-oauth-secret',
+            key: 'SPOTIFY_CLIENT_SECRET',
           },
         },
       });

@@ -7,7 +7,7 @@
 
   {{ ui.form_field('bot_name', 'Bot display name', config.get('bot_name', ''),
       hint='Shown in Discord and the Activity.') }}
-  {{ ui.form_field('default_source', 'Default source', config.get('default_source', ''),
+  {{ ui.form_field('default_source', 'Default source', config.get('default_source') or 'youtube',
       hint='youtube, spotify, tidal, or soundcloud.') }}
   {{ ui.form_field('max_queue', 'Max queue length', config.get('max_queue', ''), 'number') }}
 

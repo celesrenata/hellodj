@@ -32,6 +32,13 @@ from .legacy_source import (
     S3JsonLegacySource,
     parse_legacy_records,
 )
+from .source_credential_backfill import (
+    BackfillResult,
+    SourceCredentialBackfill,
+    build_secrets_client,
+    legacy_secret_to_token_state,
+    parse_guild_secret_name,
+)
 
 __all__ = [
     "AdminBootstrapCredential",
@@ -44,4 +51,9 @@ __all__ = [
     "JsonFileLegacySource",
     "S3JsonLegacySource",
     "parse_legacy_records",
+    "BackfillResult",
+    "SourceCredentialBackfill",
+    "build_secrets_client",
+    "legacy_secret_to_token_state",
+    "parse_guild_secret_name",
 ]

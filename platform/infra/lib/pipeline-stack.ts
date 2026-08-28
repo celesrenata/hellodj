@@ -64,6 +64,7 @@ import * as eks from 'aws-cdk-lib/aws-eks';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import * as s3 from 'aws-cdk-lib/aws-s3';
 import {
   CodePipeline,
@@ -80,6 +81,7 @@ import {
   SEARCH_CACHE_TABLE_NAME,
   SESSION_TABLE_NAME,
   DEFAULT_ASSETS_STAGE,
+  sourceCredsKeyAlias,
 } from './data-stack';
 
 // ---------------------------------------------------------------------------
@@ -553,6 +555,7 @@ export class HelloDjStage extends cdk.Stage {
         tidalClientId: props.foundation.tidalClientId,
         googleClientSecret: props.foundation.googleClientSecret,
         discordClientSecret: props.foundation.discordClientSecret,
+        spotifyClientSecret: props.foundation.spotifyClientSecret,
         // Immutable per-component image tags so each pipeline run changes the
         // pod spec and Kubernetes rolls automatically (no manual restart).
         imageTags: props.imageTags,
@@ -1060,6 +1063,21 @@ export class PipelineStack extends cdk.Stack {
         this,
         'SharedAssetsBucket',
         `hellodj-assets-${DEFAULT_ASSETS_STAGE}-${region}`,
+      ),
+      // Source-credential envelope-encryption CMK (unified-oauth-and-token-
+      // watchdog R3.5). Referenced by its stable alias ARN. The CMK is
+      // stage-scoped (`hellodj-source-creds-<stage>`) while this fallback uses
+      // the default-stage alias; the authoritative handle (the real key by ARN,
+      // so grants land on the key policy) is supplied via
+      // `PipelineStackProps.foundation.data.sourceCredsKey` (cross-stack), which
+      // takes precedence over this import. `fromLookup` is avoided so a
+      // credential-less synth still succeeds; grants against an imported alias
+      // resolve to the underlying key at deploy.
+      sourceCredsKey: kms.Alias.fromAliasName(
+        this,
+        'SharedSourceCredsKey',
+        // `fromAliasName` expects the `alias/...` name; strip nothing.
+        sourceCredsKeyAlias(DEFAULT_ASSETS_STAGE),
       ),
     };
 

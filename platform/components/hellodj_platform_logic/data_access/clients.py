@@ -81,6 +81,10 @@ class TableLike(Protocol):
         """Return a response dict containing an ``Items`` list."""
         ...
 
+    def scan(self, **kwargs: Any) -> dict[str, Any]:
+        """Return a response dict containing an ``Items`` list (table scan)."""
+        ...
+
     def delete_item(self, **kwargs: Any) -> dict[str, Any]:
         """Delete a single item by key, honoring any ``ConditionExpression``."""
         ...
@@ -237,6 +241,20 @@ class ReadThroughTable:
             lambda: self._ddb.query(**kwargs),
             config=self._backoff,
             description="ddb query",
+        )
+
+    def scan(self, **kwargs: Any) -> dict[str, Any]:
+        """Scan the DynamoDB table directly (never DAX).
+
+        A scan enumerates the base table; it is served from DynamoDB rather
+        than DAX so an enumeration always reflects the authoritative store
+        (DAX only fronts point reads/queries). Wrapped in backoff so a
+        throttled scan page is retried and then surfaced as a typed error.
+        """
+        return with_backoff(
+            lambda: self._ddb.scan(**kwargs),
+            config=self._backoff,
+            description="ddb scan",
         )
 
     def put_item(self, **kwargs: Any) -> dict[str, Any]:

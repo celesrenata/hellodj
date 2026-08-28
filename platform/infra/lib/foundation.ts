@@ -113,6 +113,14 @@ export interface FoundationRefs {
    * for the Discord-login callback token exchange. Optional.
    */
   readonly discordClientSecret?: string;
+
+  /**
+   * The Spotify OAuth client *secret* value, surfaced into the web-ui's
+   * `web-ui-oauth-secret` Kubernetes Secret and referenced via `secretKeyRef`
+   * for the per-guild Spotify connect code→token exchange
+   * (unified-oauth-and-token-watchdog). Optional; defaults to `""` downstream.
+   */
+  readonly spotifyClientSecret?: string;
 }
 
 /**

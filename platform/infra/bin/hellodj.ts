@@ -182,6 +182,11 @@ const pipeline = new PipelineStack(app, 'hellodj-pipeline', {
       daxEndpoint: data.daxEndpoint,
       // Per-guild bot-avatar assets bucket the web-ui writes and the bot reads.
       assetsBucket: data.assetsBucket,
+      // Source-credential envelope-encryption CMK (unified-oauth-and-token-
+      // watchdog R3.5): the web-ui + watchdog encrypt against it, the watchdog
+      // + playback readers decrypt against it, and each granted component is
+      // wired `HELLODJ_SOURCE_CREDS_KMS_KEY_ID`.
+      sourceCredsKey: data.sourceCredsKey,
     },
     secrets: {
       discordBotToken: auth.discordBotTokenSecret,

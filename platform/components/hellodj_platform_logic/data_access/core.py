@@ -35,7 +35,7 @@ Requirements: 7.1, 7.2, 7.3, 7.4, 7.5, 7.6
 from __future__ import annotations
 
 import time
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterator, Mapping
 from typing import Any
 
 from .clients import BackoffConfig, ReadThroughTable, TableLike
@@ -164,6 +164,47 @@ class CoreTable:
             kwargs["ExpressionAttributeValues"][":skp"] = sk_prefix
         response = self._table.query(**kwargs)
         return [dict(item) for item in response.get("Items", [])]
+
+    def scan_entity(self, entity_type: str) -> Iterator[dict[str, Any]]:
+        """Yield every item of ``entity_type``, key-projected, across all pages.
+
+        Enumerates the base table with a ``entityType = :et`` filter and a
+        projection restricted to the primary key, the ``entityType``, and the
+        two plaintext status fields the watchdog needs (``data.expires_at`` and
+        ``data.refresh_status``). The projection deliberately **excludes**
+        ``data.enc_blob`` (and every other token field) so an enumeration never
+        pulls ciphertext or forces a KMS decrypt — only the subsequent refresh
+        path loads the blob.
+
+        Pagination is handled transparently via ``LastEvaluatedKey``: each page
+        is requested with the prior page's ``LastEvaluatedKey`` as
+        ``ExclusiveStartKey`` until DynamoDB stops returning one, and items are
+        yielded lazily as an :class:`~collections.abc.Iterator` so a large
+        result set is never fully materialized in memory.
+
+        Args:
+            entity_type: The ``entityType`` to enumerate (e.g.
+                ``"SourceCredential"``).
+
+        Yields:
+            One key-projected item dict per matching table item.
+        """
+        kwargs: dict[str, Any] = {
+            "FilterExpression": "#et = :et",
+            "ProjectionExpression": (
+                "PK, SK, #et, #d.expires_at, #d.refresh_status"
+            ),
+            "ExpressionAttributeNames": {"#et": "entityType", "#d": "data"},
+            "ExpressionAttributeValues": {":et": entity_type},
+        }
+        while True:
+            response = self._table.scan(**kwargs)
+            for item in response.get("Items", []):
+                yield dict(item)
+            last_key = response.get("LastEvaluatedKey")
+            if not last_key:
+                return
+            kwargs["ExclusiveStartKey"] = last_key
 
     # -- writes -------------------------------------------------------------
 

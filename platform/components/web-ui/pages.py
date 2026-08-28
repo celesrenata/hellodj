@@ -25,6 +25,7 @@ from flask import (
 
 # Aliased: ``registration_mode`` is also a template context variable name.
 import registration_mode as registration_mode_module
+from config_store import effective_default_source
 
 __all__ = ["build_pages_blueprint"]
 
@@ -168,7 +169,7 @@ def build_pages_blueprint() -> Blueprint:
             layout=_layout(),
             nav_items=_nav_for_current_user(),
             active="config",
-            config=values,
+            config=_config_for_render(values),
             tidal=request.args.get("tidal"),
         )
 
@@ -181,7 +182,9 @@ def build_pages_blueprint() -> Blueprint:
         values = _form_values(request.form)
         saved = store.set_global(values) if store else values
         return render_template(
-            "partials/config_form.html", config=saved, saved=True
+            "partials/config_form.html",
+            config=_config_for_render(saved),
+            saved=True,
         )
 
     @bp.route("/guilds")
@@ -354,6 +357,18 @@ def build_pages_blueprint() -> Blueprint:
 def _form_values(form: Any) -> dict[str, Any]:
     """Normalize a submitted config form into a plain dict."""
     return {key: value for key, value in form.items() if key != "csrf_token"}
+
+
+def _config_for_render(config: dict[str, Any]) -> dict[str, Any]:
+    """Return a render-ready copy of ``config`` with the default source resolved.
+
+    The config form preselects ``youtube`` when no ``default_source`` is stored
+    (R7.2), so the effective default is materialized into the payload the
+    template renders rather than left to the template's ``.get`` fallback.
+    """
+    rendered = dict(config)
+    rendered["default_source"] = effective_default_source(config)
+    return rendered
 
 
 def _dashboard_stats() -> list[dict[str, Any]]:

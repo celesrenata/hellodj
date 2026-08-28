@@ -7,6 +7,7 @@ import {
   SEARCH_CACHE_TABLE_NAME,
   SESSION_TABLE_NAME,
   CORE_GSI1_NAME,
+  sourceCredsKeyAlias,
 } from '../lib/data-stack';
 
 /**
@@ -122,5 +123,38 @@ describe('DataStack (DynamoDB + DAX)', () => {
     template.resourceCountIs('AWS::RDS::DBInstance', 0);
     template.resourceCountIs('AWS::RDS::DBCluster', 0);
     template.resourceCountIs('AWS::Neptune::DBCluster', 0);
+  });
+
+  // ---------------------------------------------------------------------------
+  // unified-oauth-and-token-watchdog task 10: source-credentials CMK.
+  //
+  // A dedicated customer-managed KMS key envelope-encrypts source-credential
+  // token blobs on the core table (R3.5). It must have key rotation enabled
+  // (annual automatic rotation) and a stable stage-scoped alias so the
+  // workloads can grant + wire `HELLODJ_SOURCE_CREDS_KMS_KEY_ID`.
+  //
+  // _Requirements: 3.1, 3.5._
+  // ---------------------------------------------------------------------------
+  test('creates a source-credentials CMK with key rotation enabled (R3.5)', () => {
+    template.resourceCountIs('AWS::KMS::Key', 1);
+    template.hasResourceProperties('AWS::KMS::Key', {
+      EnableKeyRotation: true,
+    });
+  });
+
+  test('the source-credentials CMK has a stable stage-scoped alias (R3.5)', () => {
+    // synthDataStack does not pass a stage, so it defaults to `beta`.
+    template.hasResourceProperties('AWS::KMS::Alias', {
+      AliasName: sourceCredsKeyAlias('beta'),
+    });
+  });
+
+  test('the core table retains AWS-managed at-rest encryption (R3.1)', () => {
+    // The CMK is a SECOND layer; the table's own at-rest encryption is
+    // unchanged (AWS_MANAGED → SSESpecification with SSEType KMS).
+    template.hasResourceProperties('AWS::DynamoDB::Table', {
+      TableName: CORE_TABLE_NAME,
+      SSESpecification: Match.objectLike({ SSEEnabled: true }),
+    });
   });
 });

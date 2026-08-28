@@ -26,9 +26,16 @@ __all__ = [
     "GLOBAL_CONFIG_PK",
     "CONFIG_SK",
     "CONFIG_ENTITY_TYPE",
+    "DEFAULT_SOURCE",
     "ConfigStore",
+    "effective_default_source",
     "guild_config_pk",
 ]
+
+#: The playback source used when a guild/user has configured none (R7.1–R7.3).
+#: A single shared constant so the config layer, the config form preselect, and
+#: the bot's source map all agree that "unset" means YouTube.
+DEFAULT_SOURCE = "youtube"
 
 #: Partition key for the single global platform-configuration item.
 GLOBAL_CONFIG_PK = "CONFIG#GLOBAL"
@@ -43,6 +50,20 @@ CONFIG_ENTITY_TYPE = "Config"
 def guild_config_pk(guild_id: str) -> str:
     """Return the ``hellodj-core`` partition key for a guild's config item."""
     return f"GUILD#{guild_id}"
+
+
+def effective_default_source(config: dict[str, Any]) -> str:
+    """Resolve the effective default playback source for a config payload.
+
+    An unset, empty, or whitespace-only ``default_source`` resolves to
+    :data:`DEFAULT_SOURCE` (``youtube``) so playback works out of the box
+    (R7.1). This is the single resolver the config layer exposes so the UI
+    preselect and any server-side reader agree on the fallback.
+    """
+    stored = config.get("default_source")
+    if isinstance(stored, str) and stored.strip():
+        return stored
+    return DEFAULT_SOURCE
 
 
 class ConfigStore:

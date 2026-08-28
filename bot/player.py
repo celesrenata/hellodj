@@ -58,6 +58,26 @@ def _get_youtube_injector():
     return None
 
 
+# ── default playback source (R7.1/R7.3) ─────────────────────
+#
+# When a guild/user has no explicit source configured, playback defaults to
+# YouTube. A single module-level constant so the bot's source map and the
+# web-ui config layer agree that "unset" means ``youtube``.
+DEFAULT_SOURCE = "youtube"
+
+
+def resolve_source(provider: str | None) -> str:
+    """Resolve a (possibly unset) source provider to its effective value.
+
+    An empty/``None``/whitespace-only provider resolves to
+    :data:`DEFAULT_SOURCE` (``youtube``) so the source map treats "unset" as
+    YouTube (R7.3).
+    """
+    if isinstance(provider, str) and provider.strip():
+        return provider
+    return DEFAULT_SOURCE
+
+
 # ── per-user source entitlement gate (R3.2/R3.3/R3.4) ────────
 #
 # Sources map to the entitlement ``sources`` keys 1:1 (design "Bot enforcement"
@@ -1657,7 +1677,8 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
     # Detect the actual source from the URL — overrides the guild source_provider
     # when the track URL clearly belongs to a specific service. This prevents
     # mismatches like a Spotify URL being resolved through the Tidal path.
-    sp = state.get("source_provider", "youtube")
+    # An unset/empty source_provider resolves to the default (youtube, R7.3).
+    sp = resolve_source(state.get("source_provider"))
     if url:
         if "spotify.com" in url or "spotify:" in url:
             sp = "spotify"
@@ -1782,7 +1803,7 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
             "spotify": "spsearch",
             "tidal": "tidal",
         }
-        source = source_map.get(sp, TrackSource.YouTube)
+        source = source_map.get(sp, source_map[DEFAULT_SOURCE])
 
         # ── per-guild YouTube just-in-time credential swap (R2.5) ──────────
         # For a guild that has connected its OWN YouTube account, resolve that

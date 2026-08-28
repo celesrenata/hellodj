@@ -5,3 +5,7 @@
 #     pip install -e ../hellodj_platform_logic
 # or make it importable via PYTHONPATH=components.
 boto3>=1.34
+# Envelope-decryption for the token-refresh watchdog (AES-GCM via token_crypto,
+# imported transitively through the shared SourceCredentialService the watchdog
+# reuses to decrypt/refresh source credentials).
+cryptography>=42

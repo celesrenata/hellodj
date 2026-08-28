@@ -10,10 +10,14 @@ the component *runnable* as an independently deployable container (R15.1)::
 It runs a long-lived process that exposes a minimal health endpoint on
 ``PORT`` (default 8080, matching the image's ``ExposedPorts``) so the
 deployment stays up and Kubernetes readiness/liveness probes have a target.
-Only the Python standard library is used here so the runtime image needs no
-extra dependencies beyond what the flake already bundles.
+The stdlib health server needs no extra dependencies beyond what the flake
+already bundles. Alongside it, ``main`` starts the durable token-refresh
+**watchdog** on a daemon thread (see :mod:`playback_orchestrator.token_watchdog`
+/ :mod:`playback_orchestrator.watchdog_bootstrap`); the watchdog self-degrades
+to a no-op when no datastore / KMS / provider clients are configured, so the
+health server always comes up (R5.1, R5.7).
 
-Requirements: 6.1, 6.4, 15.1
+Requirements: 5.1, 5.7, 6.1, 6.4, 15.1
 """
 
 from __future__ import annotations
@@ -68,6 +72,15 @@ def main() -> None:
     port = int(os.environ.get("PORT", "8080"))
     server = ThreadingHTTPServer((host, port), _HealthHandler)
     _install_signal_handlers(server)
+
+    # Start the durable token-refresh watchdog on a daemon thread next to the
+    # health server (R5.1). It self-degrades to a no-op (logs "degraded:
+    # watchdog disabled") when no datastore / KMS / provider clients are
+    # configured, so the health server always comes up regardless (R5.7).
+    from .watchdog_bootstrap import start_watchdog_thread
+
+    start_watchdog_thread()
+
     _LOG.info(
         "playback-orchestrator ready: health server on %s:%s (stage=%s)",
         host,

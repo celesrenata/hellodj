@@ -102,6 +102,10 @@ def create_app(
     app.extensions["user_profiles"] = services["user_profiles"]
     app.extensions["guild_admin"] = services["guild_admin"]
     app.extensions["guild_sources"] = services["guild_sources"]
+    # Unified per-user source-credential store (encrypted DynamoDB); None in
+    # degraded mode (no KMS / CMK) so callbacks skip the new write and fall
+    # back to the legacy per-guild secret (R2.6).
+    app.extensions["source_credentials"] = services["source_credentials"]
     app.extensions["guild_identity_service"] = services[
         "guild_identity_service"
     ]
@@ -196,6 +200,11 @@ def _configure(app: Flask, overrides: dict[str, Any]) -> None:
         POTOKEN_SERVER_URL=os.getenv(
             "POTOKEN_SERVER_URL",
             f"http://potoken-server.hellodj-{stage}.svc.cluster.local:4416",
+        ),
+        # Source-credentials CMK id for envelope-encrypting stored tokens
+        # (unified-oauth-and-token-watchdog). Absent -> no unified store wired.
+        HELLODJ_SOURCE_CREDS_KMS_KEY_ID=os.getenv(
+            "HELLODJ_SOURCE_CREDS_KMS_KEY_ID", ""
         ),
     )
     app.config.update(overrides)

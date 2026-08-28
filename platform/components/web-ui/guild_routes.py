@@ -32,7 +32,34 @@ from guild_admin_service import can_manage_guild
 from guild_sources import SUPPORTED_PROVIDERS
 from source_oauth import source_provider_configured
 
-__all__ = ["build_guild_blueprint"]
+__all__ = ["build_guild_blueprint", "OAUTH_SOURCE_PROVIDERS"]
+
+#: The OAuth providers offered on the per-user account connections panel
+#: (R1.1). SoundCloud is intentionally excluded — it is search-only and needs
+#: no OAuth (R1.7). This mirrors the per-guild ``SUPPORTED_PROVIDERS`` set.
+OAUTH_SOURCE_PROVIDERS = SUPPORTED_PROVIDERS
+
+
+def _account_source_status(sub: str) -> dict[str, Any]:
+    """Return a ``{provider: status}`` map for the account panel (no token).
+
+    Reads plaintext status from :class:`SourceCredentialService` keyed by the
+    user's ``sub`` — never decrypts, never returns a token value (R8.1, R8.3).
+    Degrades to an empty map when no unified store is wired or no sub is known.
+    """
+    creds = current_app.extensions.get("source_credentials")
+    if creds is None or not sub:
+        return {}
+    return {row["provider"]: row for row in creds.status(sub)}
+
+
+def _account_providers_configured() -> dict[str, bool]:
+    """Return which account providers have their OAuth client id configured.
+
+    An unconfigured provider renders a disabled "Needs setup" control instead
+    of an active Connect link that would silently no-op (R1.2).
+    """
+    return {p: source_provider_configured(p) for p in OAUTH_SOURCE_PROVIDERS}
 
 
 def _svc(name: str) -> Any:
@@ -71,7 +98,17 @@ def build_guild_blueprint() -> Blueprint:
 
     @bp.route("/account")
     def account():  # type: ignore[unused-ignore]
-        """User profile + Discord link status."""
+        """User profile + Discord link status + per-user source connections.
+
+        Renders the Discord link control (linked/not-linked + enable + reset,
+        R8.4) and a per-provider connections panel over the unified per-user
+        source-credential store keyed by the session ``sub`` (R1.1). Each
+        provider shows its plaintext status (connected / last-refresh /
+        refresh_status) with NO token value ever rendered (R8.1, R8.3), and a
+        Connect control that is active only when the provider's OAuth client id
+        is configured — otherwise a disabled "Needs setup" control (R1.2).
+        SoundCloud is intentionally absent (search-only, R1.7).
+        """
         if not _require_login():
             return redirect(url_for("pages.login"))
         profiles = _svc("user_profiles")
@@ -82,6 +119,53 @@ def build_guild_blueprint() -> Blueprint:
             layout=_layout(),
             nav_items=_nav(),
             active="account",
+            profile=profile,
+            providers=OAUTH_SOURCE_PROVIDERS,
+            source_status=_account_source_status(user.get("sub", "")),
+            providers_configured=_account_providers_configured(),
+        )
+
+    @bp.route("/account/sources/<provider>/disconnect", methods=["POST"])
+    def account_disconnect_source(provider: str):  # type: ignore[unused-ignore]
+        """Disconnect (delete) the user's credential for a provider (R8.2).
+
+        Deletes only the calling user's ``SOURCECRED#<provider>`` item via
+        :meth:`SourceCredentialService.disconnect` and returns the refreshed
+        connections partial so the change reflects without a full page reload
+        (HTMX partial). No-ops safely in degraded mode (no unified store) and
+        never touches another user's credential (keyed by the session sub).
+        """
+        if not _require_login():
+            return redirect(url_for("pages.login"))
+        sub = _user().get("sub", "")
+        creds = _svc("source_credentials")
+        if creds is not None and sub and provider in OAUTH_SOURCE_PROVIDERS:
+            creds.disconnect(sub, provider)
+        return render_template(
+            "partials/account_source_list.html",
+            providers=OAUTH_SOURCE_PROVIDERS,
+            source_status=_account_source_status(sub),
+            providers_configured=_account_providers_configured(),
+        )
+
+    @bp.route("/account/discord/reset", methods=["POST"])
+    def account_discord_reset():  # type: ignore[unused-ignore]
+        """Reset (unlink) the user's Discord link, then re-render the control.
+
+        Clears the Discord id + GSI1 reverse index for the calling user via
+        :meth:`UserProfileService.unlink_discord` (R8.4) and returns the Discord
+        link partial reflecting the now-unlinked state (HTMX swap). No-ops in
+        degraded mode; never affects another account.
+        """
+        if not _require_login():
+            return redirect(url_for("pages.login"))
+        profiles = _svc("user_profiles")
+        sub = _user().get("sub", "")
+        if profiles is not None and sub:
+            profiles.unlink_discord(sub)
+        profile = profiles.get(sub) if profiles and sub else {}
+        return render_template(
+            "partials/account_discord_link.html",
             profile=profile,
         )
 

@@ -43,6 +43,11 @@ from auth_forms import (
 from auth_oauth import (
     discord_id_from_code,
 )
+from source_credential_store import (
+    persist_spotify_credential,
+    persist_tidal_status,
+    persist_youtube_credential,
+)
 from source_oauth import (
     source_authorize_url,
     source_tokens_from_request,
@@ -224,6 +229,15 @@ def build_auth_blueprint() -> Blueprint:
             AuthPurpose.TIDAL_SOURCE_AUTH, UserType.ADMIN
         )
         assert provider is AuthProvider.TIDAL_FIRST_PARTY
+        # Tidal's tokens are owned by the tidal-stream sidecar (the callback is
+        # forwarded there for the single-app-id exchange/refresh). We still
+        # record the CONNECTION STATUS in the unified DynamoDB store so the UI
+        # and watchdog can see it (design: "add DynamoDB write of Tidal
+        # status"). No token material is stored here — the web-ui holds none.
+        sub = (session.get("user") or {}).get("sub", "")
+        persist_tidal_status(
+            current_app.extensions.get("source_credentials"), sub
+        )
         tidal_stream_url = current_app.config.get("TIDAL_STREAM_URL", "")
         if not tidal_stream_url:
             # No downstream service wired (e.g. tests): land back on config.
@@ -265,7 +279,15 @@ def build_auth_blueprint() -> Blueprint:
 
     @bp.route("/sources/<guild_id>/<provider>/callback")
     def source_callback(guild_id: str, provider: str):  # type: ignore[unused-ignore]
-        """Finish a per-guild source OAuth flow and store isolated tokens."""
+        """Finish a per-guild source OAuth flow and store the credential.
+
+        On a valid ``state`` + successful exchange, the token is persisted BOTH
+        to the encrypted per-user DynamoDB store (:class:`SourceCredentialService`,
+        keyed by the connecting user's sub — the owner, R1.4/R2.1) and, during
+        migration, to the legacy isolated per-guild secret (R2.6). A
+        state mismatch (R1.5) or an exchange failure (R1.6) stores nothing
+        partial and surfaces a clear ``<provider>_connect_failed`` error.
+        """
         if not session.get("user"):
             return redirect(url_for("pages.login"))
         state = request.args.get("state", "")
@@ -275,6 +297,7 @@ def build_auth_blueprint() -> Blueprint:
             return redirect(url_for("pages.guilds"))
         connected_by = (session.get("user") or {}).get("sub", "")
         sources = current_app.extensions.get("guild_sources")
+        source_creds = current_app.extensions.get("source_credentials")
         if provider in ("youtube", "youtube_music"):
             # YouTube has no per-guild sidecar: the web-ui completes the
             # code->refresh-token exchange and attaches a PoToken so the guild
@@ -299,6 +322,12 @@ def build_auth_blueprint() -> Blueprint:
                         provider=provider,
                     )
                 )
+            # NEW credentials also land in the encrypted DynamoDB store keyed by
+            # the connecting user's sub (the owner); the legacy per-guild secret
+            # write below stays as the migration fallback (R1.4, R2.1, R2.6).
+            persist_youtube_credential(
+                source_creds, connected_by, provider, tokens
+            )
         elif provider == "spotify":
             # Spotify has no per-guild sidecar for the exchange: the web-ui
             # completes the code->refresh-token exchange with the resolved
@@ -321,6 +350,8 @@ def build_auth_blueprint() -> Blueprint:
                         provider=provider,
                     )
                 )
+            # Mirror the encrypted DynamoDB write for Spotify (R1.4, R2.1).
+            persist_spotify_credential(source_creds, connected_by, tokens)
         else:
             tokens = source_tokens_from_request(provider)
         if sources and tokens:

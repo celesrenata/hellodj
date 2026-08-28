@@ -20,6 +20,27 @@ truth.
 | `user_bans.py` | Per-guild playback ban list. |
 | `persistence.py` | Unified queue/session persistence — the **single writer** to `hellodj-session` via `data_access.SessionTable.put_state` (optimistic lock, DAX hot path). |
 | `router.py` | Routes a play request through ban check → classification → content filter → persistence. |
+| `token_watchdog.py` | Durable token-refresh watchdog: refreshes near-expiry source credentials on a background loop (per-item isolation, optimistic-lock multi-replica safe). Runs on a daemon thread next to the health server. |
+| `watchdog_bootstrap.py` | Env-driven, degrade-safe construction of the watchdog (CoreTable + KMS + `SourceCredentialService` + `{provider: RefreshClient}`); starts it or logs "degraded: watchdog disabled". |
+
+## Token-refresh watchdog
+
+The orchestrator hosts the durable **token-refresh watchdog** for the
+`unified-oauth-and-token-watchdog` feature. Because this container is already
+standing (run loop + DynamoDB access) and survives a bot pod bounce, refresh
+lives here instead of an in-bot task. Each tick enumerates near-expiry
+credentials (a key-projected scan that never decrypts), refreshes each via the
+matching provider `RefreshClient`, and writes the encrypted result back through
+the shared `SourceCredentialService` optimistic lock — so it is idempotent and
+safe across replicas. One item's failure is isolated (logged, recorded as
+`refresh_status=failed`, prior blob intact) and never stops the pass or crashes
+the loop. With no datastore / KMS / provider clients configured it degrades to a
+no-op and the health server is unaffected.
+
+Env: `HELLODJ_CORE_TABLE`, `HELLODJ_SOURCE_CREDS_KMS_KEY_ID`,
+`TOKEN_WATCHDOG_INTERVAL`, `TOKEN_WATCHDOG_THRESHOLD`, and the provider OAuth
+client id/secret pairs (`GOOGLE_CLIENT_ID`/`GOOGLE_CLIENT_SECRET`,
+`SPOTIFY_CLIENT_ID`/`SPOTIFY_CLIENT_SECRET`, `TIDAL_CLIENT_ID`/`TIDAL_TOKEN_URL`).
 
 ## Requirements covered
 

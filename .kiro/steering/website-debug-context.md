@@ -248,18 +248,77 @@ Infra (deployed via `cdk deploy hellodj-eks`):
 - bot-path SAs (discord-bot-core, tidal/spotify-stream, lavalink): READ on same prefix
 - web-ui env: `DISCORD_CLIENT_SECRET` + `SPOTIFY_CLIENT_ID`/`TIDAL_CLIENT_ID`/`GOOGLE_CLIENT_ID`
 
+## Unified source-credential store + durable watchdog (unified-oauth-and-token-watchdog spec)
+
+This spec replaced the per-guild Secrets Manager secret model with a **unified
+per-user DynamoDB credential store** (envelope-encrypted) and a **durable
+token-refresh watchdog**. It also closes the "silent broken authorize URL" and
+OAuth env-wiring gaps that used to sit in KNOWN GAPS below.
+
+- **Storage:** one `hellodj-core` item per user+provider —
+  `PK=USER#<sub>`, `SK=SOURCECRED#<provider>`, `entityType=SourceCredential`.
+  Plaintext status (`connected`, `expires_at`, `last_refresh_at`,
+  `refresh_status`, …) + an envelope-encrypted token blob (`enc_blob` +
+  `enc_key` + `kms_key_id`). Never a plaintext token; tokens are never logged.
+- **Encryption:** shared `hellodj_platform_logic.token_crypto`
+  (`encrypt_blob`/`decrypt_blob`, AES-GCM under a KMS data key). Double at rest:
+  table KMS + app-layer envelope.
+- **New CMK:** `alias/hellodj-source-creds-<stage>` (rotation on), created in
+  `data-stack.ts`, id wired as `HELLODJ_SOURCE_CREDS_KMS_KEY_ID`. Deploy the CMK
+  with `cdk deploy hellodj-data`.
+- **Least privilege** (`SOURCE_CREDENTIAL_KMS_COMPONENTS` in
+  `workloads-stack.ts`): `web-ui` (writer: GenerateDataKey+Encrypt+Decrypt) &
+  `playback-orchestrator` (watchdog: same) get RW on the table + full CMK;
+  `discord-bot-core`/`tidal-stream`/`spotify-stream` (readers) get table read +
+  CMK **Decrypt only**. Nothing else gets a CMK grant.
+- **Watchdog:** durable token-refresh loop in the standing
+  `playback-orchestrator` container (survives a bot bounce), started on a daemon
+  thread next to its `/healthz` server. Enumerates near-expiry
+  `SourceCredential` items (`CoreTable.scan_entity`, key-projected, never pulls
+  `enc_blob`), refreshes via provider `RefreshClient`s, writes back with an
+  optimistic lock (multi-replica safe). Per-item failure isolation; degraded
+  no-op when no store/KMS/clients. Tidal still routes through the existing
+  first-party `tidal_refresh` unchanged.
+- **New env vars:**
+  - web-ui + playback-orchestrator + readers: `HELLODJ_SOURCE_CREDS_KMS_KEY_ID`.
+  - web-ui + playback-orchestrator: `HELLODJ_GOOGLE_OAUTH_SECRET_ARN`,
+    `HELLODJ_DISCORD_OAUTH_SECRET_ARN`, `DISCORD_CLIENT_ID`, provider
+    client id/secret envs.
+  - web-ui: `POTOKEN_SERVER_URL` (defaults to in-namespace `potoken-server`).
+  - playback-orchestrator: `TOKEN_WATCHDOG_INTERVAL` (default 300s),
+    `TOKEN_WATCHDOG_THRESHOLD` (default 600s).
+- **Readers:** `bot/playback/guild_credentials.py` resolves the DynamoDB item +
+  decrypts via `token_crypto`, falling back to the legacy `hellodj/<stage>/guild/*`
+  secret. Preserves the YouTube `POST /youtube` all-fields-together swap + TTL
+  cache.
+- **Migration backfill:** one-shot Job in `platform/components/migration`
+  (`python -m migration_job.backfill_main`, needs
+  `HELLODJ_SOURCE_CREDS_KMS_KEY_ID` + stage/region) reads existing
+  `hellodj/<stage>/guild/*` secrets and writes encrypted `SourceCredential`
+  items; idempotent; logs counts only. Run AFTER the CMK + IAM are deployed.
+- **Default source is `youtube`** (unset resolves to YouTube in the config layer
+  and the bot source map; the config form preselects it).
+
 ## KNOWN GAPS / NOT YET DONE (likely debugging targets)
 
-1. **Source OAuth client ids/secrets are EMPTY env** — `SPOTIFY_CLIENT_ID`,
-   `TIDAL_CLIENT_ID`, `GOOGLE_CLIENT_ID`, `DISCORD_CLIENT_SECRET` default to "".
-   The per-guild "Connect" buttons no-op until these are populated from Secrets
-   Manager into the web-ui deployment env (workloads-stack `containerEnv`).
+1. ~~**Source OAuth client ids/secrets are EMPTY env**~~ *(addressed by
+   unified-oauth-and-token-watchdog)* — `workloads-stack.ts` now wires the
+   provider client id/secret envs (+ `HELLODJ_GOOGLE_OAUTH_SECRET_ARN`,
+   `HELLODJ_DISCORD_OAUTH_SECRET_ARN`, `POTOKEN_SERVER_URL`), and when a
+   provider client id is absent the UI renders a disabled "Needs setup" control
+   instead of a link that no-ops (R1.2). Populate the OAuth secrets once
+   out-of-band, then `cdk deploy hellodj-eks` to apply the env.
 2. **Discord login** (`/auth/login`) — needs `DISCORD_CLIENT_ID` (+ secret for
-   the callback token exchange). Only Cognito admin login is fully wired.
-3. **Bot-side per-guild credential resolution** — designed (bot reads
-   `hellodj/<stage>/guild/*`), IAM granted, but the bot's `player.py`/lavasrc
-   integration to actually LOAD per-guild tokens at play time may not be wired
-   yet. Verify `bot/playback/guild_credentials.py` exists / is used.
+   the callback token exchange). The `DISCORD_CLIENT_ID` +
+   `HELLODJ_DISCORD_OAUTH_SECRET_ARN` env wiring is now present; the login
+   *route* wiring may still need finishing. Only Cognito admin login is fully
+   wired.
+3. ~~**Bot-side per-guild credential resolution**~~ *(addressed by
+   unified-oauth-and-token-watchdog)* — `bot/playback/guild_credentials.py` now
+   has a DynamoDB-backed `DynamoCredentialResolver` (built via
+   `build_dynamo_credential_resolver()`, consulted FIRST) with the legacy
+   per-guild secret as fallback, decrypting via `token_crypto`. `bot.py` wires it
+   into `GuildCredentialResolver` + `YouTubeCredentialInjector`.
 4. **Source connect stores only the auth code** — the code→token exchange is
    delegated to the streaming sidecars (they own client secrets). Verify the
    sidecars actually complete the exchange against the guild secret.
@@ -298,10 +357,21 @@ AWS_PROFILE=hellodj aws codepipeline get-pipeline-state --name hellodj-pipeline 
 ## Gate Commands (must pass before push)
 
 ```bash
-cd platform/infra && npx tsc --noEmit && npx jest          # 226 tests
-cd platform/components/web-ui && ruff check --target-version py314 . && python3 -m pytest tests/ -q  # 24 tests
-python3 platform/tools/check_line_count.py platform/components/web-ui   # 500-line ceiling
+cd platform/infra && npx tsc --noEmit && npx jest          # 282 tests (23 suites)
+cd platform/components/web-ui && ruff check --target-version py314 . && python3 -m pytest tests/ -q  # 384 tests
+cd platform/components/playback-orchestrator && ruff check --target-version py314 . && python3 -m pytest tests/ -q  # 55 tests (watchdog)
+cd platform/components/migration && ruff check --target-version py314 . && python3 -m pytest tests/ -q  # 21 tests (backfill)
+python3 platform/tools/check_line_count.py platform/components/web-ui platform/components/playback-orchestrator platform/components/hellodj_platform_logic platform/components/migration   # 500-line ceiling
 ```
+
+> Env note: `platform/components/hellodj_platform_logic` has a few tests that
+> import `boto3` (`test_data_access_property.py`) or the pinning/verify tooling
+> (`test_apply_bump.py`, `test_gate_pins.py`, `test_verify_all.py`,
+> `test_verify_integration_cache_synth_jest.py`) which fail to COLLECT in a bare
+> local venv without `boto3` / the tools on `sys.path`. These are pre-existing
+> environment gaps, NOT test failures — the CI image has those deps. The spec's
+> own package tests (`test_token_crypto.py`, `test_source_refresh_property.py`,
+> `test_data_access.py`, `test_tidal_refresh_property.py`) pass.
 
 ## Local shell gotcha
 

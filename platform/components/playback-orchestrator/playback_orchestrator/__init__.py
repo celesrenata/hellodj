@@ -30,6 +30,7 @@ from .classifier import ClassificationResult, ContentType, classify
 from .content_filter import ContentFilter, FilterRule
 from .persistence import QueueItem, SessionState, SessionStore
 from .router import PlaybackRouter, RouteDecision, RouteOutcome
+from .token_watchdog import TokenWatchdog
 from .user_bans import BanEntry, UserBans
 
 __all__ = [
@@ -44,6 +45,7 @@ __all__ = [
     "PlaybackRouter",
     "RouteDecision",
     "RouteOutcome",
+    "TokenWatchdog",
     "BanEntry",
     "UserBans",
 ]
