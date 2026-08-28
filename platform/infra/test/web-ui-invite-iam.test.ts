@@ -170,13 +170,11 @@ describe('web-ui tokenized-invite IAM + env wiring (task 15, R7.1, R7.4)', () =>
           Match.objectLike({
             Effect: 'Allow',
             Action: ['ses:SendEmail', 'ses:SendRawEmail'],
-            // SES authorizes the send against BOTH the domain identity ARN and
-            // the email-address identity ARN, so the grant lists both; the
-            // From is pinned via an ses:FromAddress condition.
-            Resource: [
-              `arn:aws:ses:${TEST_REGION}:${TEST_ACCOUNT}:identity/${expectedHostname}`,
-              `arn:aws:ses:${TEST_REGION}:${TEST_ACCOUNT}:identity/${expectedSender}`,
-            ],
+            // SES checks multiple identity ARNs per send (From domain, From
+            // address, and — in the sandbox — each recipient), so the resource
+            // is `identity/*` in this account/region; least-privilege on the
+            // SENDER is enforced by the ses:FromAddress condition.
+            Resource: `arn:aws:ses:${TEST_REGION}:${TEST_ACCOUNT}:identity/*`,
             Condition: {
               'ForAllValues:StringEquals': {
                 'ses:FromAddress': expectedSender,
@@ -188,18 +186,20 @@ describe('web-ui tokenized-invite IAM + env wiring (task 15, R7.1, R7.4)', () =>
     });
   });
 
-  test('the SES send grant covers the email-address identity ARN (R7.1)', () => {
+  test('the SES send grant is FromAddress-constrained on identity/* (R7.1)', () => {
     const { eksTemplate } = compose();
     eksTemplate.hasResourceProperties('AWS::IAM::Policy', {
       PolicyDocument: Match.objectLike({
         Statement: Match.arrayWith([
           Match.objectLike({
             Action: ['ses:SendEmail', 'ses:SendRawEmail'],
-            // The array must include the invites@<domain> email-address ARN —
-            // the resource SES actually authorizes the From against.
-            Resource: Match.arrayWith([
-              `arn:aws:ses:${TEST_REGION}:${TEST_ACCOUNT}:identity/${expectedSender}`,
-            ]),
+            Resource: `arn:aws:ses:${TEST_REGION}:${TEST_ACCOUNT}:identity/*`,
+            // Least-privilege is on the sender: only the invite From is allowed.
+            Condition: {
+              'ForAllValues:StringEquals': {
+                'ses:FromAddress': expectedSender,
+              },
+            },
           }),
         ]),
       }),

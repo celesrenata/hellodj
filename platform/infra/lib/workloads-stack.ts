@@ -903,22 +903,22 @@ export class WorkloadsStack extends cdk.Stack {
       );
       // Branded invitation email delivery (R1.1, R7.1, R7.4): the web-ui sends
       // the single-use registration link from `invites@<stage>.<region>...`.
-      // SES authorizes `SendEmail` for that From against BOTH the DOMAIN
-      // identity ARN (`identity/<domain>`) AND the EMAIL-ADDRESS identity ARN
-      // (`identity/invites@<domain>`) — so the grant must list both, or the
-      // send is denied with AccessDenied on `identity/invites@<domain>`
-      // (observed). The `ses:FromAddress` condition keeps it least-privilege:
-      // the web-ui can send only as the invite sender on the stage domain.
+      //
+      // SES evaluates `ses:SendEmail` against MULTIPLE identity ARNs per call:
+      // the From domain, the From email-address, AND — in the SES sandbox —
+      // each RECIPIENT identity. Recipients are arbitrary, so an ARN allow-list
+      // can't enumerate them (that's what caused AccessDenied on
+      // `identity/<recipient>`). The correct least-privilege shape is to allow
+      // the action on any identity in THIS account/region (`identity/*`) and
+      // constrain the SENDER via an `ses:FromAddress` condition — the web-ui
+      // can still only send AS the invite sender, never as any other From.
       sa.role.addToPrincipalPolicy(
         new iam.PolicyStatement({
           sid: 'InviteEmailSend',
           effect: iam.Effect.ALLOW,
           actions: ['ses:SendEmail', 'ses:SendRawEmail'],
           resources: [
-            `arn:aws:ses:${this.region}:${this.account}:identity/` +
-              this.inviteSenderDomain,
-            `arn:aws:ses:${this.region}:${this.account}:identity/` +
-              this.inviteSender,
+            `arn:aws:ses:${this.region}:${this.account}:identity/*`,
           ],
           conditions: {
             'ForAllValues:StringEquals': {
