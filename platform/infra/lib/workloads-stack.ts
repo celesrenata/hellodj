@@ -580,13 +580,23 @@ export class WorkloadsStack extends cdk.Stack {
     // Easy-DKIM self-verification: publish the three CNAME tokens SES issues
     // for the domain identity into the delegated `hellodj.bot` zone. Once they
     // resolve, SES flips the identity to Verified with no manual step.
+    //
+    // `record.name` is the FULLY-QUALIFIED DKIM host
+    // (`<token>._domainkey.<stage>.<region>.hellodj.bot`). CnameRecord treats a
+    // `recordName` that does NOT end in "." as relative and appends the zone
+    // name — which would double the suffix
+    // (`...hellodj.bot.hellodj.bot`, SES then reports HOST_NOT_FOUND). Ending
+    // it with a "." tells CDK to use it verbatim as the absolute name.
     this.inviteSenderIdentity.dkimRecords.forEach((record, index) => {
+      const absoluteName = record.name.endsWith('.')
+        ? record.name
+        : `${record.name}.`;
       new route53.CnameRecord(
         this,
         `${this.stage}-InviteSenderDkim${index}`,
         {
           zone: inviteZone,
-          recordName: record.name,
+          recordName: absoluteName,
           domainName: record.value,
         },
       );
