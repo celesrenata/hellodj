@@ -268,6 +268,21 @@ export interface WorkloadsStackProps extends cdk.StackProps {
    * (`this.region`) when unset, so the hostname mirrors `dns_naming`.
    */
   readonly region?: string;
+
+  /**
+   * The Cognito user-pool web-ui app client id (from `AuthStack`), injected
+   * into the web-ui container so the admin/registration/recovery hosted-UI
+   * flows work. When unset, the web-ui's Cognito buttons produce an empty
+   * `client_id` and the hosted-UI redirect is broken (R8.2, R8.3, R8.5).
+   */
+  readonly cognitoClientId?: string;
+
+  /**
+   * The Discord OAuth application client id (from `AuthStack` secrets/config),
+   * injected into the web-ui container so day-to-day Discord login works. When
+   * unset, the Discord login button produces an empty `client_id` (R8.4).
+   */
+  readonly discordClientId?: string;
 }
 
 /**
@@ -631,6 +646,42 @@ export class WorkloadsStack extends cdk.Stack {
         name: 'HELLODJ_AI_TASK_ROLE_ARN',
         value: this.props.aiTaskRole.roleArn,
       });
+    }
+
+    // web-ui auth wiring: the Flask app reads these to build the Cognito
+    // hosted-UI (admin/register/recover) and Discord OAuth (login) redirects.
+    // Without them the "Administrator sign in" button redirects to a broken
+    // `/login?client_id=` URL with an http:// (not https://) redirect URI
+    // (R8.2-R8.5). The public base URL is this stage's https hostname so
+    // redirect URIs are absolute + https; the Cognito domain follows the
+    // AuthStack's deterministic `hellodj-<stage>-<account>` hosted-UI prefix.
+    if (spec.name === 'web-ui') {
+      env.push({
+        name: 'HELLODJ_PUBLIC_BASE_URL',
+        value: `https://${this.stageEndpoint.hostname}`,
+      });
+      env.push({
+        name: 'HELLODJ_COOKIE_SECURE',
+        value: '1',
+      });
+      env.push({
+        name: 'COGNITO_DOMAIN',
+        value:
+          `https://hellodj-${this.stage}-${this.account}` +
+          `.auth.${this.region}.amazoncognito.com`,
+      });
+      if (this.props.cognitoClientId) {
+        env.push({
+          name: 'COGNITO_CLIENT_ID',
+          value: this.props.cognitoClientId,
+        });
+      }
+      if (this.props.discordClientId) {
+        env.push({
+          name: 'DISCORD_CLIENT_ID',
+          value: this.props.discordClientId,
+        });
+      }
     }
     return env;
   }

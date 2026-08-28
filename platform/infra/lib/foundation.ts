@@ -49,6 +49,20 @@ export interface FoundationRefs {
    * `AuthStack`) the voice-pipeline component assumes.
    */
   readonly aiTaskRole: iam.IRole;
+
+  /**
+   * The Cognito web-ui app client id (from `AuthStack`), injected into the
+   * web-ui container so the admin/registration/recovery hosted-UI flows work
+   * (R8.2, R8.3, R8.5). Optional so imported foundations without it still
+   * synthesize.
+   */
+  readonly cognitoClientId?: string;
+
+  /**
+   * The Discord OAuth application client id, injected into the web-ui
+   * container so day-to-day Discord login works (R8.4). Optional.
+   */
+  readonly discordClientId?: string;
 }
 
 /**

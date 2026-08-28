@@ -157,6 +157,9 @@ const pipeline = new PipelineStack(app, 'hellodj-pipeline', {
       ytCipher: auth.ytCipherSecret,
     },
     aiTaskRole: auth.aiTaskRole,
+    // web-ui Cognito hosted-UI client id so the admin/register/recover
+    // buttons build a valid hosted-UI redirect (R8.2, R8.3, R8.5).
+    cognitoClientId: auth.userPoolClient.userPoolClientId,
   },
 });
 

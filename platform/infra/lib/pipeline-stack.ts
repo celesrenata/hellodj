@@ -406,6 +406,8 @@ export class HelloDjStage extends cdk.Stage {
         data: props.foundation.data,
         secrets: props.foundation.secrets,
         aiTaskRole: props.foundation.aiTaskRole,
+        cognitoClientId: props.foundation.cognitoClientId,
+        discordClientId: props.foundation.discordClientId,
       },
     );
   }
