@@ -14,9 +14,9 @@ invite by its hashed token in one indexed GSI1 lookup without knowing the email.
 Data model (hellodj-core single table):
 
 * ``PK=INVITE#<email>``  ``SK=INVITE``
-  ``GSI1PK=INVITETOKEN#<tokenHash>``  ``GSI1SK=INVITE``
-  data={email, invited_by, token_hash, expires_at, status, created_at}
-  ``status`` is one of ``invited`` | ``accepted`` | ``expired`` | ``revoked``.
+  ``GSI1PK=INVITETOKEN#<tokenHash>``  ``GSI1SK=INVITE`` — data={email,
+  invited_by, token_hash, expires_at, status (invited|accepted|expired|revoked),
+  created_at}
 
 On registration (``register``) the winning token consumer creates a CONFIRMED
 Cognito account (``admin_create_user`` with ``MessageAction=SUPPRESS`` +
@@ -156,11 +156,8 @@ class InviteService:
     (R2.2, R2.6).
 
     When an :class:`InviteEmailService` is supplied, :meth:`invite` sends the
-    branded invitation email carrying the ``/invite/<raw_token>`` link after
-    recording the pending invite; if the send fails the just-created invite
-    record is rolled back so a retry starts clean (R1.1). When no email sender
-    is wired (``None``) the invite is recorded without an email — a graceful
-    degrade that preserves the record-only behavior.
+    branded link and rolls the record back on send failure (R1.1); with no
+    sender wired it degrades to recording the invite without an email.
     """
 
     def __init__(
@@ -476,11 +473,14 @@ class InviteService:
         return rows[0] if rows else None
 
     def _is_valid(self, data: Mapping[str, Any]) -> bool:
-        """Return whether an invite payload is ``invited`` and unexpired."""
-        if data.get("status") != "invited":
-            return False
-        expires_at = data.get("expires_at")
-        return isinstance(expires_at, int) and expires_at > int(time.time())
+        """Return whether an invite payload is ``invited`` and unexpired.
+
+        Expiry uses :func:`invite_admin.is_unexpired` (accepts the ``Decimal``
+        live DynamoDB returns for Number attrs).
+        """
+        return data.get("status") == "invited" and invite_admin.is_unexpired(
+            data.get("expires_at")
+        )
 
     def _is_registered(self, email_norm: str) -> bool:
         """Return whether a Cognito account already exists for ``email``.

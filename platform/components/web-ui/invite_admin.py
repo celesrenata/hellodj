@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import time
 from collections.abc import Mapping
+from numbers import Number
 from typing import Any
 
 from hellodj_platform_logic.data_access import CoreTable
@@ -32,6 +33,7 @@ __all__ = [
     "revoke_invite",
     "delete_invite",
     "effective_status",
+    "is_unexpired",
     "RevokeError",
 ]
 
@@ -161,13 +163,25 @@ def delete_invite(
     return {"email": email_norm, "status": "deleted"}
 
 
+def is_unexpired(expires_at: Any) -> bool:
+    """Return whether an ``expires_at`` epoch-second value is in the future.
+
+    ``expires_at`` is a Number (``N``) attribute, which live DynamoDB returns as
+    :class:`decimal.Decimal` — a ``numbers.Number`` but NOT a ``numbers.Real``
+    or ``int``. Accept any ``numbers.Number`` (``int`` or ``Decimal``, excluding
+    ``bool``) so a freshly minted invite isn't treated as expired just because
+    of its deserialized type.
+    """
+    if isinstance(expires_at, bool) or not isinstance(expires_at, Number):
+        return False
+    return expires_at > int(time.time())
+
+
 def effective_status(data: Mapping[str, Any]) -> str:
     """Return the display status, surfacing a lapsed ``invited`` as expired."""
     status = data.get("status", "invited")
-    if status == "invited":
-        expires_at = data.get("expires_at")
-        if not (isinstance(expires_at, int) and expires_at > int(time.time())):
-            return "expired"
+    if status == "invited" and not is_unexpired(data.get("expires_at")):
+        return "expired"
     return status
 
 
@@ -187,5 +201,4 @@ def blocks_new_invite(item: Mapping[str, Any]) -> bool:
         return False
     if not data.get("token_hash"):
         return False
-    expires_at = data.get("expires_at")
-    return isinstance(expires_at, int) and expires_at > int(time.time())
+    return is_unexpired(data.get("expires_at"))
