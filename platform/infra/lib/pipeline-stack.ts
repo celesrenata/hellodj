@@ -69,6 +69,7 @@ import {
   CodePipeline,
   CodePipelineSource,
   CodeBuildStep,
+  ManualApprovalStep,
 } from 'aws-cdk-lib/pipelines';
 import { Construct } from 'constructs';
 import { KubectlV36Layer } from '@aws-cdk/lambda-layer-kubectl-v36';
@@ -902,7 +903,25 @@ export class PipelineStack extends cdk.Stack {
         foundation,
         region,
       });
-      this.pipeline.addStage(stage);
+      // Manual verification gate before promoting PAST beta (R11.x): beta
+      // deploys automatically once synth + component builds pass, but staging
+      // and production each require an explicit human approval action at the
+      // START of the stage. CDK Pipelines renders a `pre` ManualApprovalStep as
+      // a CodePipeline Manual approval action that blocks the stage (and thus
+      // all promotion beyond it) until an operator approves — after verifying
+      // the just-deployed lower environment. This preserves the fixed
+      // beta → staging → production order and halt-on-failure semantics while
+      // inserting a deliberate stop for verification (a rejected/expired
+      // approval leaves the upstream stage deployed and blocks promotion).
+      const pre =
+        stageName === 'beta'
+          ? undefined
+          : [
+              new ManualApprovalStep(`ApproveDeployTo-${stageName}`, {
+                comment: `Verify the previous environment, then approve deploy to ${stageName}.`,
+              }),
+            ];
+      this.pipeline.addStage(stage, pre ? { pre } : undefined);
       this.stages.push(stage);
       this.stageNames.push(stageName);
     }

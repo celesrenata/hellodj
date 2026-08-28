@@ -319,6 +319,49 @@ describe('PipelineStack — synthesized CodePipeline', () => {
     // Build/synth precedes the first deploy stage.
     expect(buildIdx).toBeLessThan(betaIdx);
   });
+
+  test('staging and production require a manual approval gate; beta does not', () => {
+    // Promotion past beta is gated on a human verification step: the staging
+    // and production deploy stages each begin with a CodePipeline Manual
+    // approval action (a `pre` ManualApprovalStep), while beta deploys
+    // automatically after synth + component builds. Assert the Manual approval
+    // action is present at the START of staging and production and absent from
+    // beta.
+    const pipelines = template.findResources('AWS::CodePipeline::Pipeline');
+    const pipeline = Object.values(pipelines)[0] as any;
+    const stages: Array<{ Name: string; Actions: any[] }> =
+      pipeline.Properties.Stages;
+
+    const stageByMatch = (re: RegExp) =>
+      stages.find((s) => re.test(s.Name));
+
+    const isManualApproval = (a: any) =>
+      a?.ActionTypeId?.Category === 'Approval' &&
+      a?.ActionTypeId?.Provider === 'Manual';
+
+    const beta = stageByMatch(/beta/i);
+    const staging = stageByMatch(/staging/i);
+    const production = stageByMatch(/production/i);
+
+    expect(beta).toBeDefined();
+    expect(staging).toBeDefined();
+    expect(production).toBeDefined();
+
+    // Beta has NO manual approval action (auto-promoted after build).
+    expect((beta!.Actions ?? []).some(isManualApproval)).toBe(false);
+
+    // Staging + production each have a manual approval, and it runs FIRST
+    // (lowest RunOrder) so it blocks the deploy until approved.
+    for (const stage of [staging!, production!]) {
+      const approvals = (stage.Actions ?? []).filter(isManualApproval);
+      expect(approvals).toHaveLength(1);
+      const approvalRunOrder = approvals[0].RunOrder ?? 1;
+      const minRunOrder = Math.min(
+        ...stage.Actions.map((a: any) => a.RunOrder ?? 1),
+      );
+      expect(approvalRunOrder).toBe(minRunOrder);
+    }
+  });
 });
 
 // ---------------------------------------------------------------------------
