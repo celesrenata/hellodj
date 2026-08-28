@@ -7,17 +7,23 @@
 <div class="glass-panel panel-section">
   <h2 class="panel-section__title">Invite a user</h2>
   <p class="panel-section__muted">
-    Send an email invitation. The recipient gets a temporary password, verifies
-    their email, sets a password, then can link Discord to sign in.
+    Send an email invitation. The recipient gets a single-use link to register,
+    then links Discord to sign in. The link stops working once used or expired.
   </p>
   <form class="field-row"
-        hx-post="{{ url_for('pages.admin_invite') }}"
-        hx-target="#admin-user-list">
+        hx-post="{{ url_for('invite_admin.invite_create') }}"
+        hx-target="#admin-invite-list">
     <input class="field__input" name="email" type="email"
            placeholder="new.user@example.com" aria-label="Invite email"
            required>
     <button type="submit" class="btn btn-primary">Send invite</button>
   </form>
+
+  <div id="admin-invite-list" class="admin-invite-list"
+       hx-get="{{ url_for('invite_admin.invite_list') }}"
+       hx-trigger="load">
+    {% include "partials/admin_invite_list.html" %}
+  </div>
 </div>
 
 <div class="glass-panel panel-section">

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Invitation unavailable · HelloDJ</title>
+  <link rel="stylesheet" href="{{ static_hash('css/app.css') }}">
+</head>
+<body class="bg-surface-0 text-text-secondary login-body">
+  <canvas id="bg-shader" class="fixed inset-0 -z-10 w-full h-full pointer-events-none" aria-hidden="true"></canvas>
+
+  <main class="login-shell" role="main">
+    <div class="glass-panel login-card">
+      <h1 class="login-card__title">HelloDJ</h1>
+      <p class="notice notice--danger" role="alert">{{ message }}</p>
+
+      <div class="login-card__links">
+        <a href="{{ url_for('pages.login') }}">Back to sign in</a>
+      </div>
+
+      {% include "partials/owner_attribution.html" %}
+    </div>
+  </main>
+</body>
+</html>

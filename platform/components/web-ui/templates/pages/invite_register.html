@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Complete registration · HelloDJ</title>
+  <link rel="stylesheet" href="{{ static_hash('css/app.css') }}">
+</head>
+<body class="bg-surface-0 text-text-secondary login-body">
+  <canvas id="bg-shader" class="fixed inset-0 -z-10 w-full h-full pointer-events-none" aria-hidden="true"></canvas>
+
+  <main class="login-shell" role="main">
+    <div class="glass-panel login-card">
+      <h1 class="login-card__title">Welcome to HelloDJ</h1>
+      <p class="login-card__subtitle">Complete your registration to continue</p>
+
+      {% if error %}
+      <p class="notice notice--danger" role="alert">{{ error }}</p>
+      {% endif %}
+
+      <form class="invite-form" method="post"
+            action="{{ url_for('pages.invite_register', token=token) }}">
+        <div class="form-field">
+          <label class="form-field__label" for="invite-email">Email</label>
+          <input class="form-field__input" id="invite-email" name="email"
+                 type="email" value="{{ email }}" readonly
+                 aria-readonly="true" autocomplete="email">
+        </div>
+
+        <div class="form-field">
+          <label class="form-field__label" for="invite-password">Password</label>
+          <input class="form-field__input" id="invite-password" name="password"
+                 type="password" required autocomplete="new-password"
+                 aria-required="true" minlength="8">
+        </div>
+
+        <div class="form-field">
+          <label class="form-field__label" for="invite-password-confirm">
+            Confirm password
+          </label>
+          <input class="form-field__input" id="invite-password-confirm"
+                 name="password_confirm" type="password" required
+                 autocomplete="new-password" aria-required="true" minlength="8">
+        </div>
+
+        <button class="btn btn-primary btn-block" type="submit">
+          Create account
+        </button>
+      </form>
+
+      {% include "partials/owner_attribution.html" %}
+    </div>
+  </main>
+</body>
+</html>

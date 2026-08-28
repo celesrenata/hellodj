@@ -23,7 +23,13 @@ from flask import (
     url_for,
 )
 
+from invite_service import InviteConsumedError
+
 __all__ = ["build_pages_blueprint"]
+
+#: The single fixed message shown for any invalid/consumed/expired/unknown
+#: invite token (R2.3). Kept as a constant so the route and templates agree.
+INVITE_USED_MESSAGE = "Sorry, this invitation link has been used or has expired!"
 
 #: Base sidebar navigation model (icon key + label + endpoint). The admin entry
 #: is appended only for users in the Cognito ``admins`` group (see `_nav_for`).
@@ -103,6 +109,48 @@ def build_pages_blueprint() -> Blueprint:
         """Public login landing page (Discord / Cognito / register entry)."""
         return render_template(
             "pages/login.html", error=request.args.get("error")
+        )
+
+    @bp.route("/invite/<token>", methods=["GET", "POST"])
+    def invite_register(token: str):  # type: ignore[unused-ignore]
+        """Public registration page for a single-use invite link.
+
+        No session is required — this is the entry point for a brand-new,
+        unregistered invitee.
+
+        GET (R2.1, R2.3): the token is resolved via the invite service; a
+        valid, unused, unexpired token renders a HelloDJ-hosted registration
+        page bound to the invite's email (shown read-only). Any invalid,
+        consumed, expired, or unknown token — or a degraded app with no invite
+        service — renders exactly the fixed "used or has expired" message
+        (R2.3) and never the registration form.
+
+        POST (R2.2, R2.4, R2.5): validates the submitted password pair and
+        consumes the token via ``invite_service.register`` — a single-use,
+        atomic flip that creates the CONFIRMED Cognito account. On success the
+        user is redirected into Discord linking (their login method going
+        forward); the registration POST itself establishes **no** authenticated
+        session (R2.4). A token that lost the single-use race or expired
+        mid-flow raises :class:`InviteConsumedError` and renders the fixed
+        used/expired message (R2.5).
+        """
+        service = _invite_service()
+        if service is None:
+            return render_template(
+                "pages/invite_used.html", message=INVITE_USED_MESSAGE
+            )
+        if request.method == "POST":
+            return _invite_register_submit(service, token)
+        try:
+            invite = service.resolve_by_token(token)
+        except InviteConsumedError:
+            return render_template(
+                "pages/invite_used.html", message=INVITE_USED_MESSAGE
+            )
+        return render_template(
+            "pages/invite_register.html",
+            token=token,
+            email=invite.get("email", ""),
         )
 
     @bp.route("/")
@@ -193,35 +241,7 @@ def build_pages_blueprint() -> Blueprint:
             nav_items=_nav_for_current_user(),
             active="admin",
             users=_admin_users(),
-        )
-
-    @bp.route("/admin/invite", methods=["POST"])
-    def admin_invite():  # type: ignore[unused-ignore]
-        """Invite a new user by email (Cognito sends the email). Admin-only."""
-        if not _require_login():
-            return redirect(url_for("pages.login"))
-        if not _is_admin():
-            return redirect(url_for("pages.dashboard"))
-        email = request.form.get("email", "").strip()
-        service = _invite_service()
-        error = None
-        success = None
-        if not service:
-            error = "invites are not available (no directory configured)"
-        else:
-            try:
-                service.invite(
-                    email,
-                    invited_by=(session.get("user") or {}).get("email", ""),
-                )
-                success = f"Invite sent to {email}."
-            except Exception as exc:  # noqa: BLE001 - surface message to admin
-                error = str(exc)
-        return render_template(
-            "partials/admin_user_list.html",
-            users=_admin_users(),
-            invite_error=error,
-            invite_success=success,
+            invites=_admin_invites(),
         )
 
     @bp.route("/admin/users/search")
@@ -268,6 +288,59 @@ def build_pages_blueprint() -> Blueprint:
     return bp
 
 
+def _invite_register_submit(service: Any, token: str):
+    """Handle the ``POST /invite/<token>`` registration submission.
+
+    Validates the password pair, then consumes the token and creates the
+    account via ``service.register``. On success the invitee is sent into
+    Discord linking (R2.4) with **no** authenticated session set on this
+    request. A password mismatch/empty re-renders the form with an error (and
+    the read-only email), unless the token no longer resolves — in which case
+    the fixed used/expired message is shown. A token that lost the single-use
+    race or expired mid-flow raises :class:`InviteConsumedError` and likewise
+    renders the used/expired message (R2.5).
+    """
+    password = request.form.get("password", "")
+    confirm = request.form.get("password_confirm", "")
+    if not password or password != confirm:
+        # Re-render the form; the email must still be resolvable to bind the
+        # form. If the token no longer resolves, show used/expired instead.
+        try:
+            invite = service.resolve_by_token(token)
+        except InviteConsumedError:
+            return render_template(
+                "pages/invite_used.html", message=INVITE_USED_MESSAGE
+            )
+        error = (
+            "Passwords do not match."
+            if password
+            else "Please choose a password."
+        )
+        return render_template(
+            "pages/invite_register.html",
+            token=token,
+            email=invite.get("email", ""),
+            error=error,
+        )
+    try:
+        account = service.register(token)
+    except InviteConsumedError:
+        # Lost the single-use race or expired mid-flow (R2.5).
+        return render_template(
+            "pages/invite_used.html", message=INVITE_USED_MESSAGE
+        )
+    # Registration grants no lasting session (R2.4). We stash only the new
+    # account's Cognito subject as a pending-link handoff so the Discord-link
+    # flow can bind the identity; this is deliberately NOT a full authenticated
+    # session — the session is established only after Discord OAuth succeeds.
+    sub = account.get("sub") if isinstance(account, dict) else None
+    if sub:
+        session["pending_link_sub"] = sub
+    # The invitee links Discord next, which becomes their login method going
+    # forward (R2.4).
+    return redirect(url_for("auth.discord_link"))
+
+
 def _form_values(form: Any) -> dict[str, Any]:
     """Normalize a submitted config form into a plain dict."""
     return {key: value for key, value in form.items() if key != "csrf_token"}
@@ -304,3 +377,16 @@ def _admin_users() -> list[dict[str, Any]]:
     if not directory:
         return []
     return directory.list_users()
+
+
+def _admin_invites() -> list[dict[str, Any]]:
+    """Return the invite rows for the admin panel's invite list.
+
+    Sourced from the :class:`InviteService` when configured; degrades to an
+    empty list so the panel renders in tests / no-datastore mode. The HTMX
+    ``load`` trigger on the list also refreshes this immediately client-side.
+    """
+    service = _invite_service()
+    if not service:
+        return []
+    return service.list_invites()

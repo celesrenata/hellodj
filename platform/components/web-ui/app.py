@@ -37,6 +37,7 @@ from auth import build_auth_blueprint
 from bootstrap import build_services
 from config_store import ConfigStore
 from guild_routes import build_guild_blueprint
+from invite_admin_routes import build_invite_admin_blueprint
 from pages import build_pages_blueprint
 from secrets_store import SecretsProvider
 
@@ -107,6 +108,7 @@ def create_app(
     app.register_blueprint(build_auth_blueprint())
     app.register_blueprint(build_pages_blueprint())
     app.register_blueprint(build_guild_blueprint())
+    app.register_blueprint(build_invite_admin_blueprint())
 
     _register_static_hash(app)
     _register_health(app)

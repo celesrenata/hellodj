@@ -1,0 +1,55 @@
+{# Invite directory table + row actions (resend/revoke).
+   Swapped as an HTMX partial into #admin-invite-list. Shows every invite with
+   its effective status: invited / accepted / expired / revoked (R1.2, R1.4). #}
+{% if invite_error %}
+  <p class="notice notice--danger" role="alert">{{ invite_error }}</p>
+{% endif %}
+{% if invite_success %}
+  <p class="notice notice--success" role="status">{{ invite_success }}</p>
+{% endif %}
+<div class="glass-panel data-table__wrap">
+  <table class="data-table">
+    <thead>
+      <tr>
+        <th scope="col">Email</th>
+        <th scope="col">Status</th>
+        <th scope="col">Invited by</th>
+        <th scope="col">Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for invite in invites %}
+        <tr>
+          <td>{{ invite.email }}</td>
+          <td>
+            {% if invite.status == 'accepted' %}
+              <span class="badge badge--ok">Accepted</span>
+            {% elif invite.status == 'expired' %}
+              <span class="badge badge--muted">Expired</span>
+            {% elif invite.status == 'revoked' %}
+              <span class="badge badge--muted">Revoked</span>
+            {% else %}
+              <span class="badge badge--brand">Invited</span>
+            {% endif %}
+          </td>
+          <td>{{ invite.invited_by }}</td>
+          <td>
+            <button class="btn btn-ghost btn-sm"
+                    hx-post="{{ url_for('invite_admin.invite_resend', email=invite.email) }}"
+                    hx-target="#admin-invite-list">Resend</button>
+            {% if invite.status == 'invited' %}
+              <button class="btn btn-ghost btn-sm"
+                      hx-post="{{ url_for('invite_admin.invite_revoke', email=invite.email) }}"
+                      hx-confirm="Revoke the invite for {{ invite.email }}?"
+                      hx-target="#admin-invite-list">Revoke</button>
+            {% endif %}
+          </td>
+        </tr>
+      {% else %}
+        <tr>
+          <td class="data-table__empty" colspan="4">No invites yet.</td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

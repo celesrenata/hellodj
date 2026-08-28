@@ -20,7 +20,6 @@ from __future__ import annotations
 
 import base64
 import hashlib
-import json
 import secrets as pysecrets
 import urllib.parse
 from typing import Any
@@ -36,6 +35,10 @@ from flask import (
 from hellodj_platform_logic.auth_routing import route_auth
 from hellodj_platform_logic.types import AuthProvider, AuthPurpose, UserType
 
+from auth_oauth import (
+    discord_id_from_code,
+    exchange_code_for_groups,
+)
 from source_oauth import (
     source_authorize_url,
     source_tokens_from_request,
@@ -44,7 +47,6 @@ from source_oauth import (
 __all__ = ["auth_bp", "build_auth_blueprint"]
 
 DISCORD_AUTHORIZE_URL = "https://discord.com/oauth2/authorize"
-DISCORD_API_BASE = "https://discord.com/api"
 
 
 def _new_state() -> str:
@@ -106,16 +108,32 @@ def build_auth_blueprint() -> Blueprint:
 
     @bp.route("/discord/callback")
     def discord_callback():  # type: ignore[unused-ignore]
-        """Discord OAuth callback: validate state and record the session."""
+        """Discord OAuth login callback: resolve the linked account (R3.2).
+
+        A returning user who signs in via Discord is resolved to their Cognito
+        subject through the GSI1 reverse index (``user_for_discord``); the
+        session is then established without a password. A Discord identity that
+        is not linked to any account cannot log in this way (they must register
+        and link first), so we bounce back to login with a clear error rather
+        than minting a session with no account behind it.
+        """
         error = request.args.get("error")
         if error:
             return redirect(url_for("pages.login", error="denied"))
         state = request.args.get("state", "")
         if not state or state != session.pop("discord_state", None):
             return redirect(url_for("pages.login", error="state_mismatch"))
-        # Code exchange is delegated to the running service integration; here we
-        # record the authenticated purpose/provider and land on the dashboard.
-        session["user"] = {"provider": AuthProvider.DISCORD_OAUTH.value}
+        code = request.args.get("code", "")
+        discord_id = discord_id_from_code(
+            code, _redirect_uri("auth.discord_callback")
+        )
+        if not discord_id:
+            return redirect(url_for("pages.login", error="discord_failed"))
+        _establish_discord_session(discord_id)
+        if not session.get("user"):
+            # No account is linked to this Discord identity (R3.2/R3.4): a
+            # Discord login only works once the account has been linked.
+            return redirect(url_for("pages.login", error="not_linked"))
         return redirect(url_for("pages.dashboard"))
 
     @bp.route("/cognito/callback")
@@ -129,7 +147,11 @@ def build_auth_blueprint() -> Blueprint:
         # account is not a standard user — it administers all other accounts —
         # so `is_admin` must reflect Cognito `admins` group membership.
         code = request.args.get("code", "")
-        groups = _exchange_code_for_groups(code, session.pop("cognito_verifier", ""))
+        groups = exchange_code_for_groups(
+            code,
+            session.pop("cognito_verifier", ""),
+            _redirect_uri("auth.cognito_callback"),
+        )
         session["user"] = {
             "provider": AuthProvider.COGNITO.value,
             "is_admin": "admins" in groups,
@@ -139,8 +161,15 @@ def build_auth_blueprint() -> Blueprint:
 
     @bp.route("/discord/link")
     def discord_link():  # type: ignore[unused-ignore]
-        """Start linking the logged-in user's Discord account (R3.1)."""
-        if not session.get("user"):
+        """Start linking a user's Discord account (R3.1).
+
+        Reached in two ways: an already-authenticated user linking Discord
+        after the fact, OR the post-registration handoff where the invitee has
+        just registered (``session['pending_link_sub']`` carries their Cognito
+        subject but no authenticated session — R2.4). Either context is enough
+        to begin the OAuth flow; without one we bounce to login.
+        """
+        if not _link_subject():
             return redirect(url_for("pages.login"))
         state = _new_state()
         session["discord_link_state"] = state
@@ -157,26 +186,37 @@ def build_auth_blueprint() -> Blueprint:
 
     @bp.route("/discord/link/callback")
     def discord_link_callback():  # type: ignore[unused-ignore]
-        """Finish Discord linking: store discord_id → user mapping (R3.1-3.4)."""
-        if not session.get("user"):
+        """Finish Discord linking then log the user in via Discord (R3.1-3.4).
+
+        Links the Discord id to the subject (from an authenticated session or
+        the post-registration handoff) through ``link_discord`` — which sets
+        the GSI1 reverse index (R3.3) and enforces one-account-per-identity
+        (R3.4). A Discord id already linked to a different account raises
+        ``ValueError`` and is surfaced as a clear ``already_linked`` error
+        (never a 500). On success the authenticated session is established so
+        Discord OAuth is the login method thereafter (R3.2).
+        """
+        sub = _link_subject()
+        if not sub:
             return redirect(url_for("pages.login"))
         state = request.args.get("state", "")
         if not state or state != session.pop("discord_link_state", None):
             return redirect(url_for("guild.account", error="state_mismatch"))
         code = request.args.get("code", "")
-        discord_id = _discord_id_from_code(
+        discord_id = discord_id_from_code(
             code, _redirect_uri("auth.discord_link_callback")
         )
         profiles = current_app.extensions.get("user_profiles")
-        user = session.get("user") or {}
-        if discord_id and profiles and user.get("sub"):
-            try:
-                profiles.link_discord(user["sub"], discord_id)
-                user["discord_id"] = discord_id
-                user["discord_linked"] = True
-                session["user"] = user
-            except ValueError:
-                return redirect(url_for("guild.account", error="already_linked"))
+        if not discord_id or not profiles:
+            return redirect(url_for("guild.account", error="discord_failed"))
+        try:
+            profiles.link_discord(sub, discord_id)
+        except ValueError:
+            return redirect(url_for("guild.account", error="already_linked"))
+        # Linking succeeded: establish the authenticated session (Discord OAuth
+        # is the login method from now on, R3.2) and clear any pending handoff.
+        session.pop("pending_link_sub", None)
+        _establish_discord_session(discord_id)
         return redirect(url_for("guild.account"))
 
     @bp.route("/tidal/callback")
@@ -272,6 +312,45 @@ def _guild_source_authorized(guild_id: str) -> bool:
     )
 
 
+def _link_subject() -> str | None:
+    """Return the Cognito subject to link Discord to, or ``None``.
+
+    Prefers an already-authenticated session (a user linking Discord after the
+    fact) and falls back to the post-registration handoff key
+    ``pending_link_sub`` (the invitee just registered but holds no
+    authenticated session yet — R2.4/R3.1).
+    """
+    user = session.get("user") or {}
+    if user.get("sub"):
+        return str(user["sub"])
+    pending = session.get("pending_link_sub")
+    return str(pending) if pending else None
+
+
+def _establish_discord_session(discord_id: str) -> None:
+    """Establish an authenticated Discord-login session for ``discord_id``.
+
+    Resolves the Cognito subject linked to the Discord id via the GSI1 reverse
+    index (``user_for_discord``) and, when found, sets ``session['user']`` with
+    Discord as the provider (R3.2). When no account is linked the session is
+    left untouched so the caller can react (e.g. bounce to login).
+    """
+    profiles = current_app.extensions.get("user_profiles")
+    if not profiles:
+        return
+    sub = profiles.user_for_discord(discord_id)
+    if not sub:
+        return
+    profile = profiles.get(sub) or {}
+    session["user"] = {
+        "provider": AuthProvider.DISCORD_OAUTH.value,
+        "sub": sub,
+        "discord_id": discord_id,
+        "discord_linked": True,
+        "email": profile.get("email", ""),
+    }
+
+
 
 
 
@@ -315,114 +394,6 @@ def _redirect_uri(endpoint: str) -> str:
     if base:
         return base + url_for(endpoint)
     return url_for(endpoint, _external=True)
-
-
-def _exchange_code_for_groups(code: str, verifier: str) -> list[str]:
-    """Exchange the Cognito auth code for tokens and return its group claims.
-
-    Performs the authorization-code + PKCE token exchange against the Cognito
-    hosted-UI ``/oauth2/token`` endpoint, then decodes the ID token payload to
-    read the ``cognito:groups`` claim. The claim drives the admin gate: a user
-    in the ``admins`` group is an administrator (manages all accounts), any
-    other authenticated user is a standard user.
-
-    Returns an empty list when the exchange can't be performed (missing code,
-    unconfigured Cognito, or a network/parse error) so login still succeeds as
-    a non-admin rather than failing hard.
-    """
-    if not code:
-        return []
-    domain = current_app.config.get("COGNITO_DOMAIN", "").rstrip("/")
-    client_id = current_app.config.get("COGNITO_CLIENT_ID", "")
-    if not domain or not client_id:
-        return []
-    import json as _json
-    import urllib.request as _req
-
-    body = urllib.parse.urlencode(
-        {
-            "grant_type": "authorization_code",
-            "client_id": client_id,
-            "code": code,
-            "redirect_uri": _redirect_uri("auth.cognito_callback"),
-            "code_verifier": verifier,
-        }
-    ).encode("ascii")
-    request_obj = _req.Request(
-        f"{domain}/oauth2/token",
-        data=body,
-        headers={"Content-Type": "application/x-www-form-urlencoded"},
-        method="POST",
-    )
-    try:
-        with _req.urlopen(request_obj, timeout=8) as resp:  # noqa: S310
-            tokens = _json.loads(resp.read().decode("utf-8"))
-    except Exception:  # noqa: BLE001 - login degrades to non-admin on failure
-        return []
-    id_token = tokens.get("id_token", "")
-    return _groups_from_id_token(id_token)
-
-
-def _discord_id_from_code(code: str, redirect_uri: str) -> str | None:
-    """Exchange a Discord OAuth code for the user's Discord id.
-
-    Performs the Discord token exchange then calls ``/users/@me`` to read the
-    numeric user id used to link the account (R3.1). Returns ``None`` on any
-    failure so linking degrades rather than erroring.
-    """
-    if not code:
-        return None
-    client_id = current_app.config.get("DISCORD_CLIENT_ID", "")
-    client_secret = current_app.config.get("DISCORD_CLIENT_SECRET", "")
-    if not client_id or not client_secret:
-        return None
-    import urllib.request as _req
-
-    token_body = urllib.parse.urlencode(
-        {
-            "grant_type": "authorization_code",
-            "code": code,
-            "redirect_uri": redirect_uri,
-            "client_id": client_id,
-            "client_secret": client_secret,
-        }
-    ).encode("ascii")
-    try:
-        token_req = _req.Request(
-            f"{DISCORD_API_BASE}/oauth2/token",
-            data=token_body,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-            method="POST",
-        )
-        with _req.urlopen(token_req, timeout=8) as resp:  # noqa: S310
-            access = json.loads(resp.read().decode("utf-8")).get("access_token")
-        if not access:
-            return None
-        me_req = _req.Request(
-            f"{DISCORD_API_BASE}/users/@me",
-            headers={"Authorization": f"Bearer {access}"},
-        )
-        with _req.urlopen(me_req, timeout=8) as resp:  # noqa: S310
-            return json.loads(resp.read().decode("utf-8")).get("id")
-    except Exception:  # noqa: BLE001
-        return None
-
-
-def _groups_from_id_token(id_token: str) -> list[str]:
-    """Return the ``cognito:groups`` claim from a JWT ID token payload.
-
-    Decodes the JWT payload segment only (no signature verification — the token
-    came directly from the Cognito token endpoint over TLS in this same
-    request, so it is trusted here for the group-membership read).
-    """
-    try:
-        payload_b64 = id_token.split(".")[1]
-        padded = payload_b64 + "=" * (-len(payload_b64) % 4)
-        claims = json.loads(base64.urlsafe_b64decode(padded).decode("utf-8"))
-    except Exception:  # noqa: BLE001
-        return []
-    groups = claims.get("cognito:groups", [])
-    return list(groups) if isinstance(groups, list) else []
 
 
 #: Importable blueprint instance for apps that prefer a module-level object.

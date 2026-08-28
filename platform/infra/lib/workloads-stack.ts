@@ -44,6 +44,7 @@ import * as eks from 'aws-cdk-lib/aws-eks';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as dynamodb from 'aws-cdk-lib/aws-dynamodb';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as ses from 'aws-cdk-lib/aws-ses';
 import { Construct } from 'constructs';
 import {
   COMPONENT_WORKLOADS,
@@ -95,6 +96,34 @@ export function stageHostname(stage: string, region: string): string {
   }
   return `${stageLabel}.${regionLabel}.${HELLODJ_ZONE}`;
 }
+
+/**
+ * The local-part of the branded invitation email's verified SES sender
+ * identity. Invitation emails are sent from `<INVITE_LOCAL_PART>@<hostname>`
+ * for the stage (R7.4), so the single-use registration link the invitee
+ * receives originates from a HelloDJ-owned, stage-scoped identity.
+ */
+export const INVITE_SENDER_LOCAL_PART = 'invites';
+
+/**
+ * Derive the stage's verified SES sender identity for invitation emails:
+ * `invites@<stage>.<region>.hellodj.bot`, mirroring {@link stageHostname} so
+ * the sender, the public base URL, and the Ingress hostname all agree on the
+ * one `dns_naming`-derived name (R7.4). This is the `INVITE_SENDER` the web-ui
+ * sends branded invites from and the identity the web-ui role's `ses:SendEmail`
+ * grant is scoped to (R7.1).
+ */
+export function stageInviteSender(stage: string, region: string): string {
+  return `${INVITE_SENDER_LOCAL_PART}@${stageHostname(stage, region)}`;
+}
+
+/**
+ * The default TTL (in seconds) of a single-use Invite_Token — 7 days — mirrored
+ * from the web-ui's `invite_service.DEFAULT_INVITE_TTL_SECONDS`. Injected as
+ * `INVITE_TOKEN_TTL` so IaC and the runtime agree on how long an invitation
+ * link stays valid before it is treated as expired (R1.3).
+ */
+export const DEFAULT_INVITE_TOKEN_TTL_SECONDS = 7 * 24 * 60 * 60;
 
 /**
  * A single stage's isolated endpoint on the shared GPU host — the TypeScript
@@ -318,6 +347,24 @@ export interface WorkloadsStackProps extends cdk.StackProps {
    * shared cluster's eks stack.
    */
   readonly flaskSessionKey?: string;
+
+  /**
+   * Override for the verified SES sender identity the web-ui sends branded
+   * invitation emails from (`INVITE_SENDER`). When unset it defaults to
+   * `invites@<stage>.<region>.hellodj.bot` (see {@link stageInviteSender}) so
+   * the sender agrees with the stage's Ingress hostname + public base URL. A
+   * stage-scoped SES `EmailIdentity` is provisioned for whichever value is
+   * used, and the web-ui role's `ses:SendEmail`/`ses:SendRawEmail` grant is
+   * scoped to that identity's ARN (R7.1, R7.4).
+   */
+  readonly inviteSender?: string;
+
+  /**
+   * Override for the single-use Invite_Token TTL (seconds) injected as
+   * `INVITE_TOKEN_TTL`. Defaults to {@link DEFAULT_INVITE_TOKEN_TTL_SECONDS}
+   * (7 days), mirroring the web-ui's `invite_service` default (R1.3).
+   */
+  readonly inviteTokenTtlSeconds?: number;
 }
 
 /**
@@ -344,6 +391,24 @@ export class WorkloadsStack extends cdk.Stack {
    * web-ui replicas (prevents OAuth-callback session loss across pods).
    */
   public readonly webUiFlaskSecretManifest: eks.KubernetesManifest;
+
+  /**
+   * The verified SES sender identity (`invites@<stage>.<region>.hellodj.bot`
+   * by default) branded invitation emails are sent from for this stage. The
+   * web-ui role's `ses:SendEmail`/`ses:SendRawEmail` grant is scoped to this
+   * identity's ARN (R7.1, R7.4).
+   */
+  public readonly inviteSender: string;
+
+  /**
+   * The stage's SES sender {@link ses.EmailIdentity} for invitation emails.
+   * Provisioning it here (a foundation-shared but stage-scoped identity) makes
+   * the verified sender part of the declarative infra rather than a manual
+   * console step. NOTE: SES still requires the identity to complete
+   * verification (address confirmation email or domain DNS records) before it
+   * can actually send — CDK creates the identity; verification is external.
+   */
+  public readonly inviteSenderIdentity: ses.EmailIdentity;
 
   /** The deployment stage this stack's workloads belong to. */
   public readonly stage: string;
@@ -379,6 +444,26 @@ export class WorkloadsStack extends cdk.Stack {
     this.stage = props.stage ?? DEFAULT_STAGE;
     this.namespace = workloadsNamespace(this.stage);
     this.stageEndpoint = stageEndpoint(this.stage, props.region ?? this.region);
+
+    // Verified SES sender identity for the branded, single-use invitation
+    // emails the web-ui sends (R7.4). It defaults to
+    // `invites@<stage>.<region>.hellodj.bot` so the sender agrees with the
+    // stage's Ingress hostname + public base URL (one dns_naming-derived name).
+    // Provisioning the identity here makes the verified sender part of the
+    // declarative infra; SES still requires the identity to complete
+    // verification out-of-band before it can send. The web-ui role's
+    // `ses:SendEmail`/`ses:SendRawEmail` grant below is scoped to THIS
+    // identity's ARN (least privilege, R7.1).
+    this.inviteSender =
+      props.inviteSender ??
+      stageInviteSender(this.stage, props.region ?? this.region);
+    this.inviteSenderIdentity = new ses.EmailIdentity(
+      this,
+      `${this.stage}-InviteSenderIdentity`,
+      {
+        identity: ses.Identity.email(this.inviteSender),
+      },
+    );
 
     // The per-stage namespace for every HelloDJ workload in this stage.
     // All three stages add their manifests to the ONE shared cluster, so every
@@ -625,13 +710,32 @@ export class WorkloadsStack extends cdk.Stack {
             'cognito-idp:AdminRemoveUserFromGroup',
             'cognito-idp:AdminEnableUser',
             'cognito-idp:AdminDisableUser',
-            // Email invite flow (R1.1): admin_create_user sends the Cognito
-            // invitation email with a temporary password.
+            // Tokenized invite flow (R2.2): register() creates a CONFIRMED
+            // account with admin_create_user (MessageAction=SUPPRESS) then
+            // admin_set_user_password(Permanent=True) so Cognito sends no
+            // temp-password email — the branded SES invite is the only email.
             'cognito-idp:AdminCreateUser',
+            'cognito-idp:AdminSetUserPassword',
           ],
           resources: [
             `arn:aws:cognito-idp:${this.region}:${this.account}:userpool/` +
               this.props.cognitoUserPoolId,
+          ],
+        }),
+      );
+      // Branded invitation email delivery (R1.1, R7.1, R7.4): the web-ui sends
+      // the single-use registration link from the stage's verified SES sender
+      // identity. Grant `ses:SendEmail`/`ses:SendRawEmail` scoped to THAT
+      // identity's ARN only — least privilege, so the web-ui can never send
+      // from any other identity.
+      sa.role.addToPrincipalPolicy(
+        new iam.PolicyStatement({
+          sid: 'InviteEmailSend',
+          effect: iam.Effect.ALLOW,
+          actions: ['ses:SendEmail', 'ses:SendRawEmail'],
+          resources: [
+            `arn:aws:ses:${this.region}:${this.account}:identity/` +
+              this.inviteSender,
           ],
         }),
       );
@@ -853,6 +957,26 @@ export class WorkloadsStack extends cdk.Stack {
           value: this.props.discordClientId,
         });
       }
+      // Tokenized invite flow wiring (R1.1, R1.3, R7.4). `INVITE_SENDER` is the
+      // stage's verified SES sender identity the branded invitation email is
+      // sent from; `INVITE_TOKEN_TTL` is how long a single-use link stays
+      // valid; `PUBLIC_BASE_URL` is the site origin used to build the
+      // `/invite/<token>` link. The app also reads `HELLODJ_PUBLIC_BASE_URL`
+      // (set above) for the same origin; `PUBLIC_BASE_URL` is injected as the
+      // explicitly-named alias so both conventions resolve to the one
+      // stage hostname.
+      env.push({ name: 'INVITE_SENDER', value: this.inviteSender });
+      env.push({
+        name: 'INVITE_TOKEN_TTL',
+        value: String(
+          this.props.inviteTokenTtlSeconds ??
+            DEFAULT_INVITE_TOKEN_TTL_SECONDS,
+        ),
+      });
+      env.push({
+        name: 'PUBLIC_BASE_URL',
+        value: `https://${this.stageEndpoint.hostname}`,
+      });
     }
     return env;
   }

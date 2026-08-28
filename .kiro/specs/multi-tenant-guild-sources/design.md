@@ -12,7 +12,7 @@ Cognito user pool, and AWS Secrets Manager.
 | Entity | PK | SK | GSI1PK | GSI1SK | data |
 |--------|----|----|--------|--------|------|
 | User profile | `USER#<sub>` | `PROFILE` | `DISCORD#<id>` (if linked) | `USER` | email, discord_id?, discord_linked, invited_by |
-| Invite record | `INVITE#<email>` | `INVITE` | — | — | email, invited_by, status, created_at |
+| Invite record | `INVITE#<email>` | `INVITE` | `INVITETOKEN#<tokenHash>` | `INVITE` | email, invited_by, token_hash, expires_at, status, created_at, accepted_at? |
 | Guild ownership | `GUILD#<gid>` | `OWNER` | — | — | owner_sub |
 | Guild admin edge | `GUILD#<gid>` | `ADMIN#<discordId>` | `DISCORD#<discordId>` | `GUILDADMIN#<gid>` | appointed_by, appointed_at |
 | Guild source meta | `GUILD#<gid>` | `SOURCE#<provider>` | — | — | connected, connected_at, connected_by |
@@ -21,6 +21,29 @@ Cognito user pool, and AWS Secrets Manager.
 Reverse lookups via GSI1:
 - Discord login → user: `query_gsi1("DISCORD#<id>", sk_prefix="USER")`
 - Guilds a Discord id administers: `query_gsi1("DISCORD#<id>", sk_prefix="GUILDADMIN#")`
+- Invite token → invite: `query_gsi1("INVITETOKEN#<tokenHash>", sk_prefix="INVITE")`
+  so `/invite/<token>` resolves the invite by hashed token in one indexed
+  lookup without knowing the email.
+
+## Invite Token Lifecycle
+
+The invitation link carries an opaque random token (`secrets.token_urlsafe`).
+Only its **SHA-256 hash** is stored (`token_hash`); the raw token lives only in
+the email link. On `/invite/<token>`:
+
+1. Hash the token, resolve the invite via GSI1 (`INVITETOKEN#<hash>`).
+2. Validate: exists, `status == invited`, `expires_at` in the future.
+3. On successful registration, atomically flip `status invited → accepted`
+   (conditional write on the current status) so the token is single-use even
+   under concurrent requests (R2.5). The winning writer creates the CONFIRMED
+   Cognito account; losers get the "used or expired" message.
+4. Any invalid/consumed/expired/unknown token renders the fixed message
+   "Sorry, this invitation link has been used or has expired!" (R2.3).
+
+The account is created CONFIRMED (`admin_create_user` with
+`MessageAction=SUPPRESS` + `admin_set_user_password(..., Permanent=True)`), so
+Cognito sends **no** temp-password email — the branded SES invite is the only
+email. The user then links Discord (R3) as their login method (R2.4).
 
 ## Secrets: Per-Guild Isolation
 
@@ -53,12 +76,13 @@ Guild control is Discord-derived:
 
 | Module | Responsibility |
 |--------|----------------|
-| `invite_service.py` | Cognito `admin_create_user` invite (+ email), invite tracking in core table |
+| `invite_service.py` | Mint single-use Invite_Token, store invite (token hash + expiry + status), validate/consume token; create CONFIRMED Cognito account on registration |
+| `invite_email.py` | Render + send the branded invitation email via SES (verified sender identity per stage) |
 | `user_profile.py` | User profile CRUD, Discord link/unlink, GSI1 reverse lookup |
 | `guild_admin_service.py` | Guild ownership, appoint/remove Guild_Admins by Discord id, `can_manage_guild` |
 | `guild_sources.py` | Per-guild source metadata + Per_Guild_Secret read/write, ownership-gated |
-| `pages.py` (extend) | Admin invite route; user guild-management + source-connect routes |
-| `auth.py` (extend) | Discord link callback resolves/creates the user↔discord mapping |
+| `pages.py` (extend) | Admin invite route; **public** `/invite/<token>` registration page (GET form + POST register); user guild-management + source-connect routes |
+| `auth.py` (extend) | Discord link callback resolves/creates the user↔discord mapping; post-registration Discord-link handoff |
 
 ### bot (new module)
 
@@ -72,9 +96,17 @@ into the play request / Lavalink node update for that guild.
 
 ## Routes (web-ui)
 
+Public (no session required):
+- `GET  /invite/<token>` — validate token; render registration form or the
+  "used or expired" message
+- `POST /invite/<token>` — consume token (single-use), create CONFIRMED account,
+  redirect into Discord linking
+
 Admin (Platform_Owner only):
-- `POST /admin/invite` — invite a user by email
-- `GET  /admin/invites` — HTMX partial: invite list
+- `POST /admin/invite` — mint token + send branded SES invitation email
+- `POST /admin/invite/<email>/resend` — re-send a pending invite (new token)
+- `POST /admin/invite/<email>/revoke` — revoke a pending invite
+- `GET  /admin/invites` — HTMX partial: invite list with status
 
 User (any authenticated user, gated by `can_manage_guild`):
 - `GET  /account` — profile + Discord link status
@@ -88,7 +120,9 @@ User (any authenticated user, gated by `can_manage_guild`):
 
 ## IAM (least privilege)
 
-- web-ui SA: Cognito `AdminCreateUser` (+ existing admin actions), Secrets Manager
+- web-ui SA: Cognito `AdminCreateUser`/`AdminSetUserPassword` (+ existing admin
+  actions), SES `SendEmail`/`SendRawEmail` for the verified sender identity, and
+  Secrets Manager
   `CreateSecret`/`PutSecretValue`/`GetSecretValue`/`DeleteSecret`/`DescribeSecret`
   scoped to `arn:aws:secretsmanager:*:*:secret:hellodj/<stage>/guild/*`.
 - bot SA: Secrets Manager `GetSecretValue`/`DescribeSecret` scoped to the same
@@ -98,6 +132,9 @@ User (any authenticated user, gated by `can_manage_guild`):
 
 - Pure logic: `can_manage_guild`, invite dedupe, per-guild secret naming,
   Discord→user resolution — unit tested with fakes (no AWS).
+- Invite token lifecycle: mint → validate → consume; a consumed/expired/unknown
+  token is rejected with the fixed message; single-use is enforced (only one of
+  two concurrent consume attempts succeeds); only the token hash is persisted.
 - Property: for any set of guilds and users, `can_manage_guild` grants access
   only to owners/appointed-admins/super-admin; a guild's secret name is unique
   per (guild, provider) and never collides across guilds.
@@ -105,6 +142,13 @@ User (any authenticated user, gated by `can_manage_guild`):
 
 ## Migration / Compatibility
 
+- **Invite flow change (amended):** replaces the earlier Cognito built-in
+  invitation (temp-password email + hosted-UI password set) with a single-use
+  tokenized link to a HelloDJ-hosted registration page + branded SES email.
+  Accounts are now created CONFIRMED (`MessageAction=SUPPRESS` +
+  `AdminSetUserPassword Permanent=True`) so Cognito sends no temp-password
+  email. Any pending invites created under the old flow should be re-sent under
+  the new flow. New infra dependency: a verified SES sender identity per stage.
 - Global source secrets remain; per-guild takes precedence when present.
 - Existing global config untouched; per-guild config already supported by
   `ConfigStore.get_guild/set_guild`.

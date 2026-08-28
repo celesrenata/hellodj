@@ -314,6 +314,53 @@ kubectl -n hellodj-service set env deployment/hellodj -c render-lavalink-config 
 
 ---
 
+## Post-Deploy: Migrate stale pending invites (one-time)
+
+The invite flow was amended to a single-use tokenized link + branded SES email,
+replacing the old Cognito temp-password invitation. Invites created under the
+old flow were recorded **without a `token_hash`**, so their links can no longer
+be resolved by the new `/invite/<token>` route. Run this one-time migration once
+the new web-ui image is deployed to clear them out.
+
+The script lives at `platform/components/web-ui/migrate_invites.py`. It builds
+services via `bootstrap.build_services()` (needs `HELLODJ_CORE_TABLE`,
+`HELLODJ_COGNITO_USER_POOL_ID`, `AWS_REGION`, and — for `resend` — `INVITE_SENDER`
++ `HELLODJ_PUBLIC_BASE_URL` in the environment / IRSA role), enumerates every
+invite, and acts only on **old-flow, still-pending** invites (no `token_hash`,
+status `invited`). New-flow invites and non-pending (`accepted`/`revoked`)
+invites are left untouched.
+
+Two modes:
+
+- **`expire` (default, no email sent):** marks each old-flow pending invite
+  `expired` so the admin panel stops surfacing it as actionable. This is the
+  safe default — it sends no email and touches only DynamoDB.
+- **`resend`:** mints a fresh single-use token and sends the branded invitation
+  email under the new flow, giving each invitee a working link.
+
+```bash
+# From within the web-ui component dir (or a pod running the web-ui image),
+# with the web-ui env/IRSA in place:
+cd platform/components/web-ui
+
+# Default: expire stale old-flow pending invites (no emails sent)
+python3 migrate_invites.py
+
+# Or re-send them under the new flow (sends branded SES emails)
+python3 migrate_invites.py --mode resend
+```
+
+The script prints a JSON summary (`scanned`, `resent`, `expired`, `skipped`,
+`migrated`, `errors`) for logging. It is idempotent: once old-flow invites are
+expired (or re-sent, which gives them a `token_hash`), a second run reports them
+as `skipped`.
+
+> SES note: `resend` sends real email. In SES sandbox mode only verified
+> recipients receive mail — see the "SES starts in sandbox mode" note in the
+> spec tasks before re-sending to external invitees.
+
+---
+
 ## Architecture Changes Summary
 
 | Before | After |

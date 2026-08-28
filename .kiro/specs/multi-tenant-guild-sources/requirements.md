@@ -7,9 +7,13 @@ source credentials (one Tidal token, one Spotify secret, etc.), and only the
 Platform_Owner (Cognito `admins` group) can sign in. This feature turns HelloDJ
 into a multi-tenant SaaS:
 
-- The Platform_Owner **invites** new users by email (Cognito-managed invite).
-- An invited user **verifies** their email and sets a password, then logs in.
-- Once in, a user can **link Discord OAuth** to bypass password login thereafter.
+- The Platform_Owner **invites** new users by email. The email carries a
+  **single-use invitation link** to a HelloDJ-hosted registration page.
+- An invited user **opens the link, registers**, and their account is created.
+  The link **burns after one use** (or on expiry) and shows a clear
+  "already used or expired" message on any subsequent visit.
+- A registered user **logs in via Discord OAuth** (the primary login method);
+  they link their Discord identity as part of / immediately after registration.
 - A user **appoints other users by Discord user id** to administer a specific
   guild they control.
 - Each guild's music **sources (YouTube, YouTube Music, Tidal, Spotify) are
@@ -23,8 +27,10 @@ into a multi-tenant SaaS:
 
 - **Platform_Owner**: The super-admin (Cognito `admins` group). Invites users,
   manages all accounts.
-- **User**: An invited, verified account (Cognito user). Owns/administers one or
-  more guilds and their sources.
+- **User**: An invited, registered account (Cognito user). Owns/administers one
+  or more guilds and their sources.
+- **Invite_Token**: An opaque, single-use, time-limited token embedded in the
+  invitation link. Bound to one email; consumed on successful registration.
 - **Guild_Admin**: A Discord user id appointed by a User to administer a guild.
 - **Guild**: A Discord server the bot serves, identified by its Discord guild id.
 - **Source**: A music provider — `youtube`, `youtube_music`, `tidal`, `spotify`.
@@ -33,43 +39,59 @@ into a multi-tenant SaaS:
 
 ## Requirements
 
-### Requirement 1: Email invite flow (Platform_Owner)
+### Requirement 1: Email invite flow with single-use link (Platform_Owner)
 
 **User Story:** As the Platform_Owner, I want to invite a new user by email so
-they can create an account without me sharing a password.
+they receive a branded invitation with a single-use link to register, without
+me sharing any password.
 
 #### Acceptance Criteria
 1. WHEN the Platform_Owner submits an email in the admin panel, THE system SHALL
-   create a Cognito user for that email and trigger Cognito's invitation email
-   containing a temporary password.
-2. THE system SHALL record the invite (email, invited-by, timestamp, status) so
-   the admin panel can list pending and accepted invites.
-3. WHEN an invited user first authenticates with the temporary password, THE
-   system SHALL require them to set a permanent password (Cognito
-   FORCE_CHANGE_PASSWORD flow).
-4. THE admin panel SHALL show each account's invite status (invited / verified).
-5. IF an email is already invited, THE system SHALL NOT create a duplicate and
-   SHALL surface a clear message.
+   generate an opaque, single-use, time-limited Invite_Token bound to that
+   email and send a branded invitation email (via SES) containing a link of the
+   form `<public-base>/invite/<token>`.
+2. THE system SHALL record the invite (email, invited-by, timestamp, token hash,
+   expiry, status ∈ {invited, accepted, expired, revoked}) so the admin panel
+   can list pending and accepted invites.
+3. THE Invite_Token SHALL expire after a configurable TTL (default 7 days);
+   after expiry it SHALL be treated as invalid.
+4. THE admin panel SHALL show each account's invite status (invited / accepted /
+   expired) and allow re-sending or revoking a pending invite.
+5. IF an email is already invited (pending) or already registered, THE system
+   SHALL NOT create a duplicate and SHALL surface a clear message.
 
-### Requirement 2: Email verification then login
+### Requirement 2: Registration via the invite link, then Discord login
 
-**User Story:** As an invited user, I want to verify my email and log in.
-
-#### Acceptance Criteria
-1. WHEN an invited user completes the Cognito verification + password set, THE
-   system SHALL mark their account CONFIRMED.
-2. WHEN a CONFIRMED user signs in through Cognito, THE system SHALL establish an
-   authenticated session bound to their Cognito subject id.
-3. A non-verified account SHALL NOT be able to reach any authenticated route.
-
-### Requirement 3: Discord OAuth linking (bypass password login)
-
-**User Story:** As a logged-in user, I want to link my Discord account so I can
-log in with Discord from then on.
+**User Story:** As an invited user, I want to open my invitation link, register,
+and then log in.
 
 #### Acceptance Criteria
-1. WHEN a logged-in user initiates Discord linking, THE system SHALL run the
-   Discord OAuth flow and store the mapping Discord-user-id → Cognito-subject.
+1. WHEN an invitee opens `/invite/<token>` with a valid, unused, unexpired
+   token, THE system SHALL render a HelloDJ-hosted registration page bound to
+   the invite's email.
+2. WHEN the invitee completes registration, THE system SHALL create a CONFIRMED
+   Cognito account for the invite's email (no temporary password) and mark the
+   Invite_Token consumed (status `accepted`).
+3. WHEN a token is already consumed, expired, revoked, or unknown, THE system
+   SHALL NOT render the registration form and SHALL show:
+   "Sorry, this invitation link has been used or has expired!"
+4. AFTER successful registration, THE system SHALL direct the user to link their
+   Discord account and SHALL treat Discord OAuth as their login method going
+   forward (R3); the registration link itself SHALL NOT grant a further session.
+5. A token SHALL be usable at most once (single-use); concurrent attempts to
+   consume the same token SHALL result in exactly one success.
+6. AN account that has not completed registration SHALL NOT be able to reach any
+   authenticated route.
+
+### Requirement 3: Discord OAuth linking (primary login for users)
+
+**User Story:** As a registered user, I want to link my Discord account so I log
+in with Discord from then on (my primary login method).
+
+#### Acceptance Criteria
+1. WHEN a registered user initiates Discord linking (during or after
+   registration), THE system SHALL run the Discord OAuth flow and store the
+   mapping Discord-user-id → Cognito-subject.
 2. WHEN a user with a linked Discord account signs in via Discord OAuth, THE
    system SHALL resolve their Cognito account and establish the session without
    a password.
@@ -126,8 +148,12 @@ source authorization.
 ### Requirement 7: Least-privilege access
 
 #### Acceptance Criteria
-1. THE web-ui service role SHALL be granted only the Cognito admin actions and
+1. THE web-ui service role SHALL be granted only the Cognito admin actions, the
+   SES `SendEmail`/`SendRawEmail` action for the verified sender identity, and
    the Secrets Manager actions scoped to `hellodj/<stage>/guild/*` it needs.
 2. THE bot service role SHALL be granted read-only access to per-guild source
    secrets under `hellodj/<stage>/guild/*`.
 3. NO static credentials SHALL be embedded; all AWS access is via IRSA.
+4. Invitation emails SHALL be sent from a verified SES identity (domain or
+   address) for the stage; the raw Invite_Token SHALL appear only in the email
+   link and never be logged or stored in plaintext (store a hash).
