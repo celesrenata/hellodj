@@ -48,8 +48,11 @@ def test_login_page_renders(client) -> None:
     assert 'action="/auth/admin"' in html
     assert 'name="username"' in html
     assert 'name="password"' in html
-    # Entry links for the Cognito-routed purposes.
-    assert "/auth/register" in html
+    # In degraded (no-datastore) mode the registration mode defaults to CLOSED,
+    # so the self-registration link is omitted and the closed banner shows; the
+    # recover link is always present.
+    assert "/auth/register" not in html
+    assert "Registration is currently closed" in html
     assert "/auth/recover" in html
 
 

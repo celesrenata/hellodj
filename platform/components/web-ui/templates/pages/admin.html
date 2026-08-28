@@ -27,6 +27,35 @@
 </div>
 
 <div class="glass-panel panel-section">
+  <h2 class="panel-section__title">Self-registration</h2>
+  <p class="panel-section__muted">
+    Controls whether anonymous visitors can create an account at
+    <code>/register</code>. Invite links always work regardless of this setting.
+  </p>
+  {% if request.args.get('regmode') == 'saved' %}
+    <p class="notice notice--info" role="status">Registration mode saved.</p>
+  {% elif request.args.get('regmode') == 'unavailable' %}
+    <p class="notice notice--warning" role="status">
+      Registration mode is unavailable (no datastore configured).
+    </p>
+  {% endif %}
+  <p class="panel-section__muted" aria-live="polite">
+    Current mode: <strong>{{ registration_mode }}</strong>
+  </p>
+  <form class="field-row" method="post"
+        action="{{ url_for('pages.admin_set_registration_mode') }}">
+    <button type="submit" name="mode" value="OPEN"
+            class="btn {{ 'btn-primary' if registration_open else 'btn-ghost' }}">
+      Open registration
+    </button>
+    <button type="submit" name="mode" value="CLOSED"
+            class="btn {{ 'btn-primary' if not registration_open else 'btn-ghost' }}">
+      Close registration
+    </button>
+  </form>
+</div>
+
+<div class="glass-panel panel-section">
   <h2 class="panel-section__title">User Accounts</h2>
   <p class="panel-section__muted">
     Manage every account on the platform: promote or demote administrators and

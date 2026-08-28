@@ -17,11 +17,14 @@
       <div aria-live="polite">
         {% if error %}
           <p class="notice notice--danger" role="alert">{{ error }}</p>
+        {% elif registration_closed_notice %}
+          <p class="notice notice--warning" role="status">Registration is currently closed. Access is invite only.</p>
         {% elif request.args.get('registered') %}
           <p class="notice notice--success" role="status">Account confirmed. Please sign in.</p>
         {% elif request.args.get('reset') %}
           <p class="notice notice--success" role="status">Password updated. Please sign in.</p>
         {% endif %}
+        <p class="notice notice--info registration-banner" role="status">{{ registration_banner }}</p>
       </div>
 
       <form method="post" action="{{ url_for('auth.admin_login') }}" class="auth-form">
@@ -45,8 +48,10 @@
       </a>
 
       <div class="login-card__links">
-        <a href="{{ url_for('auth.register') }}">Register</a>
-        <span aria-hidden="true">·</span>
+        {% if registration_open %}
+          <a href="{{ url_for('auth.register') }}">Register</a>
+          <span aria-hidden="true">·</span>
+        {% endif %}
         <a href="{{ url_for('auth.recover') }}">Forgot password?</a>
       </div>
 

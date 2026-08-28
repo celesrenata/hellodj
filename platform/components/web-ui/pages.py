@@ -23,6 +23,9 @@ from flask import (
     url_for,
 )
 
+# Aliased: ``registration_mode`` is also a template context variable name.
+import registration_mode as registration_mode_module
+
 __all__ = ["build_pages_blueprint"]
 
 #: Base sidebar navigation model (icon key + label + endpoint). The admin entry
@@ -117,9 +120,26 @@ def build_pages_blueprint() -> Blueprint:
 
     @bp.route("/login")
     def login():  # type: ignore[unused-ignore]
-        """Public login landing page (Discord / Cognito / register entry)."""
+        """Public login landing page (Discord / Cognito / register entry).
+
+        Reads the global Registration_Mode so the page shows the fixed per-mode
+        banner and exposes the ``/register`` link only when OPEN (R3.1-R3.4). In
+        no-datastore mode the store is ``None`` ⇒ ``current_mode({})`` ⇒ CLOSED
+        (secure default). Hiding the link is advisory; the route is authoritative.
+        """
+        store = _config_store()
+        mode = registration_mode_module.current_mode(
+            store.get_global() if store else {}
+        )
         return render_template(
-            "pages/login.html", error=request.args.get("error")
+            "pages/login.html",
+            error=request.args.get("error"),
+            registration_mode=mode,
+            registration_open=(mode == registration_mode_module.OPEN),
+            registration_banner=registration_mode_module.banner_text(mode),
+            registration_closed_notice=(
+                request.args.get("registration") == "closed"
+            ),
         )
 
     @bp.route("/")
@@ -204,6 +224,10 @@ def build_pages_blueprint() -> Blueprint:
             return redirect(url_for("pages.login"))
         if not _is_admin():
             return redirect(url_for("pages.dashboard"))
+        store = _config_store()
+        mode = registration_mode_module.current_mode(
+            store.get_global() if store else {}
+        )
         return render_template(
             "pages/admin.html",
             layout=_layout(),
@@ -211,6 +235,8 @@ def build_pages_blueprint() -> Blueprint:
             active="admin",
             users=_admin_users(),
             invites=_admin_invites(),
+            registration_mode=mode,
+            registration_open=(mode == registration_mode_module.OPEN),
         )
 
     @bp.route("/admin/users/search")
@@ -227,6 +253,38 @@ def build_pages_blueprint() -> Blueprint:
             if query in u["username"].lower() or query in u["email"].lower()
         ]
         return render_template("partials/admin_user_list.html", users=matches)
+
+    @bp.route("/admin/registration-mode", methods=["POST"])
+    def admin_set_registration_mode():  # type: ignore[unused-ignore]
+        """Set the global Registration_Mode. Admin-only (R4.1, R4.2, R5.1).
+
+        Two-layer guard mirroring ``entitlement_routes.py``: a non-admin is
+        redirected before any change, and a hardened in-body ``_is_admin``
+        fallback denies with a 403 + session clear if the redirect guard is
+        somehow bypassed (defense in depth, R4.3, R4.4). In no-datastore mode
+        the config store is ``None`` — nothing is mutated and the panel shows an
+        ``unavailable`` notice. Otherwise the submitted value is audited and
+        persisted via ``registration_mode.apply_mode_change`` (normalization
+        makes a tampered value only ever resolve to CLOSED; an unchanged
+        submission is a no-op, R5.2).
+        """
+        if not _require_login():
+            return redirect(url_for("pages.login"))
+        if not _is_admin():
+            return redirect(url_for("pages.dashboard"))
+        if not _is_admin():  # hardened fallback (Property: admin-only)
+            session.clear()
+            return "Forbidden", 403
+        store = _config_store()
+        if store is None:
+            return redirect(url_for("pages.admin", regmode="unavailable"))
+        registration_mode_module.apply_mode_change(
+            store,
+            store.core_table,
+            requested=request.form.get("mode", ""),
+            admin_sub=(session.get("user") or {}).get("sub", ""),
+        )
+        return redirect(url_for("pages.admin", regmode="saved"))
 
     @bp.route("/admin/users/<username>/role", methods=["POST"])
     def admin_set_role(username: str):  # type: ignore[unused-ignore]

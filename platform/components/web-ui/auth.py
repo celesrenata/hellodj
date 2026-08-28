@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import secrets as pysecrets
 import urllib.parse
+from typing import Any
 
 from flask import (
     Blueprint,
@@ -32,6 +33,7 @@ from flask import (
 from hellodj_platform_logic.auth_routing import route_auth
 from hellodj_platform_logic.types import AuthProvider, AuthPurpose, UserType
 
+import registration_mode
 from auth_forms import (
     handle_login,
     handle_login_challenge,
@@ -94,11 +96,20 @@ def build_auth_blueprint() -> Blueprint:
 
     @bp.route("/register", methods=["GET", "POST"])
     def register():  # type: ignore[unused-ignore]
-        """Initial registration via first-party Cognito ``SignUp`` form (R8.3)."""
+        """Initial registration via first-party Cognito ``SignUp`` form (R8.3).
+
+        Gated by the global Registration_Mode: when CLOSED, both GET and POST
+        are rejected with a redirect to the login page carrying a
+        registration-closed notice, before the form is rendered or Cognito
+        ``SignUp`` is invoked (R2.1, R2.2). When OPEN the existing first-party
+        flow runs unchanged (R2.3, R2.4).
+        """
         provider = route_auth(
             AuthPurpose.INITIAL_REGISTRATION, UserType.ANONYMOUS
         )
         assert provider is AuthProvider.COGNITO
+        if not registration_mode.is_open(_global_config()):
+            return redirect(url_for("pages.login", registration="closed"))
         return handle_register()
 
     @bp.route("/recover", methods=["GET", "POST"])
@@ -330,6 +341,18 @@ def build_auth_blueprint() -> Blueprint:
         return redirect(url_for("pages.login"))
 
     return bp
+
+
+def _global_config() -> dict[str, Any]:
+    """Return the global config payload, or ``{}`` in no-datastore mode.
+
+    An absent config store yields an empty payload, which
+    :func:`registration_mode.is_open` normalizes to the secure-default CLOSED
+    state (invite-only), so registration stays closed unless a store is wired
+    and an admin has opened it.
+    """
+    store = current_app.extensions.get("config_store")
+    return store.get_global() if store else {}
 
 
 def _guild_source_authorized(guild_id: str) -> bool:

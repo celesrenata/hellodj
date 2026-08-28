@@ -56,6 +56,16 @@ class ConfigStore:
     def __init__(self, core_table: CoreTable) -> None:
         self._core = core_table
 
+    @property
+    def core_table(self) -> CoreTable:
+        """Return the underlying :class:`CoreTable` (read-only accessor).
+
+        Lets collaborators (e.g. the registration-mode audit write) reuse the
+        same table the config is stored on without reaching into the private
+        ``_core`` attribute.
+        """
+        return self._core
+
     # -- global config ------------------------------------------------------
 
     def get_global(self) -> dict[str, Any]:

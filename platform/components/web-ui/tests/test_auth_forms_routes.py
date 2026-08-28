@@ -77,6 +77,18 @@ class _FakeVerifier:
         return "admins" in self.groups(claims)
 
 
+class _OpenModeStore:
+    """Minimal ConfigStore stand-in reporting registration mode OPEN.
+
+    The ``auth.register`` gate reads ``get_global()`` and normalizes the
+    ``registration_mode`` field; returning OPEN lets the first-party sign-up
+    flow run so these form-rendering tests exercise the OPEN path.
+    """
+
+    def get_global(self) -> dict[str, Any]:
+        return {"registration_mode": "OPEN"}
+
+
 def _app(auth: _FakeAuth | None, verifier: _FakeVerifier | None):
     application = create_app(
         overrides={"TESTING": True, "SECRET_KEY": "t", "HELLODJ_STAGE": "beta"}
@@ -99,6 +111,7 @@ def test_admin_login_get_renders_form():
 
 def test_register_get_renders_form():
     app = _app(_FakeAuth(), _FakeVerifier())
+    app.extensions["config_store"] = _OpenModeStore()
     resp = app.test_client().get("/auth/register")
     assert resp.status_code == 200
     assert 'name="email"' in resp.get_data(as_text=True)
@@ -174,6 +187,7 @@ def test_login_token_verify_failure_no_session():
 
 def test_register_start_advances_to_confirm():
     app = _app(_FakeAuth(), _FakeVerifier())
+    app.extensions["config_store"] = _OpenModeStore()
     resp = app.test_client().post(
         "/auth/register",
         data={"step": "start", "email": "n@x.com", "password": "pw"},
