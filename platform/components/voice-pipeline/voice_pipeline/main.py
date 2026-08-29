@@ -45,12 +45,14 @@ def main() -> int:
     cfg = VoicePipelineConfig.from_env()
     log.info(
         "voice-pipeline configured: region=%s bedrock_model=%s polly_voice=%s "
-        "orchestrator=%s wakeword=%s",
+        "orchestrator=%s wakeword=%s web_search=%s ai_task_role=%s",
         cfg.aws_region,
         cfg.bedrock_model_id,
         cfg.polly_voice_id,
         cfg.orchestrator_base_url,
         cfg.wakeword_model_path,
+        cfg.web_search_available,
+        bool(cfg.ai_task_role_arn),
     )
     from .wakeword import WakeWordModel  # noqa: PLC0415 - probe-only import
 

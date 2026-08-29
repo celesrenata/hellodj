@@ -1,0 +1,15 @@
+# Per-component ARM64 (Graviton) dependency-compatibility manifest (task 18.4).
+#
+# Consumed by tools/gate_dependencies.py via the shared, property-tested
+# hellodj_platform_logic.dependency_gate.gate() to decide ARM64-only vs an
+# x86-64 fallback for this component (Requirement 4).
+#
+# mcp-searxng-enhanced is a pure-Python MCP server (fastmcp/httpx/trafilatura/
+# pymupdf/etc.), all packaged in nixpkgs and building/running on ARM64. Nothing
+# forces an x86-64 fallback.
+
+[dependencies]
+fastmcp = true
+httpx = true
+trafilatura = true
+pymupdf = true

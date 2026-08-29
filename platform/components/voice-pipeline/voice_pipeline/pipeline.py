@@ -21,15 +21,17 @@ from typing import Any
 
 from .aws_clients import AwsClientFactory
 from .config import VoicePipelineConfig
-from .intent import Intent, IntentRecognizer
+from .intent import Intent, IntentCategory, IntentRecognizer
 from .orchestrator_client import (
     ActionRequest,
     ActionResult,
     OrchestratorActionClient,
 )
+from .responder import GeneralResponder
 from .stt import SpeechToText, Transcript
 from .tts import SpeechAudio, TextToSpeech
 from .wakeword import WakeWordModel
+from .web_search import WebSearchClient
 
 log = logging.getLogger(__name__)
 
@@ -63,14 +65,18 @@ class VoiceInteractionResult:
     Attributes:
         transcript: The recognized speech.
         intent: The structured intent.
-        action_result: The orchestrator's response (None if not dispatched).
+        action_result: The orchestrator's response (None if not dispatched;
+            general queries are answered by Bedrock, not the orchestrator).
         reply_audio: Synthesized spoken reply (None if not synthesized).
+        answer_text: The text that was spoken back — the orchestrator's message
+            for music/admin actions, or the Bedrock answer for general queries.
     """
 
     transcript: Transcript
     intent: Intent
     action_result: ActionResult | None = None
     reply_audio: SpeechAudio | None = None
+    answer_text: str = ""
 
 
 @dataclass
@@ -98,6 +104,8 @@ class VoicePipeline:
         tts: TextToSpeech,
         orchestrator: OrchestratorActionClient,
         config: VoicePipelineConfig,
+        *,
+        responder: GeneralResponder | None = None,
     ) -> None:
         """Initialise the pipeline with its collaborators.
 
@@ -108,6 +116,10 @@ class VoicePipeline:
             tts: Amazon Polly text-to-speech engine.
             orchestrator: Typed action-dispatch client.
             config: Runtime configuration.
+            responder: Bedrock general-query responder (answers non-music,
+                non-admin questions briefly, optionally via web search). When
+                ``None``, general queries fall through to the orchestrator as
+                before.
         """
         self._wakeword = wakeword
         self._stt = stt
@@ -115,6 +127,7 @@ class VoicePipeline:
         self._tts = tts
         self._orchestrator = orchestrator
         self._config = config
+        self._responder = responder
         self._speakers: dict[int, _SpeakerState] = {}
 
     @classmethod
@@ -137,7 +150,20 @@ class VoicePipeline:
         Returns:
             A fully wired :class:`VoicePipeline`.
         """
-        factory = clients or AwsClientFactory(region=config.aws_region)
+        factory = clients or AwsClientFactory(
+            region=config.aws_region,
+            ai_task_role_arn=config.ai_task_role_arn,
+        )
+        # The web-search tool is only wired when an mcp-searxng-enhanced
+        # endpoint is configured; otherwise the responder answers model-only.
+        web_search = None
+        if config.web_search_available:
+            web_search = WebSearchClient(
+                config.searxng_mcp_url,
+                transport,
+                max_results=config.web_search_max_results,
+            )
+        responder = GeneralResponder(factory, config, web_search=web_search)
         return cls(
             wakeword=WakeWordModel(
                 config.wakeword_model_path,
@@ -148,6 +174,7 @@ class VoicePipeline:
             tts=TextToSpeech(factory, config),
             orchestrator=OrchestratorActionClient(config.orchestrator_base_url, transport),
             config=config,
+            responder=responder,
         )
 
     # ── opus ingestion (from bot-core) ────────────────────────────────────
@@ -235,6 +262,22 @@ class VoicePipeline:
                 intent=self._intent.recognize(""),
             )
         intent = self._intent.recognize(transcript.text)
+
+        # General questions ("what's the weather", "who won the game") are NOT
+        # playback actions — they are answered briefly by Bedrock (optionally
+        # via web search) and spoken back, NOT dispatched to the orchestrator.
+        # Music/admin intents still go to the orchestrator as before.
+        if self._responder is not None and intent.category is IntentCategory.GENERAL:
+            answer = await self._responder.answer(intent.query)
+            reply_audio = self._tts.synthesize(answer) if answer.strip() else None
+            return VoiceInteractionResult(
+                transcript=transcript,
+                intent=intent,
+                action_result=None,
+                reply_audio=reply_audio,
+                answer_text=answer,
+            )
+
         action_result = await self._dispatch(intent, context)
         reply_audio = self._speak(action_result)
         return VoiceInteractionResult(
@@ -242,6 +285,7 @@ class VoicePipeline:
             intent=intent,
             action_result=action_result,
             reply_audio=reply_audio,
+            answer_text=action_result.message if action_result else "",
         )
 
     async def _dispatch(self, intent: Intent, context: VoiceContext) -> ActionResult | None:

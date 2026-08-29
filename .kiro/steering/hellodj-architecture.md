@@ -27,7 +27,7 @@ HelloDJ is a voice-activated Discord music bot with:
 
 | Repo / Path | Purpose | CodeCommit |
 |---|---|---|
-| `hellodj/` (this repo) | Bot sources (`bot/`), the 12 workload component sources under `platform/components/*`, and the Kubernetes manifests (`kube/`). Training assets. | `codecommit::us-east-1://hellodj` (branch: main) |
+| `hellodj/` (this repo) | Bot sources (`bot/`), the 14 workload component sources under `platform/components/*` (12 original + `searxng` + `mcp-searxng-enhanced` for voice web search), and the Kubernetes manifests (`kube/`). Training assets. | `codecommit::us-east-1://hellodj` (branch: main) |
 | `hellodj-cdk/` | Standalone CDK application (`infra/`), the repo-wide gates (`tools/`), the encrypted cache secrets (`secrets/`), the closure/pin manifests (`closures.toml`, `pins.toml`, `pins.upstream.toml`), `pyproject.toml`, and the shared pure-logic package `hellodj_platform_logic` (`shared/hellodj_platform_logic/`). Primary synth source for the pipeline. | `codecommit::us-east-1://hellodj-cdk` (branch: main) |
 | `celesrenata/Lavalink` | Fork of lavalink-devs/Lavalink (upstream remote: `upstream`), branch `dev` | `codecommit::us-east-1://Lavalink` (branch: dev) |
 | `celesrenata/lavaplayer` | Fork of lavalink-devs/lavaplayer | `codecommit::us-east-1://lavaplayer` (branch: main) |
@@ -36,7 +36,7 @@ HelloDJ is a voice-activated Discord music bot with:
 
 The Lavalink fork uses a custom Lavalink.jar with lavaplayer fMP4 HLS patches. Plugins baked into the image: `lavasrc-plugin-4.8.3.jar`, `youtube-plugin-sabr.jar`.
 
-**CDK repo split (`cdk-standalone-package` spec).** Post-migration, the CDK application, the repo-wide gates, and the shared `hellodj_platform_logic` package live in the standalone **`hellodj-cdk`** repo, while `platform/components/*` (the 12 workloads), `bot/`, and `kube/` stay in `hellodj`. Concretely, `platform/infra/`, `platform/tools/`, `platform/secrets/`, the closure/pin manifests (`platform/closures.toml`, `platform/pins.toml`, `platform/pins.upstream.toml`), `platform/pyproject.toml`, and `platform/components/hellodj_platform_logic/` have moved OUT of `hellodj` into `hellodj-cdk` (at `infra/`, `tools/`, `secrets/`, the repo root, and `shared/hellodj_platform_logic/` respectively). The pipeline synths from `hellodj-cdk` as its primary source; the 12 per-component Nix image builds take `hellodj` as an additional source input, and vendor `hellodj_platform_logic` from the `hellodj-cdk` `shared/` input. CDK-only changes now go to `hellodj-cdk` without touching the bot repo.
+**CDK repo split (`cdk-standalone-package` spec).** Post-migration, the CDK application, the repo-wide gates, and the shared `hellodj_platform_logic` package live in the standalone **`hellodj-cdk`** repo, while `platform/components/*` (now 14 workloads — the 12 originals plus `searxng` + `mcp-searxng-enhanced`), `bot/`, and `kube/` stay in `hellodj`. Concretely, `platform/infra/`, `platform/tools/`, `platform/secrets/`, the closure/pin manifests (`platform/closures.toml`, `platform/pins.toml`, `platform/pins.upstream.toml`), `platform/pyproject.toml`, and `platform/components/hellodj_platform_logic/` have moved OUT of `hellodj` into `hellodj-cdk` (at `infra/`, `tools/`, `secrets/`, the repo root, and `shared/hellodj_platform_logic/` respectively). The pipeline synths from `hellodj-cdk` as its primary source; the per-component Nix image builds (14 components) take `hellodj` as an additional source input, and vendor `hellodj_platform_logic` from the `hellodj-cdk` `shared/` input. CDK-only changes now go to `hellodj-cdk` without touching the bot repo.
 
 ## Pod Architecture (Single Deployment, Multi-Container)
 
@@ -826,3 +826,109 @@ Key modules / wiring:
 The accelerator is a pure optimization: every read/write is best-effort and
 guarded, so a DynamoDB error, an absent accelerator, or a malformed cached track
 never breaks a search or blocks queue advancement.
+
+## AWS platform: Bedrock voice AI + SearXNG web search (bedrock-voice-web-search)
+
+> AWS EKS only. The `voice-pipeline` Python source deploys via the CI/CD
+> pipeline (push → image rebuild → roll); the two new web-search components
+> (`searxng`, `mcp-searxng-enhanced`) are Nix-built OCI images the pipeline
+> builds + deploys via the per-stage WorkloadsStack. Env/IAM changes on the
+> voice-pipeline ride the pipeline (the `aiTaskRole` grant is per-stage
+> WorkloadsStack, not a foundation stack).
+
+The AWS voice pipeline (`platform/components/voice-pipeline/`) is fully
+Bedrock-native and now answers general/basic voice questions — including brief
+web searches — in addition to routing music/admin commands to the
+playback-orchestrator. This is the AWS counterpart to the on-prem `bot/voice/`
+Ollama+OpenAI path; the on-prem path is unchanged.
+
+### Component count: 12 → 14
+
+Two new components were added for voice web search, so the platform now has
+**14** independently deployable components (was 12): the originals plus
+`searxng` and `mcp-searxng-enhanced`. `PLATFORM_COMPONENTS` (pipeline) and
+`COMPONENT_WORKLOADS` (catalog) both carry all 14; the pipeline builds one Nix
+OCI image per component and self-heals the ECR repo on first push
+(`aws ecr describe-repositories || create-repository`, scoped to
+`repository/hellodj/*`).
+
+### The chain
+
+```
+Discord voice (opus, from discord-bot-core)
+  → voice-pipeline: local ONNX wakeword → Amazon Transcribe (STT)
+  → Amazon Bedrock intent classify (Converse API)
+     ├─ music/admin  → playback-orchestrator (unchanged)
+     └─ general      → GeneralResponder (Bedrock Converse, brief spoken answer)
+                          │  web_search tool (when needed)
+                          ▼
+                       mcp-searxng-enhanced  (FastMCP HTTP, :8000, /mcp)
+                          │  GET /search?format=json
+                          ▼
+                       searxng               (metasearch, :8080)
+  → Amazon Polly (TTS) → spoken reply
+```
+
+### Model choice
+
+Default Bedrock model is **`amazon.nova-micro-v1:0`** — the cheapest/fastest
+`ON_DEMAND` text model on Bedrock, right-sized for one-off Discord requests (not
+deep reasoning). Reached via the **model-agnostic Bedrock Converse API**, so a
+per-stage swap is a single `BEDROCK_MODEL_ID` env change (threaded via the
+`bedrockModelId` WorkloadsStack prop). Converse requires only
+`bedrock:InvokeModel`, already on the keyless AI task role.
+
+### Keyless AI via assume-role (gap closed)
+
+The voice-pipeline pod's IRSA role is granted only `sts:AssumeRole` on the
+shared `hellodj-ai-task-<stage>` role (Bedrock/Transcribe/Polly). The
+`AwsClientFactory` now **assumes that role** (STS) when `HELLODJ_AI_TASK_ROLE_ARN`
+is set, so every Bedrock/Transcribe/Polly client runs under the dedicated
+keyless role. Previously the factory used the pod's own creds directly and would
+have been unauthorized — that gap is closed. Assume-role failure degrades to the
+default credential chain rather than crashing the pod.
+
+### Web search components
+
+- **`searxng`** (`platform/components/searxng/`) — nixpkgs `searxng` as a
+  Nix-built OCI image (no Debian). A baked `settings.yml` enables
+  `search.formats: [html, json]` (SearXNG's default is html-only → a
+  `format=json` request would 403), binds `0.0.0.0:8080`, disables the limiter
+  (only in-cluster caller). `secret_key` is a non-secret placeholder
+  (internal-only instance). Port 8080, health `/`.
+- **`mcp-searxng-enhanced`** (`platform/components/mcp-searxng-enhanced/`) — the
+  `OvertliDS/mcp-searxng-enhanced` MCP server, Nix-built from upstream Python
+  (fastmcp/httpx/trafilatura/pymupdf/…), run in **FastMCP HTTP mode**
+  (`mcp_server.py --http`) serving MCP-over-HTTP at `/mcp`. Env
+  `SEARXNG_ENGINE_API_BASE_URL=http://searxng:8080/search` (injected by the
+  `webSearch` dependency), `DESIRED_TIMEZONE=UTC`. No AWS calls → no IAM grant.
+  Port 8000, health `/mcp`. Exposes `search_web` / `get_website` /
+  `get_current_datetime`; the voice-pipeline uses `search_web`.
+
+### Voice-pipeline modules (new/changed)
+
+- `web_search.py` — `WebSearchClient`: MCP-over-HTTP JSON-RPC `tools/call` →
+  `search_web`, injectable transport, graceful degradation to empty results.
+- `responder.py` — `GeneralResponder`: Bedrock Converse + `web_search` tool loop
+  (bounded to 3 rounds) + a "answer in 1-2 spoken sentences, no markdown" system
+  prompt; degrades to a one-sentence apology on any error.
+- `pipeline.py` — `process_utterance` routes `IntentCategory.GENERAL` to the
+  responder (answer → Polly) instead of the orchestrator; music/admin unchanged.
+  `VoiceInteractionResult.answer_text` carries the spoken text.
+- `config.py` — `bedrock_model_id` (default `amazon.nova-micro-v1:0`),
+  `max_response_tokens`, `ai_task_role_arn` (`HELLODJ_AI_TASK_ROLE_ARN`),
+  `searxng_mcp_url` (`HELLODJ_SEARXNG_MCP_URL`), `web_search_enabled`
+  (`HELLODJ_WEB_SEARCH_ENABLED`). `web_search_available` gates the tool.
+
+### Env wired by the WorkloadsStack (voice-pipeline)
+
+`HELLODJ_AI_TASK_ROLE_ARN`, `BEDROCK_MODEL_ID` (default `amazon.nova-micro-v1:0`),
+`HELLODJ_SEARXNG_MCP_URL=http://mcp-searxng-enhanced:8000`. When the MCP URL is
+absent the responder answers model-only (no web search) — degraded, not broken.
+
+### Degradation
+
+Every stage degrades independently: no wakeword model → voice off; Transcribe
+error → empty transcript (no dispatch/answer); Bedrock error → spoken apology;
+web-search/MCP error or unconfigured endpoint → model-only answer; Polly error →
+no audio. None of these crash the pipeline.
