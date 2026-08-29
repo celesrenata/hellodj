@@ -109,6 +109,7 @@ class BotClient:
         async def on_ready() -> None:  # pragma: no cover - discord runtime
             self._last_heartbeat_monotonic = time.monotonic()
             log.info("gateway: READY as %s", getattr(bot.user, "name", "?"))
+            await self._sync_commands()
             if self._identity_applier is not None:
                 try:
                     await self._identity_applier.apply_all_pending()
@@ -125,6 +126,7 @@ class BotClient:
                 int(guild.id), getattr(guild, "name", "")
             )
             log.info("gateway: joined guild %s -> %s", guild.id, status.value)
+            await self._sync_commands(guild)
             if self._identity_applier is not None:
                 try:
                     await self._identity_applier.apply_guild(int(guild.id))
@@ -138,6 +140,41 @@ class BotClient:
         @bot.event
         async def on_guild_remove(guild: Any) -> None:  # pragma: no cover
             self._policy.clear(int(guild.id))
+
+    async def _sync_commands(self, guild: Any | None = None) -> None:  # pragma: no cover - discord runtime
+        """Sync the app-command (slash) tree so commands appear in Discord.
+
+        discord.py registers a cog's ``app_commands`` into ``bot.tree`` when the
+        cog is added, but Discord only surfaces them after an explicit
+        ``tree.sync()``. Global syncs can take up to an hour to propagate, so we
+        copy the global commands into each guild and do a PER-GUILD sync, which
+        is effectively instant — this is why ``/activate`` shows up immediately
+        after the bot joins/reconnects. On ``on_ready`` we sync every guild the
+        bot is in; on ``on_guild_join`` we sync just the new guild.
+
+        Best-effort: a sync failure is logged and never crashes the event.
+        """
+        bot = self._bot
+        if bot is None:  # pragma: no cover - defensive
+            return
+        tree = getattr(bot, "tree", None)
+        if tree is None:
+            return
+        try:
+            import discord
+
+            guilds = [guild] if guild is not None else list(bot.guilds)
+            for g in guilds:
+                snowflake = discord.Object(id=int(g.id))
+                tree.copy_global_to(guild=snowflake)
+                synced = await tree.sync(guild=snowflake)
+                log.info(
+                    "gateway: synced %d app command(s) to guild %s",
+                    len(synced),
+                    g.id,
+                )
+        except Exception as exc:  # noqa: BLE001 - never crash on a sync failure
+            log.warning("gateway: app-command sync failed: %s", exc)
 
     def note_heartbeat(self) -> None:
         """Record that a gateway heartbeat/READY/resume was observed just now.
