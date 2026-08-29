@@ -25,36 +25,40 @@ from flask import (
 
 # Aliased: ``registration_mode`` is also a template context variable name.
 import registration_mode as registration_mode_module
+from admin_dashboard import admin_dashboard_stats
 from config_store import effective_default_source
 
 __all__ = ["build_pages_blueprint"]
 
-#: Base sidebar navigation model (icon key + label + endpoint). The admin entry
-#: is appended only for users in the Cognito ``admins`` group (see `_nav_for`).
-NAV_ITEMS = [
+#: Sidebar navigation for a regular (Discord-OAuth) member. A member manages
+#: only themselves: platform Config, their Guilds, and their Account source
+#: connections. Administrators do NOT see these — they run the platform, not a
+#: personal account — and get :data:`ADMIN_NAV_ITEMS` instead (see
+#: ``_nav_for_current_user``).
+USER_NAV_ITEMS = [
     {"key": "dashboard", "label": "Dashboard", "endpoint": "pages.dashboard"},
     {"key": "config", "label": "Config", "endpoint": "pages.config"},
     {"key": "guilds", "label": "Guilds", "endpoint": "pages.guilds"},
     {"key": "account", "label": "Account", "endpoint": "guild.account"},
 ]
 
-#: The admin-only nav entries, shown to Cognito ``admins`` group members only.
-#: ``Admin`` is the account-management panel; ``Entitlements`` is the per-user
-#: entitlement control plane (its own blueprint). Both are appended only for
-#: admins by ``_nav_for_current_user`` (R1.4).
-ADMIN_NAV_ITEM = {
-    "key": "admin",
-    "label": "Admin",
-    "endpoint": "pages.admin",
-}
+#: Backwards-compatible alias for the member navigation model.
+NAV_ITEMS = USER_NAV_ITEMS
 
-#: The admin-only entitlements control-plane nav entry (R1.4). Routes to the
-#: entitlement user picker in the ``entitlements`` blueprint.
-ENTITLEMENTS_NAV_ITEM = {
-    "key": "entitlements",
-    "label": "Entitlements",
-    "endpoint": "entitlements.entitlements_index",
-}
+#: Sidebar navigation for an administrator (Cognito ``admins`` group). An admin
+#: administers the *platform*, not a personal account, so the member-only
+#: Config/Guilds/Account entries are intentionally absent — their landing page
+#: is the KPI ``Dashboard`` and they manage accounts (``Admin``) and per-user
+#: ``Entitlements`` (its own blueprint).
+ADMIN_NAV_ITEMS = [
+    {"key": "dashboard", "label": "Dashboard", "endpoint": "pages.dashboard"},
+    {"key": "admin", "label": "Admin", "endpoint": "pages.admin"},
+    {
+        "key": "entitlements",
+        "label": "Entitlements",
+        "endpoint": "entitlements.entitlements_index",
+    },
+]
 
 
 def _config_store():
@@ -92,14 +96,16 @@ def _is_admin() -> bool:
 def _nav_for_current_user() -> list[dict[str, Any]]:
     """Return the nav items visible to the current user.
 
-    Administrators additionally get the account-management ``Admin`` panel and
-    the per-user ``Entitlements`` control plane; a regular user sees neither
-    (R1.4). The entitlement entry is intentionally shown only to admins so the
-    control plane is never surfaced to a non-admin session.
+    An administrator runs the platform, not a personal account, so they get a
+    dedicated navigation — the KPI ``Dashboard``, the account-management
+    ``Admin`` panel, and the per-user ``Entitlements`` control plane — WITHOUT
+    the member-only Config/Guilds/Account entries. A regular (Discord-OAuth)
+    member gets exactly the member navigation and never the admin/entitlements
+    control planes (R1.4).
     """
     if _is_admin():
-        return [*NAV_ITEMS, ADMIN_NAV_ITEM, ENTITLEMENTS_NAV_ITEM]
-    return list(NAV_ITEMS)
+        return list(ADMIN_NAV_ITEMS)
+    return list(USER_NAV_ITEMS)
 
 
 def _layout() -> str:
@@ -146,16 +152,29 @@ def build_pages_blueprint() -> Blueprint:
 
     @bp.route("/")
     def dashboard():  # type: ignore[unused-ignore]
-        """Dashboard with status cards. Login-required."""
+        """Landing dashboard. Login-required.
+
+        An administrator lands on a service-wide KPI dashboard (real at-a-glance
+        metrics for the whole platform); a regular member lands on the per-user
+        dashboard. Both share the ``/`` route and the sidebar shell — only the
+        rendered content and the nav differ by role.
+        """
         if not _require_login():
             return redirect(url_for("pages.login"))
-        stats = _dashboard_stats()
+        if _is_admin():
+            return render_template(
+                "pages/admin_dashboard.html",
+                layout=_layout(),
+                nav_items=_nav_for_current_user(),
+                active="dashboard",
+                stats=_admin_stats(),
+            )
         return render_template(
             "pages/dashboard.html",
             layout=_layout(),
             nav_items=_nav_for_current_user(),
             active="dashboard",
-            stats=stats,
+            stats=_dashboard_stats(),
         )
 
     @bp.route("/config")
@@ -385,6 +404,19 @@ def _dashboard_stats() -> list[dict[str, Any]]:
         {"label": "Tracks Today", "value": cfg.get("tracks_today", 0)},
         {"label": "Voice Sessions", "value": cfg.get("voice_sessions", 0)},
     ]
+
+
+def _admin_stats() -> list[dict[str, Any]]:
+    """Return the administrator dashboard KPI cards from live platform data.
+
+    Delegates to :func:`admin_dashboard.admin_dashboard_stats`, wiring the
+    Cognito user directory, the invite service, and the ``hellodj-core`` table
+    (each ``None`` in degraded mode). Every metric degrades to ``0``
+    independently, so the admin dashboard always renders a full card set.
+    """
+    store = _config_store()
+    core_table = store.core_table if store else None
+    return admin_dashboard_stats(_admin_directory(), _invite_service(), core_table)
 
 
 def _guild_list() -> list[dict[str, Any]]:

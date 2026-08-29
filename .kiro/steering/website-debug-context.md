@@ -494,8 +494,19 @@ OAuth env-wiring gaps that used to sit in KNOWN GAPS below.
    from a route).
 6. **Config page** is still GLOBAL config — per-guild config exists in
    `ConfigStore.get_guild/set_guild` but the UI config form writes global.
-7. **Dashboard stats** are all 0 (placeholder `_dashboard_stats` / `_guild_list`
-   return empty — not wired to live data).
+7. **Member dashboard stats** are still 0 (placeholder `_dashboard_stats` /
+   `_guild_list` return empty — not wired to live data). NOTE (2026-08-29):
+   the **admin** landing page is now a DISTINCT, role-scoped KPI dashboard —
+   admins land on `pages/admin_dashboard.html` (route `/` branches on
+   `_is_admin()`) with REAL counts from `admin_dashboard.admin_dashboard_stats`
+   (Total Users / Administrators / Disabled Accounts from `AdminDirectory`,
+   Pending Invites from `InviteService`, Guilds + Connected Sources via
+   `CoreTable.scan_entity('GuildOwner'|'SourceCredential')`; each metric
+   degrades to 0 independently). Admin nav is also role-scoped
+   (`ADMIN_NAV_ITEMS` = Dashboard/Admin/Entitlements) and intentionally DROPS
+   the member-only Config/Guilds/Account entries (`USER_NAV_ITEMS`); the routes
+   still exist but aren't surfaced to admins. The member dashboard/nav is
+   unchanged.
 
 ## Debugging Commands
 

@@ -1,0 +1,27 @@
+{% extends layout|default("base.html") %}
+{% import "components/macros.html" as ui %}
+
+{% block title %}Dashboard{% endblock %}
+{% block heading %}Dashboard{% endblock %}
+
+{% block content %}
+<div class="dashboard-grid">
+  {% for stat in stats %}
+    {{ ui.stat_card(stat.label, stat.value) }}
+  {% endfor %}
+</div>
+
+<div class="glass-panel panel-section">
+  <h2 class="panel-section__title">Service Overview</h2>
+  <p class="panel-section__muted">
+    At-a-glance platform metrics. Manage accounts from the
+    <a href="{{ url_for('pages.admin') }}"
+       hx-get="{{ url_for('pages.admin') }}" hx-target="#main-content"
+       hx-push-url="true">Admin</a>
+    panel and per-user limits from
+    <a href="{{ url_for('entitlements.entitlements_index') }}"
+       hx-get="{{ url_for('entitlements.entitlements_index') }}"
+       hx-target="#main-content" hx-push-url="true">Entitlements</a>.
+  </p>
+</div>
+{% endblock %}
