@@ -141,15 +141,17 @@ path, not the main invite.
 1. **DO NOT build/push Docker images locally.** The CI/CD pipeline builds all
    images (Nix OCI on ARM64 CodeBuild) and pushes to ECR. Fix source → commit →
    push to CodeCommit → pipeline rebuilds.
-2. **Self-mutation is DISABLED.** Changes to `platform/infra/lib/pipeline-stack.ts`
+2. **Self-mutation is DISABLED.** `pipeline-stack.ts` now lives in the
+   `hellodj-cdk` repo at `hellodj-cdk/infra/lib/pipeline-stack.ts`. Changes to it
    (install/build commands, nix.conf, cache config) DO NOT take effect on a
    CodeCommit push alone — the CodeBuild buildspecs are frozen at `cdk deploy`
    time. For pipeline-stack.ts changes: commit + push, THEN
-   `cd platform/infra && npx cdk deploy hellodj-pipeline`, THEN start a new
-   pipeline execution.
+   `cd infra && npx cdk deploy hellodj-pipeline` (from the `hellodj-cdk`
+   package), THEN start a new pipeline execution.
 3. **Infra manifest/IAM changes** (workloads-stack.ts, eks-stack.ts, auth-stack.ts,
-   edge-stack.ts, foundation.ts, bin/hellodj.ts) deploy via
-   `cd platform/infra && npx cdk deploy <stack>` — NOT by pushing to CodeCommit.
+   edge-stack.ts, foundation.ts, bin/hellodj.ts — these stacks now also live in
+   `hellodj-cdk/infra`) deploy via `cd infra && npx cdk deploy <stack>` (from the
+   `hellodj-cdk` package) — NOT by pushing to CodeCommit.
    The workloads Kubernetes manifests live in the `hellodj-eks` stack (they're
    attached to `eks.cluster.addManifest`), so `cdk deploy hellodj-eks` applies
    web-ui env + IRSA changes.
@@ -168,8 +170,9 @@ path, not the main invite.
      `hellodj-eks` manifests (from `CODEBUILD_RESOLVED_SOURCE_VERSION` at synth,
      or `-c hellodj:imageTag=<sha>`), so re-applying the manifests changes the
      pod spec and K8s rolls automatically — no `kubectl rollout restart` needed.
-   - To roll pods after a push, re-apply the manifests with:
-     `platform/tools/deploy_workloads.sh` (from HEAD; verifies the ECR image
+   - To roll pods after a push, re-apply the manifests with the
+     `tools/deploy_workloads.sh` wrapper (now in the `hellodj-cdk` repo — `tools/`
+     is at the hellodj-cdk repo root; from HEAD; verifies the ECR image
      exists, pins the tag via context, clean env + private cdk.out — avoids the
      stale-`CODEBUILD_RESOLVED_SOURCE_VERSION` footgun that once shipped a
      non-existent `web-ui:<garbage>` tag and ImagePullBackOff'd the pods).
@@ -191,7 +194,12 @@ path, not the main invite.
 - **EKS cluster**: `hellodj` — `aws eks update-kubeconfig --name hellodj --region us-east-1 --kubeconfig /tmp/hellodj-eks-kubeconfig`
 - **Namespaces**: `hellodj-beta`, `hellodj-staging`, `hellodj-production`
 - **ECR**: `874927898283.dkr.ecr.us-east-1.amazonaws.com/hellodj/<component>`
-- **Pipeline**: `hellodj-pipeline` (Source → Build/synth → ComponentBuilds → beta → staging → production)
+- **Pipeline**: `hellodj-pipeline` (Source → Build/synth → ComponentBuilds → beta → staging → production).
+  The primary synth source is now **`hellodj-cdk`** (the CDK app + gates + shared
+  logic; was `hellodj`); the 12 per-component Nix builds take **`hellodj`** as an
+  additional source input (the 12 workloads stay in `hellodj`). Source repo count
+  is now **six** (`hellodj-cdk`, `hellodj`, `Lavalink`, `lavaplayer`, `LavaSrc`,
+  `youtube-source`).
 - **Nix cache**: `s3://hellodj-nix-cache?region=us-east-1`, `require-sigs = false` (working)
 - **Cognito**: user pool `us-east-1_C6xFPZt4x` (`hellodj-beta`), web-ui client
   `7e914pnbvn2c8lq8vkme22ds43`, hosted UI domain
@@ -357,14 +365,19 @@ AWS_PROFILE=hellodj aws codepipeline get-pipeline-state --name hellodj-pipeline 
 ## Gate Commands (must pass before push)
 
 ```bash
-cd platform/infra && npx tsc --noEmit && npx jest          # 282 tests (23 suites)
+# CDK app + gates now live in the hellodj-cdk repo (run from that package):
+cd infra && npx tsc --noEmit && npx jest          # 282 tests (23 suites)
+# Component sources stay in hellodj (run from that repo):
 cd platform/components/web-ui && ruff check --target-version py314 . && python3 -m pytest tests/ -q  # 384 tests
 cd platform/components/playback-orchestrator && ruff check --target-version py314 . && python3 -m pytest tests/ -q  # 55 tests (watchdog)
 cd platform/components/migration && ruff check --target-version py314 . && python3 -m pytest tests/ -q  # 21 tests (backfill)
-python3 platform/tools/check_line_count.py platform/components/web-ui platform/components/playback-orchestrator platform/components/hellodj_platform_logic platform/components/migration   # 500-line ceiling
+# check_line_count.py moved to hellodj-cdk/tools/; it still targets the hellodj component trees:
+python3 tools/check_line_count.py <hellodj>/platform/components/web-ui <hellodj>/platform/components/playback-orchestrator <hellodj>/platform/components/migration   # 500-line ceiling
 ```
 
-> Env note: `platform/components/hellodj_platform_logic` has a few tests that
+> Note: `hellodj_platform_logic` now lives in `hellodj-cdk` at
+> `shared/hellodj_platform_logic/` (it is no longer under
+> `platform/components/`). Its tests have a few that
 > import `boto3` (`test_data_access_property.py`) or the pinning/verify tooling
 > (`test_apply_bump.py`, `test_gate_pins.py`, `test_verify_all.py`,
 > `test_verify_integration_cache_synth_jest.py`) which fail to COLLECT in a bare

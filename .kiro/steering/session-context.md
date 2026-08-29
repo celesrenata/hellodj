@@ -7,10 +7,11 @@ inclusion: auto
 **DO NOT build or push Docker images locally.** The CI/CD pipeline handles all
 image builds and deployments. The correct workflow is:
 
-1. Fix source code in the local repo
+1. Fix source code in the local repo (CDK-only changes go to the `hellodj-cdk`
+   repo; bot/component source changes stay in `hellodj`)
 2. Commit and push to CodeCommit
 3. The pipeline builds Nix OCI images on ARM64 CodeBuild, pushes to ECR, and deploys to EKS
-4. If the pipeline stack itself needs updating: `cd platform/infra && npx cdk deploy hellodj-pipeline --profile hellodj --require-approval never`
+4. If the pipeline stack itself needs updating: `cd infra && npx cdk deploy hellodj-pipeline --profile hellodj --require-approval never` (run from the `hellodj-cdk` package)
 
 ### CRITICAL: Self-mutation is DISABLED
 
@@ -19,11 +20,12 @@ frozen at `cdk deploy` time.** Changes to `pipeline-stack.ts` (install commands,
 component build commands, nix.conf setup, cache config, etc.) DO NOT take effect
 by pushing to CodeCommit alone.
 
+The pipeline-stack.ts edits now live in `hellodj-cdk/infra/lib/pipeline-stack.ts`.
 The workflow for ANY change to `pipeline-stack.ts`:
 
-1. Edit `pipeline-stack.ts`
+1. Edit `infra/lib/pipeline-stack.ts` (in the `hellodj-cdk` repo)
 2. Commit + push to CodeCommit (so source matches)
-3. **`cd platform/infra && npx cdk deploy hellodj-pipeline`** ← updates the CodeBuild buildspecs
+3. **`cd infra && npx cdk deploy hellodj-pipeline`** (from the `hellodj-cdk` package) ← updates the CodeBuild buildspecs
 4. **`aws codepipeline start-pipeline-execution --name hellodj-pipeline`** ← runs a fresh execution with the new buildspecs
 
 If you skip step 3, the pipeline keeps running the OLD buildspec even though
@@ -45,8 +47,8 @@ source → commit → push → pipeline.
 
 | Stage | What Happens |
 |-------|-------------|
-| Source | CodeCommit push (any of 5 repos) triggers pipeline |
-| Synth | CDK synth produces CloudFormation templates |
+| Source | CodeCommit push (any of 6 repos) triggers pipeline. Primary synth source is `hellodj-cdk`; `hellodj` is an additional input for the component builds |
+| Synth | CDK synth produces CloudFormation templates (synths from `hellodj-cdk`) |
 | ComponentBuilds | 12 parallel Nix builds on ARM64 CodeBuild → push `:latest` + `:$COMMIT` to ECR |
 | Beta Deploy | Workloads stack applied to `hellodj-beta` namespace |
 | Staging Deploy | Workloads stack applied to `hellodj-staging` namespace |
@@ -61,17 +63,17 @@ source → commit → push → pipeline.
 ### Key Commands
 
 ```bash
-# Deploy pipeline stack changes (self-mutation disabled)
-cd platform/infra && npx cdk deploy hellodj-pipeline --profile hellodj --require-approval never
+# Deploy pipeline stack changes (self-mutation disabled) — from the hellodj-cdk package
+cd infra && npx cdk deploy hellodj-pipeline --profile hellodj --require-approval never
 
-# Deploy foundation (EKS + networking + data) changes
-cd platform/infra && npx cdk deploy hellodj-eks hellodj-network hellodj-data --profile hellodj --require-approval never
+# Deploy foundation (EKS + networking + data) changes — from the hellodj-cdk package
+cd infra && npx cdk deploy hellodj-eks hellodj-network hellodj-data --profile hellodj --require-approval never
 
-# Run CDK tests
-cd platform/infra && npx jest
+# Run CDK tests — from the hellodj-cdk package
+cd infra && npx jest
 
-# Run synth only (validate)
-cd platform/infra && npx cdk synth hellodj-pipeline --quiet
+# Run synth only (validate) — from the hellodj-cdk package
+cd infra && npx cdk synth hellodj-pipeline --quiet
 
 # Push to CodeCommit (triggers pipeline)
 git push codecommit main
@@ -119,7 +121,7 @@ KUBECONFIG=/tmp/hellodj-eks-kubeconfig kubectl describe pod <pod> -n hellodj-bet
 - **Pipeline name**: `hellodj-pipeline`
 - **AWS profile**: `hellodj` (account `874927898283`, region `us-east-1`)
 - **EKS cluster name**: `hellodj`
-- **Source of truth**: CodeCommit (5 repos), NOT GitHub
+- **Source of truth**: CodeCommit (6 repos, incl. the new `hellodj-cdk` for the CDK app/gates/shared logic; primary synth source is `hellodj-cdk`), NOT GitHub
 - **Namespaces**: `hellodj-beta`, `hellodj-staging`, `hellodj-production`
 - **ECR registry**: `874927898283.dkr.ecr.us-east-1.amazonaws.com/hellodj/<component>`
 - **Node architecture**: ARM64 (Graviton `m7g.large` / `c7g.large`)

@@ -27,13 +27,16 @@ HelloDJ is a voice-activated Discord music bot with:
 
 | Repo / Path | Purpose | CodeCommit |
 |---|---|---|
-| `hellodj/` (this repo) | Bot, web-ui, kube manifests, platform infra, training | `codecommit::us-east-1://hellodj` (branch: main) |
+| `hellodj/` (this repo) | Bot sources (`bot/`), the 12 workload component sources under `platform/components/*`, and the Kubernetes manifests (`kube/`). Training assets. | `codecommit::us-east-1://hellodj` (branch: main) |
+| `hellodj-cdk/` | Standalone CDK application (`infra/`), the repo-wide gates (`tools/`), the encrypted cache secrets (`secrets/`), the closure/pin manifests (`closures.toml`, `pins.toml`, `pins.upstream.toml`), `pyproject.toml`, and the shared pure-logic package `hellodj_platform_logic` (`shared/hellodj_platform_logic/`). Primary synth source for the pipeline. | `codecommit::us-east-1://hellodj-cdk` (branch: main) |
 | `celesrenata/Lavalink` | Fork of lavalink-devs/Lavalink (upstream remote: `upstream`), branch `dev` | `codecommit::us-east-1://Lavalink` (branch: dev) |
 | `celesrenata/lavaplayer` | Fork of lavalink-devs/lavaplayer | `codecommit::us-east-1://lavaplayer` (branch: main) |
 | `celesrenata/LavaSrc` | Fork of topi314/LavaSrc (Tidal/Spotify source plugin) | `codecommit::us-east-1://LavaSrc` (branch: tidal-v2-api) |
 | `celesrenata/youtube-source` | Fork of lavalink-devs/youtube-source (SABR support) | `codecommit::us-east-1://youtube-source` (branch: main) |
 
 The Lavalink fork uses a custom Lavalink.jar with lavaplayer fMP4 HLS patches. Plugins baked into the image: `lavasrc-plugin-4.8.3.jar`, `youtube-plugin-sabr.jar`.
+
+**CDK repo split (`cdk-standalone-package` spec).** Post-migration, the CDK application, the repo-wide gates, and the shared `hellodj_platform_logic` package live in the standalone **`hellodj-cdk`** repo, while `platform/components/*` (the 12 workloads), `bot/`, and `kube/` stay in `hellodj`. Concretely, `platform/infra/`, `platform/tools/`, `platform/secrets/`, the closure/pin manifests (`platform/closures.toml`, `platform/pins.toml`, `platform/pins.upstream.toml`), `platform/pyproject.toml`, and `platform/components/hellodj_platform_logic/` have moved OUT of `hellodj` into `hellodj-cdk` (at `infra/`, `tools/`, `secrets/`, the repo root, and `shared/hellodj_platform_logic/` respectively). The pipeline synths from `hellodj-cdk` as its primary source; the 12 per-component Nix image builds take `hellodj` as an additional source input, and vendor `hellodj_platform_logic` from the `hellodj-cdk` `shared/` input. CDK-only changes now go to `hellodj-cdk` without touching the bot repo.
 
 ## Pod Architecture (Single Deployment, Multi-Container)
 
