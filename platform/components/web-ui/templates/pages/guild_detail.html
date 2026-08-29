@@ -14,6 +14,8 @@
             @click="tab = 'identity'" role="tab">Identity</button>
     <button class="tab" :class="tab === 'bots' && 'tab--active'"
             @click="tab = 'bots'" role="tab">Bots</button>
+    <button class="tab" :class="tab === 'activation' && 'tab--active'"
+            @click="tab = 'activation'" role="tab">Activation</button>
   </div>
 
   <div x-show="tab === 'admins'" x-transition role="tabpanel">
@@ -75,6 +77,19 @@
       may run is set by your entitlement.
     </p>
     {% include "partials/guild_bot_list.html" %}
+  </div>
+
+  <div x-show="tab === 'activation'" x-transition role="tabpanel">
+    <h2 class="panel-section__title">Activation</h2>
+    <p class="panel-section__muted">
+      After the bot is in your server, an administrator must run
+      <code>/activate &lt;key&gt;</code> in the server once to enable HelloDJ.
+      Until then the bot ignores commands. This stops anyone from adding the bot
+      and using it without your key.
+    </p>
+    <div id="guild-activation">
+      {% include "partials/guild_activation.html" %}
+    </div>
   </div>
 </div>
 {% endblock %}

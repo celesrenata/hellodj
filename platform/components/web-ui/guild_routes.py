@@ -214,6 +214,7 @@ def build_guild_blueprint() -> Blueprint:
         guild_admin = _svc("guild_admin")
         sources = _svc("guild_sources")
         identity_svc = _svc("guild_identity_service")
+        activation = _svc("guild_activation")
         bots_ctx = bot_context(guild_id)
         # Which providers are wired for interactive OAuth (client id present).
         # Unconfigured providers render a disabled "Needs setup" control rather
@@ -239,6 +240,7 @@ def build_guild_blueprint() -> Blueprint:
             pool_size=bots_ctx["pool_size"],
             can_custom_name=bots_ctx["can_custom_name"],
             can_custom_avatar=bots_ctx["can_custom_avatar"],
+            activation=_activation_context(activation, guild_id),
             error=request.args.get("error", ""),
             error_provider=request.args.get("provider", ""),
         )
@@ -322,6 +324,27 @@ def build_guild_blueprint() -> Blueprint:
             admins=guild_admin.list_admins(guild_id) if guild_admin else [],
         )
 
+    @bp.route("/guilds/<guild_id>/activation/regenerate", methods=["POST"])
+    def regenerate_activation(guild_id: str):  # type: ignore[unused-ignore]
+        """Regenerate the guild's activation key. Ownership-gated.
+
+        Mints a NEW key and clears activation (the old key can no longer
+        activate the guild — on-prem deactivate parity), then returns the
+        activation partial for an HTMX swap.
+        """
+        if not _require_login():
+            return redirect(url_for("pages.login"))
+        if not _can_manage(guild_id):
+            return redirect(url_for("pages.guilds"))
+        activation = _svc("guild_activation")
+        if activation is not None:
+            activation.regenerate_key(guild_id)
+        return render_template(
+            "partials/guild_activation.html",
+            guild_id=guild_id,
+            activation=_activation_context(activation, guild_id),
+        )
+
     @bp.route("/guilds/<guild_id>/sources/<provider>/disconnect", methods=["POST"])
     def disconnect_source(guild_id: str, provider: str):  # type: ignore[unused-ignore]
         """Disconnect (delete) a guild's per-provider source. Ownership-gated."""
@@ -342,6 +365,20 @@ def build_guild_blueprint() -> Blueprint:
         )
 
     return bp
+
+
+def _activation_context(activation: Any, guild_id: str) -> dict[str, Any]:
+    """Return the guild's activation ``{key, activated}`` for rendering.
+
+    Generates the key on first view (on-prem dashboard parity) so the admin
+    always has a key to run ``/activate <key>`` with. Degrades to an empty,
+    not-activated context when no activation service is wired.
+    """
+    if activation is None:
+        return {"key": "", "activated": False}
+    key = activation.get_or_create_key(guild_id)
+    status = activation.status(guild_id)
+    return {"key": key, "activated": bool(status.get("activated", False))}
 
 
 def _render_identity(

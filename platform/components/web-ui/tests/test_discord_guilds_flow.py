@@ -210,3 +210,48 @@ def test_claim_already_owned_by_other_bounces(app, monkeypatch) -> None:
     assert "add=already_claimed" in resp.headers["Location"]
     # Ownership is unchanged (first-come-first-served).
     assert ga.owner_of("111") == "someone-else"
+
+
+class _FakeEntitlements:
+    """Entitlement service stand-in returning a fixed effective record."""
+
+    def __init__(self, max_guilds: int) -> None:
+        self._max_guilds = max_guilds
+
+    def get_effective(self, sub: str):
+        return {"max_guilds": self._max_guilds}
+
+
+def test_claim_refused_when_guild_quota_reached(app, monkeypatch) -> None:
+    # The user's max_guilds is 1 and they already own one guild → claiming a
+    # NEW guild is refused with add=guild_quota (R12.3).
+    ga = _configure(app, monkeypatch)
+    ga.claim_ownership("already", "sub-1", name="First")
+    app.extensions["entitlement_service"] = _FakeEntitlements(max_guilds=1)
+    client = app.test_client()
+    _login(client, sub="sub-1")
+    with client.session_transaction() as sess:
+        sess["add_guild_candidates"] = {"222": "Second"}
+
+    resp = client.post("/auth/discord/guilds/claim", data={"guild_id": "222"})
+
+    assert resp.status_code == 302
+    assert "add=guild_quota" in resp.headers["Location"]
+    assert ga.owner_of("222") is None
+
+
+def test_claim_allowed_within_guild_quota(app, monkeypatch) -> None:
+    # max_guilds=2, owns one → claiming a second is allowed.
+    ga = _configure(app, monkeypatch)
+    ga.claim_ownership("already", "sub-1", name="First")
+    app.extensions["entitlement_service"] = _FakeEntitlements(max_guilds=2)
+    client = app.test_client()
+    _login(client, sub="sub-1")
+    with client.session_transaction() as sess:
+        sess["add_guild_candidates"] = {"222": "Second"}
+
+    resp = client.post("/auth/discord/guilds/claim", data={"guild_id": "222"})
+
+    assert resp.status_code == 302
+    assert resp.headers["Location"].endswith("/guilds/222")
+    assert ga.owner_of("222") == "sub-1"

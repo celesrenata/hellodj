@@ -469,6 +469,42 @@ OAuth env-wiring gaps that used to sit in KNOWN GAPS below.
 - **Default source is `youtube`** (unset resolves to YouTube in the config layer
   and the bot source map; the config form preselects it).
 
+## Guild activation key + `/activate` gate (AWS port, 2026-08-29)
+
+Port of the on-prem activation gate (a guild does NOTHING until an admin runs
+`/activate <key>` with the key from the web dashboard — stops arbitrary people
+adding the bot and using it). AWS had only `GuildPolicy` (admin-portal approve),
+NOT the key/`/activate` UX; this adds it, backed by `hellodj-core`.
+
+- **web-ui** `guild_activation_service.py` — `GuildActivationService` over
+  `PK=GUILD#<gid>` / `SK=ACTIVATION` (entityType `GuildActivation`,
+  `data={key, activated}`). `get_or_create_key` mints `secrets.token_urlsafe(16)`
+  on first panel view (idempotent); `regenerate_key` mints a new key AND clears
+  `activated` (on-prem deactivate parity). Shown on the guild-detail
+  **Activation** tab (`partials/guild_activation.html`) with a regenerate
+  control; `POST /guilds/<gid>/activation/regenerate` (ownership-gated).
+- **discord-bot-core** `policy/activation.py` (`GuildActivation` +
+  `CoreTableActivationStore` reading the SAME item) and
+  `commands/activation_cog.py` (`/activate <key>` command + a GLOBAL command
+  check that blocks every command in an unactivated guild EXCEPT `activate`;
+  DMs allowed). Wired in `main.py` after `gateway.build()`; when no core table
+  is configured the store is None and the gate treats every guild as LOCKED
+  (secure default). `command_allowed` is a pure, unit-tested decision.
+- **Entitlement gate on "add a server"** (R12.3): `discord_guilds_routes.
+  add_guild_claim` now refuses claiming a NEW guild once the user's owned-guild
+  count reaches their effective `max_guilds` (`entitlements_core.quota_reached`,
+  via `EntitlementService.get_effective`) → `?add=guild_quota`. Re-claiming an
+  already-owned guild is exempt. Per-guild bot count stays gated by
+  `max_bots_per_guild` on the Bots tab (`bot_app_pool.assign_next`).
+- **Bot joining a server** is the Bots-tab flow (unchanged): assign a pool app
+  → click its Discord invite URL. A bot CANNOT self-join (Discord requires the
+  user to authorize), so "add a server" claims ownership + lands on the detail
+  page; the invite click is the join. Full chain: add server → Bots: add a bot
+  → click invite → Activation: `/activate <key>` in Discord → bot works.
+- Both components deploy via the pipeline (source push → image rebuild → roll).
+  No infra/IAM change — reuses `hellodj-core`; discord-bot-core already had the
+  core-table read grant + `HELLODJ_CORE_TABLE` env for identity.
+
 ## KNOWN GAPS / NOT YET DONE (likely debugging targets)
 
 1. ~~**Source OAuth client ids/secrets are EMPTY env**~~ *(addressed by

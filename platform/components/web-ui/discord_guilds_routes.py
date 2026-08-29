@@ -78,6 +78,27 @@ def _discord_client_id() -> str:
     return client_id
 
 
+def _guild_quota_reached(sub: str) -> bool:
+    """Return whether the user has reached their ``max_guilds`` entitlement.
+
+    Compares the user's current owned-guild count against their effective
+    ``max_guilds`` via the shared :mod:`entitlements_core` so the web-ui, bot,
+    and orchestrator agree (R12.3). Degrades permissively ONLY when no
+    entitlement service is wired (tests / no-datastore) — with a service wired,
+    an unresolved record applies the restrictive default (``max_guilds=1``).
+    """
+    from entitlements_core import quota_reached  # noqa: PLC0415
+
+    ent = current_app.extensions.get("entitlement_service")
+    guild_admin = current_app.extensions.get("guild_admin")
+    if ent is None or guild_admin is None:
+        return False
+    # get_effective already merges over the secure defaults (max_guilds=1).
+    effective = ent.get_effective(sub)
+    owned = len(guild_admin.guilds_owned_by(sub))
+    return quota_reached(owned, int(effective.get("max_guilds", 1)))
+
+
 def register_discord_guilds_routes(bp: Blueprint) -> None:
     """Register the add-a-server connect/callback/claim routes on ``bp``."""
 
@@ -152,6 +173,13 @@ def register_discord_guilds_routes(bp: Blueprint) -> None:
         sub = (session.get("user") or {}).get("sub", "")
         if guild_admin is None or not sub:
             return redirect(url_for("pages.guilds", add="unavailable"))
+        # Claiming a NEW guild is gated by the user's ``max_guilds`` entitlement
+        # (R12.3): a user may attach the bot to only as many guilds as their
+        # entitlement allows. Re-claiming a guild they already own is exempt
+        # (it doesn't grow their count). The bot count PER guild is a separate
+        # entitlement enforced later on the bots panel.
+        if guild_admin.owner_of(guild_id) != sub and _guild_quota_reached(sub):
+            return redirect(url_for("pages.guilds", add="guild_quota"))
         guild_admin.claim_ownership(
             guild_id, sub, name=candidates.get(guild_id, "")
         )

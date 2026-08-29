@@ -18,6 +18,11 @@
   <p class="notice notice--warning" role="status">
     That server has already been claimed by another account.
   </p>
+{% elif add_notice == 'guild_quota' %}
+  <p class="notice notice--warning" role="status">
+    You've reached the number of servers your plan allows. Remove a server or
+    upgrade your entitlements to add another.
+  </p>
 {% elif add_notice in ('not_authorized', 'state_mismatch', 'unavailable') %}
   <p class="notice notice--danger" role="alert">
     Could not add that server. Please try again.

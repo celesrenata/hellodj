@@ -1,0 +1,30 @@
+{# Per-guild activation key + status (on-prem /activate parity). #}
+<div class="glass-panel panel-section">
+  {% if activation.activated %}
+    <p class="notice notice--success" role="status">
+      This server is <strong>activated</strong>. HelloDJ commands are enabled.
+    </p>
+  {% else %}
+    <p class="notice notice--warning" role="status">
+      This server is <strong>not activated</strong>. Run
+      <code>/activate {{ activation.key }}</code> in the server to enable it.
+    </p>
+  {% endif %}
+
+  <label class="field__label" for="activation-key">Activation key</label>
+  <div class="field-row">
+    <input id="activation-key" class="field__input" type="text" readonly
+           value="{{ activation.key }}"
+           aria-label="Activation key for this server">
+  </div>
+  <p class="panel-section__muted">
+    Run <code>/activate {{ activation.key }}</code> in your Discord server.
+    Regenerating the key deactivates the server and invalidates the old key.
+  </p>
+
+  <form hx-post="{{ url_for('guild.regenerate_activation', guild_id=guild_id) }}"
+        hx-target="#guild-activation"
+        hx-confirm="Regenerate the key? The old key will stop working and the server will need to be re-activated.">
+    <button type="submit" class="btn btn-ghost">Regenerate key</button>
+  </form>
+</div>

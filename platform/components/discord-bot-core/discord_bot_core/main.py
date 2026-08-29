@@ -16,6 +16,7 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from .commands.activation_cog import build_activation_cog
 from .commands.playback_cog import build_playback_cog
 from .commands.registry import CommandRegistry
 from .config import BotConfig
@@ -23,6 +24,7 @@ from .gateway.client import BotClient
 from .identity.applier import IdentityApplier
 from .identity.store import build_identity_store
 from .playback.client import PlaybackClient
+from .policy.activation import GuildActivation, build_activation_store
 from .policy.guild_policy import GuildPolicy
 from .secrets import TokenProvider
 from .watchdogs.gateway_health import GatewayHealthWatchdog
@@ -106,10 +108,12 @@ def build_transport(base_url: str) -> Any:
         async def post_json(
             self, url: str, payload: dict[str, Any]
         ) -> dict[str, Any]:
-            async with aiohttp.ClientSession() as session:
-                async with session.post(url, json=payload) as resp:
-                    resp.raise_for_status()
-                    return await resp.json()
+            async with (
+                aiohttp.ClientSession() as session,
+                session.post(url, json=payload) as resp,
+            ):
+                resp.raise_for_status()
+                return await resp.json()
 
     del base_url  # base_url is applied by PlaybackClient, kept for symmetry
     return _AioHttpTransport()
@@ -154,7 +158,20 @@ async def run(config: BotConfig | None = None) -> None:
 
     deps = Dependencies(playback=playback, guild_policy=guild_policy)
     gateway = BotClient(cfg, registry, guild_policy, deps)
-    gateway.build()
+    bot = gateway.build()
+
+    # Per-guild activation gate (on-prem /activate parity): a guild is locked
+    # until an admin runs /activate <key>. The cog owns the command and installs
+    # a global command check on the bot. When no core table is configured the
+    # store is None and the gate treats every guild as locked (secure default),
+    # so the bot still runs but refuses commands until activation is wired.
+    activation_store = build_activation_store(cfg.core_table_name, cfg.aws_region)
+    if activation_store is not None:
+        activation = GuildActivation(activation_store)
+        cog = build_activation_cog(bot, activation)
+        result = bot.add_cog(cog)
+        if result is not None:
+            await result
 
     # Optional per-guild bot-identity apply: only when the core table + assets
     # bucket are configured. The applier reads persisted BOTIDENTITY items and

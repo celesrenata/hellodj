@@ -104,6 +104,8 @@ def create_app(
     # Account-level delegated admins (co-admins of a user's own account,
     # appointed by Discord id); None in degraded mode (no datastore).
     app.extensions["account_admin"] = services["account_admin"]
+    # Per-guild activation key (on-prem /activate parity); None in degraded mode.
+    app.extensions["guild_activation"] = services["guild_activation"]
     app.extensions["guild_sources"] = services["guild_sources"]
     # Unified per-user source-credential store (encrypted DynamoDB); None in
     # degraded mode (no KMS / CMK) so callbacks skip the new write and fall

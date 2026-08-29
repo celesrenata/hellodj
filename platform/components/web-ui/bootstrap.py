@@ -27,6 +27,7 @@ from bot_app_pool import BotAppAssignmentService, BotAppPool
 from bot_identity import BotIdentityService
 from config_store import ConfigStore
 from entitlement_service import EntitlementService
+from guild_activation_service import GuildActivationService
 from guild_admin_service import GuildAdminService
 from guild_sources import GuildSourcesService
 from invite_email import InviteEmailService
@@ -150,6 +151,7 @@ def build_services() -> dict[str, Any]:
         "user_profiles": None,
         "guild_admin": None,
         "account_admin": None,
+        "guild_activation": None,
         "guild_sources": None,
         "source_credentials": None,
         "guild_identity_service": None,
@@ -165,6 +167,7 @@ def build_services() -> dict[str, Any]:
     services["user_profiles"] = user_profiles
     services["guild_admin"] = GuildAdminService(core)
     services["account_admin"] = AccountAdminService(core)
+    services["guild_activation"] = GuildActivationService(core)
     services["entitlement_service"] = EntitlementService(core)
 
     secrets = _secrets_client()
