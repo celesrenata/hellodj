@@ -40,6 +40,37 @@ staging/production (regression-guarded by a test). Deploys via a plain
 CodeCommit push (pipeline synth resolves + the per-stage WorkloadsStack rolls);
 manual fallback `tools/deploy_workloads.sh --stage beta` threads the same context.
 
+### Admin sign-in STILL unavailable — synth context word-split (fixed 2026-08-29, take 2)
+
+The per-stage Cognito resolution above was correct AND the synth resolved the
+right ids (build log: `resolved Cognito clients: {"beta": "7e914..."}`), but the
+deployed web-ui STILL had NO `COGNITO_CLIENT_ID` — admin login stayed
+"temporarily unavailable". Root cause (facts, from the synth CodeBuild log): the
+resolved map was `{"beta": "<id>"}` (Python `json.dumps` default separator puts
+a SPACE after the colon), and the synth step expanded it into
+`npx cdk synth $CTX` **UNQUOTED**. The shell word-split the value on that inner
+space, handing cdk a truncated `-c hellodj:cognitoClientIdByStage={"beta":`
+(invalid JSON) as one arg and `"<id>"}` as another. `stageMapContext` in
+`bin/hellodj.ts` caught the `JSON.parse` failure and returned `undefined` →
+empty per-stage map → each `HelloDjStage` fell back to the empty single-stage
+`cognitoClientId` → `workloads-stack.ts` skipped the `COGNITO_CLIENT_ID` env →
+`build_cognito_auth()` returned None → "unavailable". So the map was resolved but
+never reached the manifest.
+
+Fix (source, `hellodj-cdk/infra/lib/pipeline-stack.ts` `getBuildCommands`): two
+complementary changes so the value survives the shell verbatim — (1) emit the
+resolved maps as COMPACT JSON (`json.dumps(d, separators=(',',':'))`, no spaces),
+and (2) build the synth context as a bash ARRAY (`CTX=(); CTX+=(-c "k=$V")`) and
+invoke `npx cdk synth "${CTX[@]}"` so each `-c key=value` is one argv element,
+word-split-proof regardless of the value's contents. Runs on the
+`amazonlinux-aarch64-standard:3.0` CodeBuild image (bash arrays are fine).
+Regression-guarded in `pipeline-stack.test.ts` (asserts compact separators, the
+quoted `-c "...=$COG_CLIENTS"` args, and `synth "${CTX[@]}"`; forbids the old
+unquoted `synth $CTX`). Deploys via a plain CodeCommit push — this is a
+`pipeline-stack.ts` change, so the pipeline's `UpdatePipeline`/SelfMutate stage
+rewrites the synth commands, the next synth threads the quoted context, and the
+beta WorkloadsStack redeploys web-ui WITH `COGNITO_CLIENT_ID`.
+
 ## CloudFront 502 "couldn't resolve the origin domain name" (fixed 2026-08-29)
 
 Symptom: the whole site returned a CloudFront 502 error page —
