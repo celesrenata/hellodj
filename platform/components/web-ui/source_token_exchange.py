@@ -33,12 +33,15 @@ Requirements: 2.3, 2.4
 from __future__ import annotations
 
 import json
+import logging
 import time
 import urllib.parse
 import urllib.request
 from typing import Any
 
 from flask import current_app
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     "source_exchange_google",
@@ -147,12 +150,22 @@ def discord_client_credentials() -> tuple[str, str]:
 
     arn = cfg.get("HELLODJ_DISCORD_OAUTH_SECRET_ARN", "") or ""
     if not arn:
+        log.warning(
+            "discord creds: no plain env secret and no "
+            "HELLODJ_DISCORD_OAUTH_SECRET_ARN configured"
+        )
         return client_id, client_secret
     resolved = _resolve_secret_json(arn)
-    return (
-        client_id or str(resolved.get("client_id", "")),
-        client_secret or str(resolved.get("client_secret", "")),
-    )
+    out_id = client_id or str(resolved.get("client_id", ""))
+    out_secret = client_secret or str(resolved.get("client_secret", ""))
+    if not out_id or not out_secret:
+        log.warning(
+            "discord creds: resolved from ARN but still incomplete "
+            "(client_id=%s, client_secret=%s)",
+            "set" if out_id else "empty",
+            "set" if out_secret else "empty",
+        )
+    return out_id, out_secret
 
 
 # ── Spotify client id/secret resolution (env first, then Secrets Manager) ───
@@ -189,20 +202,48 @@ def _resolve_secret_json(arn: str) -> dict[str, Any]:
     Uses a Secrets Manager client stashed on ``app.extensions['secrets_admin']``
     when present (tests inject a fake); otherwise lazily constructs a boto3
     client. Shared by the Google and Spotify credential resolvers.
+
+    The lazy client is built with an EXPLICIT region: boto3's default region
+    resolution does not honor ``AWS_REGION`` (only ``AWS_DEFAULT_REGION``),
+    which is unset in the pod — so ``boto3.client("secretsmanager")`` raised
+    ``NoRegionError`` and silently resolved to no credentials, breaking Discord
+    OAuth (the client_secret came back empty). Pin the region from
+    ``AWS_REGION``/``AWS_DEFAULT_REGION`` so the fetch actually runs.
     """
     client = current_app.extensions.get("secrets_admin")
     if client is None:
         try:
+            import os  # noqa: PLC0415
+
             import boto3  # noqa: PLC0415 - lazy; keeps import cost off hot path
 
-            client = boto3.client("secretsmanager")
+            region = (
+                current_app.config.get("AWS_REGION")
+                or os.environ.get("AWS_REGION")
+                or os.environ.get("AWS_DEFAULT_REGION")
+            )
+            client = boto3.client("secretsmanager", region_name=region)
         except Exception:  # noqa: BLE001 - no AWS available (e.g. tests)
+            # A silently-empty resolve here cascades into a bare
+            # ?error=discord_failed with no cause on record. Log it (the ARN is
+            # not sensitive; the secret VALUE is never touched on this path).
+            log.warning(
+                "secret resolve: could not build secretsmanager client for %s",
+                arn,
+                exc_info=True,
+            )
             return {}
     try:
         raw = client.get_secret_value(SecretId=arn).get("SecretString", "")
         parsed = json.loads(raw) if raw else {}
-        return parsed if isinstance(parsed, dict) else {}
+        if not isinstance(parsed, dict):
+            log.warning("secret resolve: %s did not contain a JSON object", arn)
+            return {}
+        return parsed
     except Exception:  # noqa: BLE001 - absent/denied secret -> empty
+        # Surface WHY (AccessDenied / ResourceNotFound / endpoint / timeout);
+        # the exception text carries no secret material.
+        log.warning("secret resolve failed for %s", arn, exc_info=True)
         return {}
 
 
