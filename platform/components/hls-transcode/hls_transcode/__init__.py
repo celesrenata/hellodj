@@ -29,6 +29,10 @@ Public surface:
     * :class:`~hls_transcode.s3_sink.S3Sink` — S3 (CloudFront origin) sink.
     * :class:`~hls_transcode.metrics.PressureMetrics` — CloudWatch publisher.
     * :class:`~hls_transcode.visualizer.VisualizerRenderer` — visualizer hook.
+    * :class:`~hls_transcode.runtime.TranscodeRuntime` — the control loop that
+      drives live demand -> the hybrid controller -> CloudWatch pressure, plus
+      the ffmpeg process manager + S3 segment uploader (the execution half that
+      actually drains work CPU -> GPU and back at runtime).
 """
 
 from __future__ import annotations

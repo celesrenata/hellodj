@@ -18,6 +18,7 @@ Requirements: 3.1, 3.9, 3.11, 6.2, 15.1, 16.4, 18.4
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -56,11 +57,33 @@ class TranscodeHandlers:
 
     Kept aiohttp-free so the start/stop/pressure logic is unit-testable without
     a server; :func:`build_app` adapts these into aiohttp coroutines.
+
+    When a :class:`~hls_transcode.runtime.FfmpegProcessManager` is injected the
+    handlers ALSO drive the real ffmpeg lifecycle: a start request spawns the
+    encoder for the resolved plan (mirroring segments to S3 via the uploader),
+    and a stop request drains it (R17). Without a process manager the handlers
+    stay pure planning-only (the shape the smoke tests exercise).
     """
 
-    def __init__(self, manager: JobManager) -> None:
-        """Initialise with the job manager the handlers delegate to."""
+    def __init__(
+        self,
+        manager: JobManager,
+        *,
+        process_manager: object | None = None,
+        uploader: object | None = None,
+    ) -> None:
+        """Initialise with the job manager and optional ffmpeg process manager.
+
+        Args:
+            manager: The job manager the handlers delegate planning to.
+            process_manager: Optional :class:`FfmpegProcessManager`; when
+                supplied, start/stop drive the real ffmpeg process lifecycle.
+            uploader: Optional :class:`SegmentUploader` passed to the process
+                manager so produced segments mirror to the S3 CloudFront origin.
+        """
         self._manager = manager
+        self._process_manager = process_manager
+        self._uploader = uploader
 
     def start_transcode(
         self, payload: dict[str, Any]
@@ -69,7 +92,9 @@ class TranscodeHandlers:
 
         Accepts the activity-backend's transcode payload (``guildId``,
         ``kind``, ``streamId``, optional ``sourceUri``) and returns the resolved
-        playlist location and selected encoder path.
+        playlist location and selected encoder path. When a process manager is
+        wired, the ffmpeg process is spawned as a background task (the HTTP
+        response does not block on encoder startup).
         """
         try:
             guild_id = int(payload["guildId"])
@@ -84,6 +109,10 @@ class TranscodeHandlers:
             )
         except JobError as error:
             return 400, {"error": str(error)}
+        if self._process_manager is not None:
+            asyncio.ensure_future(
+                self._process_manager.start(plan, uploader=self._uploader)
+            )
         return 202, {
             "accepted": True,
             "encoder": plan.encoder.value,
@@ -94,13 +123,21 @@ class TranscodeHandlers:
     def stop_transcode(
         self, payload: dict[str, Any]
     ) -> tuple[int, dict[str, Any]]:
-        """Handle a stop request; returns ``(status, body)``."""
+        """Handle a stop request; returns ``(status, body)``.
+
+        Stops tracking the job and, when a process manager is wired, drains the
+        ffmpeg process as a background task (SIGTERM -> wait -> SIGKILL, R17).
+        """
         try:
             guild_id = int(payload["guildId"])
             stream_id = str(payload["streamId"])
         except (KeyError, ValueError, TypeError):
             return 400, {"error": "guildId and streamId are required"}
         stopped = self._manager.stop_transcode(guild_id, stream_id)
+        if self._process_manager is not None:
+            asyncio.ensure_future(
+                self._process_manager.stop(guild_id, stream_id)
+            )
         return 200, {"stopped": stopped}
 
     def pressure(self) -> tuple[int, dict[str, Any]]:
@@ -114,9 +151,18 @@ class TranscodeHandlers:
         }
 
 
-def build_handlers(config: TranscodeConfig) -> TranscodeHandlers:
-    """Build the pure :class:`TranscodeHandlers` from configuration."""
-    return TranscodeHandlers(create_job_manager(config))
+def build_handlers(
+    config: TranscodeConfig, manager: JobManager | None = None
+) -> TranscodeHandlers:
+    """Build the pure :class:`TranscodeHandlers` from configuration.
+
+    Args:
+        config: The component runtime configuration.
+        manager: Optional shared :class:`JobManager`; a fresh one is composed
+            when omitted. Pass the same instance the runtime control loop uses
+            so active-job counts and the encoder decision stay consistent.
+    """
+    return TranscodeHandlers(manager or create_job_manager(config))
 
 
 def build_app(handlers: TranscodeHandlers) -> Any:
@@ -170,18 +216,64 @@ def build_app(handlers: TranscodeHandlers) -> Any:
 
 
 def main() -> None:
-    """Console entry point: build config + app and run the aiohttp server."""
+    """Console entry point: run the aiohttp server + the hybrid control loop.
+
+    Composes ONE shared :class:`JobManager` used by both the HTTP handlers and
+    the runtime control loop, wires the ffmpeg process manager + S3 segment
+    uploader so start/stop drive the real encoder lifecycle, and runs the
+    control loop (demand -> scheduler -> CloudWatch pressure) as a background
+    task next to the aiohttp server. On shutdown the loop is stopped and every
+    ffmpeg process is drained within the bounded window (R17).
+    """
     from aiohttp import web
+
+    from .runtime import (
+        FfmpegProcessManager,
+        SegmentUploader,
+        build_runtime,
+    )
+    from .s3_sink import S3Sink, create_s3_client
 
     logging.basicConfig(level=logging.INFO)
     config = TranscodeConfig.from_env()
-    handlers = build_handlers(config)
+
+    # One shared manager for the handlers AND the control loop.
+    manager = create_job_manager(config)
+    runtime = build_runtime(config, manager)
+    process_manager = FfmpegProcessManager()
+
+    # Segment uploader (only when an HLS bucket is configured; otherwise the
+    # encoder still runs but nothing mirrors to S3 — degraded mode).
+    uploader: SegmentUploader | None = None
+    if config.hls_s3_bucket:
+        uploader = SegmentUploader(
+            S3Sink(config.hls_s3_bucket, create_s3_client(config.aws_region))
+        )
+
+    handlers = TranscodeHandlers(
+        manager, process_manager=process_manager, uploader=uploader
+    )
     app = build_app(handlers)
+
+    async def _on_startup(_: Any) -> None:
+        app["control_loop"] = asyncio.ensure_future(runtime.run())
+
+    async def _on_cleanup(_: Any) -> None:
+        runtime.request_stop()
+        task = app.get("control_loop")
+        if task is not None:
+            task.cancel()
+        await process_manager.stop_all()
+
+    app.on_startup.append(_on_startup)
+    app.on_cleanup.append(_on_cleanup)
+
     log.info(
-        "hls-transcode listening on %s:%s (gpu_available=%s)",
+        "hls-transcode listening on %s:%s (gpu_available=%s, hls_bucket=%s)",
         config.host,
         config.port,
         config.gpu_available,
+        config.hls_s3_bucket or "<none>",
     )
     web.run_app(app, host=config.host, port=config.port)
 

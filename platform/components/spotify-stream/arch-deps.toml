@@ -5,9 +5,12 @@
 # Set a dependency false + add a [notes] entry to force x86-64 and document why
 # (R4.3, R4.4).
 #
-# spotify-stream is a streaming source client: a Rust (librespot) direct Spotify
-# streaming sidecar, Nix-built. librespot cross-compiles to aarch64 and its
-# audio deps are ARM64-compatible (design component table: Graviton).
+# spotify-stream is a streaming source client: a Python `librespot` +
+# `aiohttp` direct Spotify streaming sidecar (ported from the working on-prem
+# `spotify-stream/app.py`), Nix-built with ffmpeg for OGG->MP3 transcode. All
+# deps (python3Packages.librespot, aiohttp, ffmpeg-headless) are pure-Python /
+# ARM64-native in nixpkgs, so it builds on aarch64 (Graviton) with no x86
+# fallback (design component table: Graviton).
 
 [dependencies]
 streaming_source_clients = true

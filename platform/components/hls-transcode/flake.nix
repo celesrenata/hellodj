@@ -27,7 +27,16 @@
 
         pythonEnv = python.withPackages pythonDeps;
 
-        # FFmpeg with libx264 (CPU baseline transcode on Graviton).
+        # FFmpeg for BOTH encode paths of the hybrid gas/electric transcoder:
+        #   * libx264 — the CPU floor on Graviton (always available), and
+        #   * h264_nvenc — the GPU path on the g5g/T4G transcode node.
+        # `ffmpeg_7-full` builds with `withNvcodec` (nv-codec-headers) on Linux,
+        # so the `h264_nvenc` encoder is COMPILED IN; at runtime it dlopens the
+        # NVIDIA `libnvidia-encode.so` the accelerated AL2023 host + device
+        # plugin inject into the container. On a CPU-only node the driver lib is
+        # absent, so `runtime.probe_gpu_ready()` reports NVENC unavailable and
+        # the scheduler stays on the libx264 floor. DO NOT swap this for a lean
+        # ffmpeg that drops nvenc — that silently disables the GPU ("gas") path.
         ffmpeg = pkgs.ffmpeg_7-full;
 
         # Reproducible source: strip transient files (__pycache__/*.pyc/*.pyo,

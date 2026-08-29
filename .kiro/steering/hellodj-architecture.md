@@ -676,12 +676,45 @@ GPU scale-to-zero primitive.
   `transcode-gpu` NodePool for the pending GPU pod. While the node is
   provisioning, the CPU transcode path keeps serving in-flight work so the
   interactive latency budget holds during spin-up.
+  - **Pod GPU request (wired 2026-08-29).** The transcode pod actually
+    REQUESTS `nvidia.com/gpu: 1` — `ResourceSpec.gpuUnits` on
+    `TRANSCODE_RESOURCES` (`component-workloads.ts`) is emitted into BOTH the
+    container `resources.requests` and `resources.limits` (extended resources
+    require request == limit). This is what makes a pending transcode replica
+    unschedulable on the CPU app fleet (which advertises zero GPU) and forces
+    Karpenter to provision the `transcode-gpu` host from zero — the
+    scale-up-on-arrival trigger (asserted by `eks-gpu.test.ts`: "transcode pod
+    REQUESTS a time-sliced nvidia.com/gpu"). The `transcode-gpu` toleration +
+    `workload=transcode` nodeSelector decide WHICH node; the GPU request is what
+    PROVISIONS one. CPU-only components (e.g. `web-ui`) emit no GPU resource.
+  - **Runtime control loop (wired 2026-08-29).** The `hls-transcode` component
+    now runs the execution half: `hls_transcode/runtime.py`
+    (`TranscodeRuntime`) samples live demand (`cpu_pressure()` + active jobs),
+    probes NVENC readiness (`probe_gpu_ready()` — needs `nvidia-smi` + ffmpeg
+    advertising `h264_nvenc`), advances the shared `hybrid_gpu` controller via
+    `TranscodeScheduler.observe(...)`, and publishes CPU/GPU pressure to
+    CloudWatch `HelloDJ/Transcode` (R16.4). `FfmpegProcessManager` spawns/kills
+    the ffmpeg process per plan (SIGTERM → wait `DEFAULT_PROCESS_DRAIN_SECONDS`
+    120s → SIGKILL), and `SegmentUploader` mirrors produced HLS artifacts to
+    the S3 CloudFront origin. `server.py:main()` runs the loop + process
+    manager next to the aiohttp server. Without this loop the controller stayed
+    in `ELECTRIC_ONLY` forever and never drained to GPU.
+  - **CDK env + IAM (wired 2026-08-29).** `hls-transcode` now has
+    `dependencies: { hlsTranscode: true }`; the workloads stack injects
+    `HELLODJ_GPU_AVAILABLE=true`, `HELLODJ_HLS_S3_BUCKET`
+    (`hellodj-hls-<stage>-<region>`, EdgeStack), `HELLODJ_CLOUDFRONT_DOMAIN`
+    (`https://<stage>.<region>.hellodj.bot`), `HELLODJ_HLS_S3_PREFIX=hls`,
+    `HELLODJ_METRICS_NAMESPACE=HelloDJ/Transcode`, and grants the IRSA role
+    read/write on the HLS bucket + `cloudwatch:PutMetricData` scoped to the
+    `HelloDJ/Transcode` namespace. Deploy via `cdk deploy hellodj-eks`; the
+    component source deploys via the pipeline.
 - **Drain to GPU.** When a `GPU_Host` is available, transcode/render workloads
   schedule onto it via the `transcode-gpu` taint / toleration, draining new work
   off the CPU path. When the node is reclaimed, in-flight transcode jobs drain
   gracefully within the existing `GPU_DRAIN_TIMEOUT_SECONDS` (120s) window before
   the node is removed — the drain reuses that primitive rather than introducing a
-  new one.
+  new one. The `hls-transcode` pod's own `terminationGracePeriodSeconds` is now
+  120s to match, so the pod is not SIGKILLed mid-drain.
 - **10-minute warm window + scale-to-zero.** The `GpuIdleConfig.idle_window_seconds`
   default is 600 seconds (10 minutes), mirrored by the CDK
   `DEFAULT_GPU_IDLE_WINDOW_SECONDS = 600`; the value is always within the
@@ -693,3 +726,32 @@ GPU scale-to-zero primitive.
   transcode pods), so a busy GPU host is never reclaimed mid-work. GPU
   autoscaling is orthogonal to the orchestrator's single-replica constraint — it
   scales the `transcode-gpu` node, not the orchestrator.
+
+### GPU node image: EKS-optimized AL2023 accelerated AMI (self-join, updated 2026-08-29)
+
+The `GPU_Host` is NOT a custom/pre-baked NixOS AMI. The `transcode-gpu`
+Karpenter `EC2NodeClass` (`eks-stack.ts` `addGpuNodePool()`) selects the
+**EKS-optimized Amazon Linux 2023 accelerated AMI** via an
+`amiSelectorTerms: [{ alias: 'al2023@latest' }]` term. The `alias` implicitly
+sets `amiFamily: AL2023`, so Karpenter **auto-generates the NodeConfig
+bootstrap userData** (cluster name + `apiServerEndpoint` + cluster CA + kubelet
+flags + the `karpenter.sh/unregistered` registration taint). The node runs
+`kubelet`/`containerd` and **registers with the EKS control plane on boot** —
+the EKS-native self-join path. On a `g5g.xlarge` (T4G) GPU instance the alias
+resolves to the **accelerated** variant, which ships the NVIDIA driver; the
+NVIDIA k8s device plugin is supplied separately by the time-slicing DaemonSet
+(`addNvidiaDevicePlugin()`). The transcode node role is mapped in `aws-auth`
+with `system:nodes`, authorizing the joined kubelet.
+
+WHY NOT a pre-baked NixOS AMI (retired 2026-08-29): the old
+`amiFamily: Custom` + baked-NixOS-AMI approach had no way to join the cluster —
+the NixOS image shipped no kubelet/containerd and `Custom`-family nodes get NO
+auto-generated bootstrap userData, so a launched node would boot, never
+register, and be reaped as unregistered (the pending `hls-transcode` pod would
+never schedule). The `infra/ami/` NixOS AMI flake, the `build-gpu-ami` pipeline
+step, the `bakedGpuAmiId`/`PLACEHOLDER_GPU_AMI_ID` wiring, and the
+`/hellodj/gpu-ami-id` SSM parameter were all removed. The GPU NodePool is now
+always emitted (no baked-AMI id to inject, no placeholder gating). NOTE: this
+GPU node is the ONE exception to the otherwise Nix-only, no-Debian image policy
+— it runs the AWS-managed AL2023 host so it can self-join EKS; the workloads
+that land on it are still the Nix-built OCI container images.
