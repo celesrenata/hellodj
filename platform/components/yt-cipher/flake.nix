@@ -96,6 +96,50 @@
           rm -rf "$out/ejs/.git" "$out/ejs/node_modules" || true
         '';
 
+        # Canonicalizes the primed DENO_DIR so the `denoCache` fixed-output
+        # derivation's hash is stable run-to-run and builder-to-builder. See the
+        # long comment on `denoCache.installPhase` for why this is necessary.
+        denoCacheCanon = pkgs.writeText "yt-cipher-deno-cache-canon.py" ''
+          import glob, json, os, sys
+          root = sys.argv[1]
+          mark = b"// denoCacheMetadata="
+          # Deno appends `// denoCacheMetadata={json}` to every cached remote
+          # module. That JSON's `headers` map is serialized in non-deterministic
+          # order and carries volatile CDN fields (date/age/cf-ray/
+          # x-deno-trace-id/server-timing) plus a per-fetch `time` epoch — so
+          # copying it verbatim gives a different hash on EVERY build. Keep only
+          # the stable `url` mapping (+ content-type) that `deno compile
+          # --cached-only` needs; drop all volatile transport metadata.
+          for f in glob.glob(os.path.join(root, "remote", "**"), recursive=True):
+              if not os.path.isfile(f):
+                  continue
+              with open(f, "rb") as fh:
+                  data = fh.read()
+              idx = data.rfind(mark)
+              if idx == -1:
+                  continue
+              meta = json.loads(data[idx + len(mark):].decode("utf-8"))
+              hdrs = meta.get("headers", {}) or {}
+              canon = {"headers": {}, "url": meta.get("url", "")}
+              for k in ("content-type",):
+                  if k in hdrs:
+                      canon["headers"][k] = hdrs[k]
+              trailer = mark + json.dumps(
+                  canon, sort_keys=True, separators=(",", ":")
+              ).encode("utf-8")
+              with open(f, "wb") as fh:
+                  fh.write(data[:idx] + trailer)
+          # npm packument `registry.json` carries a volatile `_deno.etag` (weak
+          # CDN etag, differs per edge) and unordered `versions`/`time` maps.
+          for f in glob.glob(os.path.join(root, "**", "registry.json"), recursive=True):
+              if not os.path.isfile(f):
+                  continue
+              d = json.load(open(f))
+              if "_deno.etag" in d:
+                  d["_deno.etag"] = ""
+              json.dump(d, open(f, "w"), sort_keys=True, separators=(",", ":"))
+        '';
+
         # Fixed-output derivation that primes DENO_DIR with the remote std/deps
         # `patch-ejs.ts`, `server.ts`, and `worker.ts` import, so the app build
         # below runs fully offline. Network is allowed here because the output
@@ -104,7 +148,7 @@
         denoCache = pkgs.stdenv.mkDerivation {
           name = "yt-cipher-deno-cache";
           src = preparedSrc;
-          nativeBuildInputs = [ deno ];
+          nativeBuildInputs = [ deno pkgs.python3 ];
           buildPhase = ''
             export DENO_DIR="$TMPDIR/deno-dir"
             export HOME="$TMPDIR"
@@ -125,7 +169,24 @@
           # would make this fixed-output derivation's hash non-deterministic
           # (the first two builds produced two different hashes). The fetched
           # dependency payloads — `remote/` (HTTPS imports) and `npm/` + `deps/`
-          # (npm/JSR packages) — ARE stable and are all `--cached-only` needs.
+          # (npm/JSR packages) — ARE the parts `--cached-only` needs.
+          #
+          # HOWEVER, copying those trees verbatim STILL produced a different
+          # hash on every build, on every builder. Two sources of run-to-run
+          # variance had to be neutralized (see `denoCacheCanon`):
+          #   1. Each cached remote module carries a trailing
+          #      `// denoCacheMetadata={json}` line whose `headers` map is
+          #      serialized in non-deterministic order and holds volatile CDN
+          #      fields (date/age/cf-ray/x-deno-trace-id/server-timing) + a
+          #      per-fetch `time` epoch.
+          #   2. Each npm packument `registry.json` holds a weak `_deno.etag`
+          #      (differs per CDN edge) and unordered `versions`/`time` maps.
+          # The canonicalizer rewrites both deterministically, keeping only the
+          # stable `url` mapping (+ content-type) the compile step consults.
+          # `deno compile --cached-only` does NOT need the volatile transport
+          # metadata (verified: the compile still succeeds and the trees are
+          # then byte-identical across independent fetches), so this makes the
+          # output depend only on the stable dependency payload bytes.
           installPhase = ''
             mkdir -p "$out"
             for d in remote npm deps registries; do
@@ -138,14 +199,21 @@
             find "$out" -type f \
               \( -name '*.db' -o -name '*_cache_v2' -o -name '*-wal' \
                  -o -name '*-shm' -o -name '*-journal' \) -delete
+            # Canonicalize the volatile Deno cache metadata (remote-module
+            # `denoCacheMetadata` trailers + npm `registry.json`) so the
+            # fixed-output hash is stable run-to-run and builder-to-builder.
+            python3 ${denoCacheCanon} "$out"
           '';
           dontFixup = true;
           outputHashMode = "recursive";
           outputHashAlgo = "sha256";
-          # Content hash of the primed DENO_DIR (std + npm:meriyah/astring for
-          # the patched ejs). Recompute if the pinned rev changes the imported
-          # remote deps: build `.#denoCache`, read the "got:" hash, paste here.
-          outputHash = "sha256-MlT78WMkjrsKxPyML5jp6B25CcqnoqJqC4SLXqA5hhM=";
+          # Content hash of the CANONICALIZED primed DENO_DIR (std +
+          # npm:meriyah/astring for the patched ejs). Thanks to `denoCacheCanon`
+          # this is now deterministic run-to-run and builder-to-builder — the
+          # value only changes when the pinned rev changes the imported remote
+          # deps. Recompute then: build `.#denoCache`, read the "got:" hash,
+          # paste here.
+          outputHash = "sha256-JHFtMn4XTg+AHVF6seAKggtJ1Ygi0QLIBCrCQXY6SUM=";
         };
 
         ytCipherApp = pkgs.stdenv.mkDerivation {
