@@ -771,3 +771,58 @@ always emitted (no baked-AMI id to inject, no placeholder gating). NOTE: this
 GPU node is the ONE exception to the otherwise Nix-only, no-Debian image policy
 — it runs the AWS-managed AL2023 host so it can self-join EKS; the workloads
 that land on it are still the Nix-built OCI container images.
+
+## AWS platform: distributed search-cache accelerator (search-cache-accelerator)
+
+> AWS EKS only. Bot source changes deploy via the CI/CD pipeline (push → image
+> rebuild → roll); the `discord-bot-core` `searchCache` IAM dependency deploys
+> via the pipeline's per-stage WorkloadsStack. The `hellodj-search-cache` table
+> itself is a foundation resource (`data-stack.ts`), unchanged.
+
+The bot's multi-provider search (`bot/search/engine.py` `UnifiedSearchEngine`)
+fans a query out to Spotify, Tidal, YouTube, and YouTube Music in parallel —
+the slow path. A shared, DAX-fronted accelerator now sits in FRONT of that
+fan-out over the existing `hellodj-search-cache` hot table
+(`hellodj_platform_logic.data_access.SearchCacheTable`, keyed by `queryKey`,
+TTL `ttl`), so every bot instance shares one accelerator cache.
+
+- **Serve immediately on a hit.** `search()` checks the in-process LRU
+  (`ResultCache`) first, then the accelerator. An accelerator hit (results
+  another instance already resolved) returns WITHOUT dispatching any provider,
+  and is promoted into the local LRU.
+- **Backfill misses.** After the providers return and dedup, the deduplicated
+  results are written to BOTH the LRU and the accelerator, so the next instance
+  to ask the same question is served instantly. Results the accelerator did not
+  have get filled in this way once the real engines return.
+- **Failure tracking + eviction.** `player.py`'s mid-song retry give-up site
+  (`on_track_exception`, after `MAX_TRACK_RETRIES`=3) calls
+  `_record_track_playback_failure(track)` → the accelerator's `record_failure`.
+  Failure counts live in their OWN cache entries keyed by `(provider, track_id)`
+  (prefix `trackfail:`), independent of which query surfaced the track. Once a
+  track crosses `FAILURE_EVICTION_THRESHOLD` (3) failures it is filtered out of
+  every result the accelerator serves and never written back — no bot instance
+  re-serves a proven-unplayable track. The counter expires by the table TTL, so
+  a track that later works again naturally rejoins the cache.
+
+Key modules / wiring:
+
+- `bot/search/accelerator.py` — `SearchCacheAccelerator` (serialize
+  `SearchResult` ↔ the cache `results` payload, per-track failure counter,
+  eviction filter), `build_search_cache_accelerator()` (lazy boto3 +
+  `hellodj_platform_logic`; `None` on any failure → pure fan-out), and
+  `resolve_shared_accelerator()` (lazy `import bot`).
+- `bot/bot.py` — process-wide singleton built at startup
+  (`_build_search_accelerator`, alongside the credential/entitlement resolvers)
+  and exposed via `get_search_accelerator()`. `player.py` and the search engines
+  share this ONE instance. `None` in local dev (no boto3) → pure fan-out with
+  the in-process LRU only.
+- **CDK (`hellodj-cdk`):** `discord-bot-core` now declares
+  `dependencies.searchCache: true` (`component-workloads.ts`), which grants its
+  IRSA role `grantReadWriteData` on `hellodj-search-cache` and injects
+  `HELLODJ_SEARCH_CACHE_TABLE` (both wired in `workloads-stack.ts`). The
+  `playback-orchestrator` already had this dependency. Deploys via the pipeline
+  WorkloadsStack (not `cdk deploy hellodj-eks`).
+
+The accelerator is a pure optimization: every read/write is best-effort and
+guarded, so a DynamoDB error, an absent accelerator, or a malformed cached track
+never breaks a search or blocks queue advancement.

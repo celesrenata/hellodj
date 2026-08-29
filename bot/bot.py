@@ -227,7 +227,12 @@ def _build_search_accelerator():
     try:
         from search import build_search_cache_accelerator
 
-        _search_accelerator = build_search_cache_accelerator()
+        # HELLODJ_SEARCH_CACHE_TABLE is injected by workloads-stack.ts for the
+        # discord-bot-core component (searchCache dependency). Absent → the
+        # builder defaults to the SEARCH_CACHE_TABLE_NAME constant.
+        _search_accelerator = build_search_cache_accelerator(
+            table_name=os.getenv("HELLODJ_SEARCH_CACHE_TABLE") or None
+        )
         bot.search_accelerator = _search_accelerator
     except Exception as exc:  # noqa: BLE001 - non-fatal: pure fan-out fallback
         _search_accelerator = None

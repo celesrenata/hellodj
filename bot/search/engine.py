@@ -20,6 +20,11 @@ try:
 except ImportError:  # pragma: no cover
     wavelink = None  # type: ignore[assignment]
 
+from .accelerator import (
+    SearchCacheAccelerator,
+    build_search_cache_accelerator,
+    resolve_shared_accelerator,
+)
 from .cache import ResultCache
 from .deduplicator import Deduplicator, detect_variant, normalize_key
 from .models import ProviderResult, SearchResult
@@ -51,8 +56,25 @@ class UnifiedSearchEngine:
     strict timing budgets.
     """
 
-    def __init__(self, *, cache_capacity: int = 200, cache_ttl: float = 60.0) -> None:
+    def __init__(
+        self,
+        *,
+        cache_capacity: int = 200,
+        cache_ttl: float = 60.0,
+        accelerator: SearchCacheAccelerator | None = None,
+    ) -> None:
         self._cache = ResultCache(capacity=cache_capacity, ttl=cache_ttl)
+        # Distributed accelerator over the shared hellodj-search-cache table.
+        # Prefer the process-wide accelerator built at bot startup (so every
+        # engine + player.py share ONE instance); when injected explicitly use
+        # that; otherwise build the real table directly (None on any failure →
+        # pure provider fan-out with the in-process LRU only).
+        if accelerator is not None:
+            self._accelerator = accelerator
+        else:
+            self._accelerator = (
+                resolve_shared_accelerator() or build_search_cache_accelerator()
+            )
 
     async def search(
         self,
@@ -100,7 +122,10 @@ class UnifiedSearchEngine:
             ]
 
         # --- Cache lookup ---
-        # Requirement 7.4: cache hit returns without dispatching searches
+        # Requirement 7.4: a cache hit returns without dispatching searches.
+        # Fast path 1: in-process LRU (this bot instance). Fast path 2: the
+        # shared accelerator (results another instance resolved, failed tracks
+        # filtered out); an accelerator hit is promoted into the local LRU.
         cached = self._cache.get(
             query,
             provider_filter=provider_filter,
@@ -109,6 +134,23 @@ class UnifiedSearchEngine:
         )
         if cached is not None:
             return cached
+
+        if self._accelerator is not None:
+            accel_hit = self._accelerator.get(
+                query,
+                provider_filter=provider_filter,
+                content_type=content_type,
+                sort_order=sort_order,
+            )
+            if accel_hit:
+                self._cache.put(
+                    query,
+                    accel_hit,
+                    provider_filter=provider_filter,
+                    content_type=content_type,
+                    sort_order=sort_order,
+                )
+                return accel_hit
 
         # --- Determine which providers to query ---
         if provider_filter and provider_filter != "all":
@@ -172,7 +214,9 @@ class UnifiedSearchEngine:
             )
 
         # --- Store in cache ---
-        # Requirement 7.6: store successful results
+        # Requirement 7.6: store successful results in BOTH the local LRU and
+        # the shared accelerator so the next bot instance to ask the same
+        # question is served instantly.
         self._cache.put(
             query,
             deduplicated,
@@ -180,6 +224,14 @@ class UnifiedSearchEngine:
             content_type=content_type,
             sort_order=sort_order,
         )
+        if self._accelerator is not None:
+            self._accelerator.put(
+                query,
+                deduplicated,
+                provider_filter=provider_filter,
+                content_type=content_type,
+                sort_order=sort_order,
+            )
 
         return deduplicated
 
@@ -454,6 +506,18 @@ class UnifiedSearchEngine:
             )
 
         return deduplicated
+
+    def record_track_failure(self, provider: str, track_id: str) -> None:
+        """Record a playback failure for a track against the shared accelerator.
+
+        Called when a track has exhausted its playback retries. After
+        :data:`~search.accelerator.FAILURE_EVICTION_THRESHOLD` failures the
+        accelerator evicts the track so no bot instance re-serves it from cache.
+        No-op when the accelerator is unavailable (local dev / pure fan-out).
+        """
+        if self._accelerator is None:
+            return
+        self._accelerator.record_failure(provider, track_id)
 
     def _get_guild_source_provider(self, guild_id: int | None) -> str:
         """Look up the guild's preferred source_provider.
