@@ -46,3 +46,9 @@ bot/stickers/*.zip
 
 # Transient secret staging (bot-app pool) — never commit
 .bot-app-pool.tmp.json
+.pool-cur.tmp.json
+.pool-new.tmp.json
+
+# Local bot-app pool token material — never commit
+/tokens
+/bot-app-pool.json

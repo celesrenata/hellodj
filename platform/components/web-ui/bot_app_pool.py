@@ -34,11 +34,11 @@ Requirements: multi-bot pool + per-guild invite links.
 
 from __future__ import annotations
 
-import json
 import time
 import urllib.parse
 from typing import Any, Protocol
 
+from hellodj_platform_logic.bot_app_pool import parse_pool
 from hellodj_platform_logic.data_access import CoreTable
 
 from guild_admin_service import guild_pk
@@ -139,20 +139,18 @@ class BotAppPool:
         try:
             resp = self._secrets.get_secret_value(SecretId=self.secret_name)
             raw = resp.get("SecretString", "") or ""
-            parsed = json.loads(raw) if raw else []
-        except Exception:  # noqa: BLE001 - absent/denied/invalid → empty pool
-            parsed = []
-        pool: list[dict[str, Any]] = []
-        if isinstance(parsed, list):
-            for entry in parsed:
-                cid = str((entry or {}).get("client_id", "") or "")
-                if cid:
-                    pool.append(
-                        {
-                            "label": str(entry.get("label", "") or cid),
-                            "client_id": cid,
-                        }
-                    )
+        except Exception:  # noqa: BLE001 - absent/denied → empty pool
+            raw = ""
+        # Delegate the pure parsing (JSON array shape, client-id skip, secret
+        # handling) to the shared ``parse_pool`` so the web-ui reader and the
+        # orchestrator's instance runtime agree exactly. This reader projects
+        # the parsed apps down to ONLY the public ``label`` + ``client_id`` —
+        # the client secret / bot token never leave the shared ``PoolApp`` and
+        # are never cached or rendered here.
+        pool: list[dict[str, Any]] = [
+            {"label": app.label, "client_id": app.client_id}
+            for app in parse_pool(raw)
+        ]
         self._cache = pool
         return pool
 

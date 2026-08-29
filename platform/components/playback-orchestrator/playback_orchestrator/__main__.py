@@ -15,9 +15,14 @@ already bundles. Alongside it, ``main`` starts the durable token-refresh
 **watchdog** on a daemon thread (see :mod:`playback_orchestrator.token_watchdog`
 / :mod:`playback_orchestrator.watchdog_bootstrap`); the watchdog self-degrades
 to a no-op when no datastore / KMS / provider clients are configured, so the
-health server always comes up (R5.1, R5.7).
+health server always comes up (R5.1, R5.7). It also starts the AWS multi-bot
+**instance runtime** on a second daemon thread (see
+:mod:`playback_orchestrator.instance_bootstrap`); like the watchdog it
+self-degrades to a no-op (health server unaffected) when no pool/claims are
+configured or discord.py is absent, and its instances are disconnected cleanly
+on SIGTERM/SIGINT (aws-multi-bot-runtime R2.1-R2.4).
 
-Requirements: 5.1, 5.7, 6.1, 6.4, 15.1
+Requirements: 5.1, 5.7, 6.1, 6.4, 15.1 (aws-multi-bot-runtime 2.1, 2.2, 2.3, 2.4)
 """
 
 from __future__ import annotations
@@ -51,11 +56,25 @@ class _HealthHandler(BaseHTTPRequestHandler):
         _LOG.debug("health-server: " + fmt, *args)
 
 
-def _install_signal_handlers(server: ThreadingHTTPServer) -> None:
-    """Shut the server down cleanly on SIGTERM/SIGINT."""
+def _install_signal_handlers(
+    server: ThreadingHTTPServer, on_shutdown: object | None = None
+) -> None:
+    """Shut the server down cleanly on SIGTERM/SIGINT.
+
+    ``on_shutdown`` is an optional zero-arg callable run before the health
+    server stops — used to disconnect the multi-bot instance runtime's
+    Bot_Instances cleanly within the shutdown window (Requirement 2.4). It is
+    best-effort: a failure to shut the runtime down never blocks the server
+    shutdown.
+    """
 
     def _handle(signum: int, _frame: FrameType | None) -> None:
         _LOG.info("received signal %s, shutting down", signum)
+        if on_shutdown is not None:
+            try:
+                on_shutdown()  # type: ignore[operator]
+            except Exception as exc:  # noqa: BLE001 - never block shutdown
+                _LOG.warning("instance runtime shutdown error: %s", exc)
         server.shutdown()
 
     signal.signal(signal.SIGTERM, _handle)
@@ -71,7 +90,6 @@ def main() -> None:
     host = os.environ.get("HOST", "0.0.0.0")  # noqa: S104 (container bind)
     port = int(os.environ.get("PORT", "8080"))
     server = ThreadingHTTPServer((host, port), _HealthHandler)
-    _install_signal_handlers(server)
 
     # Start the durable token-refresh watchdog on a daemon thread next to the
     # health server (R5.1). It self-degrades to a no-op (logs "degraded:
@@ -80,6 +98,24 @@ def main() -> None:
     from .watchdog_bootstrap import start_watchdog_thread
 
     start_watchdog_thread()
+
+    # Start the AWS multi-bot instance runtime on its own daemon thread/loop
+    # (aws-multi-bot-runtime R2.1). It connects one voice-only secondary gateway
+    # per claimed pool application, isolated from the health server and watchdog
+    # (R2.2). It self-degrades to a no-op (logs "degraded: instance runtime
+    # disabled") when no pool/claims/datastore are configured or discord.py is
+    # absent, so the health server still comes up (R2.3). The returned handle's
+    # stop() disconnects the instances cleanly on SIGTERM/SIGINT (R2.4).
+    from .instance_bootstrap import start_instance_runtime_thread
+
+    instance_runtime = start_instance_runtime_thread()
+
+    _install_signal_handlers(
+        server,
+        on_shutdown=(
+            instance_runtime.stop if instance_runtime is not None else None
+        ),
+    )
 
     _LOG.info(
         "playback-orchestrator ready: health server on %s:%s (stage=%s)",

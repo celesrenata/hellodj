@@ -509,3 +509,167 @@ The Dockerfile does NOT use the official `ghcr.io/lavalink-devs/lavalink` image 
 - Requirements split into layers: core → torch → AI (prevents registry push timeouts)
 - Stickers directory copied for whiteboard feature
 - Wake word model optionally baked in (also mountable via volume)
+
+## AWS platform: fixed-callback source OAuth + multi-bot pool (2026-08-28)
+
+> AWS EKS only. Web-ui changes deploy via the CI/CD pipeline (source push →
+> image rebuild → `cdk deploy hellodj-eks -c hellodj:imageTag=<HEAD>` to roll).
+
+### Per-account source OAuth — ONE fixed callback per provider (model B2)
+
+Source OAuth (YouTube/YouTube Music/Spotify/Tidal) uses a SINGLE fixed callback
+per provider: `https://<stage>.us-east-1.hellodj.bot/auth/oauth/<provider>/callback`.
+Providers require every redirect_uri to be pre-registered, so the connecting
+user's identity rides in the OAuth `state` (signed session), NEVER the URL path
+— exactly the Discord `/auth/discord/callback` convention. Register 3 paths
+(spotify/tidal/youtube — youtube_music shares the Google app) × 3 stage hosts
+per provider console.
+
+- Routes: `source_account_routes.register_source_oauth_routes(bp)` adds
+  `/auth/oauth/<provider>/connect` (mints state, redirects to provider) and the
+  fixed `/auth/oauth/<provider>/callback` (validates state, exchanges, stores).
+- Credentials stay PER-USER (`USER#<sub>/SOURCECRED#<provider>`, the unified
+  encrypted store). A guild "uses" a source by binding to a managing user's
+  connected credential (guild binding), so tokens are never duplicated per guild.
+- `source_oauth.redirect_uri_for(provider)` builds the guild-free fixed URI;
+  the legacy per-guild `/auth/sources/<gid>/<provider>/*` routes remain for
+  migration but their guild-in-path redirect is the deprecated shape.
+- Account UI: connect / re-authorize / refresh-PoToken (YouTube) / clear-auth
+  (disconnect), plus a read-only "Your entitlements" panel. Account is now a
+  sidebar nav item; the Config "Sources" tab was removed (sources live on
+  Account).
+
+### Global Discord bot-application pool (multi-bot per guild)
+
+Discord dedupes bot members by application id, so N simultaneous bots in a
+guild require N distinct Discord applications. A fixed GLOBAL pool of
+pre-registered applications is stored in Secrets Manager
+`hellodj/<stage>/bot-app-pool` — a JSON array of
+`{label, client_id, client_secret, bot_token}` (created empty by
+`auth-stack.ts`, populated out-of-band). Applications are global (one app may
+serve many guilds); a guild holds each at most once.
+
+- Web-ui: `bot_app_pool.BotAppPool` (read-only pool reader) +
+  `BotAppAssignmentService` (`assign_next` quota-gated, `release`,
+  `list_claims`, `pool_size`). Claims: `GUILD#<gid>/BOTAPP#<client_id>`,
+  entity `BotAppClaim` (no credential material). Invite URL is
+  `discord.com/oauth2/authorize?client_id=<id>&scope=bot applications.commands&permissions=2150714368`
+  (View Channel, Send Messages, Embed Links, Read Message History, Connect,
+  Speak, Use Application Commands).
+- Routes (`guild_bot_routes.register_bot_routes`, ownership-gated):
+  `POST /guilds/<gid>/bots` (assign next free app, capped by the guild OWNER's
+  `max_bots_per_guild`), `/bots/<client_id>/remove`, `/bots/<client_id>/name`,
+  `/bots/<client_id>/avatar`. UI is the guild-detail "Bots" tab.
+- Per-bot identity: `bot_identity.BotIdentityService` is now keyed
+  `GUILD#<gid>/BOTIDENTITY#<client_id>` (legacy per-guild key when client_id
+  is empty). Default names iterate `HelloDJ`, `HelloDJ#1`, … by claim index
+  (`default_bot_name`); the OWNER's `custom_name` / `custom_avatar`
+  entitlements gate per-bot rename + avatar (enforced server-side).
+- CDK: `workloads-stack.ts` grants web-ui + bot-runtime readers READ on the
+  pool secret (threaded via `botAppPool` in the workloads secrets bag).
+
+**Runtime (now wired — `aws-multi-bot-runtime` spec):** the AWS multi-instance
+bot runtime that connects the assigned pool applications now exists (see the
+next section). The `playback-orchestrator` reads the pool + per-guild claims and
+runs one voice-only secondary gateway per claimed, token-bearing application.
+The only remaining out-of-band step is populating the pool apps' `bot_token`s in
+the `hellodj/<stage>/bot-app-pool` secret — a pool entry with an empty
+`bot_token` is skipped (logged, never connected), so the extra bots come online
+for exactly the applications whose tokens are filled in.
+
+## AWS platform: multi-bot runtime + CPU→GPU offload (aws-multi-bot-runtime spec)
+
+> AWS EKS only. `playback-orchestrator` source changes deploy via the CI/CD
+> pipeline (source push → image rebuild → `cdk deploy hellodj-eks -c
+> hellodj:imageTag=<HEAD>` to roll); infra (env / IAM / HPA / NodePool) via
+> `cdk deploy hellodj-eks`. This is the AWS port of the on-prem
+> `Instance_Orchestrator` (unified-playback R6) — it differs ONLY in the
+> credential source and host process; the assign/release/health/quota logic is
+> inherited unchanged.
+
+### Instance_Runtime (secondary bot gateways in playback-orchestrator)
+
+The standing `playback-orchestrator` process now hosts a third daemon thread
+next to its `/healthz` server and the durable token watchdog: the
+**Instance_Runtime**, which brings the guild's claimed pool applications online
+as voice-only secondary bots.
+
+- **Credential source (pool ∩ claims, not SQLite).** `PoolCredentialSource`
+  (`playback_orchestrator/instance_runtime.py`) reads the
+  `hellodj/<stage>/bot-app-pool` secret via IRSA and parses it with the SHARED
+  `hellodj_platform_logic.bot_app_pool.parse_pool` (the SAME parser the web-ui
+  uses — the `PoolApp` frozen dataclass keeps `client_secret`/`bot_token`
+  internal and out of `repr`). It reads the guild's `GUILD#<gid>`/`BOTAPP#*`
+  `BotAppClaim` items from the `hellodj-core` table, and
+  `instances_for_guild(gid)` returns the intersection: pool entries that are
+  claimed by the guild AND carry a `bot_token`. The on-prem
+  `instance.<index>.token` / `instance.<index>.app_id` SQLite keys are NOT read
+  or required on AWS.
+- **Voice-only secondary gateways.** `AwsInstanceOrchestrator(InstanceOrchestrator)`
+  overrides ONLY `initialize()` to build a `BotInstance` per claimed,
+  token-bearing pool app and connect them in parallel with per-instance
+  isolation (one gateway's connect/health failure marks that instance
+  `unhealthy` and continues — it never crashes the loop, the watchdog, or the
+  health server). `discord-bot-core` remains the single Primary_Bot that owns
+  slash commands; these instances only join voice channels. Assign / release /
+  health-check / quota are inherited from the on-prem orchestrator unchanged.
+- **Shared Lavalink node.** All Bot_Instances share ONE Lavalink node/session
+  (mirroring unified-playback R6.7), wired via the `HELLODJ_LAVALINK_NODE_URL`
+  env.
+- **Entitlement quotas.** Assignment resolves the owning user's effective
+  entitlements through the SHARED `entitlements_core`
+  (`effective_max_bots_per_guild`, `quota_reached`) so the web-ui, the on-prem
+  orchestrator, and this runtime agree exactly; a resolution failure applies the
+  restrictive `DEFAULT_ENTITLEMENTS` (limits = 1), never a more-permissive
+  fallback.
+- **Degraded no-op.** When the pool secret is unconfigured, the pool is empty,
+  or `discord.py` is unavailable, the runtime logs `degraded: instance runtime
+  disabled` and does NOT start — the health server still comes up. SIGTERM/SIGINT
+  disconnects the instances cleanly within the shutdown window.
+- **Daemon-thread bootstrap.** `instance_bootstrap.start_instance_runtime_thread()`
+  (mirrors `watchdog_bootstrap`) builds the source + orchestrator from env and
+  runs the asyncio loop on a daemon thread; `__main__.main()` starts it right
+  next to `start_watchdog_thread()`. Guild discovery is a `BotAppClaim` scan.
+- **Single-replica constraint (hard).** The orchestrator runs at
+  `minReplicas=1`/`maxReplicas=1` (pinned in `component-workloads.ts`). A second
+  replica would double-connect the same bot tokens and Discord rejects the
+  second gateway identify. Do NOT scale it horizontally.
+- **CDK least privilege** (`workloads-stack.ts`): `playback-orchestrator` gets
+  READ on the pool secret (already granted) + a scoped `BotAppClaimRead`
+  statement on the core table's `GUILD#*` items, plus the runtime env (stage,
+  region, `HELLODJ_LAVALINK_NODE_URL`). No static Discord credentials live in
+  the manifest — bot tokens are read from the pool secret at runtime via IRSA.
+
+### CPU→GPU render/transcode offload (10-minute warm window)
+
+The compute model: **everything runs on a single instance** until CPU
+render/transcode load crosses a threshold, at which point a **GPU host is spun
+up**, render/transcode work is **drained onto the GPU**, and the GPU host is
+kept **warm for 10 minutes** after its last use before it is **spun down**. This
+wires the CPU-threshold scale-up trigger and the drain to the existing Karpenter
+GPU scale-to-zero primitive.
+
+- **CPU-threshold scale-up trigger.** The `hls-transcode` HPA targets a CPU
+  utilization threshold (the shared `DEFAULT_HPA_TARGET_CPU_PERCENT` mirror).
+  When CPU render/transcode load exceeds it, the HPA scales up transcode pods
+  that request a GPU, so Karpenter provisions a `GPU_Host` from the
+  `transcode-gpu` NodePool for the pending GPU pod. While the node is
+  provisioning, the CPU transcode path keeps serving in-flight work so the
+  interactive latency budget holds during spin-up.
+- **Drain to GPU.** When a `GPU_Host` is available, transcode/render workloads
+  schedule onto it via the `transcode-gpu` taint / toleration, draining new work
+  off the CPU path. When the node is reclaimed, in-flight transcode jobs drain
+  gracefully within the existing `GPU_DRAIN_TIMEOUT_SECONDS` (120s) window before
+  the node is removed — the drain reuses that primitive rather than introducing a
+  new one.
+- **10-minute warm window + scale-to-zero.** The `GpuIdleConfig.idle_window_seconds`
+  default is 600 seconds (10 minutes), mirrored by the CDK
+  `DEFAULT_GPU_IDLE_WINDOW_SECONDS = 600`; the value is always within the
+  enforced [60, 900] range and the CDK mirror equals the shared default. The
+  `transcode-gpu` NodePool uses `consolidationPolicy: WhenEmpty` +
+  `consolidateAfter: 600s`, so after a continuous 10-minute window with no active
+  transcode workload the node scales to zero. While any transcode workload is
+  active on the node, `WhenEmpty` does not fire (it only consolidates at zero
+  transcode pods), so a busy GPU host is never reclaimed mid-work. GPU
+  autoscaling is orthogonal to the orchestrator's single-replica constraint — it
+  scales the `transcode-gpu` node, not the orchestrator.
