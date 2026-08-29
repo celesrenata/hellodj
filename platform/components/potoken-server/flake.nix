@@ -29,69 +29,88 @@
         # ------------------------------------------------------------------
         # Artifact provenance (see README.md).
         #
-        # Upstream: Brainicism/bgutil-ytdlp-pot-provider (branch `master`) — a
-        # Node.js/TypeScript server that generates YouTube Proof-of-Origin
-        # tokens via LuanRT's BgUtils/Botguard interfacing library. The
-        # published image's entrypoint is `node build/main.js` and it exposes
-        # port 4416. It exposes `POST /get_pot` and `GET /ping`.
+        # Upstream: Brainicism/bgutil-ytdlp-pot-provider — a Node.js/TypeScript
+        # server (the `server/` subproject) that generates YouTube
+        # Proof-of-Origin tokens via LuanRT's BgUtils/Botguard interfacing
+        # library. The published image's entrypoint is `node build/main.js` and
+        # it exposes port 4416. It exposes `POST /get_pot` and `GET /ping`.
         #
-        # The upstream source is NOT vendored in this repo. The derivation
-        # below is a structured placeholder: point `src` at the real source
-        # (a fetchFromGitHub of Brainicism/bgutil-ytdlp-pot-provider built with
-        # pkgs.buildNpmPackage, producing the compiled build/main.js) to make
-        # the build fully realizable. The flake stays evaluable so the image
-        # structure, the Node base, the port, and the Secrets-Manager-injected
-        # secret contract can be reviewed and asserted without the sources.
-        #
-        # TODO(artifact-source): replace mkPlaceholderApp below with a real
-        # source fetch/build. Recommended:
-        #   pkgs.buildNpmPackage {
-        #     pname = "bgutil-pot-provider";
-        #     version = "<pinned>";
-        #     src = pkgs.fetchFromGitHub {
-        #       owner = "Brainicism"; repo = "bgutil-ytdlp-pot-provider";
-        #       rev = "<pinned>"; hash = "sha256-...";
-        #     };
-        #     # server/ subdir holds the Node server; build emits build/main.js
-        #     npmDepsHash = "sha256-...";
-        #   }
+        # Pinned to release tag 1.3.2 (rev 7511309…). The `server/` subdir holds
+        # a `package.json` + `package-lock.json`; `npx tsc` compiles `src/` to
+        # `build/main.js` (see the upstream server/Dockerfile `build_node`
+        # stage). One runtime dependency, `canvas`, is a NATIVE module compiled
+        # from source, so the build needs the C toolchain + cairo/pango/jpeg/
+        # giflib/rsvg/pixman headers wired as `buildInputs` / `nativeBuildInputs`
+        # (mirroring nixpkgs' own `node-canvas` packaging).
         # ------------------------------------------------------------------
 
-        mkPlaceholderApp = { name, provenance }:
-          pkgs.runCommand name
-            {
-              meta.description =
-                "PLACEHOLDER for ${name} — provenance: ${provenance}";
-            }
-            ''
-              # TODO(artifact-source): this emits a placeholder marker instead
-              # of the real compiled Node server. Swap this derivation for a
-              # buildNpmPackage/fetchFromGitHub build once the artifact source
-              # is wired up. The output PATH and the entrypoint filename
-              # (build/main.js) are what the image layout depends on, so keep
-              # the same layout.
-              mkdir -p "$out/build"
-              cat > "$out/build/main.js" <<EOF
-              // PLACEHOLDER ARTIFACT: ${name}
-              // provenance: ${provenance}
-              // This is not the real bgutil POT provider. Replace the
-              // mkPlaceholderApp derivation in flake.nix with a real
-              // buildNpmPackage build of Brainicism/bgutil-ytdlp-pot-provider
-              // (server/) that produces build/main.js.
-              console.error("placeholder potoken-server; wire artifact-source");
-              process.exit(1);
-              EOF
-            '';
-
-        potokenApp = mkPlaceholderApp {
-          name = "bgutil-pot-provider";
-          provenance =
-            "Brainicism/bgutil-ytdlp-pot-provider fork, branch master "
-            + "(Node.js POT provider, LuanRT BgUtils/Botguard)";
+        src = pkgs.fetchFromGitHub {
+          owner = "Brainicism";
+          repo = "bgutil-ytdlp-pot-provider";
+          rev = "7511309af023b09788dc8f2efc96cc3671291e6c"; # tag 1.3.2
+          hash = "sha256-vlhuw0Ci/xfPgLxjeW7E+Pz9Fo6yeME3cyVRf8NAAPU=";
         };
 
-        # Node.js runtime, built/packaged by Nix. No Debian/Ubuntu layers.
         nodejs = pkgs.nodejs_22;
+
+        # Native libraries the `canvas` npm dependency links against. These
+        # match nixpkgs' `node-canvas` buildInputs; without them `npm ci`'s
+        # node-gyp step fails to find cairo/pango/etc. The SAME shared libraries
+        # must be present at RUNTIME (the compiled `canvas.node` dlopen's them),
+        # so they are also added to the image `contents` below — but only these
+        # library outputs, never the `.dev` header outputs.
+        canvasNativeDeps = with pkgs; [
+          cairo
+          pango
+          libjpeg
+          giflib
+          librsvg
+          pixman
+        ];
+
+        potokenApp = pkgs.buildNpmPackage {
+          pname = "bgutil-pot-provider";
+          version = "1.3.2";
+
+          inherit src;
+          # The Node server lives in the `server/` subdirectory of the repo.
+          sourceRoot = "${src.name}/server";
+
+          # Hash of the fetched npm dependency closure, computed from
+          # server/package-lock.json via `prefetch-npm-deps`. Update alongside
+          # the pinned rev whenever the lockfile changes.
+          npmDepsHash = "sha256-hpXVvhJm66+ETJdGAbEa/QZ4rxOYBD8RJqSItlNpoOg=";
+
+          nativeBuildInputs = [ pkgs.python3 pkgs.pkg-config ] ++ [ nodejs ];
+          buildInputs = canvasNativeDeps;
+
+          # `npm ci` runs canvas's node-gyp native build; allow its lifecycle
+          # script (the package.json `allowScripts` lists canvas + @swc/core).
+          npmFlags = [ "--legacy-peer-deps" ];
+
+          # `npx tsc` (the package's build step) emits build/main.js.
+          buildPhase = ''
+            runHook preBuild
+            npx tsc
+            runHook postBuild
+          '';
+
+          # Install the compiled server + its production node_modules so the
+          # runtime image can `node build/main.js` with all deps resolved.
+          installPhase = ''
+            runHook preInstall
+            mkdir -p "$out/opt/potoken-server"
+            cp -r build "$out/opt/potoken-server/build"
+            cp -r node_modules "$out/opt/potoken-server/node_modules"
+            cp package.json "$out/opt/potoken-server/package.json"
+            runHook postInstall
+          '';
+
+          # Skip the default npm build (we run tsc explicitly) and the default
+          # npm install (we assemble the layout by hand above).
+          dontNpmBuild = true;
+          dontNpmInstall = true;
+        };
 
         # ------------------------------------------------------------------
         # OCI image. buildLayeredImage keeps the Node runtime and the app in
@@ -106,11 +125,11 @@
           tag = "nix";
 
           # Only Nix-built closures land in the image. No FROM ubuntu/debian.
-          contents = [ nodejs pkgs.cacert ];
+          contents = [ nodejs pkgs.cacert ] ++ canvasNativeDeps;
 
           extraCommands = ''
-            mkdir -p opt/potoken-server/build
-            cp ${potokenApp}/build/main.js opt/potoken-server/build/main.js
+            mkdir -p opt/potoken-server
+            cp -r ${potokenApp}/opt/potoken-server/. opt/potoken-server/
           '';
 
           config = {

@@ -28,64 +28,160 @@
         # ------------------------------------------------------------------
         # Artifact provenance (see README.md).
         #
-        # Upstream: kikkia/yt-cipher (branch `master`) — an HTTP API wrapper
-        # around yt-dlp/ejs that performs YouTube player-script signature and
-        # n-parameter deciphering. It is a Deno application; the entrypoint is
-        # `deno run ... server.ts`, and it depends on a patched copy of the
-        # yt-dlp/ejs sources (applied by the repo's scripts/patch-ejs.ts).
+        # Upstream: kikkia/yt-cipher — an HTTP API wrapper around yt-dlp/ejs
+        # that performs YouTube player-script signature and n-parameter
+        # deciphering. It is a Deno application; `server.ts` is the entrypoint
+        # and it `deno compile`s a standalone binary that bundles `worker.ts`.
+        # The build fetches a pinned `yt-dlp/ejs` checkout and patches it via
+        # `scripts/patch-ejs.ts` (see the upstream Dockerfile).
         #
-        # The upstream source is NOT vendored in this repo. The derivation
-        # below is a structured placeholder: point `src` at the real source
-        # (a fetchFromGitHub of kikkia/yt-cipher plus the pinned yt-dlp/ejs
-        # checkout, or a release artifact) to make the build fully realizable.
-        # The flake stays evaluable so the image structure, the Deno base, the
-        # port, and the Secrets-Manager-injected API_TOKEN contract can be
-        # reviewed and asserted without the sources present.
+        # Pinned: kikkia/yt-cipher rev 1e1fd8e… and yt-dlp/ejs rev cd4e87f…
+        # (the EJS_COMMIT the upstream Dockerfile pins).
         #
-        # TODO(artifact-source): replace mkPlaceholderApp below with a real
-        # source fetch/build. Options:
-        #   - pkgs.fetchFromGitHub {
-        #       owner = "kikkia"; repo = "yt-cipher"; rev = "<pinned>";
-        #       hash = "sha256-...";
-        #     }
-        #     plus a fetch of yt-dlp/ejs pinned to the rev the upstream README
-        #     documents, then run scripts/patch-ejs.ts at build time; OR
-        #   - a flake input pointing at a pre-built closure in a Nix cache.
-        # Deno caches remote deps at first run; for a hermetic image, vendor the
-        # Deno dependency cache (DENO_DIR) at build time (deno cache server.ts).
+        # Deno resolves remote `https://deno.land/std@…` imports over the
+        # network at compile time. Nix's build sandbox has no network, so we
+        # populate `DENO_DIR` in a fixed-output derivation (`denoCache`, network
+        # allowed because its content hash is pinned) and reuse it in the
+        # hermetic `deno compile` step (DENO_DIR set, no network needed).
         # ------------------------------------------------------------------
 
-        mkPlaceholderApp = { name, provenance }:
-          pkgs.runCommand name
-            {
-              meta.description =
-                "PLACEHOLDER for ${name} — provenance: ${provenance}";
-            }
-            ''
-              # TODO(artifact-source): this emits a placeholder marker instead
-              # of the real Deno application sources. Swap this derivation for a
-              # fetchFromGitHub/build once the artifact source is wired up. The
-              # output PATH and the entrypoint filename are what the image
-              # layout depends on, so keep the same server.ts name.
-              mkdir -p "$out"
-              cat > "$out/server.ts" <<EOF
-              // PLACEHOLDER ARTIFACT: ${name}
-              // provenance: ${provenance}
-              // This is not the real yt-cipher application. Replace the
-              // mkPlaceholderApp derivation in flake.nix with a real
-              // fetchFromGitHub/build derivation (kikkia/yt-cipher + patched
-              // yt-dlp/ejs) and vendor the Deno dependency cache.
-              EOF
-            '';
+        deno = pkgs.deno;
 
-        ytCipherApp = mkPlaceholderApp {
-          name = "yt-cipher";
-          provenance =
-            "kikkia/yt-cipher fork, branch master (Deno wrapper around yt-dlp/ejs)";
+        # `deno compile` needs the target-arch `denort` runtime binary, which it
+        # otherwise downloads from dl.deno.land at build time (breaking the
+        # hermetic sandbox). Fetch it as a fixed-output derivation pinned to the
+        # nixpkgs `deno` version, for the AWS Graviton (aarch64) deployment
+        # target, and hand it to the compile step via `DENORT_BIN`. Bump the
+        # version + hash together whenever nixpkgs' deno bumps.
+        denortVersion = deno.version; # 2.9.4 at pin time
+        denortZip = pkgs.fetchurl {
+          url =
+            "https://dl.deno.land/release/v${denortVersion}/denort-aarch64-unknown-linux-gnu.zip";
+          hash = "sha256-7vmXrDP1wLhtvc000UFCmZ87C3kRXADngYqpnvr6l/8=";
+        };
+        denortBin = pkgs.runCommand "denort-${denortVersion}-aarch64" {
+          nativeBuildInputs = [ pkgs.unzip ];
+        } ''
+          mkdir -p "$out/bin"
+          unzip ${denortZip} -d "$out/bin"
+          chmod +x "$out/bin/denort"
+        '';
+
+        src = pkgs.fetchFromGitHub {
+          owner = "kikkia";
+          repo = "yt-cipher";
+          rev = "1e1fd8e2f34ca90cf23545be72e46307bd3d3d2a";
+          hash = "sha256-WiOlBI2Z21Mr81gZIOMGXu0c3C4h0LM4CafXh6FkEtQ=";
         };
 
-        # Deno runtime, built/packaged by Nix. No Debian/Ubuntu layers.
-        deno = pkgs.deno;
+        # The pinned yt-dlp/ejs checkout the patch step consumes (EJS_COMMIT in
+        # the upstream Dockerfile).
+        ejsSrc = pkgs.fetchFromGitHub {
+          owner = "yt-dlp";
+          repo = "ejs";
+          rev = "cd4e87f52e87ab6d8b318fd3a817adda6fafa8dc";
+          hash = "sha256-6S6O2wXfD38iMbtqMB3WA25cJJoWQRZ7gx9cpKQVYpU=";
+        };
+
+        # Assemble the exact build tree the upstream Dockerfile produces (minus
+        # the patch step, which needs network and therefore runs inside the
+        # fixed-output `denoCache` below): the app sources + the raw ejs
+        # checkout at ./ejs.
+        preparedSrc = pkgs.runCommand "yt-cipher-prepared-src" { } ''
+          mkdir -p "$out"
+          cp -r ${src}/. "$out/"
+          chmod -R u+w "$out"
+          cp -r ${ejsSrc} "$out/ejs"
+          chmod -R u+w "$out/ejs"
+          rm -rf "$out/ejs/.git" "$out/ejs/node_modules" || true
+        '';
+
+        # Fixed-output derivation that primes DENO_DIR with the remote std/deps
+        # `patch-ejs.ts`, `server.ts`, and `worker.ts` import, so the app build
+        # below runs fully offline. Network is allowed here because the output
+        # is content-addressed by `outputHash`. Update the hash whenever the
+        # pinned rev changes the set of imported remote deps.
+        denoCache = pkgs.stdenv.mkDerivation {
+          name = "yt-cipher-deno-cache";
+          src = preparedSrc;
+          nativeBuildInputs = [ deno ];
+          buildPhase = ''
+            export DENO_DIR="$TMPDIR/deno-dir"
+            export HOME="$TMPDIR"
+            # The ejs sources must be PATCHED before caching: patch-ejs.ts
+            # rewrites their imports to `npm:meriyah` / `npm:astring`, and those
+            # npm deps (plus the std deps patch-ejs.ts itself uses) are exactly
+            # what the compile step needs cached. Cache in dependency order:
+            #   1. the patch script's own std deps, then run it;
+            #   2. server.ts + worker.ts, which now pull the patched ejs's
+            #      npm:meriyah / npm:astring.
+            deno cache scripts/patch-ejs.ts
+            deno run --allow-read --allow-write ./scripts/patch-ejs.ts
+            deno cache server.ts worker.ts
+          '';
+          # Emit ONLY the content-stable parts of DENO_DIR. Deno's cache also
+          # contains SQLite analysis DBs (`*_cache_v2`), a `gen/` V8 code cache,
+          # and other mutable state whose bytes/ordering vary run-to-run, which
+          # would make this fixed-output derivation's hash non-deterministic
+          # (the first two builds produced two different hashes). The fetched
+          # dependency payloads — `remote/` (HTTPS imports) and `npm/` + `deps/`
+          # (npm/JSR packages) — ARE stable and are all `--cached-only` needs.
+          installPhase = ''
+            mkdir -p "$out"
+            for d in remote npm deps registries; do
+              if [ -e "$TMPDIR/deno-dir/$d" ]; then
+                cp -r "$TMPDIR/deno-dir/$d" "$out/$d"
+              fi
+            done
+            # Drop any leftover SQLite/WAL/journal files that may sit inside the
+            # copied dep trees so the hash depends only on payload bytes.
+            find "$out" -type f \
+              \( -name '*.db' -o -name '*_cache_v2' -o -name '*-wal' \
+                 -o -name '*-shm' -o -name '*-journal' \) -delete
+          '';
+          dontFixup = true;
+          outputHashMode = "recursive";
+          outputHashAlgo = "sha256";
+          # Content hash of the primed DENO_DIR (std + npm:meriyah/astring for
+          # the patched ejs). Recompute if the pinned rev changes the imported
+          # remote deps: build `.#denoCache`, read the "got:" hash, paste here.
+          outputHash = "sha256-MlT78WMkjrsKxPyML5jp6B25CcqnoqJqC4SLXqA5hhM=";
+        };
+
+        ytCipherApp = pkgs.stdenv.mkDerivation {
+          pname = "yt-cipher";
+          version = "0-unstable-2026-08-24";
+          src = preparedSrc;
+          nativeBuildInputs = [ deno ];
+          buildPhase = ''
+            # Point Deno at the pre-primed cache (writable copy — deno needs to
+            # write its analysis caches) and run fully offline.
+            cp -r "${denoCache}" "$TMPDIR/deno-dir"
+            chmod -R u+w "$TMPDIR/deno-dir"
+            export DENO_DIR="$TMPDIR/deno-dir"
+            export HOME="$TMPDIR"
+            # Supply the pre-fetched aarch64 `denort` runtime so `deno compile`
+            # does not reach dl.deno.land, and cross-target aarch64 (Graviton)
+            # regardless of the builder's own arch.
+            export DENORT_BIN="${denortBin}/bin/denort"
+            # Apply the ejs patch offline (its deps are cached), then compile.
+            deno run --cached-only --allow-read --allow-write ./scripts/patch-ejs.ts
+            deno compile \
+              --no-check \
+              --cached-only \
+              --target aarch64-unknown-linux-gnu \
+              --output server \
+              --allow-net --allow-read --allow-write --allow-env \
+              --include worker.ts \
+              server.ts
+          '';
+          installPhase = ''
+            mkdir -p "$out/opt/yt-cipher"
+            cp server "$out/opt/yt-cipher/server"
+            cp -r docs "$out/opt/yt-cipher/docs" 2>/dev/null || true
+            mkdir -p "$out/opt/yt-cipher/player_cache"
+          '';
+        };
 
         # ------------------------------------------------------------------
         # OCI image. buildLayeredImage keeps the Deno runtime and the app in
@@ -100,11 +196,13 @@
           tag = "nix";
 
           # Only Nix-built closures land in the image. No FROM ubuntu/debian.
-          contents = [ deno pkgs.cacert ];
+          # The `deno compile` output is a self-contained binary, so the Deno
+          # runtime need not be a separate image layer; cacert stays for TLS.
+          contents = [ pkgs.cacert ];
 
           extraCommands = ''
             mkdir -p opt/yt-cipher
-            cp ${ytCipherApp}/server.ts opt/yt-cipher/server.ts
+            cp -r ${ytCipherApp}/opt/yt-cipher/. opt/yt-cipher/
           '';
 
           config = {
@@ -121,17 +219,8 @@
               # deployment set OVERRIDE_PLAYER_VARIANT=IAS.
               "OVERRIDE_PLAYER_VARIANT=IAS"
             ];
-            # Mirrors the upstream Deno entrypoint. Config (incl. the injected
-            # API_TOKEN) is read from the environment at runtime, not baked in.
-            Entrypoint = [
-              "${deno}/bin/deno"
-              "run"
-              "--allow-net"
-              "--allow-read"
-              "--allow-write"
-              "--allow-env"
-              "/opt/yt-cipher/server.ts"
-            ];
+            # The `deno compile` standalone binary is the entrypoint.
+            Entrypoint = [ "/opt/yt-cipher/server" ];
           };
         };
       in
@@ -139,8 +228,9 @@
         packages = {
           default = image;
           image = image;
-          # Expose the app derivation for inspection/testing.
+          # Expose the app + cache derivations for inspection/testing.
           ytCipherApp = ytCipherApp;
+          denoCache = denoCache;
         };
 
         # `nix flake check` evaluates these.

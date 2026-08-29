@@ -21,23 +21,37 @@ Preserving remote cipher keeps YouTube multi-source playback working (R6.1).
 
 ## Artifact provenance
 
-The upstream source is **not vendored** in this repository. See the
-`TODO(artifact-source)` markers in `flake.nix` for how to wire the real fetch.
+The upstream source is fetched and built from Nix (no vendored copy in this
+repo) in `flake.nix`, pinned by commit + content hashes. The build reproduces
+the upstream `Dockerfile`: fetch a pinned `yt-dlp/ejs` checkout, patch it
+(`scripts/patch-ejs.ts` rewrites its imports to `npm:meriyah` / `npm:astring`),
+then `deno compile` a self-contained `server` binary.
 
-| Artifact | Source (upstream) | Notes |
-|---|---|---|
-| `yt-cipher` app (`server.ts` + deps) | [`kikkia/yt-cipher`](https://github.com/kikkia/yt-cipher), branch **`master`** | Deno HTTP API around `yt-dlp/ejs`. Requires a pinned checkout of `yt-dlp/ejs` patched via the repo's `scripts/patch-ejs.ts`. |
-| Deno runtime | `pkgs.deno` (nixpkgs) | Nix-built/packaged; **not** a Debian/Ubuntu layer. |
+| Artifact | Source (upstream) | Pin | Notes |
+|---|---|---|---|
+| `yt-cipher` app | [`kikkia/yt-cipher`](https://github.com/kikkia/yt-cipher) | rev `1e1fd8e…` | Deno HTTP API around `yt-dlp/ejs`; `deno compile`s `server.ts` (+`worker.ts`) into a standalone binary. |
+| `yt-dlp/ejs` | [`yt-dlp/ejs`](https://github.com/yt-dlp/ejs) | rev `cd4e87f…` (the upstream `EJS_COMMIT`) | Patched at build time by `scripts/patch-ejs.ts`. |
+| Deno runtime | `pkgs.deno` (nixpkgs) | 2.9.4 | Nix-built/packaged; **not** a Debian/Ubuntu layer. |
+| `denort` runtime | `dl.deno.land` release zip | 2.9.4, **aarch64** | `deno compile`'s target runtime; fetched as a fixed-output derivation and supplied via `DENORT_BIN` so the compile is offline. |
 
-Because the source is not in the repo, `flake.nix` currently builds it via a
-**placeholder derivation** (`mkPlaceholderApp`) that emits a marker `server.ts`
-at the correct path. This keeps the flake **evaluable and structurally
-reviewable** — the Deno base, image layers, entrypoint, port, and the
-Secrets-Manager-injected `API_TOKEN` contract are all real — without shipping
-upstream sources. Replace the placeholder with a real
-`pkgs.fetchFromGitHub { owner = "kikkia"; repo = "yt-cipher"; … }` (plus the
-pinned `yt-dlp/ejs` checkout and a vendored Deno dependency cache) once the CI
-artifact channel exists.
+### Hermetic Deno build (three pinned hashes)
+
+Deno resolves remote `https://deno.land/std@…` + `npm:` imports over the network
+and `deno compile` downloads `denort` — none allowed in Nix's build sandbox. So
+`flake.nix` uses three pinned hashes:
+
+1. `fetchFromGitHub` `hash` for the app source (and one for `yt-dlp/ejs`).
+2. A **fixed-output `denoCache` derivation** (`outputHash`) that patches ejs and
+   runs `deno cache` with network allowed, then emits ONLY the content-stable
+   dep payloads (`remote/` + `npm/` + `deps/`), stripping Deno's SQLite/`gen`
+   caches so the hash is deterministic. Recompute by building `.#denoCache` and
+   reading the `got:` hash.
+3. A **fixed-output `denortZip`** (`fetchurl` `hash`) for the aarch64 `denort`.
+
+The app build then runs fully offline (`--cached-only`, `DENORT_BIN` set) and
+cross-targets `aarch64-unknown-linux-gnu` (AWS Graviton). Bump all pins together
+when the `deno` version or upstream revs change. The image is built + pushed by
+the CI/CD pipeline on ARM64 CodeBuild; do not build/push locally.
 
 ## Base image and CPU architecture
 

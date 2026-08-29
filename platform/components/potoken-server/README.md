@@ -23,22 +23,25 @@ interfacing library.
 
 ## Artifact provenance
 
-The upstream source is **not vendored** in this repository. See the
-`TODO(artifact-source)` markers in `flake.nix` for how to wire the real build.
+The upstream source is fetched and built from Nix (no vendored copy in this
+repo) via `pkgs.buildNpmPackage` in `flake.nix`, pinned by commit + content
+hashes.
 
-| Artifact | Source (upstream) | Notes |
-|---|---|---|
-| POT provider (`build/main.js`) | [`Brainicism/bgutil-ytdlp-pot-provider`](https://github.com/Brainicism/bgutil-ytdlp-pot-provider), branch **`master`** | Node.js/TypeScript server (the `server/` subproject). Published image entrypoint is `node build/main.js`. |
-| Node.js runtime | `pkgs.nodejs_22` (nixpkgs) | Nix-built/packaged; **not** a Debian/Ubuntu layer. |
+| Artifact | Source (upstream) | Pin | Notes |
+|---|---|---|---|
+| POT provider (`build/main.js` + runtime `node_modules`) | [`Brainicism/bgutil-ytdlp-pot-provider`](https://github.com/Brainicism/bgutil-ytdlp-pot-provider) | tag **`1.3.2`** (rev `7511309…`) | Node.js/TypeScript server (the `server/` subproject). `npx tsc` compiles `src/` → `build/main.js`; entrypoint `node build/main.js`. |
+| Node.js runtime | `pkgs.nodejs_22` (nixpkgs) | — | Nix-built/packaged; **not** a Debian/Ubuntu layer. |
+| Native libs for `canvas` | `cairo`, `pango`, `libjpeg`, `giflib`, `librsvg`, `pixman` | — | The one native npm dep (`canvas`) is compiled from source; these are its `buildInputs` **and** runtime `dlopen` libs (also in the image `contents`). |
 
-Because the source is not in the repo, `flake.nix` currently builds it via a
-**placeholder derivation** (`mkPlaceholderApp`) that emits a marker
-`build/main.js` at the correct path. This keeps the flake **evaluable and
-structurally reviewable** — the Node base, image layers, entrypoint, port, and
-the Secrets-Manager-injected secret contract are all real — without shipping
-upstream sources. Replace the placeholder with a real `pkgs.buildNpmPackage`
-build of `Brainicism/bgutil-ytdlp-pot-provider` (its `server/` directory, which
-compiles to `build/main.js`) once the CI artifact channel exists.
+Pins in `flake.nix`:
+
+- `fetchFromGitHub` `hash` — the source tree content hash.
+- `npmDepsHash` — the npm dependency closure hash, computed from
+  `server/package-lock.json` via
+  `nix run nixpkgs#prefetch-npm-deps -- server/package-lock.json`.
+
+Bump both together whenever the pinned rev changes. The image is built + pushed
+by the CI/CD pipeline on ARM64 CodeBuild; do not build/push locally.
 
 ## Base image and CPU architecture
 
