@@ -9,7 +9,15 @@ All work is in `hellodj-cdk`.
 
 ## Tasks
 
-- [ ] 1. Reproduce + root-cause the self-mutation failure
+- [x] 1. Reproduce + root-cause the self-mutation failure
+  - FINDING: the blocker is already resolved by the current architecture.
+    Synth with `selfMutation: true` succeeds and injects the `UpdatePipeline`
+    stage; the `hellodj-pipeline` stack template contains ZERO
+    `Custom::AWSCDK-EKS-KubernetesResource` and no cross-stack kubectl
+    reference. The manifests moved to per-stage `WorkloadsStack`s (each imports
+    the cluster with its OWN `KubectlV36Layer`), deployed as separate CFN stacks
+    via pipeline actions — so the SelfMutate step (which redeploys only the
+    pipeline stack) has no EKS-scoped handler to invoke cross-stack.
   - Enable `selfMutation: true` in an ISOLATED synth / throwaway pipeline (or
     inspect a `cdk deploy --no-execute` changeset) — do NOT touch the live
     `hellodj-pipeline`. Capture the exact `Custom::AWSCDK-EKS-KubernetesResource`
@@ -20,7 +28,12 @@ All work is in `hellodj-cdk`.
     Investigation section before writing any fix.
   - _Requirements: 1.1, 1.2, 1.3_
 
-- [ ] 2. Remove the cross-stack kubectl-handler failure edge
+- [x] 2. Remove the cross-stack kubectl-handler failure edge
+  - Already satisfied by the current architecture (task 1 finding): manifests on
+    per-stage WorkloadsStacks with their own kubectl layer; pipeline stack
+    template has no kubectl custom resource. Added a regression-guard test
+    (`test/pipeline-selfmutation.test.ts`) asserting the UpdatePipeline stage
+    carries only a SelfMutate action (no manifest/kubectl action).
   - Apply the diagnosis-selected fix (preference order): (a) reference a stable,
     stack-independent kubectl role/provider by name/ARN from every
     manifest-applying stack; (b) confirm/ensure NO pipeline-deployed stage stack
@@ -33,7 +46,12 @@ All work is in `hellodj-cdk`.
     resource (regression guard for the original disablement).
   - _Requirements: 2.1, 2.2, 2.3_
 
-- [ ] 3. Flip selfMutation on + preserve build/roll behavior
+- [x] 3. Flip selfMutation on + preserve build/roll behavior
+  - Set `selfMutation: true` in `pipeline-stack.ts` (comment updated with the
+    resolved-blocker rationale). Rewrote `pipeline-selfmutation.test.ts` to
+    assert self-mutation ON (UpdatePipeline stage + SelfMutate action +
+    `selfMutationEnabled === true`). ComponentBuilds + immutable-tag roll
+    unchanged; promotion order/halt-on-failure unchanged. tsc + jest (346) pass.
   - Set `selfMutation: true` in `pipeline-stack.ts`.
   - Confirm ComponentBuilds still pushes `:latest` + commit tag and the
     immutable-tag auto-roll is intact; a foundation self-mutation deploy must
