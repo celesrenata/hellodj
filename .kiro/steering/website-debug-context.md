@@ -13,6 +13,77 @@ without re-discovering everything.
 - **Path**: CloudFront → ALB → EKS web-ui (Flask/gunicorn) pods
 - **Login**: works. Admin account `admin` / `Wkh3llodjbeta!` (Cognito, `admins` group)
 
+## Admin sign-in "temporarily unavailable" (fixed 2026-08-29)
+
+Symptom: `/auth/admin` could not sign in — the login POST always rendered
+"Sign-in is temporarily unavailable." Root cause (facts): the deployed web-ui
+pod had NO `COGNITO_CLIENT_ID` env var, so `web-ui/cognito_auth.build_cognito_auth()`
+returned `None` and `auth_forms.handle_login` short-circuited to the degraded
+message (login was impossible, not just wrong-password). The env was empty
+because `bin/hellodj.ts` reads the client id from context `hellodj:cognitoClientId`
+(default `''`) and NOTHING supplied it: cdk.json didn't have it and the pipeline
+synth never resolved it. Verified: live pool `us-east-1_C6xFPZt4x`, web-ui
+client `7e914pnbvn2c8lq8vkme22ds43`, `ALLOW_USER_PASSWORD_AUTH` enabled, no
+client secret (public client — matches `cognito_auth.py`).
+
+Fix (self-healing, in `hellodj-cdk`, NOT a rotting cdk.json literal — that's the
+ALB-DNS anti-pattern): the pipeline synth step now resolves EACH stage's live
+Cognito pool + web-ui client id from the `hellodj-auth` foundation (mirroring the
+OIDC-ARN resolution) and threads them as PER-STAGE JSON maps
+`-c hellodj:cognitoClientIdByStage={...}` / `-c hellodj:cognitoUserPoolIdByStage={...}`.
+`bin/hellodj.ts` parses the maps (`stageMapContext`) into
+`foundation.cognitoClientIdByStage` / `...UserPoolIdByStage`; each per-stage
+`HelloDjStage` selects ITS stage's id (falling back to the single-stage
+`cognitoClientId` for a standalone deploy). Each stage has a DISTINCT
+`hellodj-<stage>` pool, so this is per-stage correct — beta's id never leaks into
+staging/production (regression-guarded by a test). Deploys via a plain
+CodeCommit push (pipeline synth resolves + the per-stage WorkloadsStack rolls);
+manual fallback `tools/deploy_workloads.sh --stage beta` threads the same context.
+
+## CloudFront 502 "couldn't resolve the origin domain name" (fixed 2026-08-29)
+
+Symptom: the whole site returned a CloudFront 502 error page —
+"CloudFront wasn't able to resolve the origin domain name." Root cause (facts):
+the `hellodj-edge` CloudFront distribution (`ED3GFEKRKFBX4`) had its default/
+`static/*` origin **hardcoded** in `hellodj-cdk/infra/bin/hellodj.ts` as the
+literal ALB DNS name `k8s-hellodj-15947bf6df-1852676627.us-east-1.elb.amazonaws.com`
+(with a comment falsely claiming the name is "stable for the group 'hellodj'").
+The AWS Load Balancer Controller had deleted+recreated the shared Ingress ALB,
+which changed the AWS-assigned trailing id — the live ALB became
+`k8s-hellodj-15947bf6df-**2128421402**...`. The hardcoded old name was
+`NXDOMAIN`, so CloudFront could not resolve its origin → 502. (The `k8s-hellodj-
+<groupHash>` prefix is stable for the group; the trailing `<elbId>` is NOT — it
+changes on every ALB recreation.)
+
+Fix (source, not an imperative CloudFront patch): `bin/hellodj.ts` no longer
+bakes the ALB DNS literal. Like the other post-deploy-resolved values in that
+file (`oidcProviderArn`, `daxEndpoint`, `cognitoClientId`, …), the ALB DNS is
+threaded via context `hellodj:albDnsName` (absent → static-only S3 fallback,
+never a rotting literal). Restored the site by deploying the foundation edge
+stack with the current name:
+
+```bash
+ALB=$(aws elbv2 describe-load-balancers --region us-east-1 \
+  --query "LoadBalancers[?starts_with(LoadBalancerName,'k8s-hellodj-')].DNSName | [0]" \
+  --output text --profile hellodj)
+cd infra && npx cdk deploy hellodj-edge -c hellodj:albDnsName=$ALB \
+  --profile hellodj --require-approval never
+```
+
+`hellodj-edge` is a FOUNDATION stack (top-level in `bin/hellodj.ts`), NOT a
+pipeline stage — a plain git push does NOT redeploy it; it needs the explicit
+`cdk deploy hellodj-edge`. Verified after deploy: origin =
+`k8s-hellodj-15947bf6df-2128421402...`, and `GET https://beta.us-east-1.hellodj.bot/healthz`
++ `/login` return HTTP 200 (`server: gunicorn`, `via: ...cloudfront.net`).
+
+REMAINING FRAGILITY (follow-up, NOT yet done): the origin is still the RAW ELB
+DNS name, so the NEXT ALB recreation will break CloudFront again and require
+another `cdk deploy hellodj-edge -c hellodj:albDnsName=<new>`. The durable fix
+is a stable Route53 indirection — an origin-only record (e.g. `origin.<envName>`)
+kept pointed at the current ALB by external-dns, with CloudFront's origin set to
+that stable name — so a future recreation never breaks the edge. Not yet
+implemented.
+
 ## Invitation email / Amazon SES (fixed 2026-08-28)
 
 The admin-panel invite flow sends a branded single-use registration link via
@@ -145,44 +216,69 @@ path, not the main invite.
    in `hellodj-cdk/infra/lib/pipeline-stack.ts` with `selfMutation: true`. The
    pipeline has an `UpdatePipeline` (SelfMutate) stage, so a CDK git push
    auto-applies `pipeline-stack.ts` changes (install/build commands, nix.conf,
-   cache) AND foundation-stack changes (e.g. `hellodj-eks` GPU NodePool / idle
-   window / env / IAM) — NO manual `cdk deploy hellodj-pipeline` /
-   `cdk deploy hellodj-eks` needed. The old cross-stack kubectl-handler blocker
-   is gone (manifests on per-stage WorkloadsStacks with their own kubectl
-   layer; the SelfMutate step redeploys only the pipeline stack, which has no
-   kubectl custom resource). Fallback if the self-mutating pipeline breaks: the
-   one-time `cd infra && npx cdk deploy hellodj-pipeline` reinstalls it.
-3. **Infra manifest/IAM changes** (workloads-stack.ts, eks-stack.ts, auth-stack.ts,
-   edge-stack.ts, foundation.ts, bin/hellodj.ts — these stacks now also live in
-   `hellodj-cdk/infra`) deploy via `cd infra && npx cdk deploy <stack>` (from the
-   `hellodj-cdk` package) — NOT by pushing to CodeCommit.
-   The workloads Kubernetes manifests live in the `hellodj-eks` stack (they're
-   attached to `eks.cluster.addManifest`), so `cdk deploy hellodj-eks` applies
-   web-ui env + IRSA changes.
+   cache, stages) — NO manual `cdk deploy hellodj-pipeline` needed. The old
+   cross-stack kubectl-handler blocker is gone (manifests on per-stage
+   WorkloadsStacks with their own kubectl layer; the SelfMutate step redeploys
+   only the pipeline stack, which has no kubectl custom resource). Fallback if
+   the self-mutating pipeline breaks: the one-time
+   `cd infra && npx cdk deploy hellodj-pipeline` reinstalls it.
+   **CORRECTION (2026-08-29): self-mutation does NOT deploy the FOUNDATION
+   stacks** (`hellodj-eks`, `hellodj-data`, `hellodj-auth`, `hellodj-network`).
+   Those are top-level `app` stacks deployed ONCE outside the pipeline, NOT
+   pipeline stages — self-mutation only rewrites the pipeline stack's own
+   template. A change to a foundation stack (e.g. the new `hellodj-kubectl`
+   role in `hellodj-eks`, or its GPU NodePool / idle window / env / IAM)
+   requires an explicit `cd infra && npx cdk deploy hellodj-eks`. Only
+   `pipeline-stack.ts` changes and per-stage WorkloadsStack manifests ride a
+   plain push.
+3. **FOUNDATION infra/IAM changes** (`eks-stack.ts`, `auth-stack.ts`,
+   `data-stack.ts`, `edge-stack.ts`, `network-stack.ts`, and the FOUNDATION
+   props in `bin/hellodj.ts` — all in `hellodj-cdk/infra`) deploy via
+   `cd infra && npx cdk deploy <stack>` (from the `hellodj-cdk` package) — NOT
+   by pushing to CodeCommit. NOTE: `hellodj-eks` now owns ONLY the shared
+   cluster + GPU NodePool + NVIDIA device plugin. It NO LONGER owns the workload
+   manifests (web-ui env, IRSA SAs, Deployments) — those moved to the per-stage
+   `WorkloadsStack` (push-triggered-rolling-deploy spec). So `cdk deploy
+   hellodj-eks` applies GPU/cluster changes; web-ui env + IRSA changes ride the
+   pipeline (see #5).
 4. **Component source changes** (web-ui `*.py`, templates, flake.nix, bot code)
    DO take effect on a plain CodeCommit push (pipeline rebuilds the image).
-5. **Rolling pods after an image rebuild (READ THIS).** The workloads'
-   Kubernetes manifests live in the **`hellodj-eks`** foundation stack (via
-   `cluster.addManifest`), NOT in the per-stage `WorkloadsStack` the pipeline
-   deploys. This is DELIBERATE: `selfMutation` is OFF because applying manifests
-   through the EKS kubectl handler Lambda inside a self-mutating pipeline
-   triggers cross-stack custom-resource failures (see
-   `.kiro/specs/cdk-standalone-package/design.md`). Consequences:
-   - A `git push` rebuilds the component **images** (pipeline → ECR) but does
-     NOT roll the pods — the pipeline never deploys `hellodj-eks`.
-   - `bin/hellodj.ts` bakes an **immutable commit-hash image tag** into the
-     `hellodj-eks` manifests (from `CODEBUILD_RESOLVED_SOURCE_VERSION` at synth,
-     or `-c hellodj:imageTag=<sha>`), so re-applying the manifests changes the
-     pod spec and K8s rolls automatically — no `kubectl rollout restart` needed.
-   - To roll pods after a push, re-apply the manifests with the
-     `tools/deploy_workloads.sh` wrapper (now in the `hellodj-cdk` repo — `tools/`
-     is at the hellodj-cdk repo root; from HEAD; verifies the ECR image
-     exists, pins the tag via context, clean env + private cdk.out — avoids the
-     stale-`CODEBUILD_RESOLVED_SOURCE_VERSION` footgun that once shipped a
-     non-existent `web-ui:<garbage>` tag and ImagePullBackOff'd the pods).
-     Under the hood this is `cdk deploy hellodj-eks -c hellodj:imageTag=<HEAD>`.
+5. **Rolling pods after an image rebuild (READ THIS — UPDATED).** The workloads'
+   Kubernetes manifests live in the per-stage **`WorkloadsStack`**
+   (`hellodj-pipeline/hellodj-<stage>-stage/hellodj-workloads-<stage>`), which
+   the **pipeline deploys**, NOT in the `hellodj-eks` foundation stack. This is
+   the current model after the `push-triggered-rolling-deploy` spec:
+   `selfMutation` is **ENABLED**; each per-stage WorkloadsStack imports the
+   shared cluster with its OWN kubectl layer (so there is no cross-stack
+   kubectl-handler failure), and the pipeline deploys the WorkloadsStacks as
+   ordered stages. Consequences:
+   - A `git push` rebuilds the component **images** (pipeline → ECR) AND the
+     pipeline deploys the per-stage WorkloadsStacks — so a plain push **does**
+     roll the pods. This is the normal, correct path.
+   - The pipeline synth resolves post-deploy foundation outputs from LIVE AWS
+     and threads them via `-c` (mirroring how the OIDC ARN is resolved):
+     - the immutable image tag (`hellodj:imageTag=<hellodj_Source SHA>`), so
+       each run changes the pod spec and K8s rolls automatically;
+     - the real cluster OIDC provider ARN (`hellodj:oidcProviderArn`) for IRSA
+       trust;
+     - EACH stage's Cognito pool + web-ui client id as PER-STAGE JSON maps
+       (`hellodj:cognitoClientIdByStage` / `hellodj:cognitoUserPoolIdByStage`),
+       so the web-ui gets `COGNITO_CLIENT_ID` and admin sign-in at `/auth/admin`
+       works. Each stage has its OWN `hellodj-<stage>` pool, so the maps are
+       resolved per stage — never a single shared id leaking beta's pool into
+       staging/production. Stages whose pool doesn't exist yet are omitted.
+   - MANUAL fallback (pipeline wedged, or force one stage to re-pull without a
+     full promotion): `tools/deploy_workloads.sh [--stage <stage>]` (in the
+     `hellodj-cdk` repo). It deploys the per-stage WorkloadsStack directly
+     (`cdk deploy hellodj-pipeline/hellodj-<stage>-stage/hellodj-workloads-<stage>`),
+     pins the immutable HEAD tag, verifies the ECR image exists, and threads the
+     SAME OIDC + per-stage Cognito context the pipeline synth resolves (so a
+     manual roll never regresses IRSA or admin login). It targets the
+     WorkloadsStack — NOT `cdk deploy hellodj-eks` (that stack no longer holds
+     the workloads).
    - `kubectl rollout restart` still works as a last-resort manual re-pull of
-     `:latest`, but the wrapper is preferred (immutable tag + auto-roll).
+     `:latest`, but the pipeline (or the wrapper) is preferred (immutable tag +
+     auto-roll).
    - TAG RESOLUTION is hardened in `bin/hellodj.ts`: explicit `-c
      hellodj:imageTag` ALWAYS wins; `CODEBUILD_RESOLVED_SOURCE_VERSION` is only
      trusted when it matches `^[0-9a-f]{40}$` (a real commit SHA), so a stray
