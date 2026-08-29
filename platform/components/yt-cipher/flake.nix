@@ -220,7 +220,22 @@
           pname = "yt-cipher";
           version = "0-unstable-2026-08-24";
           src = preparedSrc;
-          nativeBuildInputs = [ deno ];
+          # `deno compile` emits a DYNAMICALLY-LINKED binary whose ELF
+          # interpreter is the build host's `/lib/ld-linux-aarch64.so.1` (the
+          # GNU/glibc target). The minimal OCI image (contents = [ cacert ]) has
+          # no such loader, so the kernel fails the exec with the misleading
+          # "no such file or directory" (it's the MISSING INTERPRETER, not the
+          # binary). We patchelf the interpreter + RPATH to the Nix glibc/gcc
+          # libs (explicit patchelf, NOT autoPatchelfHook — the latter needs
+          # pyelftools and is flaky under cross-arch emulation). The referenced
+          # store paths enter the binary's closure, so `buildLayeredImage`
+          # includes the loader + libs in the image automatically (no FROM
+          # debian needed).
+          nativeBuildInputs = [ deno pkgs.patchelf ];
+          buildInputs = [ pkgs.stdenv.cc.cc.lib pkgs.glibc ];
+          # patchelf is applied explicitly in postInstall below; skip the
+          # default fixup's autoPatchelf/strip which could re-touch the binary.
+          dontStrip = true;
           buildPhase = ''
             # Point Deno at the pre-primed cache (writable copy — deno needs to
             # write its analysis caches) and run fully offline.
@@ -248,6 +263,30 @@
             cp server "$out/opt/yt-cipher/server"
             cp -r docs "$out/opt/yt-cipher/docs" 2>/dev/null || true
             mkdir -p "$out/opt/yt-cipher/player_cache"
+
+            # Point the deno-compiled binary's ELF interpreter at the Nix glibc
+            # dynamic loader and set an RPATH covering glibc + libgcc/libstdc++,
+            # so it runs in the minimal image (which otherwise has no
+            # /lib/ld-linux-aarch64.so.1). The store paths pulled in here become
+            # part of the binary's closure and are included in the OCI image.
+            # aarch64 glibc ships the loader as `ld-linux-aarch64.so.1`; fail
+            # loudly if it is not where we expect (rather than silently leaving
+            # the un-runnable /lib interpreter).
+            LOADER="${pkgs.glibc}/lib/ld-linux-aarch64.so.1"
+            if [ ! -e "$LOADER" ]; then
+              echo "ERROR: expected glibc loader not found at $LOADER" >&2
+              ls -1 "${pkgs.glibc}/lib" | grep -i "ld-linux" >&2 || true
+              exit 1
+            fi
+            patchelf \
+              --set-interpreter "$LOADER" \
+              --set-rpath "${pkgs.lib.makeLibraryPath [ pkgs.glibc pkgs.stdenv.cc.cc.lib ]}" \
+              "$out/opt/yt-cipher/server"
+            # Verify the interpreter actually changed off the default /lib path.
+            if patchelf --print-interpreter "$out/opt/yt-cipher/server" | grep -q "^/lib/"; then
+              echo "ERROR: interpreter still points at /lib after patchelf" >&2
+              exit 1
+            fi
           '';
         };
 
