@@ -569,6 +569,22 @@ pre-registered applications is stored in Secrets Manager
 `auth-stack.ts`, populated out-of-band). Applications are global (one app may
 serve many guilds); a guild holds each at most once.
 
+**The Primary_Bot application (`DISCORD_CLIENT_ID`, the `discord-bot-core`
+command-owner already in every guild) MUST NOT be a pool member.** Handing out
+its invite link or bringing it up as a secondary voice gateway would open a
+second gateway identify for the same application id, which Discord rejects and
+which collides with the running Primary. The shared parser
+`hellodj_platform_logic.bot_app_pool.parse_pool` takes an `exclude_client_ids`
+set and drops the Primary regardless of the secret's contents; both the web-ui
+`BotAppPool` (via `primary_client_id`, wired from `DISCORD_CLIENT_ID` in
+`bootstrap.py`) and the orchestrator `PoolCredentialSource` (via
+`primary_client_id`, wired in `instance_bootstrap.py`) pass it. `DISCORD_CLIENT_ID`
+is injected into BOTH the web-ui and the `playback-orchestrator`
+(`MULTI_BOT_RUNTIME_COMPONENT`) container env by `workloads-stack.ts`. The beta
+pool secret was also corrected to remove the Primary entry it had erroneously
+contained (8 distinct secondaries `00`–`07`, no `HelloDJ` slot); the guard is
+the durable defense so a future mispopulation can never resurface it.
+
 - Web-ui: `bot_app_pool.BotAppPool` (read-only pool reader) +
   `BotAppAssignmentService` (`assign_next` quota-gated, `release`,
   `list_claims`, `pool_size`). Claims: `GUILD#<gid>/BOTAPP#<client_id>`,

@@ -131,6 +131,42 @@ def test_pool_reads_the_stage_secret():
     assert src._secrets.requested == ["hellodj/beta/bot-app-pool"]  # noqa: SLF001
 
 
+def test_pool_excludes_primary_bot_client_id():
+    """The Primary_Bot id is never a connectable secondary (no double identify).
+
+    Even if the pool secret lists the Primary alongside the secondaries, the
+    runtime filters it out via ``primary_client_id`` so it never opens a second
+    gateway for the command-owner's application id.
+    """
+    core = CoreTable(_FakeTable())
+    src = PoolCredentialSource(
+        _FakeSecrets(json.dumps(_POOL)),
+        core,
+        stage="beta",
+        primary_client_id="100",
+    )
+    assert [a.client_id for a in src.pool()] == ["101", "102"]
+
+
+def test_excluded_primary_is_not_connectable_even_when_claimed():
+    """A guild that claims the Primary id gets no instance for it.
+
+    Belt-and-suspenders: excluding at the pool means the pool ∩ claims ∩ token
+    intersection can never include the Primary, so a stray claim on it yields
+    nothing.
+    """
+    core = CoreTable(_FakeTable())
+    src = PoolCredentialSource(
+        _FakeSecrets(json.dumps(_POOL)),
+        core,
+        stage="beta",
+        primary_client_id="100",
+    )
+    _claim(core, _GID, "100")  # claim the Primary (should be ignored)
+    _claim(core, _GID, "102")  # claim a real secondary
+    assert [a.client_id for a in src.instances_for_guild(_GID)] == ["102"]
+
+
 # ── claim intersection ───────────────────────────────────────────────────────
 
 

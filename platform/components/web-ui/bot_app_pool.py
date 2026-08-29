@@ -122,10 +122,19 @@ class BotAppPool:
     """
 
     def __init__(
-        self, secrets_client: SecretsClient, *, stage: str
+        self,
+        secrets_client: SecretsClient,
+        *,
+        stage: str,
+        primary_client_id: str = "",
     ) -> None:
         self._secrets = secrets_client
         self._stage = stage
+        # The Primary_Bot application id (DISCORD_CLIENT_ID). It is the
+        # platform's command-owner and already in every guild via
+        # discord-bot-core, so it must never be surfaced as an assignable
+        # secondary — excluded from the parsed pool regardless of the secret.
+        self._primary_client_id = (primary_client_id or "").strip()
         self._cache: list[dict[str, Any]] | None = None
 
     @property
@@ -149,7 +158,9 @@ class BotAppPool:
         # are never cached or rendered here.
         pool: list[dict[str, Any]] = [
             {"label": app.label, "client_id": app.client_id}
-            for app in parse_pool(raw)
+            for app in parse_pool(
+                raw, exclude_client_ids={self._primary_client_id}
+            )
         ]
         self._cache = pool
         return pool

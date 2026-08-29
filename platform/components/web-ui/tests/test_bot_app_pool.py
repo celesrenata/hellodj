@@ -99,6 +99,30 @@ def test_invite_url_carries_only_public_client_id():
     assert "permissions=" in url
 
 
+# ── Primary_Bot excluded from the assignable pool ────────────────────────────
+
+
+def test_pool_excludes_primary_bot_client_id():
+    """The Primary_Bot (DISCORD_CLIENT_ID) is never surfaced as a pool app.
+
+    A pool secret that (by operator error) lists the Primary alongside the
+    secondaries must still not offer the Primary for assignment — the reader
+    filters it out via ``primary_client_id``.
+    """
+    pool = BotAppPool(
+        _FakeSecrets(json.dumps(_POOL)),
+        stage="beta",
+        primary_client_id="100",
+    )
+    assert pool.client_ids() == ["101", "102"]
+
+
+def test_pool_without_primary_id_keeps_all_apps():
+    """No primary id configured → the pool is unchanged (backwards compatible)."""
+    pool = BotAppPool(_FakeSecrets(json.dumps(_POOL)), stage="beta")
+    assert pool.client_ids() == ["100", "101", "102"]
+
+
 # ── pool reader ──────────────────────────────────────────────────────────────
 
 

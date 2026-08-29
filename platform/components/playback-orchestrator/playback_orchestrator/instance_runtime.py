@@ -137,10 +137,17 @@ class PoolCredentialSource:
         core_table: CoreTable,
         *,
         stage: str,
+        primary_client_id: str = "",
     ) -> None:
         self._secrets = secrets_client
         self._core = core_table
         self._stage = stage
+        # The Primary_Bot application id (DISCORD_CLIENT_ID). The Primary is the
+        # single command-owner run by discord-bot-core and is already in every
+        # guild; it must never be brought up as a secondary voice gateway (a
+        # duplicate identify for the same application id is rejected by Discord).
+        # Excluded from the parsed pool regardless of the secret's contents.
+        self._primary_client_id = (primary_client_id or "").strip()
         self._pool_cache: list[PoolApp] | None = None
 
     @property
@@ -168,7 +175,9 @@ class PoolCredentialSource:
                 "instance runtime: bot-app-pool secret unavailable; empty pool"
             )
             raw = ""
-        pool = parse_pool(raw)
+        pool = parse_pool(
+            raw, exclude_client_ids={self._primary_client_id}
+        )
         self._pool_cache = pool
         return pool
 

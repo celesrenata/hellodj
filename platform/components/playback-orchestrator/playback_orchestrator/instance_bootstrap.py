@@ -188,7 +188,14 @@ def build_instance_runtime() -> tuple[AwsInstanceOrchestrator, list[str]] | None
         return None
 
     stage = os.getenv("HELLODJ_STAGE", "").strip() or "beta"
-    source = PoolCredentialSource(secrets, core, stage=stage)
+    # Exclude the Primary_Bot (DISCORD_CLIENT_ID) from the connectable pool so
+    # the runtime never opens a second gateway for the command-owner's app id.
+    source = PoolCredentialSource(
+        secrets,
+        core,
+        stage=stage,
+        primary_client_id=os.getenv("DISCORD_CLIENT_ID", ""),
+    )
 
     # No bot applications in the pool → nothing to connect (degraded no-op).
     if not source.pool():
