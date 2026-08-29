@@ -9,7 +9,7 @@ and `entitlements_core` unchanged wherever possible.
 
 ## Tasks
 
-- [ ] 1. Extract pool parsing into the shared package
+- [x] 1. Extract pool parsing into the shared package
   - Add `hellodj_platform_logic/bot_app_pool.py`: `PoolApp` dataclass +
     `parse_pool(raw_json) -> list[PoolApp]` (skips entries with no client_id;
     keeps client_secret/bot_token internal, never logged).
@@ -18,7 +18,7 @@ and `entitlements_core` unchanged wherever possible.
   - Unit tests: parse shape, tokenless entries flagged, no secret in repr.
   - _Requirements: 1.1, 1.3, 1.5_
 
-- [ ] 2. `PoolCredentialSource` (playback-orchestrator)
+- [x] 2. `PoolCredentialSource` (playback-orchestrator)
   - Add `playback_orchestrator/instance_runtime.py` `PoolCredentialSource`:
     `pool()` (read `bot-app-pool` secret via injected secrets client + stage),
     `claimed_client_ids(guild_id)` (read `GUILD#<gid>/BOTAPP#*` via CoreTable),
@@ -27,7 +27,7 @@ and `entitlements_core` unchanged wherever possible.
     tokenless skip, empty/absent pool → empty.
   - _Requirements: 1.1, 1.2, 1.3_
 
-- [ ] 3. `AwsInstanceOrchestrator` (subclass, override initialize only)
+- [x] 3. `AwsInstanceOrchestrator` (subclass, override initialize only)
   - Add `AwsInstanceOrchestrator(InstanceOrchestrator)` in `instance_runtime.py`:
     override `initialize()` to build `BotInstance`s from
     `PoolCredentialSource.instances_for_guild` (per claimed+token app) and
@@ -37,7 +37,7 @@ and `entitlements_core` unchanged wherever possible.
     a connect failure marks that instance unhealthy without affecting others.
   - _Requirements: 2.1, 2.2, 2.5, 3.1, 3.2, 3.3, 3.4, 3.5, 5.1, 5.2, 5.3_
 
-- [ ] 4. Entitlement quota enforcement on the AWS path
+- [x] 4. Entitlement quota enforcement on the AWS path
   - Ensure `AwsInstanceOrchestrator` resolves the owning user's effective
     entitlements via `entitlements_core` and enforces
     `effective_max_bots_per_guild` + `max_guilds` at assignment (restrictive
@@ -46,7 +46,7 @@ and `entitlements_core` unchanged wherever possible.
     mirroring the on-prem orchestrator's quota tests.
   - _Requirements: 4.1, 4.2, 4.3, 4.4_
 
-- [ ] 5. Instance runtime bootstrap on the daemon thread
+- [x] 5. Instance runtime bootstrap on the daemon thread
   - Add `playback_orchestrator/instance_bootstrap.py`
     `start_instance_runtime_thread()` (mirrors `watchdog_bootstrap`): build
     source + orchestrator from env, run the asyncio loop on a daemon thread,
@@ -56,7 +56,7 @@ and `entitlements_core` unchanged wherever possible.
   - Unit tests: degraded no-op path (health server unaffected); startup wiring.
   - _Requirements: 2.1, 2.2, 2.3, 2.4_
 
-- [ ] 6. CDK: orchestrator claim-read grant + runtime env + single replica
+- [x] 6. CDK: orchestrator claim-read grant + runtime env + single replica
   - `workloads-stack.ts`: grant `playback-orchestrator` READ on the core-table
     `GUILD#*`/`BOTAPP#*` items (claims) [pool secret READ already granted];
     wire runtime env (stage/region/Lavalink node URL); pin the orchestrator to
@@ -65,7 +65,7 @@ and `entitlements_core` unchanged wherever possible.
     existing suite still passes.
   - _Requirements: 9.1, 9.2, 9.3_
 
-- [ ] 7. GPU offload wiring (idle window done; trigger + drain assertions)
+- [x] 7. GPU offload wiring (idle window done; trigger + drain assertions)
   - Confirm the 600s idle window in `GpuIdleConfig` + CDK mirror (done); ensure
     the `hls-transcode` HPA CPU target drives GPU-pod scale-up and the
     `transcode-gpu` NodePool uses `WhenEmpty` + `consolidateAfter: 600s` +
@@ -74,7 +74,7 @@ and `entitlements_core` unchanged wherever possible.
     CPU-target present; NodePool consolidation + drain-timeout assertions.
   - _Requirements: 6.1, 6.2, 6.3, 7.1, 7.2, 7.3, 8.1, 8.2, 8.3, 8.4, 9.4_
 
-- [ ] 8. Gates, deploy, docs
+- [x] 8. Gates, deploy, docs
   - Run `ruff check --target-version py314`, orchestrator + shared pytest,
     `cd infra && npx tsc --noEmit && npx jest`, and the 500-line ceiling check
     on changed components.
