@@ -932,3 +932,47 @@ Every stage degrades independently: no wakeword model → voice off; Transcribe
 error → empty transcript (no dispatch/answer); Bedrock error → spoken apology;
 web-search/MCP error or unconfigured endpoint → model-only answer; Polly error →
 no audio. None of these crash the pipeline.
+
+
+## AWS platform: slash-command visibility (activation + entitlement gated)
+
+> AWS `discord-bot-core` only. Source changes deploy via the CI/CD pipeline
+> (push → image rebuild → roll). No infra change (reuses the `hellodj-core`
+> table + the bot's existing IRSA read grant).
+
+The bot's slash commands are **all `app_commands`** (not prefix commands) and are
+synced **per guild** on `on_ready` / `on_guild_join` — per-guild sync is instant,
+unlike the up-to-an-hour global sync. What is synced (VISIBLE) to each guild is
+computed, not static, so the command picker only ever shows what that guild is
+entitled to see. Two filters compose:
+
+1. **Activation** (`commands/activation_cog.allowed_command_names`):
+   - Unactivated guild → only `activate` and `help` are visible/allowed.
+   - Activated guild → `activate` DISAPPEARS; everything else is visible.
+   - `GuildActivation` reads `GUILD#<gid>`/`ACTIVATION` (web-ui writes the key).
+     A successful `/activate` fires `on_activated` → `gateway.resync_guild(gid)`
+     so `activate` vanishes and the rest appear immediately (no reconnect).
+   - Secure default: no activation reader / lookup error ⇒ treated as
+     unactivated (only `activate`/`help`).
+
+2. **Feature entitlement** (`policy/entitlements`): a FEATURE command is hidden
+   from a guild whose OWNER's entitlement doesn't include it, so unpurchased
+   features aren't advertised. `EntitlementResolver` reads
+   `GUILD#<gid>`/`OWNER` → `owner_sub` → `USER#<sub>`/`ENTITLEMENT`, merged over
+   secure defaults (all feature flags OFF) that MIRROR the web-ui
+   `entitlements_core.DEFAULT_ENTITLEMENTS`. The feature booleans gated on:
+   `video_activities`, `visualizations`, `wakeword`, `ai_integration`.
+   - `COMMAND_FEATURE_ENTITLEMENT` maps a command name → its gating entitlement
+     key. A command ABSENT from the map is BASELINE (no entitlement required):
+     `play`/`skip`/`pause`/`activate`/`help`. The map is EMPTY today (the bot
+     ships only baseline playback commands); adding a feature cog is a one-line
+     entry there.
+   - Secure default: no resolver / resolution error ⇒ all gated feature commands
+     hidden. Baseline commands always pass.
+
+Both filters run in `gateway/client._sync_one_guild` (visibility) AND in the
+`activation_cog` gate (`bot.tree.interaction_check` for slash + `bot.add_check`
+for prefix) as a runtime backstop, so a stale client cache can't invoke a
+hidden/denied command. `main.py` wires `gateway.set_activation(...)`,
+`gateway.set_entitlements(build_entitlement_resolver(...))`, and passes both into
+`build_activation_cog(...)`.

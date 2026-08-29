@@ -74,8 +74,20 @@ class BotClient:
         self._deps = deps
         self._identity_applier = identity_applier
         self._activation: Any | None = None
+        self._entitlements: Any | None = None
         self._bot: Any = None
         self._last_heartbeat_monotonic: float | None = None
+
+    def set_entitlements(self, resolver: Any) -> None:
+        """Attach the per-guild feature-entitlement resolver for visibility.
+
+        With it set, :meth:`_sync_commands` hides a feature command from a guild
+        whose owner's entitlement does not include that feature (so unpurchased
+        features aren't advertised). Without it (degraded), the secure default
+        applies: every gated feature command is hidden until entitlement
+        resolution is wired. Baseline commands are unaffected either way.
+        """
+        self._entitlements = resolver
 
     def set_activation(self, activation: Any) -> None:
         """Attach the per-guild activation reader used for command visibility.
@@ -172,6 +184,34 @@ class BotClient:
             )
             return False
 
+    def _entitlement_filter(self, guild_id: int, names: set[str]) -> set[str]:
+        """Filter ``names`` to those the guild owner's entitlements permit.
+
+        Resolves the guild owner's effective feature entitlements and drops any
+        feature command they don't have. When no resolver is wired the secure
+        default (all-features-OFF) applies, so gated feature commands are hidden;
+        baseline commands always pass. Never raises — a resolution failure falls
+        back to the secure default.
+        """
+        from ..policy.entitlements import (
+            DEFAULT_FEATURE_ENTITLEMENTS,
+            entitlement_allowed_commands,
+        )
+
+        if self._entitlements is None:
+            effective = dict(DEFAULT_FEATURE_ENTITLEMENTS)
+        else:
+            try:
+                effective = self._entitlements.effective_for_guild(guild_id)
+            except Exception as exc:  # noqa: BLE001 - secure default on error
+                log.warning(
+                    "gateway: entitlement resolution failed for guild %s: %s",
+                    guild_id,
+                    exc,
+                )
+                effective = dict(DEFAULT_FEATURE_ENTITLEMENTS)
+        return entitlement_allowed_commands(names, effective)
+
     async def _sync_commands(self, guild: Any | None = None) -> None:  # pragma: no cover - discord runtime
         """Sync each guild's slash commands based on its ACTIVATION state.
 
@@ -215,6 +255,10 @@ class BotClient:
             all_cmds = list(tree.get_commands())
             all_names = frozenset(c.name for c in all_cmds)
             visible = allowed_command_names(self._guild_activated(gid), all_names)
+            # Then hide feature commands the guild owner's entitlements don't
+            # include, so unpurchased features aren't advertised. Baseline
+            # commands (activate/help/play/…) are not gated and always pass.
+            visible = self._entitlement_filter(gid, visible)
             # Rebuild the guild-local command set to exactly the visible subset.
             tree.clear_commands(guild=snowflake)
             for cmd in all_cmds:

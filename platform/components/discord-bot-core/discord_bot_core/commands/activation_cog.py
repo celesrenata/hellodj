@@ -87,11 +87,36 @@ def allowed_command_names(
     return names - {"activate"}
 
 
+def _entitlement_blocks(
+    entitlements: Any | None, *, command_name: str, guild_id: int | None
+) -> bool:
+    """Return whether feature entitlements should BLOCK this command (backstop).
+
+    Mirrors the gateway's visibility filter as a runtime defense: a feature
+    command whose gating entitlement the guild owner lacks is blocked even if a
+    stale client cache still surfaces it. Baseline commands (not gated) are
+    never blocked. DMs and an absent resolver do not block here — the gateway's
+    secure-default HIDE already governs visibility; this only stops a resolvable
+    denial. Never raises.
+    """
+    if guild_id is None or entitlements is None:
+        return False
+    from ..policy.entitlements import command_visible_for_entitlements
+
+    try:
+        effective = entitlements.effective_for_guild(int(guild_id))
+        return not command_visible_for_entitlements(command_name, effective)
+    except Exception as exc:  # noqa: BLE001 - never block on a resolution error
+        log.warning("activation: entitlement backstop error: %s", exc)
+        return False
+
+
 def build_activation_cog(
     bot: Any,
     activation: GuildActivation,
     *,
     on_activated: Any | None = None,
+    entitlements: Any | None = None,
 ) -> Any:
     """Build the activation cog and install the global command gates on ``bot``.
 
@@ -107,6 +132,10 @@ def build_activation_cog(
             re-sync so ``/activate`` disappears and the full command set appears
             immediately — without waiting for a reconnect. Best-effort: a failure
             is logged and never fails the activation reply.
+        entitlements: Optional feature-entitlement resolver. When present the
+            gate also BLOCKS a feature command the guild owner's entitlement
+            doesn't include (defense in depth behind the gateway's visibility
+            hide). ``None`` disables the runtime entitlement backstop.
     """
     from discord import app_commands
     from discord.ext import commands
@@ -116,12 +145,17 @@ def build_activation_cog(
         command_name = getattr(getattr(ctx, "command", None), "name", "") or ""
         guild = getattr(ctx, "guild", None)
         guild_id = int(guild.id) if guild is not None else None
-        if command_allowed(
+        if not command_allowed(
             activation, command_name=command_name, guild_id=guild_id
         ):
-            return True
-        await ctx.reply(_LOCKED_MESSAGE)
-        return False
+            await ctx.reply(_LOCKED_MESSAGE)
+            return False
+        if _entitlement_blocks(
+            entitlements, command_name=command_name, guild_id=guild_id
+        ):
+            await ctx.reply(_ENTITLEMENT_MESSAGE)
+            return False
+        return True
 
     bot.add_check(_prefix_gate)
 
@@ -134,15 +168,19 @@ def build_activation_cog(
         command_name = getattr(
             getattr(interaction, "command", None), "name", ""
         ) or ""
-        guild_id = getattr(interaction, "guild_id", None)
-        if command_allowed(
-            activation,
-            command_name=command_name,
-            guild_id=int(guild_id) if guild_id is not None else None,
+        raw_gid = getattr(interaction, "guild_id", None)
+        guild_id = int(raw_gid) if raw_gid is not None else None
+        if not command_allowed(
+            activation, command_name=command_name, guild_id=guild_id
         ):
-            return True
-        await _reply_locked(interaction)
-        return False
+            await _reply_locked(interaction)
+            return False
+        if _entitlement_blocks(
+            entitlements, command_name=command_name, guild_id=guild_id
+        ):
+            await _reply_locked(interaction, message=_ENTITLEMENT_MESSAGE)
+            return False
+        return True
 
     bot.tree.interaction_check = _app_gate
 
@@ -205,10 +243,16 @@ _LOCKED_MESSAGE = (
     "enable HelloDJ."
 )
 
+#: Prompt shown when a feature command is blocked by the owner's entitlements.
+_ENTITLEMENT_MESSAGE = (
+    "✨ This feature isn't included in this server's plan. Upgrade in the "
+    "HelloDJ web dashboard to enable it."
+)
 
-async def _reply_locked(interaction: Any) -> None:
-    """Reply to a blocked slash interaction with the locked prompt (ephemeral)."""
+
+async def _reply_locked(interaction: Any, *, message: str = _LOCKED_MESSAGE) -> None:
+    """Reply to a blocked slash interaction with a gate prompt (ephemeral)."""
     try:
-        await interaction.response.send_message(_LOCKED_MESSAGE, ephemeral=True)
+        await interaction.response.send_message(message, ephemeral=True)
     except Exception:  # noqa: BLE001 - a gate reply must never crash the bot
-        log.debug("activation gate: could not send locked message")
+        log.debug("activation gate: could not send gate message")

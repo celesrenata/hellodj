@@ -25,6 +25,7 @@ from .identity.applier import IdentityApplier
 from .identity.store import build_identity_store
 from .playback.client import PlaybackClient
 from .policy.activation import GuildActivation, build_activation_store
+from .policy.entitlements import build_entitlement_resolver
 from .policy.guild_policy import GuildPolicy
 from .secrets import TokenProvider
 from .watchdogs.gateway_health import GatewayHealthWatchdog
@@ -165,16 +166,29 @@ async def run(config: BotConfig | None = None) -> None:
     # a global command check on the bot. When no core table is configured the
     # store is None and the gate treats every guild as locked (secure default),
     # so the bot still runs but refuses commands until activation is wired.
+    # Feature-entitlement resolver (guild owner's plan → which feature commands
+    # are visible). None when unconfigured → the gateway hides all gated feature
+    # commands (secure default). Baseline commands are never gated.
+    entitlement_resolver = build_entitlement_resolver(
+        cfg.core_table_name, cfg.aws_region
+    )
+    gateway.set_entitlements(entitlement_resolver)
+
     activation_store = build_activation_store(cfg.core_table_name, cfg.aws_region)
     if activation_store is not None:
         activation = GuildActivation(activation_store)
         # The gateway uses the activation reader to decide which commands are
         # VISIBLE per guild (unactivated -> only activate/help), and re-syncs a
         # guild the moment /activate succeeds (activate disappears, the rest
-        # appear) via the on_activated callback.
+        # appear) via the on_activated callback. The entitlement resolver hides
+        # feature commands the guild owner's plan doesn't include, and the cog
+        # gate enforces the same as a runtime backstop.
         gateway.set_activation(activation)
         cog = build_activation_cog(
-            bot, activation, on_activated=gateway.resync_guild
+            bot,
+            activation,
+            on_activated=gateway.resync_guild,
+            entitlements=entitlement_resolver,
         )
         result = bot.add_cog(cog)
         if result is not None:
