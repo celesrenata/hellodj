@@ -420,8 +420,16 @@ def _admin_stats() -> list[dict[str, Any]]:
 
 
 def _guild_list() -> list[dict[str, Any]]:
-    """Return the guild rows to render (empty until wired to live data)."""
-    return []
+    """Return the current user's guilds (owned + administered) for rendering.
+
+    Delegates to :func:`guild_common.user_guild_list` (extracted to keep this
+    module under the 500-line ceiling). This is what makes a just-claimed guild
+    appear in the list; it degrades to an empty list when logged out or no
+    service is wired.
+    """
+    from guild_common import user_guild_list  # noqa: PLC0415
+
+    return user_guild_list()
 
 
 def _admin_users() -> list[dict[str, Any]]:

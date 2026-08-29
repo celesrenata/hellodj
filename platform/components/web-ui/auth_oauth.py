@@ -28,8 +28,13 @@ log = logging.getLogger(__name__)
 __all__ = [
     "exchange_code_for_groups",
     "discord_id_from_code",
+    "discord_manageable_guilds_from_code",
     "groups_from_id_token",
 ]
+
+#: Discord ``MANAGE_GUILD`` permission bit. A user who is a guild owner OR holds
+#: this permission is allowed to add HelloDJ to that guild.
+DISCORD_MANAGE_GUILD = 0x20
 
 DISCORD_API_BASE = "https://discord.com/api"
 
@@ -161,6 +166,102 @@ def discord_id_from_code(code: str, redirect_uri: str) -> str | None:
     except Exception:  # noqa: BLE001
         log.warning(
             "discord oauth exchange failed (redirect_uri=%s)",
+            redirect_uri,
+            exc_info=True,
+        )
+        return None
+
+
+def discord_manageable_guilds_from_code(
+    code: str, redirect_uri: str
+) -> list[dict[str, str]]:
+    """Exchange a Discord ``guilds``-scope code for the user's manageable guilds.
+
+    Performs the Discord token exchange (the code must have been obtained with
+    the ``identify guilds`` scope) then calls ``/users/@me/guilds`` and filters
+    to the guilds the user may add a bot to: those they OWN or where they hold
+    the ``MANAGE_GUILD`` permission. Returns a list of
+    ``{"id", "name", "owner"}`` (owner as ``"1"``/``""``) ordered as Discord
+    returns them. Returns ``[]`` on any failure so the flow degrades to an
+    empty picker rather than erroring.
+    """
+    access = _discord_access_token(code, redirect_uri)
+    if not access:
+        return []
+    try:
+        req = urllib.request.Request(
+            f"{DISCORD_API_BASE}/users/@me/guilds",
+            headers={
+                "Authorization": f"Bearer {access}",
+                "User-Agent": DISCORD_USER_AGENT,
+            },
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:  # noqa: S310
+            guilds = json.loads(resp.read().decode("utf-8"))
+    except Exception:  # noqa: BLE001 - degrade to an empty picker on failure
+        log.warning("discord guilds fetch failed", exc_info=True)
+        return []
+    if not isinstance(guilds, list):
+        return []
+    manageable: list[dict[str, str]] = []
+    for guild in guilds:
+        if not isinstance(guild, dict):
+            continue
+        is_owner = bool(guild.get("owner", False))
+        try:
+            perms = int(str(guild.get("permissions", "0")))
+        except ValueError:
+            perms = 0
+        if is_owner or (perms & DISCORD_MANAGE_GUILD):
+            manageable.append(
+                {
+                    "id": str(guild.get("id", "")),
+                    "name": str(guild.get("name", "")),
+                    "owner": "1" if is_owner else "",
+                }
+            )
+    return [g for g in manageable if g["id"]]
+
+
+def _discord_access_token(code: str, redirect_uri: str) -> str | None:
+    """Exchange a Discord OAuth code for an access token, or ``None``.
+
+    Shared by the guilds-scope flow; mirrors the token exchange in
+    :func:`discord_id_from_code` (same credential resolution, User-Agent, and
+    graceful degradation) without duplicating the ``/users/@me`` call.
+    """
+    if not code:
+        return None
+    from source_token_exchange import discord_client_credentials  # noqa: PLC0415
+
+    client_id, client_secret = discord_client_credentials()
+    if not client_id or not client_secret:
+        log.warning("discord guilds oauth: missing credentials")
+        return None
+    body = urllib.parse.urlencode(
+        {
+            "grant_type": "authorization_code",
+            "code": code,
+            "redirect_uri": redirect_uri,
+            "client_id": client_id,
+            "client_secret": client_secret,
+        }
+    ).encode("ascii")
+    try:
+        req = urllib.request.Request(
+            f"{DISCORD_API_BASE}/oauth2/token",
+            data=body,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "User-Agent": DISCORD_USER_AGENT,
+            },
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=8) as resp:  # noqa: S310
+            return json.loads(resp.read().decode("utf-8")).get("access_token")
+    except Exception:  # noqa: BLE001
+        log.warning(
+            "discord guilds token exchange failed (redirect_uri=%s)",
             redirect_uri,
             exc_info=True,
         )

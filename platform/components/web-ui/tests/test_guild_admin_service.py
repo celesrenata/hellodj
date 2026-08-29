@@ -310,3 +310,42 @@ def test_end_to_end_appointment_grants_management_via_service_facts() -> None:
         owner_sub=owner_sub,
         admin_discord_ids=admin_ids,
     )
+
+
+def test_claim_ownership_stores_name_and_owned_reverse_index() -> None:
+    """Claiming records the guild name and the OWNER#<sub> reverse index."""
+    svc, _ = _service()
+    svc.claim_ownership("g1", "owner-sub", name="My Server")
+
+    assert svc.owner_of("g1") == "owner-sub"
+    assert svc.guild_name("g1") == "My Server"
+    owned = svc.guilds_owned_by("owner-sub")
+    assert owned == [{"guild_id": "g1", "name": "My Server"}]
+
+
+def test_guilds_owned_by_scoped_and_multi() -> None:
+    """A user's owned guilds resolve via GSI1, scoped to that owner."""
+    svc, _ = _service()
+    svc.claim_ownership("g1", "owner-a", name="A1")
+    svc.claim_ownership("g2", "owner-a", name="A2")
+    svc.claim_ownership("g3", "owner-b", name="B1")
+
+    ids = {g["guild_id"] for g in svc.guilds_owned_by("owner-a")}
+    assert ids == {"g1", "g2"}
+    assert {g["guild_id"] for g in svc.guilds_owned_by("owner-b")} == {"g3"}
+
+
+def test_claim_ownership_first_come_first_served() -> None:
+    """A guild already owned is not re-claimed by a second user."""
+    svc, _ = _service()
+    svc.claim_ownership("g1", "owner-a", name="A")
+    svc.claim_ownership("g1", "owner-b", name="B")
+
+    assert svc.owner_of("g1") == "owner-a"
+    assert svc.guilds_owned_by("owner-b") == []
+
+
+def test_guild_name_absent_returns_empty() -> None:
+    """guild_name of an unclaimed guild is the empty string."""
+    svc, _ = _service()
+    assert svc.guild_name("nope") == ""

@@ -1,0 +1,34 @@
+{% extends layout|default("base.html") %}
+
+{% block title %}Add a server{% endblock %}
+{% block heading %}Pick a server{% endblock %}
+
+{% block content %}
+<div class="glass-panel panel-section">
+  <p class="panel-section__muted">
+    These are the Discord servers you own or manage. Choose one to add HelloDJ
+    to it — you'll then be able to invite a bot and configure sources.
+  </p>
+  <ul class="guild-list__items">
+    {% for guild in candidates %}
+      <li class="glass-panel guild-row">
+        <span class="guild-row__name">
+          {{ guild.name or guild.id }}
+          {% if guild.owner %}
+            <span class="guild-row__meta">owner</span>
+          {% endif %}
+        </span>
+        <form method="post"
+              action="{{ url_for('auth.add_guild_claim') }}">
+          <input type="hidden" name="guild_id" value="{{ guild.id }}">
+          <button type="submit" class="btn btn-primary btn-sm">Add</button>
+        </form>
+      </li>
+    {% else %}
+      <li class="guild-list__empty panel-section__muted">
+        No manageable servers found.
+      </li>
+    {% endfor %}
+  </ul>
+</div>
+{% endblock %}

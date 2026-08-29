@@ -519,10 +519,24 @@ OAuth env-wiring gaps that used to sit in KNOWN GAPS below.
 4. **Source connect stores only the auth code** — the code→token exchange is
    delegated to the streaming sidecars (they own client secrets). Verify the
    sidecars actually complete the exchange against the guild secret.
-5. **Guild ownership claim** — `can_manage_guild` uses OWNER/admin edges, but
-   nothing yet CREATES the OWNER edge on first guild access. Decide the claim
-   path (currently `GuildAdminService.claim_ownership` exists but isn't called
-   from a route).
+5. ~~**Guild ownership claim**~~ *(FIXED 2026-08-29, "add a server" flow)* —
+   there is now an entry point that creates the OWNER edge. `/guilds` has an
+   **Add a server** button → `/auth/discord/guilds/connect` starts a Discord
+   OAuth with the `identify guilds` scope → `/auth/discord/guilds/callback`
+   fetches `/users/@me/guilds`, keeps ONLY guilds the user OWNS or has
+   `MANAGE_GUILD` on (`auth_oauth.discord_manageable_guilds_from_code`), stashes
+   the candidate id→name map in the session, and renders `pages/guild_select.html`
+   → `POST /auth/discord/guilds/claim` claims ownership **only for a guild in the
+   session candidate set** (so a user can't claim a server they don't manage),
+   then redirects to `/guilds/<id>` (bot invite + sources). Routes live in
+   `discord_guilds_routes.py` (registered on the auth blueprint, off the
+   500-line-limited `auth.py`). `GuildAdminService.claim_ownership` now stores
+   the guild `name` and an `OWNER#<sub>`/`GUILD#<gid>` GSI1 reverse index;
+   `guilds_owned_by(sub)` + `guild_name(gid)` back the now-live `/guilds` list
+   (`guild_common.user_guild_list`, owned ∪ administered). REQUIRES the fixed
+   redirect `/auth/discord/guilds/callback` be registered in the Discord app for
+   each stage host (out-of-band, like the source callbacks). Deploys via the
+   pipeline (web-ui source change).
 6. **Config page** is still GLOBAL config — per-guild config exists in
    `ConfigStore.get_guild/set_guild` but the UI config form writes global.
 7. **Member dashboard stats** are still 0 (placeholder `_dashboard_stats` /

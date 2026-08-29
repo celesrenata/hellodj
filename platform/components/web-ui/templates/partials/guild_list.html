@@ -2,11 +2,16 @@
   <ul class="guild-list__items">
     {% for guild in guilds %}
       <li class="glass-panel guild-row">
-        <span class="guild-row__name">{{ guild.name }}</span>
-        <span class="guild-row__meta">{{ guild.get('members', 0) }} members</span>
+        <a class="guild-row__name"
+           href="{{ url_for('guild.guild_detail', guild_id=guild.guild_id) }}">
+          {{ guild.name or guild.guild_id }}
+        </a>
+        <span class="guild-row__meta"><code>{{ guild.guild_id }}</code></span>
       </li>
     {% endfor %}
   </ul>
 {% else %}
-  <p class="guild-list__empty panel-section__muted">No guilds found.</p>
+  <p class="guild-list__empty panel-section__muted">
+    No servers yet. Add one to get started.
+  </p>
 {% endif %}

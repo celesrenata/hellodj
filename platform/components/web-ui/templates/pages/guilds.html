@@ -4,6 +4,36 @@
 {% block heading %}Guilds{% endblock %}
 
 {% block content %}
+{% set add_notice = request.args.get('add') %}
+{% if add_notice == 'denied' %}
+  <p class="notice notice--warning" role="status">
+    Discord authorization was cancelled. No server was added.
+  </p>
+{% elif add_notice == 'none' %}
+  <p class="notice notice--info" role="status">
+    You don't manage any Discord servers (you must own a server or have the
+    Manage Server permission to add HelloDJ).
+  </p>
+{% elif add_notice == 'already_claimed' %}
+  <p class="notice notice--warning" role="status">
+    That server has already been claimed by another account.
+  </p>
+{% elif add_notice in ('not_authorized', 'state_mismatch', 'unavailable') %}
+  <p class="notice notice--danger" role="alert">
+    Could not add that server. Please try again.
+  </p>
+{% endif %}
+
+<div class="glass-panel panel-section">
+  <h2 class="panel-section__title">Add a server</h2>
+  <p class="panel-section__muted">
+    Connect with Discord to pick a server you own or manage, then invite a bot
+    to it.
+  </p>
+  <a class="btn btn-primary"
+     href="{{ url_for('auth.add_guild_connect') }}">Add a server</a>
+</div>
+
 <div class="glass-panel panel-section">
   <label class="field__label" for="guild-search">Search guilds</label>
   <input type="search" id="guild-search" name="q" class="field__input"

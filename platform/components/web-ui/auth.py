@@ -43,6 +43,7 @@ from auth_forms import (
 from auth_oauth import (
     discord_id_from_code,
 )
+from discord_guilds_routes import register_discord_guilds_routes
 from discord_session import establish_discord_session
 from source_account_routes import register_source_oauth_routes
 from source_credential_store import (
@@ -370,6 +371,10 @@ def build_auth_blueprint() -> Blueprint:
     # Per-account source OAuth (ONE fixed callback per provider, B2). Extracted
     # to source_account_routes to keep auth.py under the 500-line ceiling.
     register_source_oauth_routes(bp)
+
+    # "Add a server": Discord guilds-scope pick + ownership claim (Option 2).
+    # Extracted to discord_guilds_routes for the same 500-line reason.
+    register_discord_guilds_routes(bp)
 
     @bp.route("/logout", methods=["POST", "GET"])
     def logout():  # type: ignore[unused-ignore]

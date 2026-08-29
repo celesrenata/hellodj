@@ -61,6 +61,14 @@ def _guildadmin_gsi1sk(guild_id: str) -> str:
     return f"GUILDADMIN#{guild_id}"
 
 
+def _owner_gsi1pk(owner_sub: str) -> str:
+    return f"OWNER#{owner_sub}"
+
+
+def _ownedguild_gsi1sk(guild_id: str) -> str:
+    return f"GUILD#{guild_id}"
+
+
 def can_manage_guild(
     *,
     guild_id: str,
@@ -106,16 +114,53 @@ class GuildAdminService:
             return None
         return item.get("data", {}).get("owner_sub")
 
-    def claim_ownership(self, guild_id: str, user_sub: str) -> None:
-        """Record ``user_sub`` as the guild's owner if not already owned."""
+    def claim_ownership(
+        self, guild_id: str, user_sub: str, *, name: str = ""
+    ) -> None:
+        """Record ``user_sub`` as the guild's owner if not already owned.
+
+        First-come-first-served: a guild already owned by anyone (including the
+        same user) is left untouched. Stores the guild's Discord ``name`` for
+        display and sets the GSI1 reverse index (``OWNER#<sub>`` /
+        ``GUILD#<gid>``) so :meth:`guilds_owned_by` can enumerate a user's owned
+        guilds in a single indexed query.
+        """
         if self.owner_of(guild_id) is not None:
             return
         self._core.put_new(
             guild_pk(guild_id),
             OWNER_SK,
             GUILD_OWNER_ENTITY,
-            {"owner_sub": user_sub},
+            {"owner_sub": user_sub, "name": name},
+            gsi1pk=_owner_gsi1pk(user_sub),
+            gsi1sk=_ownedguild_gsi1sk(guild_id),
         )
+
+    def guild_name(self, guild_id: str) -> str:
+        """Return the stored Discord name of a guild, or '' if unknown."""
+        item = self._core.get(guild_pk(guild_id), OWNER_SK)
+        if item is None:
+            return ""
+        return item.get("data", {}).get("name", "") or ""
+
+    def guilds_owned_by(self, user_sub: str) -> list[dict[str, Any]]:
+        """Return the guilds a user owns (id + name), resolved via GSI1.
+
+        Uses the ``OWNER#<sub>`` reverse index established by
+        :meth:`claim_ownership`, so a user's owned guilds are a single indexed
+        query rather than a table scan.
+        """
+        rows = self._core.query_gsi1(
+            _owner_gsi1pk(user_sub), sk_prefix="GUILD#"
+        )
+        return [
+            {
+                "guild_id": r["GSI1SK"].split("GUILD#", 1)[1],
+                "name": r.get("data", {}).get("name", "") or "",
+            }
+            for r in rows
+            if str(r.get("GSI1SK", "")).startswith("GUILD#")
+        ]
 
     # -- admin edges --------------------------------------------------------
 
