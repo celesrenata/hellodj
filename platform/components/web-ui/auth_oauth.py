@@ -16,10 +16,14 @@ from __future__ import annotations
 
 import base64
 import json
+import logging
+import urllib.error
 import urllib.parse
 import urllib.request
 
 from flask import current_app
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     "exchange_code_for_groups",
@@ -80,6 +84,7 @@ def discord_id_from_code(code: str, redirect_uri: str) -> str | None:
     ``None`` on any failure so linking/login degrades rather than erroring.
     """
     if not code:
+        log.warning("discord oauth: empty authorization code")
         return None
     # Resolve id+secret from plain env first, then lazily from the
     # `discord-oauth` Secrets Manager secret (keeps the secret out of the k8s
@@ -88,6 +93,14 @@ def discord_id_from_code(code: str, redirect_uri: str) -> str | None:
 
     client_id, client_secret = discord_client_credentials()
     if not client_id or not client_secret:
+        # Log which half is missing (never the values) so a mis-wired secret is
+        # diagnosable from the pod logs instead of silently 500-ing to
+        # ?error=discord_failed.
+        log.warning(
+            "discord oauth: missing credentials (client_id=%s, client_secret=%s)",
+            "set" if client_id else "empty",
+            "set" if client_secret else "empty",
+        )
         return None
     token_body = urllib.parse.urlencode(
         {
@@ -108,6 +121,7 @@ def discord_id_from_code(code: str, redirect_uri: str) -> str | None:
         with urllib.request.urlopen(token_req, timeout=8) as resp:  # noqa: S310
             access = json.loads(resp.read().decode("utf-8")).get("access_token")
         if not access:
+            log.warning("discord oauth: token response had no access_token")
             return None
         me_req = urllib.request.Request(
             f"{DISCORD_API_BASE}/users/@me",
@@ -115,7 +129,29 @@ def discord_id_from_code(code: str, redirect_uri: str) -> str | None:
         )
         with urllib.request.urlopen(me_req, timeout=8) as resp:  # noqa: S310
             return json.loads(resp.read().decode("utf-8")).get("id")
+    except urllib.error.HTTPError as exc:  # noqa: PERF203
+        # Discord returns the OAuth error (e.g. invalid_grant, redirect_uri
+        # mismatch) in the body. That body carries no token/secret material, so
+        # logging it is safe and turns a silent failure into a real fact. Log
+        # the redirect_uri too since a mismatch there is the most common cause.
+        try:
+            detail = exc.read().decode("utf-8", "replace")[:500]
+        except Exception:  # noqa: BLE001
+            detail = "<unreadable>"
+        log.warning(
+            "discord oauth exchange failed: HTTP %s at %s (redirect_uri=%s): %s",
+            exc.code,
+            getattr(exc, "url", "?"),
+            redirect_uri,
+            detail,
+        )
+        return None
     except Exception:  # noqa: BLE001
+        log.warning(
+            "discord oauth exchange failed (redirect_uri=%s)",
+            redirect_uri,
+            exc_info=True,
+        )
         return None
 
 
