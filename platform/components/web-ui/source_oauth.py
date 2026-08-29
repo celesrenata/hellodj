@@ -20,10 +20,27 @@ from flask import current_app, request, url_for
 
 __all__ = [
     "source_authorize_url",
+    "source_authorize_url_account",
     "source_provider_configured",
     "redirect_uri_for_source",
+    "redirect_uri_for",
+    "account_callback_endpoint",
     "source_tokens_from_request",
 ]
+
+#: The single fixed callback endpoint every source-OAuth provider redirects
+#: back to for a per-account (B2) connect. The provider rides in the URL path
+#: segment (``/auth/oauth/<provider>/callback``) — which is FIXED per stage
+#: host — while the connecting user's identity rides in the OAuth ``state``,
+#: NOT the path. This yields exactly one registered redirect URI per provider
+#: per stage (mirroring the Discord ``/auth/discord/callback`` convention), so
+#: adding users or guilds never touches a provider's redirect-URI allowlist.
+_ACCOUNT_CALLBACK_ENDPOINT = "auth.source_oauth_callback"
+
+
+def account_callback_endpoint() -> str:
+    """Return the Flask endpoint name of the fixed per-account source callback."""
+    return _ACCOUNT_CALLBACK_ENDPOINT
 
 _SPOTIFY_AUTHORIZE = "https://accounts.spotify.com/authorize"
 _GOOGLE_AUTHORIZE = "https://accounts.google.com/o/oauth2/v2/auth"
@@ -68,9 +85,57 @@ def redirect_uri_for_source(provider: str, guild_id: str) -> str:
     )
 
 
+def redirect_uri_for(provider: str) -> str:
+    """Return the absolute FIXED per-account source OAuth callback URI (B2).
+
+    Unlike :func:`redirect_uri_for_source`, this carries NO guild id in the
+    path — it is the single stable URI (``<base>/auth/oauth/<provider>/callback``)
+    registered once per provider per stage host. The connecting user + optional
+    guild binding travel in the OAuth ``state`` instead of the URL, so the
+    redirect URI never varies per user/guild (the provider allowlist stays
+    fixed). ``provider`` is a fixed path segment (spotify/tidal/youtube/
+    youtube_music), not dynamic data.
+    """
+    base = current_app.config.get("PUBLIC_BASE_URL", "").rstrip("/")
+    path = url_for(_ACCOUNT_CALLBACK_ENDPOINT, provider=provider)
+    if base:
+        return base + path
+    return url_for(_ACCOUNT_CALLBACK_ENDPOINT, provider=provider, _external=True)
+
+
+def source_authorize_url_account(provider: str, state: str) -> str | None:
+    """Build a provider authorize URL for a per-account connect (fixed callback).
+
+    Identical scope/params to :func:`source_authorize_url` but points every
+    provider at the single FIXED :func:`redirect_uri_for` callback (no guild in
+    the path). Returns ``None`` when the provider's client id is unconfigured
+    (the caller then surfaces a clear "needs setup" error rather than a silent
+    no-op).
+    """
+    redirect_uri = redirect_uri_for(provider)
+    return _authorize_url_with_redirect(provider, state, redirect_uri)
+
+
 def source_authorize_url(provider: str, state: str, guild_id: str) -> str | None:
-    """Build the provider OAuth authorize URL, or ``None`` if unconfigured."""
+    """Build the provider OAuth authorize URL, or ``None`` if unconfigured.
+
+    Legacy per-guild variant (guild id in the callback path). Retained for the
+    deprecated per-guild connect route; new per-account connects use
+    :func:`source_authorize_url_account` with the fixed callback.
+    """
     redirect_uri = redirect_uri_for_source(provider, guild_id)
+    return _authorize_url_with_redirect(provider, state, redirect_uri)
+
+
+def _authorize_url_with_redirect(
+    provider: str, state: str, redirect_uri: str
+) -> str | None:
+    """Build a provider authorize URL for a given ``redirect_uri``.
+
+    Shared by the per-account (fixed callback) and legacy per-guild builders so
+    the provider scopes/params live in exactly one place. Returns ``None`` when
+    the provider's client id is unconfigured or the provider is unknown.
+    """
     if provider == "spotify":
         client_id = current_app.config.get("SPOTIFY_CLIENT_ID", "")
         if not client_id:

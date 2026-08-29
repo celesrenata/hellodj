@@ -109,6 +109,9 @@ def create_app(
     app.extensions["guild_identity_service"] = services[
         "guild_identity_service"
     ]
+    # Global Discord bot-application pool assignment (multi-bot invite links);
+    # None in degraded mode (no secrets client).
+    app.extensions["bot_app_assignment"] = services["bot_app_assignment"]
     app.extensions["invite_service"] = services["invite_service"]
     # Per-user entitlement control plane (admin-only); None in degraded mode.
     app.extensions["entitlement_service"] = services["entitlement_service"]

@@ -37,18 +37,50 @@ from guild_admin_service import guild_pk
 
 __all__ = [
     "BOTIDENTITY_SK",
+    "DEFAULT_BOT_NAME",
     "AVATAR_MAX_BYTES",
     "AVATAR_FORMATS",
     "BotIdentityService",
     "AvatarValidationError",
     "detect_avatar_format",
     "guild_avatar_key",
+    "botidentity_sk",
+    "default_bot_name",
 ]
 
-#: Sort key for a guild's desired bot-identity item (one per guild).
+#: Base sort key for a guild's desired bot-identity item. With no ``client_id``
+#: this is the legacy per-guild identity (one bot per guild). When a guild runs
+#: multiple bots (each a distinct pool application), identity is keyed PER BOT
+#: as ``BOTIDENTITY#<client_id>`` so each assigned application has its own
+#: nickname + avatar (:func:`botidentity_sk`).
 BOTIDENTITY_SK = "BOTIDENTITY"
 
 IDENTITY_ENTITY = "GuildBotIdentity"
+
+#: Default bot display name applied when the owner lacks the ``custom_name``
+#: entitlement. The first bot in a guild is ``HelloDJ``; additional bots
+#: iterate ``HelloDJ#1``, ``HelloDJ#2``, … by their claim index.
+DEFAULT_BOT_NAME = "HelloDJ"
+
+
+def botidentity_sk(client_id: str = "") -> str:
+    """Return the sort key for a bot's identity item.
+
+    Empty ``client_id`` yields the legacy per-guild key (``BOTIDENTITY``);
+    a concrete application id yields the per-bot key
+    (``BOTIDENTITY#<client_id>``) so each of a guild's bots has its own
+    nickname + avatar.
+    """
+    return BOTIDENTITY_SK if not client_id else f"{BOTIDENTITY_SK}#{client_id}"
+
+
+def default_bot_name(index: int) -> str:
+    """Return the default bot name for a bot at ``index`` in the guild.
+
+    Index 0 → ``HelloDJ``; index N>0 → ``HelloDJ#N``. Used when the guild
+    owner lacks the ``custom_name`` entitlement (or hasn't set a nickname).
+    """
+    return DEFAULT_BOT_NAME if index <= 0 else f"{DEFAULT_BOT_NAME}#{index}"
 
 #: Discord's server-avatar upload ceiling is generous; 256 KiB is a safe cap.
 AVATAR_MAX_BYTES = 256 * 1024
@@ -89,14 +121,21 @@ def detect_avatar_format(data: bytes) -> str | None:
     return None
 
 
-def guild_avatar_key(guild_id: str, data: bytes, fmt: str) -> str:
-    """Return the S3 object key for a guild's bot avatar (content-addressed).
+def guild_avatar_key(
+    guild_id: str, data: bytes, fmt: str, *, client_id: str = ""
+) -> str:
+    """Return the S3 object key for a bot's avatar (content-addressed).
 
     The key embeds a content hash so a re-upload of the same image is stable and
     a new image gets a distinct key (a natural version marker the bot diffs on).
+    With a ``client_id`` the key is scoped per bot so a guild's multiple bots
+    never share an avatar object.
     """
     digest = hashlib.sha256(data).hexdigest()[:16]
-    return f"guild/{guild_id}/bot-avatar/{digest}.{_FORMAT_EXT[fmt]}"
+    scope = f"guild/{guild_id}" if not client_id else (
+        f"guild/{guild_id}/bot/{client_id}"
+    )
+    return f"{scope}/bot-avatar/{digest}.{_FORMAT_EXT[fmt]}"
 
 
 class BotIdentityService:
@@ -122,13 +161,17 @@ class BotIdentityService:
 
     # -- reads --------------------------------------------------------------
 
-    def get_identity(self, guild_id: str) -> dict[str, Any]:
-        """Return the guild's desired identity + apply status (metadata only).
+    def get_identity(
+        self, guild_id: str, *, client_id: str = ""
+    ) -> dict[str, Any]:
+        """Return a bot's desired identity + apply status (metadata only).
 
-        Returns an empty-but-shaped mapping when no identity has been set yet so
-        the template can render "not set" without special-casing ``None``.
+        With no ``client_id`` this reads the legacy per-guild identity; with a
+        concrete application id it reads that specific bot's identity. Returns
+        an empty-but-shaped mapping when no identity has been set yet so the
+        template can render "not set" without special-casing ``None``.
         """
-        item = self._core.get(guild_pk(guild_id), BOTIDENTITY_SK)
+        item = self._core.get(guild_pk(guild_id), botidentity_sk(client_id))
         data = item.get("data", {}) if item is not None else {}
         return {
             "nickname": data.get("nickname", ""),
@@ -145,21 +188,25 @@ class BotIdentityService:
     # -- writes -------------------------------------------------------------
 
     def set_nickname(
-        self, guild_id: str, nickname: str, *, requested_by: str
+        self, guild_id: str, nickname: str, *, requested_by: str,
+        client_id: str = "",
     ) -> None:
-        """Persist the desired server nickname and mark it pending (R2.7).
+        """Persist a bot's desired server nickname and mark it pending (R2.7).
 
-        The caller MUST have verified ``can_manage_guild`` first (R3.2). Marks
+        The caller MUST have verified ``can_manage_guild`` AND (for a custom
+        name) the owner's ``custom_name`` entitlement first (R3.2). Marks
         ``apply_status="pending"`` so the bot-side applier picks the change up.
         """
         self._upsert(
             guild_id,
             requested_by=requested_by,
+            client_id=client_id,
             changes=lambda d: {**d, "nickname": nickname},
         )
 
     def set_avatar(
-        self, guild_id: str, data: bytes, *, requested_by: str
+        self, guild_id: str, data: bytes, *, requested_by: str,
+        client_id: str = "",
     ) -> str:
         """Validate + upload avatar bytes to S3, record metadata (R2.8).
 
@@ -183,7 +230,7 @@ class BotIdentityService:
             raise AvatarValidationError(
                 "unsupported avatar format (allowed: PNG, JPG, GIF)"
             )
-        key = guild_avatar_key(guild_id, data, fmt)
+        key = guild_avatar_key(guild_id, data, fmt, client_id=client_id)
         self._s3.put_object(
             Bucket=self._bucket,
             Key=key,
@@ -194,6 +241,7 @@ class BotIdentityService:
         self._upsert(
             guild_id,
             requested_by=requested_by,
+            client_id=client_id,
             changes=lambda d: {
                 **d,
                 "avatar_present": True,
@@ -211,6 +259,7 @@ class BotIdentityService:
         *,
         requested_by: str,
         changes: Any,
+        client_id: str = "",
     ) -> None:
         """Read-modify-write the ``BOTIDENTITY`` item, marking it pending.
 
@@ -236,7 +285,7 @@ class BotIdentityService:
 
         self._core.update_with_lock(
             guild_pk(guild_id),
-            BOTIDENTITY_SK,
+            botidentity_sk(client_id),
             mutate,
             entity_type=IDENTITY_ENTITY,
         )

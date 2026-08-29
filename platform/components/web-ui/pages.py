@@ -35,6 +35,7 @@ NAV_ITEMS = [
     {"key": "dashboard", "label": "Dashboard", "endpoint": "pages.dashboard"},
     {"key": "config", "label": "Config", "endpoint": "pages.config"},
     {"key": "guilds", "label": "Guilds", "endpoint": "pages.guilds"},
+    {"key": "account", "label": "Account", "endpoint": "guild.account"},
 ]
 
 #: The admin-only nav entries, shown to Cognito ``admins`` group members only.

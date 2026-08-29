@@ -43,6 +43,7 @@ from auth_forms import (
 from auth_oauth import (
     discord_id_from_code,
 )
+from source_account_routes import register_source_oauth_routes
 from source_credential_store import (
     persist_spotify_credential,
     persist_tidal_status,
@@ -364,6 +365,10 @@ def build_auth_blueprint() -> Blueprint:
         session.pop("source_guild", None)
         session.pop("source_provider", None)
         return redirect(url_for("guild.guild_detail", guild_id=guild_id))
+
+    # Per-account source OAuth (ONE fixed callback per provider, B2). Extracted
+    # to source_account_routes to keep auth.py under the 500-line ceiling.
+    register_source_oauth_routes(bp)
 
     @bp.route("/logout", methods=["POST", "GET"])
     def logout():  # type: ignore[unused-ignore]

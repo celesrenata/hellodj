@@ -24,11 +24,11 @@ from flask import (
     redirect,
     render_template,
     request,
-    session,
     url_for,
 )
 
-from guild_admin_service import can_manage_guild
+from guild_bot_routes import bot_context, register_bot_routes
+from guild_common import can_manage, current_user, require_login, svc
 from guild_sources import SUPPORTED_PROVIDERS
 from source_oauth import source_provider_configured
 
@@ -62,34 +62,13 @@ def _account_providers_configured() -> dict[str, bool]:
     return {p: source_provider_configured(p) for p in OAUTH_SOURCE_PROVIDERS}
 
 
-def _svc(name: str) -> Any:
-    return current_app.extensions.get(name)
-
-
-def _user() -> dict[str, Any]:
-    return session.get("user") or {}
-
-
-def _require_login() -> bool:
-    return bool(session.get("user"))
-
-
-def _can_manage(guild_id: str) -> bool:
-    """Resolve the authorization facts and apply ``can_manage_guild`` (R5.2)."""
-    user = _user()
-    guild_admin = _svc("guild_admin")
-    owner_sub = guild_admin.owner_of(guild_id) if guild_admin else None
-    admin_ids = (
-        guild_admin.admin_discord_ids(guild_id) if guild_admin else set()
-    )
-    return can_manage_guild(
-        guild_id=guild_id,
-        user_sub=user.get("sub"),
-        discord_id=user.get("discord_id"),
-        is_super_admin=bool(user.get("is_admin")),
-        owner_sub=owner_sub,
-        admin_discord_ids=admin_ids,
-    )
+#: Thin aliases to the shared guild helpers (kept for minimal churn across this
+#: module's routes). Their canonical home is :mod:`guild_common` so the bot
+#: route module can import them without a circular dependency.
+_svc = svc
+_user = current_user
+_require_login = require_login
+_can_manage = can_manage
 
 
 def build_guild_blueprint() -> Blueprint:
@@ -113,7 +92,9 @@ def build_guild_blueprint() -> Blueprint:
             return redirect(url_for("pages.login"))
         profiles = _svc("user_profiles")
         user = _user()
-        profile = profiles.get(user["sub"]) if profiles and user.get("sub") else {}
+        sub = user.get("sub", "")
+        profile = profiles.get(sub) if profiles and sub else {}
+        ent = _svc("entitlement_service")
         return render_template(
             "pages/account.html",
             layout=_layout(),
@@ -121,8 +102,14 @@ def build_guild_blueprint() -> Blueprint:
             active="account",
             profile=profile,
             providers=OAUTH_SOURCE_PROVIDERS,
-            source_status=_account_source_status(user.get("sub", "")),
+            source_status=_account_source_status(sub),
             providers_configured=_account_providers_configured(),
+            entitlements=(ent.get_effective(sub) if ent and sub else {}),
+            entitlements_available=bool(ent and sub),
+            tally=(ent.get_tally(sub) if ent and sub else {}),
+            connected=request.args.get("connected", ""),
+            error=request.args.get("error", ""),
+            error_provider=request.args.get("provider", ""),
         )
 
     @bp.route("/account/sources/<provider>/disconnect", methods=["POST"])
@@ -179,6 +166,7 @@ def build_guild_blueprint() -> Blueprint:
         guild_admin = _svc("guild_admin")
         sources = _svc("guild_sources")
         identity_svc = _svc("guild_identity_service")
+        bots_ctx = bot_context(guild_id)
         # Which providers are wired for interactive OAuth (client id present).
         # Unconfigured providers render a disabled "Needs setup" control rather
         # than an active Connect link that would silently no-op (R2.1, R1.2).
@@ -198,6 +186,11 @@ def build_guild_blueprint() -> Blueprint:
             identity=(
                 identity_svc.get_identity(guild_id) if identity_svc else {}
             ),
+            bots=bots_ctx["bots"],
+            bot_max=bots_ctx["bot_max"],
+            pool_size=bots_ctx["pool_size"],
+            can_custom_name=bots_ctx["can_custom_name"],
+            can_custom_avatar=bots_ctx["can_custom_avatar"],
             error=request.args.get("error", ""),
             error_provider=request.args.get("provider", ""),
         )
@@ -241,6 +234,10 @@ def build_guild_blueprint() -> Blueprint:
         return _render_identity(
             guild_id, identity_svc, upload_error=upload_error
         )
+
+    # Per-guild bot-application routes (assign/release/rename/avatar) live in
+    # guild_bot_routes to keep this module under the 500-line ceiling.
+    register_bot_routes(bp)
 
     @bp.route("/guilds/<guild_id>/admins", methods=["POST"])
     def appoint_admin(guild_id: str):  # type: ignore[unused-ignore]

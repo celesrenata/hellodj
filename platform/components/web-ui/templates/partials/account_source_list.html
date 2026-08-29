@@ -44,16 +44,26 @@
               <span class="panel-section__muted">&mdash;</span>
             {% endif %}
           </td>
-          <td>
+          <td class="field-row">
             {% if status and status.connected %}
-              <button class="btn btn-ghost btn-sm"
+              {% if (providers_configured|default({})).get(provider) %}
+                <a class="btn btn-ghost btn-sm"
+                   href="{{ url_for('auth.source_oauth_connect', provider=provider) }}"
+                   title="Re-authorize {{ provider|replace('_', ' ')|title }} (refresh the stored token).">Re-authorize</a>
+              {% endif %}
+              {% if provider in ('youtube', 'youtube_music') %}
+                <a class="btn btn-ghost btn-sm"
+                   href="{{ url_for('auth.source_oauth_connect', provider=provider) }}"
+                   title="Refresh the YouTube PoToken by re-authorizing.">Refresh PoToken</a>
+              {% endif %}
+              <button class="btn btn-danger btn-sm"
                       hx-post="{{ url_for('guild.account_disconnect_source', provider=provider) }}"
                       hx-target="#account-source-list"
-                      hx-confirm="Disconnect {{ provider|replace('_', ' ')|title }} from your account?">Disconnect</button>
+                      hx-confirm="Clear {{ provider|replace('_', ' ')|title }} authorization for your account? This deletes the stored credential.">Clear auth</button>
             {% elif (providers_configured|default({})).get(provider) %}
               <a class="btn btn-primary btn-sm"
-                 href="{{ url_for('pages.guilds') }}"
-                 title="Connect {{ provider|replace('_', ' ')|title }} from a guild you manage.">Connect</a>
+                 href="{{ url_for('auth.source_oauth_connect', provider=provider) }}"
+                 title="Authorize {{ provider|replace('_', ' ')|title }} for your account.">Connect</a>
             {% else %}
               <button class="btn btn-disabled btn-sm" type="button" disabled
                       aria-disabled="true"

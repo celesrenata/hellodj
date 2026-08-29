@@ -1,0 +1,61 @@
+{# Read-only view of the signed-in user's OWN effective entitlements.
+
+   A user cannot edit their entitlements (that is the admin-only Entitlements
+   control plane); this simply surfaces what they are currently entitled to so
+   the account page explains why a capability is or is not available. Values
+   come from EntitlementService.get_effective(sub) (secure defaults merged with
+   any admin-set record) and get_tally(sub) for AI spend. Never editable here.
+
+   Context: entitlements (effective dict), tally (dict), entitlements_available. #}
+{% set sources = (entitlements|default({})).get('sources') or {} %}
+{% if not entitlements_available %}
+  <p class="panel-section__muted">Entitlements are not available right now.</p>
+{% else %}
+  <div class="glass-panel data-table__wrap">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th scope="col">Capability</th>
+          <th scope="col">State</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% macro state_cell(enabled) %}
+          {% if enabled %}
+            <span class="badge badge--ok">Allowed</span>
+          {% else %}
+            <span class="badge badge--muted">Not allowed</span>
+          {% endif %}
+        {% endmacro %}
+        <tr><td>YouTube</td><td>{{ state_cell(sources.get('youtube', False)) }}</td></tr>
+        <tr><td>YouTube Music</td><td>{{ state_cell(sources.get('youtube_music', False)) }}</td></tr>
+        <tr><td>SoundCloud</td><td>{{ state_cell(sources.get('soundcloud', False)) }}</td></tr>
+        <tr><td>Spotify</td><td>{{ state_cell(sources.get('spotify', False)) }}</td></tr>
+        <tr><td>Tidal</td><td>{{ state_cell(sources.get('tidal', False)) }}</td></tr>
+        <tr><td>Custom bot avatar</td><td>{{ state_cell(entitlements.get('custom_avatar', False)) }}</td></tr>
+        <tr><td>Custom bot name</td><td>{{ state_cell(entitlements.get('custom_name', False)) }}</td></tr>
+        <tr><td>Audio above 96 kbps</td><td>{{ state_cell(entitlements.get('audio_above_96k', False)) }}</td></tr>
+        <tr><td>Video activities</td><td>{{ state_cell(entitlements.get('video_activities', False)) }}</td></tr>
+        <tr><td>Visualizations</td><td>{{ state_cell(entitlements.get('visualizations', False)) }}</td></tr>
+        <tr><td>Wake-word / voice</td><td>{{ state_cell(entitlements.get('wakeword', False)) }}</td></tr>
+        <tr><td>AI integration</td><td>{{ state_cell(entitlements.get('ai_integration', False)) }}</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <p class="panel-section__muted">
+    Guilds: up to {{ entitlements.get('max_guilds', 1) }} ·
+    Bots per guild: up to {{ entitlements.get('max_bots_per_guild', 1) }}
+    {% if entitlements.get('ai_spend_cap') is not none %}
+      · AI spend cap: {{ entitlements.get('ai_spend_cap') }}
+    {% endif %}
+  </p>
+  {% if tally %}
+    <p class="panel-section__muted">
+      AI spend to date: {{ tally.get('accumulated_cost', 0) }}
+    </p>
+  {% endif %}
+  <p class="field__hint">
+    These are set by an administrator. Contact an admin to change what your
+    account can do.
+  </p>
+{% endif %}

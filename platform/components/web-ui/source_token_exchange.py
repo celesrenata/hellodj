@@ -223,15 +223,21 @@ def source_exchange_google(code: str, guild_id: str) -> dict[str, Any]:
     client_id, client_secret = _google_client_credentials()
     if not client_id or not client_secret:
         return {}
-    # Imported lazily to avoid a circular import (source_oauth imports nothing
-    # from this module, but keep the dependency one-directional and explicit).
-    from source_oauth import redirect_uri_for_source  # noqa: PLC0415
+    # The redirect_uri MUST match the one used to obtain the code. For a
+    # per-account (B2) connect the code was obtained with the FIXED callback
+    # (``guild_id`` is ""), so we use the guild-free ``redirect_uri_for``;
+    # otherwise the legacy per-guild callback URI.
+    from source_oauth import (  # noqa: PLC0415
+        redirect_uri_for,
+        redirect_uri_for_source,
+    )
 
-    # The redirect_uri MUST match the one used to obtain the code. The provider
-    # segment can be youtube or youtube_music; both share the youtube secret
-    # shape, so the caller passes the concrete provider via guild callback.
     provider = _current_provider_hint()
-    redirect_uri = redirect_uri_for_source(provider, guild_id)
+    redirect_uri = (
+        redirect_uri_for(provider)
+        if not guild_id
+        else redirect_uri_for_source(provider, guild_id)
+    )
     resp = _http_post_form(
         _GOOGLE_TOKEN_URL,
         {
@@ -280,9 +286,18 @@ def source_exchange_spotify(code: str, guild_id: str) -> dict[str, Any]:
     client_id, client_secret = _spotify_client_credentials()
     if not client_id or not client_secret:
         return {}
-    from source_oauth import redirect_uri_for_source  # noqa: PLC0415
+    from source_oauth import (  # noqa: PLC0415
+        redirect_uri_for,
+        redirect_uri_for_source,
+    )
 
-    redirect_uri = redirect_uri_for_source("spotify", guild_id)
+    # Match the redirect_uri used to obtain the code: fixed per-account callback
+    # when guild_id is empty (B2), else the legacy per-guild callback.
+    redirect_uri = (
+        redirect_uri_for("spotify")
+        if not guild_id
+        else redirect_uri_for_source("spotify", guild_id)
+    )
     resp = _http_post_form(
         _SPOTIFY_TOKEN_URL,
         {

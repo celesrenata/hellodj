@@ -43,3 +43,6 @@ stickers/*
 bot/stickers/assets/
 bot/stickers/manifest.json
 bot/stickers/*.zip
+
+# Transient secret staging (bot-app pool) — never commit
+.bot-app-pool.tmp.json

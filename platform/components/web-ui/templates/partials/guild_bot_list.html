@@ -1,0 +1,110 @@
+{# Per-guild bot-application invite links (multi-bot pool).
+
+   Renders one row per bot application this guild has been assigned from the
+   GLOBAL pool, each with a Discord invite link (client_id only — never a
+   secret/token) and a Remove action. An "Add bot" control claims the next free
+   pool app, capped by the guild's max_bots_per_guild entitlement. When the
+   quota is reached or the pool is exhausted the add control explains why.
+
+   Context: guild_id, bots (list of {client_id,label,invite_url}), bot_max,
+   pool_size, add_error. #}
+<div id="guild-bot-list">
+  {% if add_error %}
+    <p class="notice notice--danger" role="alert">{{ add_error }}</p>
+  {% endif %}
+  {% if upload_error %}
+    <p class="notice notice--danger" role="alert">{{ upload_error }}</p>
+  {% endif %}
+
+  {% if bots %}
+    <div class="bot-cards">
+      {% for bot in bots %}
+        <div class="glass-panel panel-section">
+          <div class="field-row" style="justify-content: space-between; align-items: center;">
+            <div>
+              <strong>{{ bot.display_name }}</strong>
+              <span class="field__hint">{{ bot.label }}</span>
+              {% if bot.apply_status == 'applied' %}
+                <span class="badge badge--ok">Applied</span>
+              {% elif bot.apply_status == 'pending' %}
+                <span class="badge badge--muted">Pending</span>
+              {% elif bot.apply_status == 'error' %}
+                <span class="badge badge--danger">Error</span>
+              {% endif %}
+            </div>
+            <div class="field-row">
+              <a class="btn btn-primary btn-sm" target="_blank" rel="noopener"
+                 href="{{ bot.invite_url }}"
+                 aria-label="Invite {{ bot.display_name }} to this server">Invite link</a>
+              <button class="btn btn-danger btn-sm"
+                      hx-post="{{ url_for('guild.remove_bot', guild_id=guild_id, client_id=bot.client_id) }}"
+                      hx-target="#guild-bot-list"
+                      hx-confirm="Release {{ bot.display_name }} from this server? Its invite link stops working and the bot can be removed from Discord separately.">Remove</button>
+            </div>
+          </div>
+
+          {# Rename — gated by the owner's custom_name entitlement. #}
+          {% if can_custom_name %}
+            <form class="field-row"
+                  hx-post="{{ url_for('guild.set_bot_name', guild_id=guild_id, client_id=bot.client_id) }}"
+                  hx-target="#guild-bot-list">
+              <label class="field">
+                <span class="field__label">Name</span>
+                <input class="field__input" name="nickname" type="text" maxlength="32"
+                       value="{{ bot.nickname }}"
+                       placeholder="{{ bot.default_name }}"
+                       aria-label="Bot name for {{ bot.label }}">
+              </label>
+              <button type="submit" class="btn btn-primary btn-sm">Save name</button>
+            </form>
+          {% else %}
+            <p class="field__hint">
+              Name: <strong>{{ bot.default_name }}</strong>. Renaming requires the
+              custom-name entitlement.
+            </p>
+          {% endif %}
+
+          {# Avatar — gated by the owner's custom_avatar entitlement. #}
+          {% if can_custom_avatar %}
+            <form class="field-row"
+                  hx-post="{{ url_for('guild.set_bot_avatar_pooled', guild_id=guild_id, client_id=bot.client_id) }}"
+                  hx-target="#guild-bot-list" hx-encoding="multipart/form-data">
+              <label class="field">
+                <span class="field__label">Avatar</span>
+                <input class="field__input" name="avatar" type="file"
+                       accept="image/png,image/jpeg,image/gif"
+                       aria-label="Bot avatar for {{ bot.label }}">
+                <span class="field__hint">PNG, JPG, or GIF · max 256 KB{% if bot.avatar_present %} · custom avatar set{% endif %}</span>
+              </label>
+              <button type="submit" class="btn btn-primary btn-sm">Upload avatar</button>
+            </form>
+          {% else %}
+            <p class="field__hint">Custom avatars require the custom-avatar entitlement.</p>
+          {% endif %}
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="panel-section__muted">No bots assigned to this server yet.</p>
+  {% endif %}
+
+  <p class="panel-section__muted">
+    Using {{ bots|length }} of {{ bot_max }} allowed bot(s) for this server.
+  </p>
+
+  {% if bots|length < bot_max and bots|length < pool_size %}
+    <button class="btn btn-primary"
+            hx-post="{{ url_for('guild.add_bot', guild_id=guild_id) }}"
+            hx-target="#guild-bot-list">Add a bot</button>
+  {% elif bots|length >= bot_max %}
+    <button class="btn btn-disabled" type="button" disabled aria-disabled="true"
+            title="This server has reached its bot limit. An administrator can raise the max bots per guild entitlement.">
+      Bot limit reached
+    </button>
+  {% else %}
+    <button class="btn btn-disabled" type="button" disabled aria-disabled="true"
+            title="No more bot applications are available in the global pool.">
+      No bots available
+    </button>
+  {% endif %}
+</div>

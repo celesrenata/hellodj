@@ -12,6 +12,8 @@
             @click="tab = 'sources'" role="tab">Sources</button>
     <button class="tab" :class="tab === 'identity' && 'tab--active'"
             @click="tab = 'identity'" role="tab">Identity</button>
+    <button class="tab" :class="tab === 'bots' && 'tab--active'"
+            @click="tab = 'bots'" role="tab">Bots</button>
   </div>
 
   <div x-show="tab === 'admins'" x-transition role="tabpanel">
@@ -62,6 +64,17 @@
          hx-trigger="none">
       {% include "partials/guild_identity_form.html" %}
     </div>
+  </div>
+
+  <div x-show="tab === 'bots'" x-transition role="tabpanel">
+    <h2 class="panel-section__title">Bots</h2>
+    <p class="panel-section__muted">
+      Each bot is a distinct Discord application, so a server can run several at
+      once (Discord allows one of each application per server). Add a bot to get
+      its invite link, then use the link to add it to this server. How many you
+      may run is set by your entitlement.
+    </p>
+    {% include "partials/guild_bot_list.html" %}
   </div>
 </div>
 {% endblock %}

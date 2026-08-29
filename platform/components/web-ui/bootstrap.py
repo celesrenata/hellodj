@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from bot_app_pool import BotAppAssignmentService, BotAppPool
 from bot_identity import BotIdentityService
 from config_store import ConfigStore
 from entitlement_service import EntitlementService
@@ -151,6 +152,7 @@ def build_services() -> dict[str, Any]:
         "guild_identity_service": None,
         "invite_service": None,
         "entitlement_service": None,
+        "bot_app_assignment": None,
     }
     if core is None:
         return services
@@ -165,6 +167,11 @@ def build_services() -> dict[str, Any]:
     if secrets is not None:
         services["guild_sources"] = GuildSourcesService(
             core, secrets, stage=stage
+        )
+        # Global Discord bot-application pool (Secrets Manager) + per-guild
+        # claim/assignment for multi-bot playback + invite links.
+        services["bot_app_assignment"] = BotAppAssignmentService(
+            core, BotAppPool(secrets, stage=stage)
         )
 
     # Unified per-user source-credential store (encrypted DynamoDB). Requires

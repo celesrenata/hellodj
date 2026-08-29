@@ -4,30 +4,13 @@
 {% block heading %}Configuration{% endblock %}
 
 {% block content %}
-{% if tidal == 'pending' %}
-  <div class="glass-panel notice notice--info" role="status">
-    Tidal authorization received. The tidal-stream service is completing the
-    first-party token exchange.
-  </div>
-{% endif %}
-
-<div class="glass-panel panel-section" x-data="{ tab: 'general' }">
-  <div class="tabs" role="tablist">
-    <button class="tab" :class="tab === 'general' && 'tab--active'"
-            @click="tab = 'general'" role="tab">General</button>
-    <button class="tab" :class="tab === 'sources' && 'tab--active'"
-            @click="tab = 'sources'" role="tab">Sources</button>
-  </div>
-
-  <div x-show="tab === 'general'" x-transition role="tabpanel">
-    {% include "partials/config_form.html" %}
-  </div>
-
-  <div x-show="tab === 'sources'" x-transition role="tabpanel">
-    <h2 class="panel-section__title">Connected Sources</h2>
-    <a class="btn btn-primary" href="{{ url_for('auth.tidal_callback') }}">
-      Reconnect Tidal
-    </a>
-  </div>
+<div class="glass-panel panel-section">
+  <h2 class="panel-section__title">General</h2>
+  {% include "partials/config_form.html" %}
 </div>
+
+<p class="panel-section__muted">
+  Music source connections (YouTube, Spotify, Tidal) live on your
+  <a href="{{ url_for('guild.account') }}">Account</a> page.
+</p>
 {% endblock %}

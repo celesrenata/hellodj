@@ -129,10 +129,13 @@ def test_config_page_renders_and_extends_shell(client) -> None:
     assert resp.status_code == 200
     html = resp.get_data(as_text=True)
     _assert_extends_shell(html)
-    # Config-specific snapshot: tablist + the Tidal reconnect entry point.
-    assert 'role="tablist"' in html
-    assert "Reconnect Tidal" in html
-    assert "/auth/tidal/callback" in html
+    # Config-specific snapshot: the General config form. Source connections
+    # moved to the Account page, so the old Sources tab (tablist + Tidal
+    # reconnect) is intentionally gone; Config points at Account instead.
+    assert "config-form" in html
+    assert 'role="tablist"' not in html
+    assert "Reconnect Tidal" not in html
+    assert "/account" in html
 
 
 def test_guilds_page_renders_and_extends_shell(client) -> None:

@@ -16,8 +16,28 @@
     this platform shows "Needs setup" until an administrator configures its
     OAuth client id.
   </p>
+  {% if connected %}
+    <p class="notice notice--success" role="status">
+      {{ connected|replace('_', ' ')|title }} connected.
+    </p>
+  {% endif %}
+  {% if error %}
+    <p class="notice notice--danger" role="alert">
+      Could not connect
+      {% if error_provider %}{{ error_provider|replace('_', ' ')|title }}{% endif %}:
+      {{ error|replace('_', ' ') }}.
+    </p>
+  {% endif %}
   <div id="account-source-list">
     {% include "partials/account_source_list.html" %}
   </div>
+</div>
+
+<div class="glass-panel panel-section">
+  <h2 class="panel-section__title">Your entitlements</h2>
+  <p class="panel-section__muted">
+    What your account is currently allowed to do on this platform.
+  </p>
+  {% include "partials/account_entitlements.html" %}
 </div>
 {% endblock %}
