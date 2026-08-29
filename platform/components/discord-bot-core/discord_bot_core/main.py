@@ -168,7 +168,14 @@ async def run(config: BotConfig | None = None) -> None:
     activation_store = build_activation_store(cfg.core_table_name, cfg.aws_region)
     if activation_store is not None:
         activation = GuildActivation(activation_store)
-        cog = build_activation_cog(bot, activation)
+        # The gateway uses the activation reader to decide which commands are
+        # VISIBLE per guild (unactivated -> only activate/help), and re-syncs a
+        # guild the moment /activate succeeds (activate disappears, the rest
+        # appear) via the on_activated callback.
+        gateway.set_activation(activation)
+        cog = build_activation_cog(
+            bot, activation, on_activated=gateway.resync_guild
+        )
         result = bot.add_cog(cog)
         if result is not None:
             await result

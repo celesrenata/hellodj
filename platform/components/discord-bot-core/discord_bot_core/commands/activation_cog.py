@@ -26,10 +26,17 @@ from ..policy.activation import GuildActivation
 
 log = logging.getLogger(__name__)
 
-__all__ = ["build_activation_cog", "command_allowed"]
+__all__ = [
+    "ALWAYS_ALLOWED",
+    "allowed_command_names",
+    "build_activation_cog",
+    "command_allowed",
+]
 
-#: Commands that are ALWAYS allowed even when a guild is not activated.
-_ALWAYS_ALLOWED = frozenset({"activate"})
+#: Commands ALWAYS allowed (and shown) even when a guild is not activated:
+#: ``activate`` (so a locked guild can unlock) and ``help`` (so users can get
+#: help before activating). Everything else is hidden + blocked until activated.
+ALWAYS_ALLOWED = frozenset({"activate", "help"})
 
 
 def command_allowed(
@@ -41,22 +48,65 @@ def command_allowed(
     """Pure gate decision: may this command run in this guild?
 
     * A DM (no guild) is allowed — activation is a per-guild gate.
-    * The ``activate`` command is always allowed (so a locked guild can unlock).
+    * ``activate``/``help`` are always allowed (so a locked guild can unlock and
+      users can still get help).
     * Any other command requires the guild to be activated.
+
+    This is the runtime backstop; :func:`allowed_command_names` decides what is
+    even *visible* per guild. Both must agree so a hidden command is also
+    blocked if a stale client cache still shows it.
     """
     if guild_id is None:
         return True
-    if command_name in _ALWAYS_ALLOWED:
+    if command_name in ALWAYS_ALLOWED:
         return True
     return activation.is_activated(int(guild_id))
 
 
-def build_activation_cog(bot: Any, activation: GuildActivation) -> Any:
+def allowed_command_names(
+    activated: bool,
+    all_names: frozenset[str] | set[str],
+) -> set[str]:
+    """Pure decision: which command names should be VISIBLE in a guild.
+
+    Drives the per-guild slash-command sync so the picker matches the spec:
+
+    * **Unactivated** — only ``activate`` and ``help`` (whichever of those the
+      bot actually defines). Every other command is hidden.
+    * **Activated** — everything the bot defines EXCEPT ``activate`` (it has
+      served its purpose and disappears); ``help`` and all other commands show.
+
+    Entitlement-based filtering of the activated set (showing only the commands
+    a guild's entitlements permit) layers on top of this result — see the caller
+    in the gateway sync — and is intentionally not decided here so this stays a
+    pure activation/visibility function.
+    """
+    names = set(all_names)
+    if not activated:
+        return names & ALWAYS_ALLOWED
+    return names - {"activate"}
+
+
+def build_activation_cog(
+    bot: Any,
+    activation: GuildActivation,
+    *,
+    on_activated: Any | None = None,
+) -> Any:
     """Build the activation cog and install the global command gates on ``bot``.
 
     Installs the gate for BOTH command styles (slash + prefix) and returns the
     cog that owns the ``/activate`` slash command. The slash command validates
     the dashboard key and unlocks the guild.
+
+    Args:
+        bot: The discord.py bot (needs ``tree`` + ``add_check``).
+        activation: The per-guild activation reader/validator.
+        on_activated: Optional ``async (guild_id: int) -> None`` callback invoked
+            right after a guild is successfully activated. Wired to a per-guild
+            re-sync so ``/activate`` disappears and the full command set appears
+            immediately — without waiting for a reconnect. Best-effort: a failure
+            is logged and never fails the activation reply.
     """
     from discord import app_commands
     from discord.ext import commands
@@ -126,6 +176,18 @@ def build_activation_cog(bot: Any, activation: GuildActivation) -> Any:
                     "✅ HelloDJ activated! All commands are now available in "
                     "this server."
                 )
+                # Re-sync so /activate disappears and the full command set
+                # appears now (not on the next reconnect). Best-effort.
+                if on_activated is not None:
+                    try:
+                        await on_activated(gid)
+                    except Exception as exc:  # noqa: BLE001 - never fail the reply
+                        log.warning(
+                            "activation: post-activate resync failed for "
+                            "guild %s: %s",
+                            gid,
+                            exc,
+                        )
             else:
                 await interaction.response.send_message(
                     "❌ Invalid activation key. Get the current key from the "

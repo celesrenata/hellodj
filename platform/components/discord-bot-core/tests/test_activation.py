@@ -15,7 +15,10 @@ from __future__ import annotations
 
 from typing import Any
 
-from discord_bot_core.commands.activation_cog import command_allowed
+from discord_bot_core.commands.activation_cog import (
+    allowed_command_names,
+    command_allowed,
+)
 from discord_bot_core.policy.activation import GuildActivation
 
 
@@ -95,3 +98,36 @@ def test_gate_allows_dms() -> None:
     assert (
         command_allowed(_act(False), command_name="play", guild_id=None) is True
     )
+
+
+def test_gate_allows_help_in_locked_guild() -> None:
+    # /help is allowed even when locked (users can get help before activating).
+    assert (
+        command_allowed(_act(False), command_name="help", guild_id=1) is True
+    )
+
+
+# -- pure command VISIBILITY (per-guild sync subset) ------------------------
+
+
+_ALL = {"activate", "help", "play", "skip", "pause"}
+
+
+def test_visible_unactivated_only_activate_and_help() -> None:
+    assert allowed_command_names(False, _ALL) == {"activate", "help"}
+
+
+def test_visible_activated_hides_activate_shows_rest() -> None:
+    visible = allowed_command_names(True, _ALL)
+    assert "activate" not in visible
+    assert visible == {"help", "play", "skip", "pause"}
+
+
+def test_visible_unactivated_intersects_defined_commands() -> None:
+    # If the bot doesn't define /help yet, unactivated shows only /activate.
+    assert allowed_command_names(False, {"activate", "play"}) == {"activate"}
+
+
+def test_visible_activated_without_activate_is_noop_on_activate() -> None:
+    # Removing activate when it isn't present is harmless.
+    assert allowed_command_names(True, {"play", "skip"}) == {"play", "skip"}

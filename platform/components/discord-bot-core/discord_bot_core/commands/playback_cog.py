@@ -17,12 +17,17 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from ..playback.client import PlaybackAction, PlaybackClient, PlaybackError, PlaybackRequest
+from ..playback.client import (
+    PlaybackAction,
+    PlaybackClient,
+    PlaybackError,
+    PlaybackRequest,
+)
 from ..policy.guild_policy import GuildPolicy
 
 log = logging.getLogger(__name__)
 
-__all__ = ["build_request", "build_playback_cog"]
+__all__ = ["build_playback_cog", "build_request"]
 
 
 def build_request(
@@ -59,66 +64,100 @@ def build_playback_cog(playback: PlaybackClient, guild_policy: GuildPolicy) -> A
     Returns:
         A ``discord.ext.commands.Cog`` instance.
     """
-    from discord.ext import commands  # local import: optional runtime dependency
+    from discord import app_commands  # local import: optional runtime dependency
+    from discord.ext import commands
 
     class PlaybackCog(commands.Cog):
-        """Discord commands that delegate playback to the orchestrator."""
+        """Discord SLASH commands that delegate playback to the orchestrator.
+
+        These are ``app_commands`` (slash) commands so they show up in Discord's
+        command picker and are synced to each guild by the gateway on ready/join
+        — the same path ``/activate`` uses. Prefix (``!hellodj``) commands do
+        NOT appear as slash commands, which is why an earlier prefix-only build
+        surfaced no commands after activation.
+        """
 
         def __init__(self) -> None:
             self._playback = playback
             self._policy = guild_policy
 
-        async def _delegate(self, ctx: Any, request: PlaybackRequest) -> None:
+        async def _delegate(
+            self, interaction: Any, request: PlaybackRequest
+        ) -> None:
             if not self._policy.is_authorized(request.guild_id):
-                await ctx.reply(
-                    "HelloDJ is awaiting administrator approval for this server."
+                await interaction.response.send_message(
+                    "HelloDJ is awaiting administrator approval for this server.",
+                    ephemeral=True,
                 )
                 return
+            # Playback delegation is a network hop to the orchestrator; defer so
+            # we don't blow Discord's 3s initial-response deadline, then follow
+            # up with the result.
+            await interaction.response.defer(thinking=True)
             try:
                 result = await self._playback.submit(request)
             except PlaybackError as exc:
                 log.warning("playback delegation failed: %s", exc)
-                await ctx.reply("Playback service is unavailable right now.")
+                await interaction.followup.send(
+                    "Playback service is unavailable right now."
+                )
                 return
-            await ctx.reply(result.message or ("OK" if result.ok else "Failed."))
+            await interaction.followup.send(
+                result.message or ("OK" if result.ok else "Failed.")
+            )
 
-        @commands.command(name="play")
-        async def play(self, ctx: Any, *, query: str) -> None:
+        @staticmethod
+        def _request_ids(interaction: Any) -> tuple[int, int, int]:
+            """Return ``(guild_id, channel_id, user_id)`` from an interaction."""
+            return (
+                int(interaction.guild_id),
+                int(interaction.channel_id),
+                int(interaction.user.id),
+            )
+
+        @app_commands.command(
+            name="play", description="Play or enqueue a track by search query."
+        )
+        @app_commands.describe(query="Song name, artist, or URL to play")
+        async def play(self, interaction: Any, query: str) -> None:
             """Play or enqueue a track by search query."""
+            gid, cid, uid = self._request_ids(interaction)
             await self._delegate(
-                ctx,
+                interaction,
                 build_request(
                     PlaybackAction.PLAY,
-                    guild_id=int(ctx.guild.id),
-                    channel_id=int(ctx.channel.id),
-                    requested_by=int(ctx.author.id),
+                    guild_id=gid,
+                    channel_id=cid,
+                    requested_by=uid,
                     query=query,
                 ),
             )
 
-        @commands.command(name="skip")
-        async def skip(self, ctx: Any) -> None:
+        @app_commands.command(name="skip", description="Skip the current track.")
+        async def skip(self, interaction: Any) -> None:
             """Skip the current track."""
+            gid, cid, uid = self._request_ids(interaction)
             await self._delegate(
-                ctx,
+                interaction,
                 build_request(
                     PlaybackAction.SKIP,
-                    guild_id=int(ctx.guild.id),
-                    channel_id=int(ctx.channel.id),
-                    requested_by=int(ctx.author.id),
+                    guild_id=gid,
+                    channel_id=cid,
+                    requested_by=uid,
                 ),
             )
 
-        @commands.command(name="pause")
-        async def pause(self, ctx: Any) -> None:
+        @app_commands.command(name="pause", description="Pause playback.")
+        async def pause(self, interaction: Any) -> None:
             """Pause playback."""
+            gid, cid, uid = self._request_ids(interaction)
             await self._delegate(
-                ctx,
+                interaction,
                 build_request(
                     PlaybackAction.PAUSE,
-                    guild_id=int(ctx.guild.id),
-                    channel_id=int(ctx.channel.id),
-                    requested_by=int(ctx.author.id),
+                    guild_id=gid,
+                    channel_id=cid,
+                    requested_by=uid,
                 ),
             )
 

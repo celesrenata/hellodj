@@ -73,8 +73,20 @@ class BotClient:
         self._policy = guild_policy
         self._deps = deps
         self._identity_applier = identity_applier
+        self._activation: Any | None = None
         self._bot: Any = None
         self._last_heartbeat_monotonic: float | None = None
+
+    def set_activation(self, activation: Any) -> None:
+        """Attach the per-guild activation reader used for command visibility.
+
+        With it set, :meth:`_sync_commands` shows only ``activate``/``help`` in
+        an unactivated guild and hides ``activate`` (showing the rest) once the
+        guild is activated. Without it (degraded), the secure default applies:
+        every guild is treated as unactivated, so only ``activate``/``help`` are
+        exposed until activation is wired.
+        """
+        self._activation = activation
 
     @property
     def bot(self) -> Any:
@@ -141,40 +153,101 @@ class BotClient:
         async def on_guild_remove(guild: Any) -> None:  # pragma: no cover
             self._policy.clear(int(guild.id))
 
+    def _guild_activated(self, guild_id: int) -> bool:
+        """Return whether ``guild_id`` is activated (secure default: locked).
+
+        Any missing activation reader or lookup error is treated as NOT
+        activated, so a guild only ever gets the full command set when we can
+        positively confirm it is activated.
+        """
+        if self._activation is None:
+            return False
+        try:
+            return bool(self._activation.is_activated(int(guild_id)))
+        except Exception as exc:  # noqa: BLE001 - locked default on any error
+            log.warning(
+                "gateway: activation lookup failed for guild %s: %s",
+                guild_id,
+                exc,
+            )
+            return False
+
     async def _sync_commands(self, guild: Any | None = None) -> None:  # pragma: no cover - discord runtime
-        """Sync the app-command (slash) tree so commands appear in Discord.
+        """Sync each guild's slash commands based on its ACTIVATION state.
 
         discord.py registers a cog's ``app_commands`` into ``bot.tree`` when the
         cog is added, but Discord only surfaces them after an explicit
-        ``tree.sync()``. Global syncs can take up to an hour to propagate, so we
-        copy the global commands into each guild and do a PER-GUILD sync, which
-        is effectively instant — this is why ``/activate`` shows up immediately
-        after the bot joins/reconnects. On ``on_ready`` we sync every guild the
-        bot is in; on ``on_guild_join`` we sync just the new guild.
+        ``tree.sync()``. We sync PER GUILD (instant, unlike the up-to-an-hour
+        global sync) and — crucially — sync only the SUBSET of commands that
+        should be VISIBLE in that guild:
 
-        Best-effort: a sync failure is logged and never crashes the event.
+        * unactivated guild → only ``activate``/``help``;
+        * activated guild → everything EXCEPT ``activate``.
+
+        The visible set is decided by the pure
+        :func:`~discord_bot_core.commands.activation_cog.allowed_command_names`,
+        so ``/activate`` disappears and the rest appear the moment a guild is
+        activated (the activation cog also triggers a per-guild re-sync then).
+
+        On ``on_ready`` we sync every guild; on join / post-activation we sync
+        just the one guild. Best-effort: a failure is logged, never crashes.
         """
         bot = self._bot
         if bot is None:  # pragma: no cover - defensive
             return
-        tree = getattr(bot, "tree", None)
+        guilds = [guild] if guild is not None else list(getattr(bot, "guilds", []))
+        for g in guilds:
+            await self._sync_one_guild(g)
+
+    async def _sync_one_guild(self, guild: Any) -> None:  # pragma: no cover - discord runtime
+        """Sync the activation-appropriate command subset to a single guild."""
+        bot = self._bot
+        tree = getattr(bot, "tree", None) if bot is not None else None
         if tree is None:
             return
         try:
             import discord
 
-            guilds = [guild] if guild is not None else list(bot.guilds)
-            for g in guilds:
-                snowflake = discord.Object(id=int(g.id))
-                tree.copy_global_to(guild=snowflake)
-                synced = await tree.sync(guild=snowflake)
-                log.info(
-                    "gateway: synced %d app command(s) to guild %s",
-                    len(synced),
-                    g.id,
-                )
+            from ..commands.activation_cog import allowed_command_names
+
+            gid = int(guild.id)
+            snowflake = discord.Object(id=gid)
+            all_cmds = list(tree.get_commands())
+            all_names = frozenset(c.name for c in all_cmds)
+            visible = allowed_command_names(self._guild_activated(gid), all_names)
+            # Rebuild the guild-local command set to exactly the visible subset.
+            tree.clear_commands(guild=snowflake)
+            for cmd in all_cmds:
+                if cmd.name in visible:
+                    tree.add_command(cmd, guild=snowflake, override=True)
+            synced = await tree.sync(guild=snowflake)
+            log.info(
+                "gateway: synced %d app command(s) to guild %s (activated=%s)",
+                len(synced),
+                gid,
+                self._guild_activated(gid),
+            )
         except Exception as exc:  # noqa: BLE001 - never crash on a sync failure
             log.warning("gateway: app-command sync failed: %s", exc)
+
+    async def resync_guild(self, guild_id: int) -> None:  # pragma: no cover - discord runtime
+        """Re-sync one guild's visible command set (e.g. right after activation).
+
+        Looks up the live guild object and re-runs the activation-aware sync so
+        ``/activate`` disappears and the full set appears immediately. A no-op if
+        the bot isn't built or the guild isn't found.
+        """
+        bot = self._bot
+        if bot is None:
+            return
+        guild = bot.get_guild(int(guild_id))
+        if guild is None:
+            # Fall back to a snowflake-only sync when the guild object isn't
+            # cached yet — discord.Object carries the id, which is all sync needs.
+            import discord
+
+            guild = discord.Object(id=int(guild_id))
+        await self._sync_one_guild(guild)
 
     def note_heartbeat(self) -> None:
         """Record that a gateway heartbeat/READY/resume was observed just now.
