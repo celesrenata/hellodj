@@ -19,11 +19,11 @@ from typing import Any, Protocol
 
 __all__ = [
     "PlaybackAction",
+    "PlaybackClient",
+    "PlaybackError",
     "PlaybackRequest",
     "PlaybackResult",
-    "PlaybackError",
     "Transport",
-    "PlaybackClient",
 ]
 
 
@@ -159,7 +159,7 @@ class PlaybackClient:
         url = f"{self._base_url}/v1/playback"
         try:
             raw = await self._transport.post_json(url, request.to_payload())
-        except Exception as exc:  # noqa: BLE001 - re-raised as a typed error
+        except Exception as exc:
             raise PlaybackError(
                 f"failed to reach playback-orchestrator at {url}: {exc}"
             ) from exc

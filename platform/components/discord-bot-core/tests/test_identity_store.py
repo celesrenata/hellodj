@@ -14,13 +14,14 @@ from __future__ import annotations
 import asyncio
 from typing import Any
 
+from hellodj_platform_logic.data_access import CoreTable
+
 from discord_bot_core.config import BotConfig
 from discord_bot_core.identity.applier import BOTIDENTITY_SK, IdentityApplier
 from discord_bot_core.identity.store import (
     CoreTableIdentityStore,
     build_identity_store,
 )
-from hellodj_platform_logic.data_access import CoreTable
 
 BUCKET = "hellodj-beta-assets"
 

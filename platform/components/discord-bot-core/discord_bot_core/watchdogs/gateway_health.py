@@ -19,7 +19,7 @@ from .base import PeriodicWatchdog
 
 log = logging.getLogger(__name__)
 
-__all__ = ["GatewayProbe", "GatewayHealthWatchdog"]
+__all__ = ["GatewayHealthWatchdog", "GatewayProbe"]
 
 
 class GatewayProbe(Protocol):

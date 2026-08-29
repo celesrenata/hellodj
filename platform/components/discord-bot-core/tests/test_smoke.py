@@ -54,7 +54,7 @@ class _FakeSecrets:
         self._payload = payload
         self.calls = 0
 
-    def get_secret_value(self, *, SecretId: str) -> dict:  # noqa: N803 - boto3 API
+    def get_secret_value(self, *, SecretId: str) -> dict:
         self.calls += 1
         return self._payload
 

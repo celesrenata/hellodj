@@ -289,7 +289,7 @@ class IdentityApplier:
                 continue
             try:
                 results[gid] = await self.apply_guild(gid)
-            except Exception:  # noqa: BLE001 - one guild must not abort the rest
+            except Exception:
                 log.exception("identity-apply: error applying guild %s", gid)
         return results
 

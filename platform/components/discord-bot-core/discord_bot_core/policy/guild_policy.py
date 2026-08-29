@@ -26,12 +26,12 @@ from enum import Enum
 from typing import Protocol
 
 __all__ = [
+    "PENDING_EXPIRY_SECONDS",
+    "GuildPolicy",
     "GuildStatus",
+    "InMemoryPolicyStore",
     "PolicyEntry",
     "PolicyStore",
-    "InMemoryPolicyStore",
-    "GuildPolicy",
-    "PENDING_EXPIRY_SECONDS",
 ]
 
 #: How long a guild may remain pending before it is auto-denied (24 hours).

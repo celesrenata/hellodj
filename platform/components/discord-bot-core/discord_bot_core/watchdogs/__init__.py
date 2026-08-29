@@ -17,8 +17,8 @@ from .gateway_health import GatewayHealthWatchdog, GatewayProbe
 from .token_refresh import TokenRefreshWatchdog
 
 __all__ = [
-    "PeriodicWatchdog",
-    "TokenRefreshWatchdog",
     "GatewayHealthWatchdog",
     "GatewayProbe",
+    "PeriodicWatchdog",
+    "TokenRefreshWatchdog",
 ]

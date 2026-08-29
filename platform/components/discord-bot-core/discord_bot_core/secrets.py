@@ -28,7 +28,7 @@ class SecretsManagerClient(Protocol):
     can supply any object exposing a compatible ``get_secret_value``.
     """
 
-    def get_secret_value(self, *, SecretId: str) -> dict[str, Any]:  # noqa: N803
+    def get_secret_value(self, *, SecretId: str) -> dict[str, Any]:
         """Return the secret payload for ``SecretId`` (boto3 API casing)."""
         ...
 

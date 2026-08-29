@@ -26,6 +26,7 @@ import base64
 from typing import Any
 
 import discord  # discord.py 2.7.1 is installed in the env
+
 from discord_bot_core.identity.applier import (
     BOTIDENTITY_SK,
     DesiredIdentity,
