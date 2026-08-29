@@ -59,12 +59,20 @@ _PROVIDER_CLIENT_ID_KEY = {
 
 
 def source_provider_configured(provider: str) -> bool:
-    """Return whether ``provider`` has the client id needed to start OAuth.
+    """Return whether ``provider`` has the credentials needed to start OAuth.
 
     Mirrors the client-id checks in :func:`source_authorize_url`: a provider is
     configured when the relevant client id is present in ``current_app.config``.
     Unknown providers are never configured.
+
+    YouTube / YouTube Music are ALWAYS configured: they authenticate via the
+    youtube-source plugin's PUBLIC device-code client (see
+    :mod:`youtube_device_oauth`), which needs no operator-supplied
+    ``GOOGLE_CLIENT_ID`` — so the Account page always offers a real "Connect"
+    (device-code) control for them instead of a "Needs setup" placeholder.
     """
+    if provider in ("youtube", "youtube_music"):
+        return True
     key = _PROVIDER_CLIENT_ID_KEY.get(provider)
     if key is None:
         return False

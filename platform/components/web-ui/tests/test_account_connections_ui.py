@@ -255,11 +255,16 @@ def test_unconfigured_provider_renders_needs_setup_disabled():
 
     body = client.get("/account").get_data(as_text=True)
 
-    # Disabled control, never an active Connect link, for an unconfigured prov.
+    # Spotify / Tidal have no client id configured, so they render the disabled
+    # "Needs setup" control (never an active Connect link) (R1.2).
     assert "Needs setup" in body
     assert "disabled" in body
-    # With NO client ids configured there is no active Connect control.
-    assert ">Connect<" not in body
+    # YouTube / YouTube Music authenticate via the youtube-source plugin's
+    # PUBLIC device-code client (no operator Google app), so they ALWAYS offer
+    # an active Connect control even with no client ids configured. Its connect
+    # is HTMX-driven (device flow) rather than a plain redirect link.
+    assert ">Connect<" in body
+    assert "youtube/device/poll" not in body  # the code panel only renders after Connect
 
 
 def test_configured_provider_renders_active_connect():

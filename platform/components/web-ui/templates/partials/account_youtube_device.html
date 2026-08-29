@@ -1,0 +1,34 @@
+{# YouTube device-code authorization step (public plugin client, no redirect).
+
+   Shown after the user clicks Connect on YouTube / YouTube Music. It displays
+   the short user code and the verification URL to open on any browser, then
+   HTMX-polls `/auth/oauth/youtube/device/poll` on the provider's interval. Each
+   poll re-renders THIS partial while pending, and swaps in the refreshed
+   connections list (`account_source_list`) on success/failure. The device_code
+   poll handle lives only in the signed session — never rendered here. #}
+<div class="glass-panel panel-section"
+     hx-post="{{ url_for('auth.source_oauth_youtube_device_poll') }}"
+     hx-trigger="load delay:{{ (interval|default(5)) }}s"
+     hx-target="#account-source-list"
+     hx-swap="innerHTML">
+  <h3 class="panel-section__title">
+    Authorize {{ provider|replace('_', ' ')|title }}
+  </h3>
+  <p class="panel-section__muted">
+    On any device, open the link below and enter this code to connect your
+    YouTube account. This page checks automatically and updates when you are
+    done.
+  </p>
+  <p class="field-row" style="align-items:center; gap:1rem;">
+    <a class="btn btn-primary btn-sm" target="_blank" rel="noopener noreferrer"
+       href="{{ verification_url }}">Open {{ verification_url }}</a>
+    <span class="badge badge--muted" aria-label="Your device code"
+          style="font-family:var(--font-mono, monospace); font-size:1.1rem; letter-spacing:0.15em;">
+      {{ user_code }}
+    </span>
+  </p>
+  <p class="panel-section__muted" role="status" aria-live="polite">
+    <span class="skeleton" style="display:inline-block; width:1rem; height:1rem; border-radius:50%;"></span>
+    Waiting for authorization&hellip;
+  </p>
+</div>

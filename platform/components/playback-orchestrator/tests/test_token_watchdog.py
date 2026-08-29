@@ -310,8 +310,15 @@ def test_degraded_build_returns_none(monkeypatch: Any) -> None:
     ):
         monkeypatch.delenv(var, raising=False)
 
+    # No datastore/KMS/CMK → the watchdog stays disabled even though it can
+    # always build the YouTube device refresh clients (it has nothing to
+    # refresh without the store).
     assert build_watchdog() is None
-    assert build_clients_by_provider() == {}
+    # YouTube / YouTube Music always have a refresh client (the youtube-source
+    # plugin's PUBLIC device client — no operator Google app), so the provider
+    # map is never empty even with no OAuth env. Spotify/Tidal are absent here.
+    clients = build_clients_by_provider()
+    assert set(clients) == {"youtube", "youtube_music"}
 
 
 def test_degraded_tick_on_empty_store_is_noop() -> None:

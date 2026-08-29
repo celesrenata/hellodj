@@ -173,6 +173,26 @@ thin adapter that delegates to the EXISTING `tidal_refresh.refresh_tidal`
 first-party single-app-id logic UNCHANGED (no regression; its property tests
 still pass).
 
+**YouTube auth on AWS uses the plugin's PUBLIC device-code client (no Google
+Cloud web app).** There is NO operator-registered Google OAuth app — the
+on-prem cred DB never had a `youtube.client_id`/`client_secret`, because the
+youtube-source plugin authenticates its TV client with a well-known PUBLIC
+"TV / limited-input device" client (`861556708454-…apps.googleusercontent.com`)
+baked into the jar. The AWS web-ui Account page drives that SAME device-code
+flow (`web-ui/youtube_device_oauth.py`): the user is shown a short code + a
+`youtube.com/activate` URL, the web-ui polls `youtube.com/o/oauth2/token` for
+the offline refresh token, pairs it with a fresh PoToken, and stores an
+encrypted `SourceCredential` — so `source_provider_configured('youtube')` is
+ALWAYS true (no `GOOGLE_CLIENT_ID` env needed). The durable watchdog refreshes
+device-issued tokens with the SAME public client at `youtube.com/o/oauth2/token`
+via `source_refresh.youtube_device_refresh_client`
+(`watchdog_bootstrap.build_clients_by_provider` uses it for youtube/youtube_music
+whenever no operator `GOOGLE_CLIENT_ID`/secret is set). Spotify/Tidal still use
+their own client ids (threaded via `cdk.json` context → the `*_CLIENT_ID` env).
+We own `youtube-source` in CodeCommit, so if Google ever rotates that public
+client we update the plugin's `YoutubeOauth2Handler` and the mirrored constants
+(`youtube_device_oauth` + `source_refresh.YOUTUBE_DEVICE_CLIENT_ID`) together.
+
 **Default playback source is `youtube`** — `player.py` `DEFAULT_SOURCE` +
 `resolve_source()` treat an unset/empty source_provider as YouTube; the web-ui
 config form preselects it.

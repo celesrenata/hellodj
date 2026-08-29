@@ -72,6 +72,17 @@ class _FakeTable:
         item = self._items.get((kwargs["Key"]["PK"], kwargs["Key"]["SK"]))
         return {"Item": dict(item)} if item is not None else {}
 
+    def query(self, **kwargs: Any) -> dict[str, Any]:
+        values = kwargs.get("ExpressionAttributeValues", {})
+        pk = values[":pk"]
+        prefix = values.get(":skp")
+        items = [
+            dict(it)
+            for (ipk, isk), it in self._items.items()
+            if ipk == pk and (prefix is None or isk.startswith(prefix))
+        ]
+        return {"Items": items}
+
     def put_item(self, **kwargs: Any) -> dict[str, Any]:
         item = kwargs["Item"]
         key = (item["PK"], item["SK"])
@@ -205,3 +216,125 @@ def test_spotify_callback_exchanges_and_stores(monkeypatch):
     assert item.get("data", {}).get("connected") is True
     # Token material never stored in plaintext.
     assert "sp-refresh-xyz" not in str(item)
+
+
+# ── YouTube device-code flow (public plugin client, no operator Google app) ──
+
+
+def test_youtube_connect_renders_device_code_no_redirect(monkeypatch):
+    """YouTube Connect starts the device flow and renders the code inline.
+
+    Unlike Spotify/Tidal (browser redirect), YouTube authenticates via the
+    youtube-source plugin's PUBLIC device client, so Connect returns a 200 HTML
+    partial with the user code + verification URL — even with NO GOOGLE_CLIENT_ID
+    configured — and stashes the (server-only) device_code in the session.
+    """
+    import source_account_routes
+
+    def _fake_start(*, http_post=None):
+        return {
+            "device_code": "DEVICE-SECRET",
+            "user_code": "ABCD-EFGH",
+            "verification_url": "https://www.youtube.com/activate",
+            "interval": 5,
+            "expires_in": 1800,
+        }
+
+    monkeypatch.setattr(
+        source_account_routes, "start_device_authorization", _fake_start
+    )
+
+    app, _core, _table = _make_app(configured=False)  # no google client id
+    client = _client(app)
+
+    resp = client.get("/auth/oauth/youtube/connect")
+
+    assert resp.status_code == 200
+    body = resp.get_data(as_text=True)
+    # User-facing code + verification URL are shown; the device_code is NOT.
+    assert "ABCD-EFGH" in body
+    assert "www.youtube.com/activate" in body
+    assert "DEVICE-SECRET" not in body
+    # HTMX poller wired to the poll route.
+    assert "youtube/device/poll" in body
+    # The secret poll handle lives only in the session.
+    with client.session_transaction() as sess:
+        assert sess["yt_device_code"] == "DEVICE-SECRET"
+        assert sess["yt_device_provider"] == "youtube"
+
+
+def test_youtube_device_poll_pending_then_success(monkeypatch):
+    """Poll returns the device partial while pending, then stores on success."""
+    import source_account_routes as sar
+
+    # First poll: pending → re-render device partial (keep polling).
+    monkeypatch.setattr(
+        sar, "poll_device_token", lambda code: {"status": "pending"}
+    )
+    # PoToken fetch stubbed so the compose step completes on success.
+    monkeypatch.setattr(
+        sar,
+        "fetch_guild_potoken",
+        lambda: {"pot_token": "PT", "pot_visitor_data": "VD"},
+    )
+
+    app, core, _table = _make_app(configured=False)
+    client = _client(app)
+    with client.session_transaction() as sess:
+        sess["yt_device_code"] = "DEVICE-SECRET"
+        sess["yt_device_provider"] = "youtube"
+        sess["yt_device_user_code"] = "ABCD-EFGH"
+        sess["yt_device_verification_url"] = "https://www.youtube.com/activate"
+        sess["yt_device_interval"] = 5
+
+    pending = client.post("/auth/oauth/youtube/device/poll")
+    assert pending.status_code == 200
+    assert "youtube/device/poll" in pending.get_data(as_text=True)
+    # Nothing stored while pending.
+    assert core.get(user_pk(_SUB), sourcecred_sk("youtube")) is None
+
+    # Second poll: authorization complete → refresh token arrives.
+    monkeypatch.setattr(
+        sar,
+        "poll_device_token",
+        lambda code: {"status": "ok", "oauth_refresh_token": "1//0gREFRESH"},
+    )
+    done = client.post("/auth/oauth/youtube/device/poll")
+    assert done.status_code == 200
+    body = done.get_data(as_text=True)
+    # The connections list is swapped back in (fragment, no full shell).
+    assert "<html" not in body.lower()
+    # An encrypted per-user YouTube credential was stored keyed by the sub.
+    item = core.get(user_pk(_SUB), sourcecred_sk("youtube"))
+    assert item is not None
+    assert item.get("data", {}).get("connected") is True
+    # Neither the refresh token nor the device code leaks into the store.
+    assert "1//0gREFRESH" not in str(item)
+    assert "DEVICE-SECRET" not in str(item)
+    # The transient device state was cleared from the session.
+    with client.session_transaction() as sess:
+        assert "yt_device_code" not in sess
+
+
+def test_youtube_device_poll_error_stores_nothing(monkeypatch):
+    """A terminal device error surfaces an error and stores no credential."""
+    import source_account_routes as sar
+
+    monkeypatch.setattr(
+        sar,
+        "poll_device_token",
+        lambda code: {"status": "error", "error": "access_denied"},
+    )
+
+    app, core, _table = _make_app(configured=False)
+    client = _client(app)
+    with client.session_transaction() as sess:
+        sess["yt_device_code"] = "DEVICE-SECRET"
+        sess["yt_device_provider"] = "youtube"
+
+    resp = client.post("/auth/oauth/youtube/device/poll")
+
+    assert resp.status_code == 200
+    assert core.get(user_pk(_SUB), sourcecred_sk("youtube")) is None
+    with client.session_transaction() as sess:
+        assert "yt_device_code" not in sess

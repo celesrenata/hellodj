@@ -46,20 +46,31 @@
           </td>
           <td class="field-row">
             {% if status and status.connected %}
-              {% if (providers_configured|default({})).get(provider) %}
+              {% if provider in ('youtube', 'youtube_music') %}
+                {# YouTube uses the plugin's device-code flow (HTMX-inline),
+                   not a browser redirect. Re-authorize restarts the flow. #}
+                <a class="btn btn-ghost btn-sm"
+                   hx-get="{{ url_for('auth.source_oauth_connect', provider=provider) }}"
+                   hx-target="#account-source-list" hx-swap="innerHTML"
+                   href="#"
+                   title="Re-authorize {{ provider|replace('_', ' ')|title }} and refresh the PoToken.">Re-authorize</a>
+              {% elif (providers_configured|default({})).get(provider) %}
                 <a class="btn btn-ghost btn-sm"
                    href="{{ url_for('auth.source_oauth_connect', provider=provider) }}"
                    title="Re-authorize {{ provider|replace('_', ' ')|title }} (refresh the stored token).">Re-authorize</a>
-              {% endif %}
-              {% if provider in ('youtube', 'youtube_music') %}
-                <a class="btn btn-ghost btn-sm"
-                   href="{{ url_for('auth.source_oauth_connect', provider=provider) }}"
-                   title="Refresh the YouTube PoToken by re-authorizing.">Refresh PoToken</a>
               {% endif %}
               <button class="btn btn-danger btn-sm"
                       hx-post="{{ url_for('guild.account_disconnect_source', provider=provider) }}"
                       hx-target="#account-source-list"
                       hx-confirm="Clear {{ provider|replace('_', ' ')|title }} authorization for your account? This deletes the stored credential.">Clear auth</button>
+            {% elif provider in ('youtube', 'youtube_music') %}
+              {# Device-code connect: renders the code/verification-URL partial
+                 inline (no redirect, no operator Google app needed). #}
+              <a class="btn btn-primary btn-sm"
+                 hx-get="{{ url_for('auth.source_oauth_connect', provider=provider) }}"
+                 hx-target="#account-source-list" hx-swap="innerHTML"
+                 href="#"
+                 title="Authorize {{ provider|replace('_', ' ')|title }} for your account.">Connect</a>
             {% elif (providers_configured|default({})).get(provider) %}
               <a class="btn btn-primary btn-sm"
                  href="{{ url_for('auth.source_oauth_connect', provider=provider) }}"

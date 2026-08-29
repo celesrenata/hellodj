@@ -31,6 +31,7 @@ from hellodj_platform_logic.source_refresh import (
     GoogleRefreshClient,
     RefreshClient,
     SpotifyRefreshClient,
+    youtube_device_refresh_client,
 )
 
 from .token_watchdog import (
@@ -104,6 +105,7 @@ def build_clients_by_provider() -> dict[str, RefreshClient]:
     google_id = os.getenv("GOOGLE_CLIENT_ID", "").strip()
     google_secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
     if google_id and google_secret:
+        # An operator-supplied Google web-app client (rare) takes precedence.
         clients["youtube"] = GoogleRefreshClient(
             client_id=google_id, client_secret=google_secret, provider="youtube"
         )
@@ -112,6 +114,13 @@ def build_clients_by_provider() -> dict[str, RefreshClient]:
             client_secret=google_secret,
             provider="youtube_music",
         )
+    else:
+        # Default: YouTube tokens are issued by the youtube-source plugin's
+        # PUBLIC device-code client (no operator Google app). Refresh them with
+        # that same public client against youtube.com/o/oauth2/token, so
+        # device-issued credentials keep renewing with no env configuration.
+        clients["youtube"] = youtube_device_refresh_client("youtube")
+        clients["youtube_music"] = youtube_device_refresh_client("youtube_music")
 
     spotify_id = os.getenv("SPOTIFY_CLIENT_ID", "").strip()
     spotify_secret = os.getenv("SPOTIFY_CLIENT_SECRET", "").strip()

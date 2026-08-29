@@ -314,12 +314,39 @@ OAuth env-wiring gaps that used to sit in KNOWN GAPS below.
 ## KNOWN GAPS / NOT YET DONE (likely debugging targets)
 
 1. ~~**Source OAuth client ids/secrets are EMPTY env**~~ *(addressed by
-   unified-oauth-and-token-watchdog)* — `workloads-stack.ts` now wires the
-   provider client id/secret envs (+ `HELLODJ_GOOGLE_OAUTH_SECRET_ARN`,
-   `HELLODJ_DISCORD_OAUTH_SECRET_ARN`, `POTOKEN_SERVER_URL`), and when a
-   provider client id is absent the UI renders a disabled "Needs setup" control
-   instead of a link that no-ops (R1.2). Populate the OAuth secrets once
-   out-of-band, then `cdk deploy hellodj-eks` to apply the env.
+   unified-oauth-and-token-watchdog, then finished 2026-08-29)* —
+   `workloads-stack.ts` wires the provider client id/secret envs (+
+   `HELLODJ_GOOGLE_OAUTH_SECRET_ARN`, `HELLODJ_DISCORD_OAUTH_SECRET_ARN`,
+   `POTOKEN_SERVER_URL`); when a provider client id is absent the UI renders a
+   disabled "Needs setup" control instead of a link that no-ops (R1.2).
+   **Fixed 2026-08-29 (source-oauth-account-page):**
+   - The Spotify/Tidal client ids are now threaded via `cdk.json` context
+     (`hellodj:spotifyClientId` / `hellodj:tidalClientId`) → `bin/hellodj.ts`
+     foundation props → `SPOTIFY_CLIENT_ID` / `TIDAL_CLIENT_ID` env (they were
+     never wired, so those envs were empty regardless of the secret). The
+     `hellodj/<stage>/spotify` secret was populated with the real
+     `{client_id, client_secret}`. Tidal is single-app-id (PKCE) — no client
+     secret is consumed anywhere.
+   - **YouTube / YouTube Music no longer need a Google Cloud OAuth app.** There
+     is none (the on-prem cred DB has only a refresh token, no client id/secret
+     — the youtube-source plugin uses a PUBLIC "TV / limited-input device"
+     client, `861556708454-…apps.googleusercontent.com`, baked into the jar).
+     The web-ui Account page now drives that SAME device-code flow
+     (`youtube_device_oauth.py`): Connect → shows a user code + verification URL
+     → HTMX-polls `/auth/oauth/youtube/device/poll` → on authorize, pairs the
+     offline refresh token with a fresh PoToken and stores an encrypted
+     `SourceCredential`. `source_provider_configured('youtube'/'youtube_music')`
+     is therefore always True (no `GOOGLE_CLIENT_ID` needed). The durable
+     watchdog refreshes device-issued tokens with the SAME public client at
+     `youtube.com/o/oauth2/token` via
+     `source_refresh.youtube_device_refresh_client` (used by
+     `watchdog_bootstrap.build_clients_by_provider` when no operator
+     `GOOGLE_CLIENT_ID`/secret is set). Verified the device endpoint still
+     issues codes (HTTP 200) 2026-08-29.
+   Deploy: web-ui + orchestrator source changes go via the pipeline (push →
+   image rebuild → `cdk deploy hellodj-eks -c hellodj:imageTag=<HEAD>` to roll);
+   the client-id env is picked up by `cdk deploy hellodj-eks` (context now in
+   `cdk.json`).
 2. **Discord login** (`/auth/login`) — needs `DISCORD_CLIENT_ID` (+ secret for
    the callback token exchange). The `DISCORD_CLIENT_ID` +
    `HELLODJ_DISCORD_OAUTH_SECRET_ARN` env wiring is now present; the login
