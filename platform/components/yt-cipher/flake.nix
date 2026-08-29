@@ -87,6 +87,26 @@
         # the patch step, which needs network and therefore runs inside the
         # fixed-output `denoCache` below): the app sources + the raw ejs
         # checkout at ./ejs.
+        #
+        # PIN THE ts_prometheus IMPORT (see below). Upstream `src/metrics.ts`
+        # imports the UNVERSIONED `https://deno.land/x/ts_prometheus/mod.ts`.
+        # deno.land serves that as a 302 redirect to the current "latest"
+        # (`/x/ts_prometheus@v0.3.0/mod.ts`). `deno compile` does NOT follow
+        # deno.land/x redirects when it bundles the module graph
+        # (denoland/deno#13704): it embeds the redirect STUB (which exports
+        # nothing) under the unversioned URL, so at RUNTIME the standalone
+        # binary throws `The requested module '.../ts_prometheus/mod.ts' does
+        # not provide an export named 'Counter'` — even though the versioned
+        # module (and all its transitive files) are correctly cached. This does
+        # NOT surface at build time because we `deno compile --no-check`.
+        #
+        # Fix: rewrite the single unversioned import to the pinned versioned URL
+        # BEFORE both cache-priming and compile (both use preparedSrc), so the
+        # bundled graph references the real module directly with no redirect to
+        # follow. `ts_prometheus` is the ONLY unversioned deno.land/x import in
+        # the source (verified); the std imports are already `@0.224.0`-pinned.
+        # Bump the version here together with the pinned yt-cipher rev if
+        # upstream changes the ts_prometheus dependency.
         preparedSrc = pkgs.runCommand "yt-cipher-prepared-src" { } ''
           mkdir -p "$out"
           cp -r ${src}/. "$out/"
@@ -94,6 +114,12 @@
           cp -r ${ejsSrc} "$out/ejs"
           chmod -R u+w "$out/ejs"
           rm -rf "$out/ejs/.git" "$out/ejs/node_modules" || true
+          # Pin the unversioned ts_prometheus import to the resolved version so
+          # `deno compile` bundles the real module, not the redirect stub.
+          substituteInPlace "$out/src/metrics.ts" \
+            --replace-fail \
+              'https://deno.land/x/ts_prometheus/mod.ts' \
+              'https://deno.land/x/ts_prometheus@v0.3.0/mod.ts'
         '';
 
         # Canonicalizes the primed DENO_DIR so the `denoCache` fixed-output
@@ -213,7 +239,7 @@
           # value only changes when the pinned rev changes the imported remote
           # deps. Recompute then: build `.#denoCache`, read the "got:" hash,
           # paste here.
-          outputHash = "sha256-JHFtMn4XTg+AHVF6seAKggtJ1Ygi0QLIBCrCQXY6SUM=";
+          outputHash = "sha256-Myb8pxQnuPIuNvigF8vRKE174UwATfZizgfP9OpzeSM=";
         };
 
         ytCipherApp = pkgs.stdenv.mkDerivation {
