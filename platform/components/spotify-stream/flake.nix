@@ -110,7 +110,15 @@
 
           extraCommands = ''
             cp -r ${appSrc}/app opt-app
+            # `cp -r` from the Nix store copies read-only perms, so the copied
+            # tree (and opt-app itself) is not writable — a bare `mkdir
+            # opt-app/data` then fails with "Permission denied" in the layered-
+            # image builder. Make the app dir writable, create the per-user
+            # DATA_DIR root, and leave it world-writable so the sidecar (running
+            # as an arbitrary UID) can create per-<sub> cache subdirs at runtime.
+            chmod -R u+w opt-app
             mkdir -p opt-app/data
+            chmod 0777 opt-app/data
           '';
 
           config = {
