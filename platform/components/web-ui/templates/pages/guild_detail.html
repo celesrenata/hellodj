@@ -4,6 +4,32 @@
 {% block heading %}Guild {{ guild_id }}{% endblock %}
 
 {% block content %}
+<div class="glass-panel panel-section">
+  <h2 class="panel-section__title">Add HelloDJ to this server</h2>
+  <p class="panel-section__muted">
+    This is the required first step. HelloDJ is the main bot that owns all the
+    slash commands — including <code>/activate</code>. It must be in your server
+    before any command shows up. The extra bots on the "Bots" tab are optional
+    additional voice instances; they do not add commands.
+  </p>
+  {% if primary_invite_url %}
+    <a class="btn btn-primary" href="{{ primary_invite_url }}"
+       target="_blank" rel="noopener noreferrer">
+      Add HelloDJ to a server
+    </a>
+    <p class="panel-section__muted" style="margin-top:.5rem">
+      After inviting, open the "Activation" tab and run
+      <code>/activate &lt;key&gt;</code> in your server.
+    </p>
+  {% else %}
+    <div class="notice notice--danger" role="alert">
+      The HelloDJ bot invite isn't configured on this server yet
+      (missing Discord client id). An administrator must set
+      <code>DISCORD_CLIENT_ID</code> before the invite link can be shown.
+    </div>
+  {% endif %}
+</div>
+
 <div class="glass-panel panel-section" x-data="{ tab: 'admins' }">
   <div class="tabs" role="tablist">
     <button class="tab" :class="tab === 'admins' && 'tab--active'"
@@ -69,12 +95,13 @@
   </div>
 
   <div x-show="tab === 'bots'" x-transition role="tabpanel">
-    <h2 class="panel-section__title">Bots</h2>
+    <h2 class="panel-section__title">Additional bots</h2>
     <p class="panel-section__muted">
-      Each bot is a distinct Discord application, so a server can run several at
-      once (Discord allows one of each application per server). Add a bot to get
-      its invite link, then use the link to add it to this server. How many you
-      may run is set by your entitlement.
+      These are OPTIONAL extra voice instances, on top of the main HelloDJ bot
+      you added above. Each is a distinct Discord application, so a server can
+      run several at once for simultaneous playback. They are voice-only and do
+      not add slash commands — <code>/activate</code> and all commands come from
+      the main HelloDJ bot. How many you may run is set by your entitlement.
     </p>
     {% include "partials/guild_bot_list.html" %}
   </div>

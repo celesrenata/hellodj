@@ -27,7 +27,11 @@ from flask import (
     url_for,
 )
 
-from guild_bot_routes import bot_context, register_bot_routes
+from guild_bot_routes import (
+    bot_context,
+    primary_bot_invite_url,
+    register_bot_routes,
+)
 from guild_common import can_manage, current_user, require_login, svc
 from guild_sources import SUPPORTED_PROVIDERS
 from source_oauth import source_provider_configured
@@ -240,6 +244,7 @@ def build_guild_blueprint() -> Blueprint:
             pool_size=bots_ctx["pool_size"],
             can_custom_name=bots_ctx["can_custom_name"],
             can_custom_avatar=bots_ctx["can_custom_avatar"],
+            primary_invite_url=primary_bot_invite_url(),
             activation=_activation_context(activation, guild_id),
             error=request.args.get("error", ""),
             error_provider=request.args.get("provider", ""),

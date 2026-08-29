@@ -49,8 +49,33 @@ __all__ = [
     "guild_owner_entitlements",
     "guild_bot_max",
     "bot_context",
+    "primary_bot_invite_url",
     "render_bots",
 ]
+
+
+def primary_bot_invite_url() -> str:
+    """Return the invite URL for the PRIMARY HelloDJ bot, or ``""`` if unknown.
+
+    The primary ``discord-bot-core`` application is the command-owner: it is the
+    ONLY bot that registers slash commands (``/activate`` and the rest). A guild
+    must have the primary bot before any command — including ``/activate`` — is
+    visible, and before the optional voice-only pool bots do anything useful.
+    Pool-bot invites (:func:`bot_app_pool.bot_invite_url` per claimed app) are
+    ADDITIONAL bots, not a substitute for the primary.
+
+    The primary application id is the same ``DISCORD_CLIENT_ID`` the web-ui uses
+    for Discord OAuth (resolved via ``discord_client_credentials``); it is a
+    public id, so exposing it in an invite link is safe. Returns ``""`` when the
+    id is not configured so the template can fall back gracefully.
+    """
+    from bot_app_pool import bot_invite_url  # noqa: PLC0415
+    from source_token_exchange import discord_client_credentials  # noqa: PLC0415
+
+    client_id, _secret = discord_client_credentials()
+    if not client_id:
+        return ""
+    return bot_invite_url(client_id)
 
 
 def guild_owner_entitlements(guild_id: str) -> dict[str, Any]:
