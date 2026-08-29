@@ -13,28 +13,35 @@ image builds and deployments. The correct workflow is:
 3. The pipeline builds Nix OCI images on ARM64 CodeBuild, pushes to ECR, and deploys to EKS
 4. If the pipeline stack itself needs updating: `cd infra && npx cdk deploy hellodj-pipeline --profile hellodj --require-approval never` (run from the `hellodj-cdk` package)
 
-### CRITICAL: Self-mutation is DISABLED
+### Self-mutation is ENABLED (updated 2026-08-29, pipeline-self-mutation spec)
 
-Because `selfMutation: false` in the pipeline, **the CodeBuild buildspecs are
-frozen at `cdk deploy` time.** Changes to `pipeline-stack.ts` (install commands,
-component build commands, nix.conf setup, cache config, etc.) DO NOT take effect
-by pushing to CodeCommit alone.
+`selfMutation: true` in the pipeline. The pipeline has an `UpdatePipeline`
+(SelfMutate) stage (Source → Build → **UpdatePipeline** → ComponentBuilds →
+beta → staging → production). A CDK git push now **self-mutates the pipeline and
+auto-applies CDK changes** — `pipeline-stack.ts` changes (install/build
+commands, nix.conf, cache config) AND foundation-stack changes (e.g.
+`hellodj-eks`: the GPU NodePool / idle window / env / IAM) take effect on a
+plain push. There is NO manual `cdk deploy hellodj-pipeline` /
+`cdk deploy hellodj-eks` two-step anymore for CDK source changes.
 
-The pipeline-stack.ts edits now live in `hellodj-cdk/infra/lib/pipeline-stack.ts`.
-The workflow for ANY change to `pipeline-stack.ts`:
+Why it's safe now (the old blocker is gone): the K8s manifests live on the
+per-stage `WorkloadsStack`s (each imports the shared cluster with its OWN
+`KubectlV36Layer`), deployed as separate CFN stacks via pipeline actions. The
+SelfMutate step redeploys ONLY the pipeline stack, whose template carries zero
+`Custom::AWSCDK-EKS-KubernetesResource` — so there is no cross-stack kubectl
+handler for it to invoke (the failure that originally forced
+`selfMutation: false`).
 
-1. Edit `infra/lib/pipeline-stack.ts` (in the `hellodj-cdk` repo)
-2. Commit + push to CodeCommit (so source matches)
-3. **`cd infra && npx cdk deploy hellodj-pipeline`** (from the `hellodj-cdk` package) ← updates the CodeBuild buildspecs
-4. **`aws codepipeline start-pipeline-execution --name hellodj-pipeline`** ← runs a fresh execution with the new buildspecs
+Workflow now (both CDK and component source):
 
-If you skip step 3, the pipeline keeps running the OLD buildspec even though
-CodeCommit has your new code. This is the #1 gotcha — the source in CodeCommit
-and the buildspec baked into CodeBuild are TWO SEPARATE THINGS when self-mutation
-is off.
+1. Edit source (`hellodj-cdk` for CDK, `hellodj` for components).
+2. Commit + push to CodeCommit.
+3. The pipeline self-mutates + rebuilds images + deploys. Done — no manual
+   `cdk deploy`.
 
-Changes to component source (bot code, web-ui app.py, flake.nix, etc.) DO take
-effect on a plain push — only `pipeline-stack.ts` changes need the `cdk deploy`.
+Fallback (only if the self-mutating pipeline is itself broken): the one-time
+manual `cd infra && npx cdk deploy hellodj-pipeline` reinstalls the pipeline,
+and reverting to `selfMutation: false` restores the old manual two-step.
 
 **DO NOT use `docker build`, `docker push`, `docker buildx`, or any manual
 image push to ECR.** The pipeline is the only path to production images.
@@ -114,7 +121,11 @@ KUBECONFIG=/tmp/hellodj-eks-kubeconfig kubectl describe pod <pod> -n hellodj-bet
 2. **Web-UI `hellodj_platform_logic` in Nix** — The flake copies the source but doesn't install it as a proper Python package; may need `PYTHONPATH` env in the image config
 3. **Component Nix flakes** — Many components still lack `flake.nix` (pipeline build step will fail for those)
 4. **Tidal Token Refresh** — `status=401`, needs credential refresh
-5. **Self-mutation** — Still disabled; kubectl handler cross-stack Lambda issue
+5. **Self-mutation** — NOW ENABLED (2026-08-29). The kubectl-handler
+   cross-stack blocker no longer applies (manifests on per-stage WorkloadsStacks
+   with their own kubectl layer); `selfMutation: true`, pipeline has an
+   `UpdatePipeline` stage, CDK git pushes auto-apply. See the "Self-mutation is
+   ENABLED" section above.
 
 ### Pipeline Facts
 

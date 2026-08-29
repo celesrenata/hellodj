@@ -141,13 +141,17 @@ path, not the main invite.
 1. **DO NOT build/push Docker images locally.** The CI/CD pipeline builds all
    images (Nix OCI on ARM64 CodeBuild) and pushes to ECR. Fix source → commit →
    push to CodeCommit → pipeline rebuilds.
-2. **Self-mutation is DISABLED.** `pipeline-stack.ts` now lives in the
-   `hellodj-cdk` repo at `hellodj-cdk/infra/lib/pipeline-stack.ts`. Changes to it
-   (install/build commands, nix.conf, cache config) DO NOT take effect on a
-   CodeCommit push alone — the CodeBuild buildspecs are frozen at `cdk deploy`
-   time. For pipeline-stack.ts changes: commit + push, THEN
-   `cd infra && npx cdk deploy hellodj-pipeline` (from the `hellodj-cdk`
-   package), THEN start a new pipeline execution.
+2. **Self-mutation is ENABLED (updated 2026-08-29).** `pipeline-stack.ts` lives
+   in `hellodj-cdk/infra/lib/pipeline-stack.ts` with `selfMutation: true`. The
+   pipeline has an `UpdatePipeline` (SelfMutate) stage, so a CDK git push
+   auto-applies `pipeline-stack.ts` changes (install/build commands, nix.conf,
+   cache) AND foundation-stack changes (e.g. `hellodj-eks` GPU NodePool / idle
+   window / env / IAM) — NO manual `cdk deploy hellodj-pipeline` /
+   `cdk deploy hellodj-eks` needed. The old cross-stack kubectl-handler blocker
+   is gone (manifests on per-stage WorkloadsStacks with their own kubectl
+   layer; the SelfMutate step redeploys only the pipeline stack, which has no
+   kubectl custom resource). Fallback if the self-mutating pipeline breaks: the
+   one-time `cd infra && npx cdk deploy hellodj-pipeline` reinstalls it.
 3. **Infra manifest/IAM changes** (workloads-stack.ts, eks-stack.ts, auth-stack.ts,
    edge-stack.ts, foundation.ts, bin/hellodj.ts — these stacks now also live in
    `hellodj-cdk/infra`) deploy via `cd infra && npx cdk deploy <stack>` (from the

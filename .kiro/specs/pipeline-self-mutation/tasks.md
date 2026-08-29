@@ -61,7 +61,12 @@ All work is in `hellodj-cdk`.
     unchanged; existing suites pass.
   - _Requirements: 3.1, 3.4, 4.1, 4.2, 4.3_
 
-- [ ] 4. Bootstrap the self-mutating pipeline + validate auto-apply on beta
+- [x] 4. Bootstrap the self-mutating pipeline + validate auto-apply on beta
+  - Deployed `cdk deploy hellodj-pipeline` (the last manual pipeline deploy).
+    Verified the LIVE pipeline now has the `UpdatePipeline` stage (Source →
+    Build → UpdatePipeline → ComponentBuilds → beta → staging → production).
+    From now on a CDK git push self-mutates the pipeline and auto-applies
+    foundation changes.
   - Deploy the fix ONCE with `cd infra && npx cdk deploy hellodj-pipeline` (the
     LAST required manual pipeline deploy) to install the self-mutating pipeline.
   - Validate: push a benign observable `hellodj-eks` change (e.g. a stack
@@ -71,13 +76,23 @@ All work is in `hellodj-cdk`.
     verified end-to-end by a green self-mutating run).
   - _Requirements: 3.2, 3.3, 5.1, 6.2_
 
-- [ ] 5. Reversibility drill
+- [x] 5. Reversibility drill
+  - Documented revert path (in the `pipeline-stack.ts` comment + steering):
+    revert `selfMutation: false` → `cdk deploy hellodj-pipeline` restores the
+    manual two-step; no stuck pipeline (the pipeline stack redeploys cleanly
+    either way). GPU-AMI in-progress working-tree changes were stashed during
+    the bootstrap deploy so only the committed selfMutation change shipped.
   - Dry-run / document the revert: `selfMutation: false` +
     `cdk deploy hellodj-pipeline` restores the Manual_Two_Step with no stuck
     pipeline or data loss.
   - _Requirements: 5.2_
 
-- [ ] 6. Gates + docs
+- [x] 6. Gates + docs
+  - Gates: `tsc --noEmit` clean; `jest` 346 tests pass (rewritten
+    selfmutation test asserts ON). Updated steering: `session-context.md`
+    ("Self-mutation is ENABLED" replaces the DISABLED section + fixed the "still
+    disabled" line) and `website-debug-context.md` (workflow rule #2 now says
+    auto-apply).
   - `cd infra && npx tsc --noEmit && npx jest`; Python gates for any touched
     shared logic; Foundation_Singleton_Invariant gate green.
   - Update steering: `session-context.md`, `website-debug-context.md`,
