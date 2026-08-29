@@ -1820,11 +1820,21 @@ async def _resolve_and_play(player: wavelink.Player, guild_id: int, entry: dict)
         # through to the untouched global push_youtube_oauth path (3.5). Non-
         # YouTube providers (tidal/spotify) are unaffected — their fallback
         # leaves are handled elsewhere (3.7).
+        #
+        # Node-pool selection (R4.1/R4.3): the injector maps this guild's owning
+        # user to one Lavalink node from a configured pool. It returns the node
+        # key ONLY when this guild has a connected YouTube credential; a guild
+        # with none returns ``None`` here, so we acquire NO lock and perform NO
+        # swap — that guild plays through the untouched global push exactly as
+        # today (R4.4). With N nodes, up to N distinct owning users resolve
+        # YouTube concurrently on distinct node locks (R4.2).
         _yt_swap_lock = None
         if sp in ("youtube", "youtube_music"):
             injector = _get_youtube_injector()
             if injector is not None:
-                _yt_swap_lock = injector.swap_lock()
+                _yt_node_key = injector.node_key_for_guild(guild_id, sp)
+                if _yt_node_key is not None:
+                    _yt_swap_lock = injector.swap_lock(_yt_node_key)
 
         async def _resolve_youtube_tracks():
             # For URLs, try to parse directly; for search, use Playable.search
@@ -2232,6 +2242,30 @@ async def on_track_end(guild_id: int, player: wavelink.Player, track: wavelink.P
         await _play_next_from_queue(guild_id)
 
 
+def _record_track_playback_failure(track: "wavelink.Playable") -> None:
+    """Record a playback failure for ``track`` against the search accelerator.
+
+    Maps the wavelink track to the ``(provider, track_id)`` the search cache
+    keys on (``track.source`` / ``track.identifier``) and reports it to the
+    process-wide accelerator so the track is counted toward eviction. Best-
+    effort and fully guarded: any missing attribute, absent accelerator (local
+    dev), or error is swallowed so queue advancement is never affected.
+    """
+    try:
+        provider = str(getattr(track, "source", "") or "")
+        track_id = str(getattr(track, "identifier", "") or "")
+        if not track_id:
+            return
+        import bot as _bot_module  # type: ignore[import]
+
+        accelerator = _bot_module.get_search_accelerator()
+        if accelerator is None:
+            return
+        accelerator.record_failure(provider, track_id)
+    except Exception as exc:  # noqa: BLE001 - non-fatal: never block the queue
+        log.debug("could not record track playback failure: %s", exc)
+
+
 async def on_track_exception(guild_id: int, player: wavelink.Player, track: wavelink.Playable, exc: Exception) -> None:
     state = get_state(guild_id)
     log.warning(
@@ -2272,6 +2306,11 @@ async def on_track_exception(guild_id: int, player: wavelink.Player, track: wave
         "Skipping track %r in guild %s after %d failed retries",
         track, guild_id, MAX_TRACK_RETRIES,
     )
+    # Record the failure against the shared search-cache accelerator so a track
+    # that has now proven unplayable (retry budget exhausted) is counted toward
+    # eviction — after FAILURE_EVICTION_THRESHOLD such episodes no bot instance
+    # will re-serve it from the cache. Best-effort; never blocks queue advance.
+    _record_track_playback_failure(track)
     state["track_retries"] = 0
     state.pop("_retrying", None)
     await on_track_end(guild_id, player, track, "exception")

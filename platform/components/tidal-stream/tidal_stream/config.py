@@ -3,10 +3,17 @@
 All settings are resolved from environment variables so the component is
 independently deployable (R15.1) and reads no local database or SQLite. The
 first-party OAuth application id and HelloDJ-owned callback URL are the core
-Tidal source auth inputs (R9.1, R9.2); the refresh token is never taken from
-the environment — it is loaded from AWS Secrets Manager at runtime.
+Tidal source auth inputs (R9.1, R9.2) and remain **global** single-app-id config
+— only the per-user token varies (multi-tenant-source-streaming R5.3).
 
-Requirements: 6.1, 9.1, 9.2, 9.5, 15.1
+Multi-tenant streaming (task 3.1) resolves each request's token from the unified
+per-user credential store (``hellodj-core`` DynamoDB + the source-credentials
+KMS CMK, Decrypt-only), so the streaming path binds NO single startup account.
+The single startup-bound ``refresh_secret_id`` is therefore OPTIONAL: it backs
+only the legacy first-party ``/auth/callback`` code-exchange forward and is
+never read by the per-user streaming path.
+
+Requirements: 6.1, 9.1, 9.2, 9.5, 15.1, 5.1, 5.3
 """
 
 from __future__ import annotations
@@ -31,6 +38,15 @@ DEFAULT_API_BASE = "https://api.tidal.com/v1"
 DEFAULT_HOST = "0.0.0.0"  # noqa: S104 - container sidecar binds all interfaces
 DEFAULT_PORT = 8801
 
+#: Default unified credential store table name.
+DEFAULT_CORE_TABLE = "hellodj-core"
+
+#: Default maximum number of concurrently-live per-user Tidal sessions (R8.1).
+DEFAULT_MAX_SESSIONS = 32
+
+#: Default per-user session idle timeout, in seconds (R8.2).
+DEFAULT_SESSION_IDLE_TIMEOUT = 900.0
+
 
 def _require(name: str) -> str:
     """Return a required environment variable or raise a clear error."""
@@ -46,14 +62,23 @@ class TidalStreamSettings:
 
     Attributes:
         app_id: The single Tidal application identifier for all Tidal source
-            auth (R9.1).
-        callback_url: The HelloDJ-owned OAuth callback endpoint (R9.2).
-        refresh_secret_id: Secrets Manager secret name/ARN holding the Tidal
-            refresh token payload.
+            auth (R9.1). Global single-app-id config (R5.3).
+        callback_url: The HelloDJ-owned OAuth callback endpoint (R9.2). Global.
+        refresh_secret_id: OPTIONAL Secrets Manager secret backing ONLY the
+            legacy first-party ``/auth/callback`` code-exchange forward; the
+            per-user streaming path never reads it (the single startup-bound
+            account is replaced by the per-user registry — R5.1). Empty when the
+            sidecar runs pure multi-tenant.
+        core_table: The unified per-user credential store table (R1.1).
+        source_creds_kms_key_id: The source-credentials KMS CMK id (Decrypt-only
+            reader grant — R9.2). Present for parity/observability; the decrypt
+            routing key travels on each stored item.
+        max_sessions: Bounded per-user session-pool size (R8.1).
+        session_idle_timeout_seconds: Per-user session idle timeout (R8.2).
         token_url: Tidal OAuth token endpoint for code exchange and refresh.
         api_base: Tidal API base for direct streaming/search resolution.
         country_code: ISO country code used for catalog/stream resolution.
-        region_name: AWS region for the Secrets Manager client (optional).
+        region_name: AWS region for the AWS clients (optional).
         host: Bind host for the HTTP server.
         port: Bind port for the HTTP server.
         expiry_skew_seconds: Skew applied when deciding token expiry.
@@ -61,7 +86,11 @@ class TidalStreamSettings:
 
     app_id: str
     callback_url: str
-    refresh_secret_id: str
+    refresh_secret_id: str = ""
+    core_table: str = DEFAULT_CORE_TABLE
+    source_creds_kms_key_id: str = ""
+    max_sessions: int = DEFAULT_MAX_SESSIONS
+    session_idle_timeout_seconds: float = DEFAULT_SESSION_IDLE_TIMEOUT
     token_url: str = DEFAULT_TOKEN_URL
     api_base: str = DEFAULT_API_BASE
     country_code: str = "US"
@@ -83,29 +112,27 @@ class TidalStreamSettings:
         """Build settings from environment variables.
 
         Raises:
-            ValueError: If a required variable (app id, callback URL, or
-                refresh secret id) is missing.
+            ValueError: If a required variable (app id or callback URL) is
+                missing, or a numeric variable is malformed.
         """
-        port_raw = os.environ.get("TIDAL_STREAM_PORT", str(DEFAULT_PORT)).strip()
-        try:
-            port = int(port_raw)
-        except ValueError as error:
-            raise ValueError(
-                f"TIDAL_STREAM_PORT must be an integer, got {port_raw!r}"
-            ) from error
-
-        skew_raw = os.environ.get("TIDAL_EXPIRY_SKEW_SECONDS", "60").strip()
-        try:
-            skew = float(skew_raw)
-        except ValueError as error:
-            raise ValueError(
-                f"TIDAL_EXPIRY_SKEW_SECONDS must be a number, got {skew_raw!r}"
-            ) from error
+        port = _int_env("TIDAL_STREAM_PORT", DEFAULT_PORT)
+        skew = _float_env("TIDAL_EXPIRY_SKEW_SECONDS", 60.0)
+        max_sessions = _int_env("TIDAL_MAX_SESSIONS", DEFAULT_MAX_SESSIONS)
+        idle_timeout = _float_env(
+            "TIDAL_SESSION_IDLE_TIMEOUT", DEFAULT_SESSION_IDLE_TIMEOUT
+        )
 
         return cls(
             app_id=_require("TIDAL_APP_ID"),
             callback_url=_require("TIDAL_CALLBACK_URL"),
-            refresh_secret_id=_require("TIDAL_REFRESH_SECRET_ID"),
+            refresh_secret_id=os.environ.get("TIDAL_REFRESH_SECRET_ID", "").strip(),
+            core_table=os.environ.get("HELLODJ_CORE_TABLE", DEFAULT_CORE_TABLE).strip()
+            or DEFAULT_CORE_TABLE,
+            source_creds_kms_key_id=os.environ.get(
+                "HELLODJ_SOURCE_CREDS_KMS_KEY_ID", ""
+            ).strip(),
+            max_sessions=max_sessions,
+            session_idle_timeout_seconds=idle_timeout,
             token_url=os.environ.get("TIDAL_TOKEN_URL", DEFAULT_TOKEN_URL).strip()
             or DEFAULT_TOKEN_URL,
             api_base=os.environ.get("TIDAL_API_BASE", DEFAULT_API_BASE).strip()
@@ -117,3 +144,21 @@ class TidalStreamSettings:
             port=port,
             expiry_skew_seconds=skew,
         )
+
+
+def _int_env(name: str, default: int) -> int:
+    """Parse an integer environment variable, raising a clear error if malformed."""
+    raw = os.environ.get(name, str(default)).strip()
+    try:
+        return int(raw)
+    except ValueError as error:
+        raise ValueError(f"{name} must be an integer, got {raw!r}") from error
+
+
+def _float_env(name: str, default: float) -> float:
+    """Parse a float environment variable, raising a clear error if malformed."""
+    raw = os.environ.get(name, str(default)).strip()
+    try:
+        return float(raw)
+    except ValueError as error:
+        raise ValueError(f"{name} must be a number, got {raw!r}") from error

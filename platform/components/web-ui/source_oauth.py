@@ -24,6 +24,7 @@ __all__ = [
     "source_provider_configured",
     "redirect_uri_for_source",
     "redirect_uri_for",
+    "redirect_uri_for_librespot",
     "account_callback_endpoint",
     "source_tokens_from_request",
 ]
@@ -109,6 +110,26 @@ def redirect_uri_for(provider: str) -> str:
     if base:
         return base + path
     return url_for(_ACCOUNT_CALLBACK_ENDPOINT, provider=provider, _external=True)
+
+
+def redirect_uri_for_librespot() -> str:
+    """Return the absolute FIXED callback URI for the Spotify librespot capture.
+
+    The librespot reusable-credential capture (multi-tenant-source-streaming
+    task 2.2) is a SEPARATE one-time flow from the standard Spotify OAuth
+    connect, so it uses its own fixed callback endpoint
+    (``/auth/oauth/spotify/librespot/callback``) rather than the shared
+    ``/auth/oauth/<provider>/callback``. Like :func:`redirect_uri_for`, the
+    connecting user rides in the flow ``state`` (session), never the URL, so
+    this URI is fixed per stage host.
+    """
+    base = current_app.config.get("PUBLIC_BASE_URL", "").rstrip("/")
+    path = url_for("auth.source_oauth_spotify_librespot_callback")
+    if base:
+        return base + path
+    return url_for(
+        "auth.source_oauth_spotify_librespot_callback", _external=True
+    )
 
 
 def source_authorize_url_account(provider: str, state: str) -> str | None:

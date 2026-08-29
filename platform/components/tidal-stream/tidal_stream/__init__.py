@@ -1,20 +1,27 @@
-"""HelloDJ ``tidal-stream`` component.
+"""HelloDJ ``tidal-stream`` component (multi-tenant).
 
-Direct Tidal audio streaming sidecar rebuilt for the AWS re-platform. It
-authenticates Tidal source access through the HelloDJ-owned **first-party
-single-app-id** OAuth integration (Requirements 9.1-9.5), refreshing tokens via
-the shared :mod:`hellodj_platform_logic.tidal_refresh` decision logic and
-persisting the refresh token in AWS Secrets Manager.
+Direct Tidal audio streaming sidecar for the AWS platform. It is **multi-tenant**
+(multi-tenant-source-streaming R5): every request carries a ``guild_id``, the
+owning user's Cognito ``sub`` is resolved server-side, and the request is served
+from that user's own Tidal token — resolved read-only from the unified per-user
+credential store (``hellodj-core`` + KMS Decrypt-only) via the shared
+:class:`hellodj_platform_logic.user_credential_resolver.UserCredentialResolver`.
+The single startup-bound account is gone; there is no cross-user fallback (R5.4,
+R10.5).
 
-The legacy two-client-id key-split approach is removed: the token manager routes
-every refresh through :func:`hellodj_platform_logic.tidal_refresh.refresh_tidal`,
-whose guard rejects the legacy mode outright (R9.3).
+Per-user sessions live in a :data:`~tidal_stream.user_sessions.TidalSessionRegistry`
+(the shared bounded-LRU :class:`hellodj_platform_logic.session_registry.SessionRegistry`
+keyed by ``sub``). The ``TIDAL_APP_ID`` / ``TIDAL_CALLBACK_URL`` stay global
+single-app-id config; only the per-user token varies, and the durable watchdog
+owns Tidal refresh (the sidecar is read-only — R5.3).
 
 The component is packaged as an independently deployable unit (R15.1) exposing:
 
-    * direct Tidal streaming endpoints (search / stream-url resolution), and
-    * the HelloDJ-owned OAuth callback endpoint ``/auth/callback`` that the
-      web-ui forwards the authorization code to (R9.2).
+    * per-user Tidal streaming endpoints
+      (``/search/{guild_id}`` / ``/stream/{guild_id}/{track_id}``), and
+    * an OPTIONAL legacy first-party OAuth callback ``/auth/callback`` (present
+      only when a refresh secret is configured) that the web-ui forwards the
+      authorization code to (R9.2) — not part of the per-user streaming path.
 """
 
 from __future__ import annotations

@@ -14,25 +14,14 @@ Item (hellodj-core single table):
   ``SourceCredential``.
 
 The item splits **plaintext status** from the **envelope-encrypted token blob**
-(design.md "Storage model"):
-
-======================  =====================================================
-``data`` field          Meaning
-======================  =====================================================
-``connected``           bool status (plaintext)
-``connected_at``        epoch seconds first connected (plaintext)
-``updated_at``          epoch seconds last write (plaintext)
-``expires_at``          access-token expiry — the watchdog reads this WITHOUT
-                        decrypting (plaintext)
-``scope``               granted scope (plaintext)
-``last_refresh_at``     epoch seconds of the last refresh attempt (plaintext)
-``refresh_status``      ``ok`` / ``failed`` (plaintext)
-``refresh_error``       short reason on failure, never token material (plaintext)
-``enc_blob``            base64 AES-GCM ciphertext of the token JSON
-``enc_key``             base64 KMS-wrapped data key
-``enc_nonce``           base64 AES-GCM nonce (needed for decrypt)
-``kms_key_id``          CMK id used (for decrypt routing + rotation)
-======================  =====================================================
+(design.md "Storage model"). Plaintext ``data`` status fields (no decrypt to
+read): ``connected`` (bool), ``connected_at``/``updated_at``/``last_refresh_at``
+(epoch seconds), ``expires_at`` (access-token expiry the watchdog reads without
+decrypting), ``scope``, ``refresh_status`` (``ok``/``failed``), and
+``refresh_error`` (short reason, never token material). Encrypted-blob fields:
+``enc_blob`` (base64 AES-GCM ciphertext of the token JSON), ``enc_key`` (base64
+KMS-wrapped data key), ``enc_nonce`` (base64 AES-GCM nonce), and ``kms_key_id``
+(CMK id for decrypt routing + rotation).
 
 Rationale for the split (design.md): the watchdog and UI enumerate/read status
 (``expires_at``, ``refresh_status``) **without** a KMS call; only
@@ -165,9 +154,8 @@ class NearExpiryCredential:
 def _token_state_to_json_bytes(state: TokenState) -> bytes:
     """Serialize a :class:`TokenState` to the JSON blob bytes to encrypt.
 
-    The blob carries the full token material (access + refresh token, expiry,
-    scope, and any provider-specific ``extra`` fields). It is the ONLY place the
-    token values live, and it is always encrypted before it reaches the item.
+    The blob is the ONLY place token values (access/refresh token, expiry,
+    scope, provider-specific ``extra``) live, always encrypted before storage.
     """
     return json.dumps(
         {

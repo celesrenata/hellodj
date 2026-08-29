@@ -362,3 +362,92 @@ class TestRoundTripNoCrossGuildLeakage:
             assert lava.pushes == []
 
         asyncio.run(run())
+
+
+# ── 4.2 — node-pool wiring sanity (owner_sub → node selection) ──────────
+#
+# Task 4.2 wires the LavalinkNodePool + OwnerLookup into the injector's
+# ``node_key_for_guild`` seam (the key ``player.py`` feeds to ``swap_lock`` and
+# holds across the single all-fields ``POST /youtube`` + track resolution). Task
+# 4.3 owns the full node-pool tests; this is the minimal sanity check that the
+# wiring routes correctly:
+#
+# * a credentialed guild is assigned a node keyed on its owning ``sub`` (sticky
+#   across calls; distinct owners land on distinct nodes up to the pool size —
+#   the concurrency-up-to-N guarantee, R4.1/R4.2);
+# * a guild with NO connected YouTube credential returns ``None`` → NO lock, NO
+#   swap → the untouched global push path is preserved exactly as today (R4.4).
+
+
+class _FakeOwners:
+    """In-memory ``OwnerLookup`` (guild id → owning Cognito ``sub``)."""
+
+    def __init__(self, mapping: dict[str, str]) -> None:
+        self._mapping = dict(mapping)
+
+    def owner_of(self, guild_id: str) -> str | None:
+        return self._mapping.get(str(guild_id))
+
+
+class TestNodePoolWiring:
+    def _injector(self, store, owners_map, pool):
+        from lavalink_node_pool import LavalinkNodePool  # noqa: F401 (import check)
+
+        secrets = FakeSecrets(store)
+        return YouTubeCredentialInjector(
+            _resolver(secrets),
+            FakeLavalink().push,
+            node_pool=pool,
+            owner_lookup=_FakeOwners(owners_map),
+        )
+
+    def test_distinct_owners_get_distinct_nodes_up_to_pool_size(self):
+        from lavalink_node_pool import LavalinkNodePool
+
+        # Two credentialed guilds owned by two distinct subs, pool of 2 nodes.
+        store = {
+            guild_source_secret_name(STAGE, "111", "youtube"): _guild_youtube_secret(
+                "1//g-A", "PO-A", "VD-A"
+            ),
+            guild_source_secret_name(STAGE, "222", "youtube"): _guild_youtube_secret(
+                "1//g-B", "PO-B", "VD-B"
+            ),
+        }
+        pool = LavalinkNodePool(["node-0", "node-1"])
+        injector = self._injector(store, {"111": "owner-A", "222": "owner-B"}, pool)
+
+        key_a = injector.node_key_for_guild("111", "youtube")
+        key_b = injector.node_key_for_guild("222", "youtube")
+
+        # Both credentialed → both get a real pool node, and distinct owners land
+        # on distinct nodes (concurrency up to pool size, R4.2).
+        assert key_a in ("node-0", "node-1")
+        assert key_b in ("node-0", "node-1")
+        assert key_a != key_b
+        # Sticky: the same guild resolves to the same node on a repeat call.
+        assert injector.node_key_for_guild("111", "youtube") == key_a
+
+    def test_no_credential_guild_returns_none_no_swap(self):
+        from lavalink_node_pool import LavalinkNodePool
+
+        # No per-guild youtube secret at all for guild 333.
+        pool = LavalinkNodePool(["node-0", "node-1"])
+        injector = self._injector({}, {"333": "owner-C"}, pool)
+
+        # None → caller acquires NO lock and performs NO swap (global path, R4.4).
+        assert injector.node_key_for_guild("333", "youtube") is None
+
+    def test_credentialed_guild_without_owner_uses_default_node(self):
+        from lavalink_node_pool import DEFAULT_NODE_KEY, LavalinkNodePool
+
+        # Credential present (legacy secret) but the owner lookup can't resolve a
+        # sub → keep today's single-node behavior rather than inventing a key.
+        store = {
+            guild_source_secret_name(STAGE, "444", "youtube"): _guild_youtube_secret(
+                "1//g-D", "PO-D", "VD-D"
+            ),
+        }
+        pool = LavalinkNodePool(["node-0", "node-1"])
+        injector = self._injector(store, {}, pool)  # no owner for 444
+
+        assert injector.node_key_for_guild("444", "youtube") == DEFAULT_NODE_KEY

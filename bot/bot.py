@@ -196,6 +196,46 @@ _yt_cred_injector = None
 # guild credential resolver). Cogs reach it via :func:`get_user_entitlements`.
 _user_entitlement_resolver = None
 
+# Process-wide distributed search-cache accelerator over the shared
+# hellodj-search-cache table (built at startup). The search engines share this
+# ONE instance so every code path (autocomplete, Activity, retries) uses the
+# same accelerator, and player.py reaches it via :func:`get_search_accelerator`
+# to record playback failures for eviction. ``None`` in local dev (pure fan-out).
+_search_accelerator = None
+
+
+def get_search_accelerator():
+    """Return the process-wide search-cache accelerator, or ``None``.
+
+    Shared by the search engines (immediate serve + backfill) and ``player.py``
+    (recording playback failures so a track that fails the retry budget is
+    evicted from the shared cache). ``None`` when unavailable (local dev / no
+    boto3) so search degrades to a pure provider fan-out.
+    """
+    return _search_accelerator
+
+
+def _build_search_accelerator():
+    """Construct the shared search-cache accelerator once (idempotent, non-fatal).
+
+    Mirrors :func:`_build_user_entitlement_resolver`: on any failure it logs and
+    leaves the accelerator as ``None`` so search runs a pure provider fan-out.
+    """
+    global _search_accelerator
+    if _search_accelerator is not None:
+        return
+    try:
+        from search import build_search_cache_accelerator
+
+        _search_accelerator = build_search_cache_accelerator()
+        bot.search_accelerator = _search_accelerator
+    except Exception as exc:  # noqa: BLE001 - non-fatal: pure fan-out fallback
+        _search_accelerator = None
+        log.info(
+            "search accelerator: unavailable (%s) — search falls back to a pure "
+            "provider fan-out", exc,
+        )
+
 
 def get_user_entitlements():
     """Return the process-wide :class:`UserEntitlementResolver`, or ``None``.
@@ -277,8 +317,26 @@ def _build_guild_credential_resolver():
         _guild_cred_resolver = GuildCredentialResolver(
             client, stage=HELLODJ_STAGE, dynamo_resolver=_dynamo_cred_resolver
         )
+        # YouTube node pool (R4.1/R4.3): map a guild's owning user to one
+        # Lavalink node from the configured pool so up to N distinct users
+        # resolve YouTube concurrently. Default size 1 == today's single node.
+        # Key the assignment on the SAME ownership lookup the DynamoDB resolver
+        # reads (GUILD#<gid>/OWNER → owner_sub); when the unified store is
+        # unavailable the owner lookup is None and every guild collapses onto the
+        # single "default" node (byte-for-byte today's behavior).
+        from playback.lavalink_node_pool import LavalinkNodePool
+
+        _yt_node_pool = LavalinkNodePool()
+        _yt_owner_lookup = (
+            _dynamo_cred_resolver.owner_lookup
+            if _dynamo_cred_resolver is not None
+            else None
+        )
         _yt_cred_injector = YouTubeCredentialInjector(
-            _guild_cred_resolver, _youtube_post
+            _guild_cred_resolver,
+            _youtube_post,
+            node_pool=_yt_node_pool,
+            owner_lookup=_yt_owner_lookup,
         )
         bot.guild_cred_resolver = _guild_cred_resolver
         bot.youtube_cred_injector = _yt_cred_injector
@@ -372,6 +430,12 @@ async def connect_lavalink():
     # capabilities/quotas at runtime (source/video/viz/wake-word/AI/quota gates)
     # and meter AI cost. Fails safe to restrictive defaults; non-fatal on failure.
     _build_user_entitlement_resolver()
+
+    # Wire the shared search-cache accelerator over hellodj-search-cache so the
+    # search engines serve cross-instance cached results immediately and back-
+    # fill misses, and the play path can evict tracks that fail their retries.
+    # Non-fatal: None → pure provider fan-out with the in-process LRU only.
+    _build_search_accelerator()
 
     # Push any stored YouTube OAuth refresh token to the youtube-source plugin.
     # The plugin's REST endpoint (/youtube) is served by Lavalink's own Spring

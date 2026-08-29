@@ -17,18 +17,33 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
+from typing import Any, Protocol
 
 import aiohttp
 
-from .token_manager import TidalTokenManager
-
-__all__ = ["TidalStreamer", "TidalStreamError"]
+__all__ = ["AccessTokenSource", "TidalStreamer", "TidalStreamError"]
 
 log = logging.getLogger(__name__)
 
 #: Per-request timeout (seconds) for Tidal API calls.
 DEFAULT_TIMEOUT_SECONDS = 30.0
+
+
+class AccessTokenSource(Protocol):
+    """A synchronous source of a valid Tidal bearer access token.
+
+    The streamer is agnostic to WHERE the token comes from: the legacy single
+    -account :class:`~tidal_stream.token_manager.TidalTokenManager` (which
+    refreshes + persists) and the multi-tenant read-only
+    :class:`~tidal_stream.user_sessions.ReadOnlyTidalTokenSource` (which resolves
+    the owning user's token from the unified store, read-only — R5.3) both
+    satisfy this protocol. ``force=True`` requests a fresh read (a legacy
+    refresh, or a read-only uncached re-resolve).
+    """
+
+    def get_access_token(self, *, force: bool = False) -> str:
+        """Return a valid access token, optionally forcing a fresh read."""
+        ...
 
 
 class TidalStreamError(Exception):
@@ -39,7 +54,9 @@ class TidalStreamer:
     """Resolves Tidal search results and direct stream URLs.
 
     Args:
-        token_manager: Provides valid first-party access tokens.
+        token_manager: Any :class:`AccessTokenSource` providing valid Tidal
+            access tokens (the legacy single-account token manager or the
+            multi-tenant read-only per-user token source — R5.3).
         api_base: Tidal API base URL.
         country_code: ISO country code for catalog/stream resolution.
         session: Optional injected aiohttp session (a new one is created and
@@ -49,7 +66,7 @@ class TidalStreamer:
 
     def __init__(
         self,
-        token_manager: TidalTokenManager,
+        token_manager: AccessTokenSource,
         *,
         api_base: str,
         country_code: str = "US",

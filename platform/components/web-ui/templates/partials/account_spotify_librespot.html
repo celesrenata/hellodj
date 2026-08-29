@@ -1,0 +1,21 @@
+{# Spotify librespot capture step (multi-tenant-source-streaming task 2.2).
+
+   Shown after the user connects Spotify via standard OAuth. Streaming a
+   guild's Spotify account uses librespot, which needs a one-time reusable
+   credential that only a full librespot login can produce. The spotify-stream
+   sidecar (which has librespot) mints this authorize URL; the user opens it,
+   authorizes, and Spotify redirects back to the web-ui librespot callback,
+   which forwards the code to the sidecar to capture the reusable blob. No
+   token material is rendered here. #}
+<div class="glass-panel panel-section">
+  <h3 class="panel-section__title">Enable Spotify playback</h3>
+  <p class="panel-section__muted">
+    One more step to let HelloDJ stream from your Spotify account. Open the
+    authorization link below and approve access; you will be returned here when
+    it completes. A Spotify Premium account is required for playback.
+  </p>
+  <p class="field-row" style="align-items:center; gap:1rem;">
+    <a class="btn btn-primary btn-sm" rel="noopener"
+       href="{{ authorize_url }}">Authorize Spotify playback</a>
+  </p>
+</div>

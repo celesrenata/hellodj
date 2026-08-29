@@ -168,6 +168,63 @@ def test_tick_only_processes_what_iter_near_expiry_yields() -> None:
     assert [(s, p) for s, p, _ in service.record_ok] == [("u1", "youtube")]
 
 
+def test_refresh_preserves_prior_librespot_extra() -> None:
+    # multi-tenant-source-streaming task 2.2 (R10.3): a Spotify OAuth refresh
+    # must NOT drop the long-lived librespot reusable blob stored in
+    # ``extra.librespot_credentials`` (the provider refresh response never
+    # contains it). The watchdog carries prior ``extra`` keys forward.
+    blob = {
+        "username": "u",
+        "credentials": "REUSABLE-b64",
+        "type": "AUTHENTICATION_STORED_SPOTIFY_CREDENTIALS",
+    }
+    service = _FakeService(
+        near=[_NearExpiry(sub="u1", provider="spotify")],
+        tokens={
+            ("u1", "spotify"): TokenState(
+                "a1", "r1", expires_at=1_000.0, extra={"librespot_credentials": blob}
+            )
+        },
+    )
+    watchdog = _watchdog(service, {"spotify": _FakeClient("spotify")})
+
+    refreshed = watchdog.tick()
+
+    assert refreshed == 1
+    (_sub, _prov, new_state) = service.record_ok[0]
+    # The refreshed token is fresh AND still carries the librespot blob.
+    assert new_state.expires_at > 1_000.0
+    assert new_state.extra["librespot_credentials"] == blob
+
+
+def test_refresh_response_extra_wins_over_prior_on_conflict() -> None:
+    # If the provider response DOES set a key also present in prior extra, the
+    # fresh value wins (prior only fills gaps).
+    class _ExtraClient:
+        provider = "spotify"
+
+        def refresh(self, refresh_token: str, now: float) -> TokenState:
+            return TokenState(
+                "acc", "ref", expires_at=now + 3600.0, extra={"k": "new"}
+            )
+
+    service = _FakeService(
+        near=[_NearExpiry(sub="u1", provider="spotify")],
+        tokens={
+            ("u1", "spotify"): TokenState(
+                "a", "r", expires_at=1_000.0, extra={"k": "old", "keep": "yes"}
+            )
+        },
+    )
+    watchdog = _watchdog(service, {"spotify": _ExtraClient()})
+
+    watchdog.tick()
+
+    (_s, _p, new_state) = service.record_ok[0]
+    assert new_state.extra["k"] == "new"  # refreshed wins
+    assert new_state.extra["keep"] == "yes"  # prior gap-filled
+
+
 def test_provider_without_client_is_skipped() -> None:
     # discord is identity-only: no client, so nothing is refreshed or recorded.
     service = _FakeService(near=[_NearExpiry(sub="u1", provider="discord")])

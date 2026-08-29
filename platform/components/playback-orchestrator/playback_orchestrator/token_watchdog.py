@@ -45,12 +45,40 @@ import logging
 import threading
 import time
 from collections.abc import Callable, Mapping
+from dataclasses import replace
 from typing import TYPE_CHECKING
 
-from hellodj_platform_logic.source_refresh import RefreshClient, apply_refresh
+from hellodj_platform_logic.source_refresh import (
+    RefreshClient,
+    TokenState,
+    apply_refresh,
+)
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from source_credential_service import SourceCredentialService
+
+
+def _preserve_prior_extra(prior: TokenState, refreshed: TokenState) -> TokenState:
+    """Carry forward prior ``extra`` keys the refresh response did not set.
+
+    A provider refresh (``apply_refresh`` → ``RefreshClient.refresh``) builds a
+    FRESH :class:`TokenState` whose ``extra`` holds only the leftover fields
+    from that provider's token response. It therefore drops any
+    provider-independent material the connect flow previously stored under
+    ``extra`` — most importantly the Spotify ``librespot_credentials`` reusable
+    blob (multi-tenant-source-streaming task 2.2), which is long-lived and NOT
+    OAuth-refreshable. This merges the prior ``extra`` back in with the refreshed
+    values winning on any key collision, so the librespot blob (and any other
+    prior extra) survives a Spotify OAuth refresh and the ``spotify-stream``
+    reader keeps working (writer/watchdog/reader move together — R10.3). Token
+    material is never logged.
+    """
+    prior_extra = dict(prior.extra)
+    if not prior_extra:
+        return refreshed
+    merged = dict(prior_extra)
+    merged.update(dict(refreshed.extra))
+    return replace(refreshed, extra=merged)
 
 _LOG = logging.getLogger("playback_orchestrator.token_watchdog")
 
@@ -159,6 +187,7 @@ class TokenWatchdog:
                 )
                 return False
             new_state = apply_refresh(state, client, now, force=True)
+            new_state = _preserve_prior_extra(state, new_state)
             self._service.record_refresh(sub, provider, new_state=new_state)
             _LOG.info(
                 "token watchdog: refreshed credential (provider=%s)", provider

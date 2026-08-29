@@ -100,24 +100,43 @@ Requirements: 6.1, 6.2, 6.3, 6.4, 6.5
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import time
 from collections.abc import Callable
-from typing import Any, Protocol
+from dataclasses import dataclass
+from typing import TYPE_CHECKING, Any, Literal, Protocol
+
+# Dual-mode import: this module is imported BOTH as ``playback.guild_credentials``
+# (from ``bot.py``, with ``bot/`` on ``sys.path``) AND bare (from the
+# ``bot/playback`` test suite, with that dir on ``sys.path``). Mirror the sibling
+# node-pool key/default so ``swap_lock``'s default and the size-1 collapse stay
+# in lock-step without duplicating the constant.
+try:  # pragma: no cover - import-path shim
+    from lavalink_node_pool import DEFAULT_NODE_KEY
+except ImportError:  # pragma: no cover - package-qualified path
+    from playback.lavalink_node_pool import DEFAULT_NODE_KEY
+
+if TYPE_CHECKING:
+    from lavalink_node_pool import LavalinkNodePool
 
 __all__ = [
     "GLOBAL_FALLBACK_LEAVES",
+    "REFRESH_STATUS_FAILED",
     "SOURCECRED_ENTITY_TYPE",
     "SOURCECRED_SK_PREFIX",
     "SUPPORTED_PROVIDERS",
     "YOUTUBE_PROVIDERS",
     "CredentialItemStore",
+    "CredentialResult",
+    "CredentialUnavailable",
     "DecryptBlob",
     "DynamoCredentialResolver",
     "GuildCredentialResolver",
     "OwnerLookup",
     "SecretsReader",
+    "UnavailableReason",
     "YouTubeCredentialInjector",
     "YouTubePush",
     "build_dynamo_credential_resolver",
@@ -168,6 +187,11 @@ SOURCECRED_ENTITY_TYPE = "SourceCredential"
 
 #: Sort key of a guild's ownership item (``guild_admin_service.OWNER_SK``).
 OWNER_SK = "OWNER"
+
+#: Plaintext ``data.refresh_status`` value the watchdog sets when a credential's
+#: refresh failed. An item in this state must never yield a token (R2.3). Kept
+#: in lock-step with the web-ui ``source_credential_service.REFRESH_STATUS_FAILED``.
+REFRESH_STATUS_FAILED = "failed"
 
 #: Expiry skew, in seconds, applied when deciding whether a decrypted access
 #: token is "already expired" for the read-only bot (R6.2). A token expiring
@@ -238,11 +262,14 @@ class GuildCredentialResolver:
         cache TTL is deterministically testable.
     dynamo_resolver:
         Optional :class:`DynamoCredentialResolver` consulted FIRST for the
-        unified per-user DynamoDB credential store (R6.1). When it returns a
-        credential the guild's tokens come from DynamoDB; when it returns
-        ``None`` (no item / store unavailable) resolution falls back to the
-        legacy per-guild Secrets Manager secret (R6.5). ``None`` disables the
-        DynamoDB branch entirely (legacy-only behavior, e.g. local dev).
+        unified per-user DynamoDB credential store (R6.1). The guild's tokens
+        come from DynamoDB when it resolves a credential; when it reports the
+        credential unavailable (``CredentialUnavailable`` — no owner / no item /
+        ``refresh_status=failed`` / decrypt failure, surfaced here via
+        :meth:`DynamoCredentialResolver.resolve_tokens` as ``None``) resolution
+        falls back to the legacy per-guild Secrets Manager secret (R6.5).
+        ``None`` disables the DynamoDB branch entirely (legacy-only behavior,
+        e.g. local dev).
     """
 
     def __init__(
@@ -310,7 +337,11 @@ class GuildCredentialResolver:
         3. otherwise the optional global fallback secret (R6.2 legacy).
         """
         if self._dynamo is not None:
-            dynamo_tokens = self._dynamo.resolve(guild_id, provider)
+            # The unified resolver returns a typed result; ``resolve_tokens``
+            # maps any ``CredentialUnavailable`` (including a ``refresh_failed``
+            # gate) to ``None`` so this legacy-secret fallback is preserved
+            # exactly while a failed-status item still never yields a token.
+            dynamo_tokens = self._dynamo.resolve_tokens(guild_id, provider)
             if dynamo_tokens is not None:
                 return dynamo_tokens
 
@@ -452,6 +483,48 @@ def token_state_to_tokens(blob: dict[str, Any]) -> dict[str, Any]:
     return tokens
 
 
+# ── Typed unavailable result (R1.2, R2.3) ───────────────────────────────
+#
+# Mirrored VERBATIM from
+# ``hellodj_platform_logic.user_credential_resolver`` (the canonical shared
+# copy the sidecars import). The bot keeps a local copy so this module stays
+# importable without the platform package — change both together.
+
+#: The specific, non-secret reasons a credential cannot be resolved. Each maps
+#: to an observable failure (R7.1) and is surfaced instead of a bare ``None``.
+UnavailableReason = Literal[
+    "no_owner",
+    "no_credential",
+    "refresh_failed",
+    "decrypt_failed",
+]
+
+
+@dataclass(frozen=True)
+class CredentialUnavailable:
+    """A typed "no usable credential" result carrying a specific reason.
+
+    Returned by :meth:`DynamoCredentialResolver.resolve` in place of a bare
+    ``None`` so a caller can distinguish WHY a credential is unavailable
+    (``no_owner`` / ``no_credential`` / ``refresh_failed`` / ``decrypt_failed``)
+    and fail the request observably (R7.1) rather than silently falling back to
+    another user's credential (R1.2). Carries no token material, so it is safe
+    to log and ``repr``.
+
+    Legacy ``None``-fallback callers use :meth:`DynamoCredentialResolver.resolve_tokens`
+    (or the ``isinstance`` guard in :class:`GuildCredentialResolver`) which maps
+    any :class:`CredentialUnavailable` to ``None``, so the failed-status gate
+    still never yields a token.
+    """
+
+    reason: UnavailableReason
+
+
+#: A resolution result: either the flattened tokens dict (success) or a typed
+#: :class:`CredentialUnavailable`.
+CredentialResult = dict[str, Any] | CredentialUnavailable
+
+
 class DynamoCredentialResolver:
     """Resolve a guild's unified per-user credential from DynamoDB (read-only).
 
@@ -521,16 +594,32 @@ class DynamoCredentialResolver:
         self._now = time_fn
         self._wall = wall_clock
         self._skew = float(expiry_skew_seconds)
-        # cache: (guild_id, provider) -> (expires_at_monotonic, value)
-        self._cache: dict[tuple[str, str], tuple[float, dict[str, Any] | None]] = {}
+        # cache: (guild_id, provider) -> (expires_at_monotonic, result)
+        self._cache: dict[tuple[str, str], tuple[float, CredentialResult]] = {}
 
-    def resolve(self, guild_id: str | int, provider: str) -> dict[str, Any] | None:
-        """Resolve a guild's unified credential tokens, or ``None`` (R6.1, R6.2).
+    @property
+    def owner_lookup(self) -> OwnerLookup:
+        """The guild→owner ``sub`` lookup this resolver uses.
 
-        Cached per ``(guild_id, provider)`` with a bounded TTL (R6.4). If a
+        Exposed so the YouTube node pool can key its ``owner_sub`` → node
+        assignment on the SAME ownership source of truth this resolver reads
+        (``GUILD#<gid>`` / ``OWNER`` → ``data.owner_sub``), rather than wiring a
+        second, potentially-divergent lookup.
+        """
+        return self._owners
+
+    def resolve(self, guild_id: str | int, provider: str) -> CredentialResult:
+        """Resolve a guild's unified credential (R1.1, R1.2, R2.2, R2.3).
+
+        Returns the flattened tokens dict on success, or a typed
+        :class:`CredentialUnavailable` naming the specific reason (``no_owner`` /
+        ``no_credential`` / ``refresh_failed`` / ``decrypt_failed``) — never
+        another user's credential.
+
+        Cached per ``(guild_id, provider)`` with a bounded TTL (R1.5). If a
         cached (or freshly read) credential's access token is expired, the entry
         is re-read once uncached so the reader uses the watchdog-refreshed value
-        rather than a dead token (R6.2).
+        rather than a dead token (R2.2).
         """
         gid = str(guild_id)
         key = (gid, provider)
@@ -538,13 +627,25 @@ class DynamoCredentialResolver:
         cached = self._cache.get(key)
         if cached is not None and self._now() < cached[0]:
             value = cached[1]
-            if value is not None and self._is_expired(value):
-                # R6.2: never serve a dead token from cache — re-read to pick up
+            if isinstance(value, dict) and self._is_expired(value):
+                # R2.2: never serve a dead token from cache — re-read to pick up
                 # the watchdog-refreshed value.
                 return self._refresh_entry(gid, provider, key)
             return value
 
         return self._refresh_entry(gid, provider, key)
+
+    def resolve_tokens(self, guild_id: str | int, provider: str) -> dict[str, Any] | None:
+        """Compatibility shim: return the tokens dict, or ``None`` if unavailable.
+
+        Preserves the legacy ``None``-fallback callers (the bot's
+        :class:`GuildCredentialResolver` legacy-secret fallback). A
+        :class:`CredentialUnavailable` — for ANY reason, including
+        ``refresh_failed`` — maps to ``None`` so those callers behave exactly as
+        before while the failed-status item still never yields a token (R2.3).
+        """
+        result = self.resolve(guild_id, provider)
+        return result if isinstance(result, dict) else None
 
     def invalidate(self, guild_id: str | int, provider: str) -> None:
         """Drop any cached resolution for a ``(guild_id, provider)`` pair."""
@@ -554,8 +655,8 @@ class DynamoCredentialResolver:
 
     def _refresh_entry(
         self, guild_id: str, provider: str, key: tuple[str, str]
-    ) -> dict[str, Any] | None:
-        """Load from DynamoDB, cache under ``key``, and return the value."""
+    ) -> CredentialResult:
+        """Load from DynamoDB, cache under ``key``, and return the result."""
         value = self._load(guild_id, provider)
         self._cache[key] = (self._now() + self._ttl, value)
         return value
@@ -574,36 +675,51 @@ class DynamoCredentialResolver:
         except (TypeError, ValueError):
             return False
 
-    def _load(self, guild_id: str, provider: str) -> dict[str, Any] | None:
-        """Resolve owner → item → decrypt → flatten. ``None`` on any failure."""
+    def _load(self, guild_id: str, provider: str) -> CredentialResult:
+        """Resolve owner → item → failed-gate → decrypt → flatten.
+
+        Returns a typed :class:`CredentialUnavailable` for every non-success
+        outcome (R1.2, R2.3); never another user's credential.
+        """
         try:
             owner_sub = self._owners.owner_of(guild_id)
-        except Exception as exc:  # noqa: BLE001 - unavailable → fall back
+        except Exception as exc:  # noqa: BLE001 - unavailable → typed no_owner
             log.debug(
                 "guild_credentials: owner lookup failed for guild %s (%s)",
                 guild_id, exc,
             )
-            return None
+            return CredentialUnavailable("no_owner")
         if not owner_sub:
-            return None
+            return CredentialUnavailable("no_owner")
 
         try:
             item = self._store.get(user_pk(owner_sub), sourcecred_sk(provider))
-        except Exception as exc:  # noqa: BLE001 - unavailable → fall back
+        except Exception as exc:  # noqa: BLE001 - unavailable → typed no_credential
             log.debug(
                 "guild_credentials: credential item read failed for guild %s "
                 "provider %s (%s)", guild_id, provider, exc,
             )
-            return None
+            return CredentialUnavailable("no_credential")
         if item is None:
-            return None
+            return CredentialUnavailable("no_credential")
 
-        blob = self._decrypt_item(item, guild_id, provider)
+        data = item.get("data", {})
+        # R2.3: the ``refresh_status=failed`` gate is a PLAINTEXT status check,
+        # done BEFORE any decrypt — a failed item never yields a token.
+        if data.get("refresh_status") == REFRESH_STATUS_FAILED:
+            log.info(
+                "guild_credentials: guild %s provider %s has "
+                "refresh_status=failed — credential unavailable (R2.3)",
+                guild_id, provider,
+            )
+            return CredentialUnavailable("refresh_failed")
+
+        blob = self._decrypt_item(data, guild_id, provider)
         if blob is None:
-            return None
+            return CredentialUnavailable("decrypt_failed")
         tokens = token_state_to_tokens(blob)
         if not tokens:
-            return None
+            return CredentialUnavailable("no_credential")
         log.info(
             "guild_credentials: guild %s provider %s resolved from unified "
             "DynamoDB credential store", guild_id, provider,
@@ -611,15 +727,14 @@ class DynamoCredentialResolver:
         return tokens
 
     def _decrypt_item(
-        self, item: dict[str, Any], guild_id: str, provider: str
+        self, data: dict[str, Any], guild_id: str, provider: str
     ) -> dict[str, Any] | None:
         """Decrypt an item's envelope blob to the token dict, or ``None``.
 
         A missing/short envelope or a decrypt raise (tamper / KMS failure, R3.4)
-        yields ``None`` so the caller falls back — never a crash, never a
-        logged token.
+        yields ``None`` (the caller maps it to ``decrypt_failed``) — never a
+        crash, never a logged token.
         """
-        data = item.get("data", {})
         enc_blob = data.get("enc_blob")
         enc_key = data.get("enc_key")
         enc_nonce = data.get("enc_nonce")
@@ -627,8 +742,6 @@ class DynamoCredentialResolver:
         if not (enc_blob and enc_key and enc_nonce and kms_key_id):
             return None
         try:
-            import base64
-
             plaintext = self._decrypt(
                 ciphertext=base64.b64decode(enc_blob),
                 wrapped_key=base64.b64decode(enc_key),
@@ -792,40 +905,82 @@ class YouTubePush(Protocol):
 
 
 class YouTubeCredentialInjector:
-    """Just-in-time per-guild YouTube credential swap on a shared Lavalink node.
+    """Just-in-time per-guild YouTube credential swap on a pooled Lavalink node.
 
     Before a guild's YouTube track is resolved/played, :meth:`inject_for_guild`
     resolves that guild's own ``{oauth_refresh_token, pot_token,
     pot_visitor_data}`` and pushes them via the single ``POST /youtube`` request
-    (last-writer-wins). Guilds WITHOUT a per-guild YouTube secret cause NO swap —
-    the caller falls through to the untouched global push (preservation 3.5).
+    (last-writer-wins). Guilds WITHOUT a per-guild YouTube credential cause NO
+    swap — the caller falls through to the untouched global push (R4.4 /
+    preservation 3.5).
 
-    The swap is serialized with a per-Lavalink-node :class:`asyncio.Lock` so a
-    concurrent resolution for another guild cannot interleave between the push
-    and the track resolution. The caller holds the returned lock context across
-    the push AND the subsequent resolve/play (see :meth:`swap_lock`).
+    Node-pool selection (R4.1/R4.3)
+    -------------------------------
+
+    The youtube-source plugin's ``POST /youtube`` replaces ALL credential fields
+    on a node, so one node holds one live YouTube credential set. To make
+    resolution concurrent up to a configured number of nodes, the injector maps
+    a guild's owning user (``owner_sub``) to one node from a
+    :class:`~playback.lavalink_node_pool.LavalinkNodePool`. A YouTube resolution:
+
+    1. resolves the guild's ``owner_sub`` (via :class:`OwnerLookup`) and its
+       YouTube credential (via :class:`GuildCredentialResolver`, which carries
+       the R2.2 expiry re-read);
+    2. picks the node assigned to ``owner_sub`` (:meth:`node_key_for_guild`);
+    3. the caller acquires THAT node's :meth:`swap_lock` and, under the held
+       lock, pushes the single all-fields ``POST /youtube`` and resolves the
+       track (R4.1).
+
+    With N nodes, up to N distinct owning users resolve YouTube concurrently,
+    each on its own node; beyond N they share a node and serialize on its lock
+    (still correct per resolution, R4.2).
+
+    Backward-compatible defaults: when no ``node_pool`` (or a size-1 pool) and no
+    ``owner_lookup`` are wired, :meth:`node_key_for_guild` returns the single
+    :data:`~playback.lavalink_node_pool.DEFAULT_NODE_KEY` node — byte-for-byte
+    today's single-shared-node behavior (strictly additive).
 
     Parameters
     ----------
     resolver:
-        A :class:`GuildCredentialResolver` used to fetch the per-guild secret.
+        A :class:`GuildCredentialResolver` used to fetch the per-guild/per-user
+        credential (DynamoDB-first, legacy-secret fallback; R2.2 expiry re-read).
     push:
         A :class:`YouTubePush` seam that issues the actual ``POST /youtube``.
+    node_pool:
+        Optional :class:`~playback.lavalink_node_pool.LavalinkNodePool` mapping
+        ``owner_sub`` → node key. ``None`` (or a size-1 pool) means every guild
+        uses the single ``"default"`` node (today's behavior).
+    owner_lookup:
+        Optional :class:`OwnerLookup` (guild id → owning Cognito ``sub``) used to
+        key the pool assignment. ``None`` means the pool cannot distinguish users
+        and every guild collapses onto the ``"default"`` node.
     """
 
-    def __init__(self, resolver: GuildCredentialResolver, push: YouTubePush) -> None:
+    def __init__(
+        self,
+        resolver: GuildCredentialResolver,
+        push: YouTubePush,
+        *,
+        node_pool: LavalinkNodePool | None = None,
+        owner_lookup: OwnerLookup | None = None,
+    ) -> None:
         self._resolver = resolver
         self._push = push
-        # node key -> lock. A single shared node uses one lock; a future
-        # node-per-guild pool would key by node uri.
+        self._node_pool = node_pool
+        self._owner_lookup = owner_lookup
+        # node key -> lock. A single shared node uses one lock; the node pool
+        # keys by the assigned node key so distinct nodes serialize independently.
         self._locks: dict[str, asyncio.Lock] = {}
 
-    def swap_lock(self, node_key: str = "default") -> asyncio.Lock:
+    def swap_lock(self, node_key: str = DEFAULT_NODE_KEY) -> asyncio.Lock:
         """Return the per-node lock, creating it on first use.
 
         The caller MUST hold this lock across the credential push AND the track
         resolution so a concurrent per-guild swap cannot clobber the node's creds
-        mid-resolution (SHARED-LAVALINK LIMITATION).
+        mid-resolution (SHARED-LAVALINK LIMITATION). With a node pool, distinct
+        node keys yield distinct locks, so resolutions on different nodes proceed
+        concurrently (R4.2).
         """
         lock = self._locks.get(node_key)
         if lock is None:
@@ -837,7 +992,9 @@ class YouTubeCredentialInjector:
         """Return a guild's per-guild YouTube tokens, or ``None`` if it has none.
 
         Only youtube / youtube_music are per-guild-swappable; any other provider
-        returns ``None`` (its resolution/fallback is handled elsewhere).
+        returns ``None`` (its resolution/fallback is handled elsewhere). The
+        resolver carries the R2.2 expiry re-read, so an expired access token is
+        replaced by the watchdog-refreshed value rather than returned dead.
         """
         if provider not in YOUTUBE_PROVIDERS:
             return None
@@ -849,6 +1006,53 @@ class YouTubeCredentialInjector:
         if not (tokens.get("oauth_refresh_token") or tokens.get("refresh_token")):
             return None
         return tokens
+
+    def node_key_for_guild(
+        self, guild_id: str | int, provider: str
+    ) -> str | None:
+        """Return the pool node key for a guild's YouTube swap, or ``None``.
+
+        Returns ``None`` when the guild has NO usable YouTube credential — the
+        caller then performs NO swap and falls through to the untouched global
+        credential-store push, exactly as today (R4.4). When the guild HAS a
+        credential, its owning ``sub`` is resolved and assigned a node from the
+        pool (sticky, least-loaded, LRU — R4.3); the returned key feeds
+        :meth:`swap_lock` so the push + resolution run under that node's lock.
+
+        With no pool/owner-lookup wired (or a size-1 pool) a credentialed guild
+        resolves to the single :data:`DEFAULT_NODE_KEY` node — today's behavior.
+        """
+        tokens = self.resolve_youtube(guild_id, provider)
+        if tokens is None:
+            # No connected YouTube credential → no swap → global path (R4.4).
+            return None
+        if self._node_pool is None:
+            return DEFAULT_NODE_KEY
+        owner_sub = self._owner_sub_for(guild_id)
+        if not owner_sub:
+            # Credential present but owner unknown (e.g. legacy-secret path with
+            # no owner lookup): keep today's single-node behavior rather than
+            # inventing a pool key.
+            return DEFAULT_NODE_KEY
+        return self._node_pool.assign(owner_sub)
+
+    def _owner_sub_for(self, guild_id: str | int) -> str | None:
+        """Resolve a guild's owning ``sub`` via the lookup, tolerating failure.
+
+        A missing lookup or any lookup error yields ``None`` so node selection
+        degrades to the single ``"default"`` node rather than crashing playback.
+        Never logs token material (the ``sub`` is an opaque identifier).
+        """
+        if self._owner_lookup is None:
+            return None
+        try:
+            return self._owner_lookup.owner_of(str(guild_id))
+        except Exception as exc:  # noqa: BLE001 - degrade to default node
+            log.debug(
+                "guild_credentials: owner lookup failed for guild %s (%s) — "
+                "using default YouTube node", guild_id, exc,
+            )
+            return None
 
     async def inject_for_guild(self, guild_id: str | int, provider: str) -> bool:
         """Resolve + push a guild's own YouTube creds if it has a per-guild secret.

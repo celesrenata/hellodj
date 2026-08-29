@@ -38,16 +38,21 @@ from flask import (
 )
 
 from source_credential_store import (
+    persist_librespot_credentials,
     persist_spotify_credential,
     persist_tidal_status,
     persist_youtube_credential,
 )
-from source_oauth import source_authorize_url_account
+from source_oauth import (
+    redirect_uri_for_librespot,
+    source_authorize_url_account,
+)
 from source_token_exchange import (
     compose_youtube_tokens,
     fetch_guild_potoken,
     source_exchange_spotify,
 )
+from spotify_librespot_capture import SpotifyLibrespotCapture
 from youtube_device_oauth import (
     DeviceCodeError,
     compose_youtube_device_tokens,
@@ -189,6 +194,14 @@ def register_source_oauth_routes(bp: Blueprint) -> None:
                     )
                 )
             persist_spotify_credential(source_creds, sub, tokens)
+            # The standard OAuth token above serves the Web API, but the
+            # spotify-stream data plane streams via librespot, which needs a
+            # separate one-time reusable credential (task 2.2). Chain into the
+            # sidecar-run librespot capture when a sidecar is wired; otherwise
+            # fall through to the normal connected redirect (degraded / tests).
+            librespot_step = _start_spotify_librespot(sub)
+            if librespot_step is not None:
+                return librespot_step
         elif provider == "tidal":
             # Tidal's token lifecycle is owned by the tidal-stream sidecar; the
             # web-ui records only the connection STATUS (no token blob) and
@@ -298,3 +311,79 @@ def register_source_oauth_routes(bp: Blueprint) -> None:
             )
         persist_youtube_credential(source_creds, sub, provider, tokens)
         return _render_account_sources(connected=provider)
+
+    def _start_spotify_librespot(sub: str):
+        """Begin the sidecar-run librespot capture, or ``None`` if unavailable.
+
+        Asks the ``spotify-stream`` sidecar (which has librespot) to mint a
+        librespot OAuth authorize URL bound to ``sub``, using the web-ui's FIXED
+        librespot callback as the redirect target. On success it stashes a CSRF
+        ``state`` in the session and renders the ``account_spotify_librespot``
+        partial with the authorize link. Returns ``None`` when no sidecar is
+        wired or the sidecar could not start (the caller then falls through to
+        the normal connected redirect — the Web-API credential is still stored).
+        """
+        capture = _librespot_capture()
+        if capture is None or not sub:
+            return None
+        redirect_uri = redirect_uri_for_librespot()
+        authorize_url = capture.start(sub, redirect_uri)
+        if not authorize_url:
+            return None
+        state = _new_state()
+        session["librespot_state"] = state
+        return render_template(
+            "partials/account_spotify_librespot.html",
+            authorize_url=authorize_url,
+        )
+
+    @bp.route("/oauth/spotify/librespot/callback")
+    def source_oauth_spotify_librespot_callback():  # type: ignore[unused-ignore]
+        """Fixed callback for the librespot capture: forward code, store blob.
+
+        Validates the CSRF ``state`` against the session (R1.5), forwards the
+        authorization ``code`` to the ``spotify-stream`` sidecar to complete the
+        librespot login + capture the reusable blob, and attaches that blob to
+        the user's Spotify credential inside the SAME envelope-encrypted token
+        blob (``extra.librespot_credentials``) — never a plaintext column (task
+        2.2, R3.3/R6.4/R10.3). Any failure surfaces a clear
+        ``spotify_playback_failed`` error and stores nothing partial; token
+        material is never logged.
+        """
+        if not session.get("user"):
+            return redirect(url_for("pages.login"))
+        state = request.args.get("state", "")
+        expected = session.pop("librespot_state", None)
+        if not state or state != expected:
+            return redirect(url_for("guild.account", error="state_mismatch"))
+        sub = (session.get("user") or {}).get("sub", "")
+        code = request.args.get("code", "")
+        capture = _librespot_capture()
+        creds = capture.complete(sub, code) if capture is not None else None
+        source_creds = current_app.extensions.get("source_credentials")
+        if not creds or not persist_librespot_credentials(
+            source_creds, sub, creds
+        ):
+            return redirect(
+                url_for(
+                    "guild.account",
+                    error="spotify_playback_failed",
+                    provider="spotify",
+                )
+            )
+        return redirect(url_for("guild.account", connected="spotify"))
+
+    def _librespot_capture() -> SpotifyLibrespotCapture | None:
+        """Build the librespot capture client from config, or ``None``.
+
+        Prefers an injected client on ``app.extensions['spotify_librespot']``
+        (tests), else constructs one from ``SPOTIFY_STREAM_URL``. Returns
+        ``None`` in degraded mode (no sidecar wired) so the caller no-ops.
+        """
+        injected = current_app.extensions.get("spotify_librespot")
+        if injected is not None:
+            return injected
+        base = current_app.config.get("SPOTIFY_STREAM_URL", "") or ""
+        if not base:
+            return None
+        return SpotifyLibrespotCapture(base)

@@ -6,11 +6,14 @@
 # (R4.3, R4.4).
 #
 # spotify-stream is a streaming source client: a Python `librespot` +
-# `aiohttp` direct Spotify streaming sidecar (ported from the working on-prem
-# `spotify-stream/app.py`), Nix-built with ffmpeg for OGG->MP3 transcode. All
-# deps (python3Packages.librespot, aiohttp, ffmpeg-headless) are pure-Python /
-# ARM64-native in nixpkgs, so it builds on aarch64 (Graviton) with no x86
-# fallback (design component table: Graviton).
+# `aiohttp` direct Spotify streaming sidecar. It is now MULTI-TENANT
+# (multi-tenant-source-streaming section 2): a per-user librespot session pool
+# keyed by the guild owner's Cognito sub, resolving each user's credential from
+# the unified `hellodj-core` DynamoDB store (via `boto3` + the shared
+# `hellodj_platform_logic` resolver, KMS Decrypt-only). Nix-built with ffmpeg
+# for OGG->MP3 transcode. All deps (python3Packages.librespot, aiohttp, boto3,
+# botocore, ffmpeg-headless) are pure-Python / ARM64-native in nixpkgs, so it
+# builds on aarch64 (Graviton) with no x86 fallback.
 
 [dependencies]
 streaming_source_clients = true

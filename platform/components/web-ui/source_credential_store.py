@@ -35,12 +35,14 @@ from typing import Any
 from hellodj_platform_logic.source_refresh import TokenState
 
 from source_credential_service import SourceCredentialService
+from spotify_librespot_capture import LIBRESPOT_CREDENTIALS_EXTRA_KEY
 
 __all__ = [
     "TIDAL_STATUS_EXPIRES_AT",
     "persist_youtube_credential",
     "persist_spotify_credential",
     "persist_tidal_status",
+    "persist_librespot_credentials",
 ]
 
 #: Sentinel far-future ``expires_at`` (epoch seconds ~ year 5138) for a
@@ -123,6 +125,49 @@ def persist_spotify_credential(
     if not state.refresh_token:
         return
     service.store(sub, "spotify", state, connected_by=sub)
+
+
+def persist_librespot_credentials(
+    service: SourceCredentialService | None,
+    sub: str,
+    librespot_credentials: dict[str, Any],
+) -> bool:
+    """Attach a captured librespot reusable blob to the user's Spotify item.
+
+    Decrypt-merge-re-encrypt on the EXISTING Spotify credential (written first
+    by the standard OAuth connect): the prior token (refresh/access token,
+    expiry, scope, other ``extra`` fields) is preserved verbatim and only
+    ``extra[LIBRESPOT_CREDENTIALS_EXTRA_KEY]`` is added/replaced, so the reusable
+    ``{username, credentials, type}`` object lives INSIDE the SAME
+    envelope-encrypted blob — never a plaintext column (design "Data Models";
+    R3.3, R6.4, R10.3). The per-user librespot session factory (task 2.3) then
+    builds a ``Session`` non-interactively from it.
+
+    Returns ``True`` when the blob was attached, ``False`` in degraded mode
+    (no store / no sub / empty blob) or when there is no Spotify credential to
+    attach to (the caller surfaces a clear error rather than a silent no-op).
+    Token material is never logged. ``connected_by`` stays the owner's own sub.
+    """
+    if service is None or not sub or not librespot_credentials:
+        return False
+    prior = service.load_token(sub, "spotify")
+    if prior is None:
+        return False
+    merged_extra = dict(prior.extra)
+    merged_extra[LIBRESPOT_CREDENTIALS_EXTRA_KEY] = dict(librespot_credentials)
+    service.store(
+        sub,
+        "spotify",
+        TokenState(
+            access_token=prior.access_token,
+            refresh_token=prior.refresh_token,
+            expires_at=prior.expires_at,
+            scope=prior.scope,
+            extra=merged_extra,
+        ),
+        connected_by=sub,
+    )
+    return True
 
 
 def persist_tidal_status(

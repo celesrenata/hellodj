@@ -30,7 +30,9 @@ import os
 
 import pytest
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
+
 from guild_credentials import (
+    CredentialUnavailable,
     DynamoCredentialResolver,
     GuildCredentialResolver,
     YouTubeCredentialInjector,
@@ -276,24 +278,28 @@ class TestResolveDecrypt:
         # read the owner's credential item under the resolved sub
         assert ("USER#owner-1", sourcecred_sk("tidal")) in core.calls
 
-    def test_no_owner_returns_none(self):
+    def test_no_owner_returns_unavailable(self):
+        # R1.2: no recorded owner → typed CredentialUnavailable(no_owner),
+        # never another user's credential.
         kms = FakeKms()
         core = FakeCore()
         r = _make_resolver(core, FakeOwners({}), kms, FakeClock(), FakeWallClock())
-        assert r.resolve("111", "tidal") is None
+        result = r.resolve("111", "tidal")
+        assert result == CredentialUnavailable("no_owner")
         # no credential item read attempted without an owner
         assert core.calls == []
 
-    def test_absent_item_returns_none(self):
+    def test_absent_item_returns_unavailable(self):
+        # R1.2: owner exists but no SOURCECRED item → no_credential.
         kms = FakeKms()
         core = FakeCore()  # owner exists but no credential item
         owners = FakeOwners({"111": "owner-1"})
         r = _make_resolver(core, owners, kms, FakeClock(), FakeWallClock())
-        assert r.resolve("111", "tidal") is None
+        assert r.resolve("111", "tidal") == CredentialUnavailable("no_credential")
 
-    def test_tampered_ciphertext_returns_none(self):
-        # R3.4: a tampered blob must not decrypt to wrong plaintext — it becomes
-        # unusable (None) so the caller falls back, never a crash.
+    def test_tampered_ciphertext_returns_unavailable(self):
+        # R3.4/R2.3: a tampered blob must not decrypt to wrong plaintext — it
+        # becomes unusable (decrypt_failed), never a crash, never a token.
         kms = FakeKms()
         item = _cred_item(kms, refresh_token="RT")
         raw = base64.b64decode(item["data"]["enc_blob"])
@@ -301,16 +307,28 @@ class TestResolveDecrypt:
         core = FakeCore({("USER#owner-1", sourcecred_sk("tidal")): item})
         owners = FakeOwners({"111": "owner-1"})
         r = _make_resolver(core, owners, kms, FakeClock(), FakeWallClock())
-        assert r.resolve("111", "tidal") is None
+        assert r.resolve("111", "tidal") == CredentialUnavailable("decrypt_failed")
 
-    def test_missing_envelope_fields_returns_none(self):
+    def test_missing_envelope_fields_returns_unavailable(self):
         kms = FakeKms()
         item = _cred_item(kms)
         del item["data"]["enc_key"]  # short envelope
         core = FakeCore({("USER#owner-1", sourcecred_sk("tidal")): item})
         owners = FakeOwners({"111": "owner-1"})
         r = _make_resolver(core, owners, kms, FakeClock(), FakeWallClock())
-        assert r.resolve("111", "tidal") is None
+        assert r.resolve("111", "tidal") == CredentialUnavailable("decrypt_failed")
+
+    def test_refresh_status_failed_gates_before_decrypt(self):
+        # R2.3: an item marked refresh_status=failed resolves to
+        # CredentialUnavailable(refresh_failed) and NEVER a token — even though
+        # the (untampered) blob would decrypt fine.
+        kms = FakeKms()
+        item = _cred_item(kms, refresh_token="RT")
+        item["data"]["refresh_status"] = "failed"
+        core = FakeCore({("USER#owner-1", sourcecred_sk("tidal")): item})
+        owners = FakeOwners({"111": "owner-1"})
+        r = _make_resolver(core, owners, kms, FakeClock(), FakeWallClock())
+        assert r.resolve("111", "tidal") == CredentialUnavailable("refresh_failed")
 
 
 # ── R6.4: cache TTL ─────────────────────────────────────────────────────
@@ -470,8 +488,9 @@ class TestIsolation:
         r = _make_resolver(core, owners, kms, FakeClock(), FakeWallClock())
 
         assert r.resolve("111", "tidal")["refresh_token"] == "A-token"
-        # B must resolve to None — the cached A entry must not bleed across.
-        assert r.resolve("222", "tidal") is None
+        # B must resolve to unavailable — the cached A entry must not bleed
+        # across, and no other user's credential is substituted (R1.2, R6).
+        assert r.resolve("222", "tidal") == CredentialUnavailable("no_credential")
         # and A stays A after B was resolved
         assert r.resolve("111", "tidal")["refresh_token"] == "A-token"
 
