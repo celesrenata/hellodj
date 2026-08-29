@@ -22,6 +22,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
+from account_admin_service import AccountAdminService
 from bot_app_pool import BotAppAssignmentService, BotAppPool
 from bot_identity import BotIdentityService
 from config_store import ConfigStore
@@ -135,9 +136,10 @@ def build_services() -> dict[str, Any]:
     """Return the runtime services keyed for ``app.extensions``.
 
     Keys: ``config_store``, ``user_profiles``, ``guild_admin``,
-    ``guild_sources``, ``source_credentials``, ``guild_identity_service``,
-    ``invite_service``, ``entitlement_service``. Any service whose backing
-    resource is unavailable is ``None`` and the routes degrade gracefully.
+    ``account_admin``, ``guild_sources``, ``source_credentials``,
+    ``guild_identity_service``, ``invite_service``, ``entitlement_service``.
+    Any service whose backing resource is unavailable is ``None`` and the routes
+    degrade gracefully.
     """
     core = _core_table()
     stage = os.getenv("HELLODJ_STAGE", "beta")
@@ -147,6 +149,7 @@ def build_services() -> dict[str, Any]:
         "config_store": None,
         "user_profiles": None,
         "guild_admin": None,
+        "account_admin": None,
         "guild_sources": None,
         "source_credentials": None,
         "guild_identity_service": None,
@@ -161,6 +164,7 @@ def build_services() -> dict[str, Any]:
     services["config_store"] = ConfigStore(core)
     services["user_profiles"] = user_profiles
     services["guild_admin"] = GuildAdminService(core)
+    services["account_admin"] = AccountAdminService(core)
     services["entitlement_service"] = EntitlementService(core)
 
     secrets = _secrets_client()
@@ -169,9 +173,16 @@ def build_services() -> dict[str, Any]:
             core, secrets, stage=stage
         )
         # Global Discord bot-application pool (Secrets Manager) + per-guild
-        # claim/assignment for multi-bot playback + invite links.
+        # claim/assignment for multi-bot playback + invite links. The Primary
+        # bot application (DISCORD_CLIENT_ID) is excluded from the pool so it is
+        # never handed out as an assignable secondary.
         services["bot_app_assignment"] = BotAppAssignmentService(
-            core, BotAppPool(secrets, stage=stage)
+            core,
+            BotAppPool(
+                secrets,
+                stage=stage,
+                primary_client_id=os.getenv("DISCORD_CLIENT_ID", ""),
+            ),
         )
 
     # Unified per-user source-credential store (encrypted DynamoDB). Requires

@@ -1,0 +1,23 @@
+{# Account co-admin edges (by Discord id) with remove action. #}
+<div class="glass-panel data-table__wrap">
+  <table class="data-table">
+    <thead>
+      <tr><th scope="col">Discord id</th><th scope="col"></th></tr>
+    </thead>
+    <tbody>
+      {% for admin in account_admins %}
+        <tr>
+          <td><code>{{ admin.discord_id }}</code></td>
+          <td>
+            <button class="btn btn-ghost btn-sm"
+                    hx-post="{{ url_for('guild.account_remove_admin', discord_id=admin.discord_id) }}"
+                    hx-target="#account-admin-list"
+                    hx-confirm="Remove account admin {{ admin.discord_id }}?">Remove</button>
+          </td>
+        </tr>
+      {% else %}
+        <tr><td class="data-table__empty" colspan="2">No account administrators appointed.</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>

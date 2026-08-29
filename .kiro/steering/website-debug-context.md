@@ -382,6 +382,37 @@ Implemented (web-ui, deploys via pipeline):
 platform_logic: added `CoreTable.query_pk_prefix`, `delete`; `delete_item` on
 ReadThroughTable/TableLike.
 
+### Account-level delegated admins (co-admins by Discord id, Option B)
+
+Distinct from PLATFORM admins (Cognito `admins` group) and GUILD admins
+(`guild_admin_service`): a user can appoint co-admins of THEIR OWN account by
+Discord user id, on the `/account` page. Option B — an appointed Discord id that
+Discord-OAuths in logs STRAIGHT INTO the owner's account (shared access; session
+identity = owner's Cognito `sub`) and lands on the dashboard.
+
+- `account_admin_service.py` — `AccountAdminService` over `hellodj-core`:
+  edge `PK=USER#<owner_sub>` / `SK=ACCTADMIN#<discordId>`, entity `AccountAdmin`,
+  GSI1 reverse (`DISCORD#<id>` / `ACCTADMIN#<owner_sub>`). `appoint_admin`
+  (idempotent) / `remove_admin` / `list_admins` / `owner_for_discord`
+  (login-path resolver; lexically-first owner when multi-appointed).
+- `guild_routes.py` — `POST /account/admins` (appoint, numeric-id-gated) +
+  `POST /account/admins/<discord_id>/remove`, keyed by the caller's own session
+  `sub` (a user only manages their OWN account's admins). HTMX partial
+  `partials/account_admin_list.html`; new "Account administrators" section in
+  `pages/account.html`.
+- `discord_session.py` — `establish_discord_session` (EXTRACTED from `auth.py`
+  to stay under the 500-line ceiling; auth.py imports it). Resolves the login
+  target: own linked account first (`user_for_discord`), else the appointed
+  owner via `AccountAdminService.owner_for_discord`. Records
+  `acting_as_account_admin` + `admin_actor_discord_id` on the session for audit;
+  the session's `discord_id` stays the OWNER's linked id so owner-scoped
+  authorization keeps resolving to the owner. Neither-linked-nor-appointed still
+  bounces to login with `not_linked`.
+- `bootstrap.py` / `app.py` — `account_admin` service built + registered as an
+  app extension (None in degraded mode).
+- Deploys via the pipeline (web-ui source change). No infra/IAM change — reuses
+  the existing `hellodj-core` table + web-ui IRSA.
+
 Infra (deployed via `cdk deploy hellodj-eks`):
 - web-ui SA: Cognito `AdminCreateUser` + Secrets Manager RW on `hellodj/<stage>/guild/*`
 - bot-path SAs (discord-bot-core, tidal/spotify-stream, lavalink): READ on same prefix

@@ -101,6 +101,9 @@ def create_app(
     )
     app.extensions["user_profiles"] = services["user_profiles"]
     app.extensions["guild_admin"] = services["guild_admin"]
+    # Account-level delegated admins (co-admins of a user's own account,
+    # appointed by Discord id); None in degraded mode (no datastore).
+    app.extensions["account_admin"] = services["account_admin"]
     app.extensions["guild_sources"] = services["guild_sources"]
     # Unified per-user source-credential store (encrypted DynamoDB); None in
     # degraded mode (no KMS / CMK) so callbacks skip the new write and fall
@@ -181,6 +184,10 @@ def _configure(app: Flask, overrides: dict[str, Any]) -> None:
         COGNITO_DOMAIN=os.getenv("COGNITO_DOMAIN", ""),
         COGNITO_CLIENT_ID=os.getenv("COGNITO_CLIENT_ID", ""),
         TIDAL_STREAM_URL=os.getenv("TIDAL_STREAM_URL", ""),
+        # spotify-stream sidecar URL — the web-ui orchestrates the one-time
+        # librespot reusable-credential capture through it (task 2.2); librespot
+        # itself lives in that sidecar, not this Flask image.
+        SPOTIFY_STREAM_URL=os.getenv("SPOTIFY_STREAM_URL", ""),
         # Per-guild source OAuth client ids (Spotify/Tidal secrets stay with
         # the sidecars; YouTube has no per-guild sidecar so the web-ui holds
         # GOOGLE_CLIENT_SECRET and completes the code->refresh-token exchange).

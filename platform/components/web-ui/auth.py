@@ -43,6 +43,7 @@ from auth_forms import (
 from auth_oauth import (
     discord_id_from_code,
 )
+from discord_session import establish_discord_session
 from source_account_routes import register_source_oauth_routes
 from source_credential_store import (
     persist_spotify_credential,
@@ -150,7 +151,7 @@ def build_auth_blueprint() -> Blueprint:
         )
         if not discord_id:
             return redirect(url_for("pages.login", error="discord_failed"))
-        _establish_discord_session(discord_id)
+        establish_discord_session(discord_id)
         if not session.get("user"):
             # No account is linked to this Discord identity (R3.2/R3.4): a
             # Discord login only works once the account has been linked.
@@ -214,7 +215,7 @@ def build_auth_blueprint() -> Blueprint:
         # Linking succeeded: establish the authenticated session (Discord OAuth
         # is the login method from now on, R3.2) and clear any pending handoff.
         session.pop("pending_link_sub", None)
-        _establish_discord_session(discord_id)
+        establish_discord_session(discord_id)
         return redirect(url_for("guild.account"))
 
     @bp.route("/tidal/callback")
@@ -424,28 +425,7 @@ def _link_subject() -> str | None:
     return str(pending) if pending else None
 
 
-def _establish_discord_session(discord_id: str) -> None:
-    """Establish an authenticated Discord-login session for ``discord_id``.
 
-    Resolves the Cognito subject linked to the Discord id via the GSI1 reverse
-    index (``user_for_discord``) and, when found, sets ``session['user']`` with
-    Discord as the provider (R3.2). When no account is linked the session is
-    left untouched so the caller can react (e.g. bounce to login).
-    """
-    profiles = current_app.extensions.get("user_profiles")
-    if not profiles:
-        return
-    sub = profiles.user_for_discord(discord_id)
-    if not sub:
-        return
-    profile = profiles.get(sub) or {}
-    session["user"] = {
-        "provider": AuthProvider.DISCORD_OAUTH.value,
-        "sub": sub,
-        "discord_id": discord_id,
-        "discord_linked": True,
-        "email": profile.get("email", ""),
-    }
 
 
 

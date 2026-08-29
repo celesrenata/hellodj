@@ -34,6 +34,28 @@
 </div>
 
 <div class="glass-panel panel-section">
+  <h2 class="panel-section__title">Account administrators</h2>
+  <p class="panel-section__muted">
+    Appoint another person to co-manage this account by their Discord user id
+    (the numeric id, not their username). An appointed administrator signs in
+    with Discord and lands on this account's dashboard with full access. Remove
+    them here at any time to revoke that access.
+  </p>
+  <form class="field-row"
+        hx-post="{{ url_for('guild.account_appoint_admin') }}"
+        hx-target="#account-admin-list">
+    <input class="field__input" name="discord_id" type="text"
+           inputmode="numeric" pattern="[0-9]+"
+           placeholder="123456789012345678"
+           aria-label="Discord user id" required>
+    <button type="submit" class="btn btn-primary">Appoint admin</button>
+  </form>
+  <div id="account-admin-list">
+    {% include "partials/account_admin_list.html" %}
+  </div>
+</div>
+
+<div class="glass-panel panel-section">
   <h2 class="panel-section__title">Your entitlements</h2>
   <p class="panel-section__muted">
     What your account is currently allowed to do on this platform.

@@ -228,6 +228,10 @@ def test_account_page_renders_status_without_token():
     assert _SECRET_REFRESH not in body
     assert _SECRET_ACCESS not in body
     assert "enc_blob" not in body
+    # The account-admin (co-admin by Discord id) section renders, with its
+    # empty state when no admins are appointed (degraded mode: no service).
+    assert "Account administrators" in body
+    assert "No account administrators appointed." in body
 
 
 # ── R1.7: SoundCloud gets NO OAuth control ─────────────────────────────────

@@ -231,6 +231,69 @@ def test_unlinked_discord_login_bounces_to_login(app) -> None:
         assert sess.get("user") is None
 
 
+# --------------------------------------------------------------------------- #
+# Account co-admin (Option B): an appointed Discord id logs INTO the owner's
+# account — its Discord identity is not linked to any account of its own.
+# --------------------------------------------------------------------------- #
+
+
+class _FakeAccountAdmin:
+    """In-memory ``AccountAdminService`` stand-in: discord_id -> owner_sub."""
+
+    def __init__(self, mapping: dict[str, str]) -> None:
+        self._by_discord = mapping
+
+    def owner_for_discord(self, discord_id: str) -> str | None:
+        return self._by_discord.get(discord_id)
+
+
+def test_appointed_account_admin_logs_into_owner_account(app) -> None:
+    # The co-admin's Discord id is NOT linked to its own account, but it IS
+    # appointed on owner "sub-owner" — Option B logs it straight into that
+    # account (session identity becomes the owner) and lands on the dashboard.
+    profiles = _configure(app, discord_id="disc-admin")
+    profiles.ensure("sub-owner", email="owner@example.com")
+    profiles.link_discord("sub-owner", "disc-owner")
+    app.extensions["account_admin"] = _FakeAccountAdmin(
+        {"disc-admin": "sub-owner"}
+    )
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["discord_state"] = "login-state"
+
+    resp = client.get("/auth/discord/callback?state=login-state&code=abc")
+
+    assert resp.status_code == 302
+    assert not resp.headers["Location"].endswith("/login")
+    with client.session_transaction() as sess:
+        user = sess["user"]
+        # Session identity is the OWNER, not the co-admin.
+        assert user["sub"] == "sub-owner"
+        assert user["email"] == "owner@example.com"
+        # Owner-scoped authorization facts use the OWNER's linked Discord id.
+        assert user["discord_id"] == "disc-owner"
+        # The acting co-admin is recorded for auditability.
+        assert user["acting_as_account_admin"] is True
+        assert user["admin_actor_discord_id"] == "disc-admin"
+
+
+def test_unappointed_unlinked_discord_still_bounces(app) -> None:
+    # A Discord id that is neither linked nor appointed cannot log in even with
+    # an account-admin service wired.
+    _configure(app, discord_id="disc-nobody")
+    app.extensions["account_admin"] = _FakeAccountAdmin({})
+    client = app.test_client()
+    with client.session_transaction() as sess:
+        sess["discord_state"] = "login-state"
+
+    resp = client.get("/auth/discord/callback?state=login-state&code=abc")
+
+    assert resp.status_code == 302
+    assert "error=not_linked" in resp.headers["Location"]
+    with client.session_transaction() as sess:
+        assert sess.get("user") is None
+
+
 def test_discord_login_state_mismatch_bounces_to_login(app) -> None:
     _configure(app, discord_id="disc-1")
     client = app.test_client()

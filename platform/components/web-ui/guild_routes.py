@@ -95,6 +95,7 @@ def build_guild_blueprint() -> Blueprint:
         sub = user.get("sub", "")
         profile = profiles.get(sub) if profiles and sub else {}
         ent = _svc("entitlement_service")
+        acct_admin = _svc("account_admin")
         return render_template(
             "pages/account.html",
             layout=_layout(),
@@ -107,9 +108,56 @@ def build_guild_blueprint() -> Blueprint:
             entitlements=(ent.get_effective(sub) if ent and sub else {}),
             entitlements_available=bool(ent and sub),
             tally=(ent.get_tally(sub) if ent and sub else {}),
+            account_admins=(
+                acct_admin.list_admins(sub) if acct_admin and sub else []
+            ),
             connected=request.args.get("connected", ""),
             error=request.args.get("error", ""),
             error_provider=request.args.get("provider", ""),
+        )
+
+    @bp.route("/account/admins", methods=["POST"])
+    def account_appoint_admin():  # type: ignore[unused-ignore]
+        """Appoint a Discord id as a co-admin of the caller's OWN account.
+
+        Keyed by the caller's session ``sub`` — a user can only appoint admins
+        on their own account, never another's. The Discord id must be numeric
+        (a Discord user id); a non-numeric value is ignored (no partial write).
+        Returns the account-admin list partial for an HTMX swap. Idempotent via
+        the service. No-ops in degraded mode (no account_admin service).
+        """
+        if not _require_login():
+            return redirect(url_for("pages.login"))
+        sub = _user().get("sub", "")
+        acct_admin = _svc("account_admin")
+        discord_id = request.form.get("discord_id", "").strip()
+        if acct_admin and sub and discord_id.isdigit():
+            acct_admin.appoint_admin(sub, discord_id)
+        return render_template(
+            "partials/account_admin_list.html",
+            account_admins=(
+                acct_admin.list_admins(sub) if acct_admin and sub else []
+            ),
+        )
+
+    @bp.route("/account/admins/<discord_id>/remove", methods=["POST"])
+    def account_remove_admin(discord_id: str):  # type: ignore[unused-ignore]
+        """Remove a Discord-id co-admin from the caller's OWN account.
+
+        Keyed by the caller's session ``sub`` so a user can only revoke admins
+        on their own account. Returns the refreshed list partial (HTMX swap).
+        """
+        if not _require_login():
+            return redirect(url_for("pages.login"))
+        sub = _user().get("sub", "")
+        acct_admin = _svc("account_admin")
+        if acct_admin and sub:
+            acct_admin.remove_admin(sub, discord_id)
+        return render_template(
+            "partials/account_admin_list.html",
+            account_admins=(
+                acct_admin.list_admins(sub) if acct_admin and sub else []
+            ),
         )
 
     @bp.route("/account/sources/<provider>/disconnect", methods=["POST"])
