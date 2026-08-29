@@ -33,6 +33,12 @@ __all__ = [
 
 DISCORD_API_BASE = "https://discord.com/api"
 
+#: Discord's API requires a descriptive User-Agent; requests with a default
+#: library UA (e.g. ``Python-urllib/3.x``) are rejected at Discord's Cloudflare
+#: edge with HTTP 403 "error code: 1010" (ban by client signature). Send an
+#: identifying UA in Discord's documented ``ClientName ($url, $version)`` shape.
+DISCORD_USER_AGENT = "HelloDJ (https://hellodj.bot, 1.0)"
+
 
 def exchange_code_for_groups(code: str, verifier: str, redirect_uri: str) -> list[str]:
     """Exchange a Cognito auth code for tokens and return its group claims.
@@ -115,7 +121,10 @@ def discord_id_from_code(code: str, redirect_uri: str) -> str | None:
         token_req = urllib.request.Request(
             f"{DISCORD_API_BASE}/oauth2/token",
             data=token_body,
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "User-Agent": DISCORD_USER_AGENT,
+            },
             method="POST",
         )
         with urllib.request.urlopen(token_req, timeout=8) as resp:  # noqa: S310
@@ -125,7 +134,10 @@ def discord_id_from_code(code: str, redirect_uri: str) -> str | None:
             return None
         me_req = urllib.request.Request(
             f"{DISCORD_API_BASE}/users/@me",
-            headers={"Authorization": f"Bearer {access}"},
+            headers={
+                "Authorization": f"Bearer {access}",
+                "User-Agent": DISCORD_USER_AGENT,
+            },
         )
         with urllib.request.urlopen(me_req, timeout=8) as resp:  # noqa: S310
             return json.loads(resp.read().decode("utf-8")).get("id")
