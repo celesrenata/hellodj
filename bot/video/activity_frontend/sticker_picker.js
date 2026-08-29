@@ -15,6 +15,25 @@
 
 const PAGE_SIZE = 30;
 
+// Module-shared base URL for sticker IMAGE bytes. Empty string = serve
+// relative to the Activity origin (the bot serves from local disk); a
+// non-empty value is the CDN/S3 prefix reported by the catalog's `base_url`
+// (AWS deployment). Set once when the catalog loads; the tool and renderer
+// import `stickerImageUrl` so every image request honours the same base.
+let _stickerImageBase = '';
+
+/** Set the sticker image base URL from the catalog's `base_url`. */
+export function setStickerImageBase(baseUrl) {
+  _stickerImageBase = (baseUrl || '').replace(/\/+$/, '');
+}
+
+/** Build the URL for a sticker image, using the CDN base when configured. */
+export function stickerImageUrl(category, filename) {
+  return _stickerImageBase
+    ? `${_stickerImageBase}/${category}/${filename}`
+    : `stickers/${category}/${filename}`;
+}
+
 export class StickerPicker {
   /**
    * @param {object} options
@@ -96,6 +115,8 @@ export class StickerPicker {
         const resp = await fetch('stickers/catalog');
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         this.catalog = await resp.json();
+        // Point sticker image URLs at the CDN when the backend reports one.
+        setStickerImageBase(this.catalog.base_url);
       } catch (_err) {
         this._gridContainer.innerHTML = '';
         this._categoriesContainer.innerHTML = '';
@@ -284,7 +305,7 @@ export class StickerPicker {
     wrapper.className = 'sticker-thumb-wrapper';
 
     const img = document.createElement('img');
-    img.dataset.src = `stickers/${categorySlug}/${filename}`;
+    img.dataset.src = stickerImageUrl(categorySlug, filename);
     img.alt = name || filename;
     img.className = 'sticker-thumbnail';
     img.title = name || filename;

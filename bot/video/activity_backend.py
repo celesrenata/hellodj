@@ -13,6 +13,7 @@ from __future__ import annotations
 import dataclasses
 import json
 import logging
+import os
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -137,9 +138,18 @@ class ActivityBackend:
     # ------------------------------------------------------------------
 
     def _init_sticker_catalog(self) -> None:
-        """Initialize the sticker catalog and store it on the app for handlers."""
-        sticker_catalog = StickerCatalog(Path("stickers"))
+        """Initialize the sticker catalog and store it on the app for handlers.
+
+        The manifest.json metadata is always read from the local ``stickers/``
+        dir (tiny JSON, baked into the image). Sticker IMAGE bytes are served
+        from a CDN/S3 when ``HELLODJ_STICKER_CDN_URL`` is set (AWS deployment),
+        otherwise from local disk (on-prem). See ``StickerCatalog``.
+        """
+        cdn_base_url = os.environ.get("HELLODJ_STICKER_CDN_URL") or None
+        sticker_catalog = StickerCatalog(Path("stickers"), cdn_base_url=cdn_base_url)
         sticker_catalog.load()
+        if cdn_base_url:
+            logger.info("Sticker images served from CDN: %s", cdn_base_url)
         self.app["sticker_catalog"] = sticker_catalog
 
     # ------------------------------------------------------------------

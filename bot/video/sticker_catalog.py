@@ -4,7 +4,24 @@ Loads stickers from a manifest.json file produced by prepare-hellodj-stickers.py
 The manifest describes categories, sticker metadata (tags, search text, animated
 flag), and file paths relative to the stickers/ directory.
 
-Serves sticker images directly from disk with proper caching headers.
+Sticker IMAGE bytes are served one of two ways:
+
+  * From a CDN / object store (AWS S3 behind CloudFront) when a base URL is
+    configured via ``HELLODJ_STICKER_CDN_URL``. The ~55 MiB of curated webp
+    assets then live in S3 instead of being baked into the bot image, and the
+    frontend fetches them directly from the (geo-local, cacheable) CDN. The
+    catalog/page/search JSON responses carry a ``base_url`` field so the client
+    knows where to load images from, and the legacy image route 302-redirects
+    to the CDN so already-serialized whiteboard strokes keep resolving.
+  * Directly from local disk (the original behaviour) when no CDN is
+    configured — the on-prem deployment bakes ``stickers/`` into the image and
+    serves the bytes itself. This fallback keeps both deployment targets
+    working from one code path.
+
+The manifest.json metadata is ALWAYS read locally at startup (it is tiny JSON,
+not image bytes) to build the in-memory category/search index. Only the image
+bytes move to the CDN.
+
 Supports pagination for lazy loading in the frontend picker.
 """
 
@@ -32,14 +49,33 @@ class StickerCatalog:
     image bytes — let the OS page cache handle that).
     """
 
-    def __init__(self, stickers_dir: Path) -> None:
+    def __init__(self, stickers_dir: Path, cdn_base_url: str | None = None) -> None:
         self._stickers_dir = stickers_dir
+        # Optional CDN/object-store base URL for sticker images (e.g.
+        # "https://stickers.us-east-1.hellodj.bot" or a CloudFront domain).
+        # When set, images are served from here instead of local disk. A
+        # trailing slash is stripped so joins are consistent.
+        self._cdn_base_url = cdn_base_url.rstrip("/") if cdn_base_url else None
         # category_slug → { name, stickers: [{ id, file, name, animated, ... }] }
         self._categories: dict[str, dict] = {}
         # All stickers flat list for search
         self._all_stickers: list[dict] = []
         # Manifest metadata
         self._meta: dict = {}
+
+    @property
+    def cdn_base_url(self) -> str | None:
+        """The configured CDN base URL for sticker images, or None (local disk)."""
+        return self._cdn_base_url
+
+    def image_url(self, category_slug: str, filename: str) -> str:
+        """Return the absolute CDN URL for a sticker image.
+
+        Only meaningful when a CDN base URL is configured. The on-disk layout
+        `assets/<category>/<file>` is mirrored under the CDN prefix.
+        """
+        base = self._cdn_base_url or ""
+        return f"{base}/{category_slug}/{filename}"
 
     def load(self) -> None:
         """Load manifest.json from the stickers directory."""
@@ -123,6 +159,11 @@ class StickerCatalog:
             ],
             "total": len(self._all_stickers),
             "animated_total": sum(1 for s in self._all_stickers if s["animated"]),
+            # Where the frontend should load sticker images from. Empty string
+            # means "relative to the Activity base" (local-disk serving); a
+            # non-empty value is the CDN/S3 prefix. The client joins this with
+            # "/<category>/<filename>".
+            "base_url": self._cdn_base_url or "",
         }
 
     def get_category_page(
@@ -248,10 +289,26 @@ async def handle_sticker_search(request: web.Request) -> web.Response:
 
 
 async def handle_sticker_image(request: web.Request) -> web.Response:
-    """GET /activity/stickers/{category}/{filename} → sticker image file."""
+    """GET /activity/stickers/{category}/{filename} → sticker image.
+
+    When a CDN base URL is configured the image bytes live in S3/CloudFront, so
+    this route 302-redirects there. Up-to-date clients read `base_url` from the
+    catalog and fetch the CDN directly (never hitting this route), but the
+    redirect keeps legacy clients and already-serialized whiteboard strokes
+    (which stored the relative `stickers/<cat>/<file>` URL) resolving. With no
+    CDN configured it serves the file from local disk as before.
+    """
     catalog: StickerCatalog = request.app["sticker_catalog"]
     category = request.match_info["category"]
     filename = request.match_info["filename"]
+
+    # Security: reject path traversal regardless of serving mode.
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise web.HTTPNotFound(text="Sticker not found")
+
+    if catalog.cdn_base_url:
+        # Images are served by the CDN; redirect there.
+        raise web.HTTPFound(catalog.image_url(category, filename))
 
     image_path = catalog.get_image_path(category, filename)
     if image_path is None:

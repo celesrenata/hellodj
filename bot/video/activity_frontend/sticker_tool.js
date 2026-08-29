@@ -11,6 +11,7 @@
  */
 
 import { normalize, denormalize, normalizeWidth } from './coords.js';
+import { stickerImageUrl } from './sticker_picker.js';
 
 const STROKE_WIDTH_PX = 3;
 const MIN_SIZE_PX = 5;
@@ -287,7 +288,7 @@ export class StickerTool {
    * @returns {HTMLImageElement|null}
    */
   _getImage(category, filename) {
-    const url = `stickers/${category}/${filename}`;
+    const url = stickerImageUrl(category, filename);
     if (this._imageCache.has(url)) {
       return this._imageCache.get(url);
     }

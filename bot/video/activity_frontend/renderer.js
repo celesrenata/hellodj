@@ -22,6 +22,7 @@
  */
 
 import { denormalize, denormalizeWidth } from './coords.js';
+import { stickerImageUrl } from './sticker_picker.js';
 
 export class StrokeRenderer {
   /**
@@ -438,7 +439,7 @@ export class StrokeRenderer {
     const boxX = Math.min(x1, x2);
     const boxY = Math.min(y1, y2);
 
-    const url = `stickers/${stroke.sticker_category}/${stroke.sticker_filename}`;
+    const url = stickerImageUrl(stroke.sticker_category, stroke.sticker_filename);
     const img = this._getOrLoadImage(url);
 
     if (img && img.complete && img.naturalWidth > 0) {

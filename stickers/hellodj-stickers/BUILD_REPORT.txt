@@ -1,0 +1,24 @@
+HelloDJ curated sticker build
+========================================
+Stickers: 1200
+Animated: 275
+Static: 925
+Assets: 55.37 MiB
+
+Noto Animated         173    29.99 MiB
+Fluent Animated       102    13.60 MiB
+Kenney Emotes          47     0.15 MiB
+Blobmoji                6     0.26 MiB
+Fluent Emoji          388     8.00 MiB
+OpenMoji              484     3.37 MiB
+
+Categories:
+blobs               6
+chaos             155
+creatures         147
+hands             174
+love              140
+party              84
+reactions         222
+stuff             181
+symbols            91

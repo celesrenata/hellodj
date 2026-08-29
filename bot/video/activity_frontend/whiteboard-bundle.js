@@ -1014,6 +1014,25 @@ class EraserTool {
 
 const STICKER_PAGE_SIZE = 30;
 
+// Bundle-scoped base URL for sticker images. Empty string = serve relative to
+// the Activity origin (local-disk mode); a non-empty value is the CDN/S3
+// prefix reported by the catalog's `base_url`. Set once when the catalog
+// loads, then used by every sticker image URL builder (picker, tool, renderer)
+// so images resolve from the CDN when configured and fall back to the bot
+// otherwise. Kept as a shared module variable because all whiteboard code is
+// concatenated into this one IIFE.
+let stickerImageBase = '';
+
+function setStickerImageBase(baseUrl) {
+  stickerImageBase = (baseUrl || '').replace(/\/+$/, '');
+}
+
+function stickerImageUrl(category, filename) {
+  return stickerImageBase
+    ? `${stickerImageBase}/${category}/${filename}`
+    : `stickers/${category}/${filename}`;
+}
+
 class StickerPicker {
   constructor({ container, onSelect }) {
     this.container = container;
@@ -1048,6 +1067,9 @@ class StickerPicker {
         const resp = await fetch('stickers/catalog');
         if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
         this.catalog = await resp.json();
+        // Point every sticker image URL at the CDN when the backend reports
+        // one (empty string keeps the relative local-disk path).
+        setStickerImageBase(this.catalog.base_url);
       } catch (_err) {
         this._gridContainer.innerHTML = '';
         this._categoriesContainer.innerHTML = '';
@@ -1151,7 +1173,7 @@ class StickerPicker {
     const wrapper = document.createElement('div');
     wrapper.className = 'sticker-thumb-wrapper';
     const img = document.createElement('img');
-    img.dataset.src = `stickers/${categorySlug}/${filename}`;
+    img.dataset.src = stickerImageUrl(categorySlug, filename);
     img.alt = name || filename;
     img.className = 'sticker-thumbnail';
     img.title = name || filename;
@@ -1321,7 +1343,7 @@ class StickerTool {
   }
 
   _getImage(category, filename) {
-    const url = `stickers/${category}/${filename}`;
+    const url = stickerImageUrl(category, filename);
     if (this._imageCache.has(url)) return this._imageCache.get(url);
     const img = new Image();
     img.src = url;
@@ -1657,7 +1679,7 @@ class WhiteboardOverlay {
     if (!stroke.sticker_category || !stroke.sticker_filename) return;
     if (!stroke.points || stroke.points.length < 2) return;
     const img = document.createElement('img');
-    img.src = `stickers/${stroke.sticker_category}/${stroke.sticker_filename}`;
+    img.src = stickerImageUrl(stroke.sticker_category, stroke.sticker_filename);
     img.style.cssText = 'position:absolute;pointer-events:none;object-fit:contain;';
     img.dataset.strokeId = stroke.id;
     this._stickerLayer.appendChild(img);
