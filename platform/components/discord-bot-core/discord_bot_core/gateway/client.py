@@ -22,7 +22,7 @@ from ..policy.guild_policy import GuildPolicy
 
 log = logging.getLogger(__name__)
 
-__all__ = ["build_intents", "BotClient"]
+__all__ = ["BotClient", "build_intents"]
 
 
 def build_intents() -> Any:
@@ -140,32 +140,91 @@ class BotClient:
             self._policy.clear(int(guild.id))
 
     def note_heartbeat(self) -> None:
-        """Record that a gateway heartbeat/READY was observed just now.
+        """Record that a gateway heartbeat/READY/resume was observed just now.
 
-        Called by the discord event handlers; also usable by tests to simulate
-        heartbeat activity for the health watchdog.
+        Called by the ``on_ready``/``on_resumed`` handlers as a coarse fallback
+        liveness signal. The authoritative signal is discord.py's own heartbeat
+        ACK tracking, read in :meth:`seconds_since_last_heartbeat`; this only
+        matters before the first ACK lands or when the websocket is momentarily
+        unavailable. Also usable by tests to simulate heartbeat activity.
         """
         self._last_heartbeat_monotonic = time.monotonic()
 
+    def _ws_heartbeat_age(self) -> float | None:
+        """Seconds since discord.py last received a HEARTBEAT_ACK, or ``None``.
+
+        Reads discord.py's live keepalive handler (``bot.ws._keep_alive``), which
+        stamps ``_last_ack`` (monotonic) on every ACK — the ONLY signal that
+        actually tracks the ongoing heartbeat pipeline. ``on_ready``/``on_resumed``
+        fire once per connection, so a manual timestamp goes stale on a perfectly
+        healthy gateway and would trigger a spurious reconnect every ~90s. Returns
+        ``None`` when the websocket or its keepalive isn't available yet, so the
+        caller falls back to the coarse ``on_ready`` timestamp.
+        """
+        bot = self._bot
+        if bot is None:  # pragma: no cover - defensive
+            return None
+        ws = getattr(bot, "ws", None)
+        if ws is None:
+            return None
+        keep_alive = getattr(ws, "_keep_alive", None)
+        last_ack = getattr(keep_alive, "_last_ack", None) if keep_alive else None
+        if last_ack is None:
+            return None
+        # discord.py's KeepAliveHandler uses time.perf_counter() for _last_ack.
+        return time.perf_counter() - float(last_ack)
+
     def seconds_since_last_heartbeat(self) -> float | None:
-        """Return seconds since the last observed heartbeat, or ``None``.
+        """Return seconds since the last gateway heartbeat, or ``None``.
+
+        Prefers discord.py's real HEARTBEAT_ACK timestamp (updates every ~41s on
+        a healthy connection). Falls back to the coarse ``on_ready``/``on_resumed``
+        timestamp only before the first ACK is observed. ``None`` means "no
+        liveness signal yet" (still connecting), which the watchdog treats as
+        healthy so it does not thrash during boot.
 
         Satisfies :class:`~discord_bot_core.watchdogs.gateway_health.GatewayProbe`.
         """
+        # A permanently-closed client is not a "stalled heartbeat" case — the run
+        # loop is exiting; don't force a reconnect on a closing client.
+        if self._bot is not None and self._bot.is_closed():
+            return None
+        ws_age = self._ws_heartbeat_age()
+        if ws_age is not None:
+            return ws_age
         if self._last_heartbeat_monotonic is None:
             return None
         return time.monotonic() - self._last_heartbeat_monotonic
 
     async def force_reconnect(self) -> None:
-        """Force the gateway to reconnect by closing the current connection.
+        """Force the gateway to reconnect WITHOUT terminating the client.
 
-        discord.py's reconnect logic re-establishes the session after close.
+        Closes the underlying *websocket* with a non-1000 code (4000). discord.py's
+        internal ``connect()`` loop catches the resulting ``ConnectionClosed`` and
+        transparently RESUMEs/reconnects — the ``bot.start()`` coroutine keeps
+        running. This is the critical difference from ``bot.close()``, which is a
+        terminal shutdown: calling it here previously ended ``bot.start()``, the
+        run loop then double-closed and raised ``CancelledError``, and the process
+        crashed (crash-loop). We must never call ``bot.close()`` to "reconnect".
+
         Satisfies :class:`~discord_bot_core.watchdogs.gateway_health.GatewayProbe`.
         """
-        if self._bot is None:  # pragma: no cover - defensive
+        bot = self._bot
+        if bot is None:  # pragma: no cover - defensive
             return
-        log.warning("gateway: forcing reconnect")
-        await self._bot.close()
+        if bot.is_closed():  # pragma: no cover - defensive
+            return
+        ws = getattr(bot, "ws", None)
+        if ws is None:
+            log.warning("gateway: reconnect requested but no live websocket")
+            return
+        log.warning("gateway: forcing websocket reconnect (resume)")
+        try:
+            # code=4000 (non-1000) => discord.py treats it as resumable and its
+            # connect() loop reconnects instead of exiting.
+            await ws.close(code=4000)
+        except Exception as exc:  # noqa: BLE001 - never crash the watchdog tick
+            log.warning("gateway: force_reconnect ws close failed: %s", exc)
 
     async def start(self, token: str) -> None:
         """Start the gateway connection with ``token`` (builds the bot if needed)."""

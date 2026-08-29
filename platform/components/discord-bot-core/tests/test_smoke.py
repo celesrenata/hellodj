@@ -8,6 +8,7 @@ without requiring discord.py, wavelink, boto3, or aiohttp to be installed.
 from __future__ import annotations
 
 import pytest
+
 from discord_bot_core.commands.playback_cog import build_request
 from discord_bot_core.config import BotConfig
 from discord_bot_core.playback.client import (
@@ -195,3 +196,115 @@ def test_gateway_health_is_stalled() -> None:
     assert wd.is_stalled(None) is False
     assert wd.is_stalled(10.0) is False
     assert wd.is_stalled(120.0) is True
+
+
+# --------------------------------------------------------------------------- #
+# BotClient gateway health probe + force_reconnect (crash-loop regression)
+# --------------------------------------------------------------------------- #
+
+
+class _FakeKeepAlive:
+    """Stand-in for discord.py's KeepAliveHandler (only ``_last_ack``)."""
+
+    def __init__(self, last_ack: float | None) -> None:
+        self._last_ack = last_ack
+
+
+class _FakeWebSocket:
+    """Stand-in for discord.py's DiscordWebSocket."""
+
+    def __init__(self, last_ack: float | None) -> None:
+        self._keep_alive = (
+            _FakeKeepAlive(last_ack) if last_ack is not None else None
+        )
+        self.closed_with: int | None = None
+
+    async def close(self, code: int = 1000) -> None:
+        self.closed_with = code
+
+
+class _FakeBot:
+    """Minimal fake of a discord.py Bot for probe/reconnect tests."""
+
+    def __init__(self, ws: _FakeWebSocket | None, closed: bool = False) -> None:
+        self.ws = ws
+        self._closed = closed
+        self.close_calls = 0
+
+    def is_closed(self) -> bool:
+        return self._closed
+
+    async def close(self) -> None:
+        # Terminal shutdown — must NOT be called by force_reconnect.
+        self.close_calls += 1
+        self._closed = True
+
+
+def _bot_client(bot: _FakeBot | None):
+    from discord_bot_core.gateway.client import BotClient
+
+    client = BotClient.__new__(BotClient)  # bypass discord import in __init__
+    client._bot = bot
+    client._last_heartbeat_monotonic = None
+    client._identity_applier = None
+    return client
+
+
+def test_probe_prefers_live_ws_heartbeat_ack() -> None:
+    import time
+
+    # A fresh ACK => tiny age, never stalled — this is the healthy-connection
+    # case that the old on_ready-only timestamp got wrong.
+    bot = _FakeBot(_FakeWebSocket(last_ack=time.perf_counter()))
+    client = _bot_client(bot)
+    age = client.seconds_since_last_heartbeat()
+    assert age is not None
+    assert age < 5.0
+
+
+def test_probe_reports_stale_ws_heartbeat() -> None:
+    import time
+
+    bot = _FakeBot(_FakeWebSocket(last_ack=time.perf_counter() - 200.0))
+    client = _bot_client(bot)
+    age = client.seconds_since_last_heartbeat()
+    assert age is not None
+    assert age > 90.0
+
+
+def test_probe_none_when_closed() -> None:
+    bot = _FakeBot(_FakeWebSocket(last_ack=0.0), closed=True)
+    client = _bot_client(bot)
+    assert client.seconds_since_last_heartbeat() is None
+
+
+def test_probe_falls_back_to_on_ready_timestamp_before_first_ack() -> None:
+    import time
+
+    bot = _FakeBot(_FakeWebSocket(last_ack=None))  # ws up, no ACK yet
+    client = _bot_client(bot)
+    assert client.seconds_since_last_heartbeat() is None  # no fallback set
+    client._last_heartbeat_monotonic = time.monotonic()
+    age = client.seconds_since_last_heartbeat()
+    assert age is not None and age < 5.0
+
+
+@pytest.mark.asyncio
+async def test_force_reconnect_closes_ws_not_bot() -> None:
+    ws = _FakeWebSocket(last_ack=0.0)
+    bot = _FakeBot(ws)
+    client = _bot_client(bot)
+    await client.force_reconnect()
+    # Regression: must close the WEBSOCKET with a resumable code, and must NOT
+    # terminally close the bot (that crashed the process previously).
+    assert ws.closed_with == 4000
+    assert bot.close_calls == 0
+    assert bot.is_closed() is False
+
+
+@pytest.mark.asyncio
+async def test_force_reconnect_noop_when_no_ws() -> None:
+    bot = _FakeBot(ws=None)
+    client = _bot_client(bot)
+    await client.force_reconnect()  # must not raise
+    assert bot.close_calls == 0
