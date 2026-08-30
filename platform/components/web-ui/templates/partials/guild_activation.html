@@ -12,10 +12,39 @@
   {% endif %}
 
   <label class="field__label" for="activation-key">Activation key</label>
-  <div class="field-row">
+  <div class="field-row" style="align-items: center; gap: 0.5rem;"
+       x-data="{ copied: false }">
     <input id="activation-key" class="field__input" type="text" readonly
            value="{{ activation.key }}"
            aria-label="Activation key for this server">
+    <button type="button" class="btn btn-ghost btn-sm"
+            :aria-label="copied ? 'Activation key copied' : 'Copy activation key'"
+            title="Copy activation key"
+            @click="
+              navigator.clipboard.writeText($refs.key.value).then(() => {
+                copied = true;
+                setTimeout(() => copied = false, 2000);
+              });
+            "
+            x-ref="btn">
+      {# icon swaps to a check on success (Lucide clipboard / check) #}
+      <svg x-show="!copied" xmlns="http://www.w3.org/2000/svg" width="16"
+           height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+           aria-hidden="true">
+        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+      </svg>
+      <svg x-show="copied" x-cloak xmlns="http://www.w3.org/2000/svg" width="16"
+           height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2" stroke-linecap="round" stroke-linejoin="round"
+           aria-hidden="true">
+        <path d="M20 6 9 17l-5-5"></path>
+      </svg>
+      <span x-text="copied ? 'Copied' : 'Copy'"></span>
+    </button>
+    {# x-ref target for the clipboard read #}
+    <input type="hidden" x-ref="key" value="{{ activation.key }}">
   </div>
   <p class="panel-section__muted">
     Run <code>/activate {{ activation.key }}</code> in your Discord server.

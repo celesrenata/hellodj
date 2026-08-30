@@ -58,6 +58,12 @@
   border-color: oklch(0.50 0.15 290 / 0.4);
 }
 
+/* Hide Alpine-managed elements until Alpine initializes (prevents a flash of
+   x-show/x-if content before hydration). */
+[x-cloak] {
+  display: none !important;
+}
+
 /* --------------------------------------------------------------------- */
 /* App shell + sidebar                                                   */
 /* --------------------------------------------------------------------- */
