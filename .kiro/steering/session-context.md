@@ -17,12 +17,24 @@ image builds and deployments. The correct workflow is:
 
 `selfMutation: true` in the pipeline. The pipeline has an `UpdatePipeline`
 (SelfMutate) stage (Source → Build → **UpdatePipeline** → ComponentBuilds →
-beta → staging → production). A CDK git push now **self-mutates the pipeline and
-auto-applies CDK changes** — `pipeline-stack.ts` changes (install/build
-commands, nix.conf, cache config) AND foundation-stack changes (e.g.
-`hellodj-eks`: the GPU NodePool / idle window / env / IAM) take effect on a
-plain push. There is NO manual `cdk deploy hellodj-pipeline` /
-`cdk deploy hellodj-eks` two-step anymore for CDK source changes.
+beta → staging → production). A CDK git push self-mutates the **pipeline stack
+itself** (its own `pipeline-stack.ts` template: install/build commands,
+nix.conf, cache config, stages) and then rebuilds images + deploys the per-stage
+**WorkloadsStacks**.
+
+**CORRECTION (2026-08-29): self-mutation does NOT deploy the foundation stacks.**
+The foundation stacks — `hellodj-eks`, `hellodj-data`, `hellodj-auth`,
+`hellodj-network` — are top-level `app` stacks in `bin/hellodj.ts`, deployed
+ONCE **outside** the pipeline. They are NOT pipeline stages, and CDK Pipelines
+self-mutation only rewrites the pipeline stack's own template — it does not
+`cdk deploy hellodj-eks`. So a change to a FOUNDATION stack (e.g. adding the
+`hellodj-kubectl` role to `hellodj-eks`, or GPU NodePool / idle window / env /
+IAM changes there) requires an explicit
+`cd infra && npx cdk deploy hellodj-eks --profile hellodj --require-approval never`.
+Only `pipeline-stack.ts` changes and the per-stage WorkloadsStack manifests ride
+a plain push. (Real incident: the new `hellodj-kubectl` role sat undeployed
+until a manual `cdk deploy hellodj-eks` created it; the WorkloadsStack kubectl
+handler failed `sts:AssumeRole` on the not-yet-existent role until then.)
 
 Why it's safe now (the old blocker is gone): the K8s manifests live on the
 per-stage `WorkloadsStack`s (each imports the shared cluster with its OWN
@@ -83,7 +95,12 @@ cd infra && npx jest
 cd infra && npx cdk synth hellodj-pipeline --quiet
 
 # Push to CodeCommit (triggers pipeline)
-git push codecommit main
+# MUST prefix AWS_PROFILE=hellodj — the repo's git credential.helper is the
+# bare `aws codecommit credential-helper $@` with NO profile, so a plain
+# `git push codecommit main` fails with a misleading
+# "fatal: repository '.../v1/repos/hellodj/' not found" (it's an AUTH failure,
+# not a missing repo). The env var makes the helper authenticate as `hellodj`.
+AWS_PROFILE=hellodj git push codecommit main
 
 # Check pipeline execution status
 AWS_PROFILE=hellodj aws codepipeline get-pipeline-state --name hellodj-pipeline --region us-east-1

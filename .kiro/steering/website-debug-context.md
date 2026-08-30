@@ -316,8 +316,18 @@ path, not the main invite.
      shell export can't poison the manifest tag.
 6. **Pipeline backlog**: rapid pushes queue multiple executions on OLD revisions.
    Stop stale ones and start fresh on HEAD:
-   `aws codepipeline stop-pipeline-execution --pipeline-name hellodj-pipeline --pipeline-execution-id <id> --abandon --region us-east-1`
-   then `aws codepipeline start-pipeline-execution --name hellodj-pipeline --region us-east-1`
+   `AWS_PROFILE=hellodj aws codepipeline stop-pipeline-execution --pipeline-name hellodj-pipeline --pipeline-execution-id <id> --abandon --region us-east-1`
+   then `AWS_PROFILE=hellodj aws codepipeline start-pipeline-execution --name hellodj-pipeline --region us-east-1`
+
+7. **Pushing to CodeCommit needs the profile.** Every `git push` to the
+   `codecommit` remote MUST be prefixed `AWS_PROFILE=hellodj git push codecommit
+   <branch>`. The repo's git `credential.helper` is the bare
+   `!aws codecommit credential-helper $@` (no `--profile`), so a plain
+   `git push codecommit main` fails with a MISLEADING
+   `fatal: repository '.../v1/repos/hellodj/' not found` — that is an AUTH
+   failure, not a missing repo (the repo exists; `aws codecommit
+   get-repository --repository-name hellodj` succeeds under the profile).
+   Do NOT chase the URL/trailing-slash; just set `AWS_PROFILE=hellodj`.
 
 ## Key AWS Facts
 

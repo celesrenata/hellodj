@@ -25,6 +25,7 @@ Requirements: 1.3, 1.4, 1.5, 1.6, 2.1
 
 from __future__ import annotations
 
+import logging
 import secrets as pysecrets
 
 from flask import (
@@ -64,6 +65,8 @@ from youtube_device_oauth import (
 #: device-code client (no operator Google Cloud app). They use the device
 #: connect UI instead of a browser redirect.
 _DEVICE_PROVIDERS = ("youtube", "youtube_music")
+
+_log = logging.getLogger("hellodj.web.source_oauth")
 
 __all__ = ["ACCOUNT_SOURCE_PROVIDERS", "register_source_oauth_routes"]
 
@@ -241,12 +244,16 @@ def register_source_oauth_routes(bp: Blueprint) -> None:
         # the same code/URL (the device_code stays server-side only).
         session["yt_device_user_code"] = flow["user_code"]
         session["yt_device_verification_url"] = flow["verification_url"]
+        session["yt_device_verification_url_complete"] = flow.get(
+            "verification_url_complete", ""
+        )
         session["yt_device_interval"] = flow["interval"]
         return render_template(
             "partials/account_youtube_device.html",
             provider=provider,
             user_code=flow["user_code"],
             verification_url=flow["verification_url"],
+            verification_url_complete=flow.get("verification_url_complete", ""),
             interval=flow["interval"],
             polling=True,
         )
@@ -281,6 +288,9 @@ def register_source_oauth_routes(bp: Blueprint) -> None:
                 provider=provider,
                 user_code=session.get("yt_device_user_code", ""),
                 verification_url=session.get("yt_device_verification_url", ""),
+                verification_url_complete=session.get(
+                    "yt_device_verification_url_complete", ""
+                ),
                 interval=int(session.get("yt_device_interval", 5) or 5),
                 polling=True,
             )
@@ -290,10 +300,17 @@ def register_source_oauth_routes(bp: Blueprint) -> None:
             "yt_device_provider",
             "yt_device_user_code",
             "yt_device_verification_url",
+            "yt_device_verification_url_complete",
             "yt_device_interval",
         ):
             session.pop(key, None)
         if status != "ok":
+            _log.warning(
+                "youtube device flow terminated for %s: status=%s error=%s",
+                provider,
+                status,
+                result.get("error", ""),
+            )
             return _render_account_sources(
                 error="youtube_connect_failed", provider=provider
             )
@@ -306,10 +323,29 @@ def register_source_oauth_routes(bp: Blueprint) -> None:
             fetch_potoken=fetch_guild_potoken,
         )
         if not tokens:
+            # The device grant succeeded (we have a refresh token) but the
+            # credential could not be composed — almost always because the
+            # PoToken fetch (potoken-server) returned nothing. Log it so this
+            # is a diagnosable fact instead of a silent "nothing happened".
+            _log.warning(
+                "youtube device flow: authorized %s but could not compose "
+                "credential (PoToken fetch likely failed); nothing stored",
+                provider,
+            )
+            return _render_account_sources(
+                error="youtube_connect_failed", provider=provider
+            )
+        if source_creds is None:
+            _log.error(
+                "youtube device flow: authorized %s but no source_credentials "
+                "store is wired; nothing stored",
+                provider,
+            )
             return _render_account_sources(
                 error="youtube_connect_failed", provider=provider
             )
         persist_youtube_credential(source_creds, sub, provider, tokens)
+        _log.info("youtube device flow connected %s for the account", provider)
         return _render_account_sources(connected=provider)
 
     def _start_spotify_librespot(sub: str):

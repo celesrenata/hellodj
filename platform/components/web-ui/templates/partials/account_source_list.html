@@ -5,7 +5,36 @@
    from SourceCredentialService.status_for (connected, last-refresh, refresh
    status) and NEVER a token value (R8.3). The action column offers Connect
    (active only when the provider's OAuth client id is configured, else a
-   disabled "Needs setup" control, R1.2) or Disconnect (HTMX partial, R8.2). #}
+   disabled "Needs setup" control, R1.2) or Disconnect (HTMX partial, R8.2).
+
+   After a connect/disconnect/device-flow outcome the caller passes `connected`
+   (a provider name) or `error` (+ `error_provider`) so this partial shows an
+   explicit success/failure notice — otherwise a completed flow would swap in a
+   visually identical table and look like "nothing happened". #}
+{% if connected %}
+  <div class="notice notice--ok" role="status" aria-live="polite">
+    {{ connected|replace('_', ' ')|title }} connected. It's ready to play.
+  </div>
+{% elif error %}
+  <div class="notice notice--danger" role="alert">
+    {% if error == 'youtube_connect_failed' %}
+      Couldn't finish connecting
+      {{ (error_provider or 'YouTube')|replace('_', ' ')|title }}. The
+      authorization completed but we couldn't fetch a playback token — try again
+      in a moment.
+    {% elif error == 'youtube_device_failed' %}
+      Couldn't start the
+      {{ (error_provider or 'YouTube')|replace('_', ' ')|title }} authorization.
+      Try again.
+    {% elif error.endswith('_connect_failed') %}
+      Couldn't finish connecting
+      {{ (error_provider or error)|replace('_', ' ')|title }}. Try again.
+    {% else %}
+      Something went wrong connecting
+      {{ (error_provider or error)|replace('_', ' ')|title }}. Try again.
+    {% endif %}
+  </div>
+{% endif %}
 <div class="glass-panel data-table__wrap">
   <table class="data-table">
     <thead>

@@ -125,8 +125,10 @@ def start_device_authorization(
 
     POSTs the plugin's device-code request and returns a dict with
     ``device_code`` (secret handle used to poll — NOT shown to the user),
-    ``user_code`` + ``verification_url`` (shown to the user), ``interval``
-    (seconds between polls), and ``expires_in`` (seconds until the code dies).
+    ``user_code`` + ``verification_url`` (shown to the user),
+    ``verification_url_complete`` (the verification URL with the code already
+    embedded, ``""`` if the endpoint didn't return one), ``interval`` (seconds
+    between polls), and ``expires_in`` (seconds until the code dies).
 
     Raises:
         DeviceCodeError: If the endpoint does not return a device code.
@@ -147,6 +149,15 @@ def start_device_authorization(
         or response.get("verification_uri", "")
         or ""
     )
+    # Google also returns a "complete" verification URL with the user code
+    # already embedded (``?user_code=<code>``), so the user can click straight
+    # through to the pre-filled consent page instead of typing the code on
+    # youtube.com/activate. Prefer it when present; fall back to the plain URL.
+    verification_url_complete = str(
+        response.get("verification_url_complete", "")
+        or response.get("verification_uri_complete", "")
+        or ""
+    )
     if not device_code or not user_code or not verification_url:
         raise DeviceCodeError("youtube device-code response was incomplete")
     try:
@@ -161,6 +172,7 @@ def start_device_authorization(
         "device_code": device_code,
         "user_code": user_code,
         "verification_url": verification_url,
+        "verification_url_complete": verification_url_complete,
         "interval": max(interval, 1),
         "expires_in": expires_in,
     }

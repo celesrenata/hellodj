@@ -15,14 +15,26 @@
     Authorize {{ provider|replace('_', ' ')|title }}
   </h3>
   <p class="panel-section__muted">
-    On any device, open the link below and enter this code to connect your
-    YouTube account. This page checks automatically and updates when you are
-    done.
+    {% if verification_url_complete %}
+      Open the button below to authorize your YouTube account — your code is
+      already filled in. This page checks automatically and updates when you
+      are done.
+    {% else %}
+      On any device, open the link below and enter this code to connect your
+      YouTube account. This page checks automatically and updates when you are
+      done.
+    {% endif %}
   </p>
   <p class="field-row" style="align-items:center; gap:1rem;">
-    <a class="btn btn-primary btn-sm" target="_blank" rel="noopener noreferrer"
-       href="{{ verification_url }}">Open {{ verification_url }}</a>
-    <span class="badge badge--muted" aria-label="Your device code"
+    {% if verification_url_complete %}
+      <a class="btn btn-primary btn-sm" target="_blank" rel="noopener noreferrer"
+         href="{{ verification_url_complete }}">Authorize YouTube</a>
+    {% else %}
+      <a class="btn btn-primary btn-sm" target="_blank" rel="noopener noreferrer"
+         href="{{ verification_url }}">Open {{ verification_url }}</a>
+    {% endif %}
+    <span class="badge badge--muted"
+          aria-label="Your device code (in case you need to enter it manually)"
           style="font-family:var(--font-mono, monospace); font-size:1.1rem; letter-spacing:0.15em;">
       {{ user_code }}
     </span>
