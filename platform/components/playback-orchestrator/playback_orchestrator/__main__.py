@@ -27,33 +27,81 @@ Requirements: 5.1, 5.7, 6.1, 6.4, 15.1 (aws-multi-bot-runtime 2.1, 2.2, 2.3, 2.4
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import signal
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import FrameType
+from typing import Any
+
+from .playback_api import PLAYBACK_ROUTE, PlaybackService, handle_playback
 
 _LOG = logging.getLogger("playback_orchestrator")
 
+#: Max request body the playback endpoint will read (guards against a runaway
+#: Content-Length). A play request is a few hundred bytes; 64 KiB is generous.
+_MAX_BODY_BYTES = 64 * 1024
 
-class _HealthHandler(BaseHTTPRequestHandler):
-    """Serve ``GET /healthz`` (and ``/``) with a 200; everything else 404."""
 
-    def do_GET(self) -> None:  # noqa: N802 (http.server API)
-        if self.path in ("/", "/healthz", "/health"):
-            body = b'{"status":"ok","component":"playback-orchestrator"}'
-            self.send_response(200)
+def _make_handler(
+    playback: PlaybackService | None,
+) -> type[BaseHTTPRequestHandler]:
+    """Build the HTTP handler class bound to the (optional) playback service.
+
+    The service is captured in a closure so the stdlib handler (which the server
+    instantiates per request) can reach it without global state. A ``None``
+    service still serves health + a clean "not configured" playback body.
+    """
+
+    class _Handler(BaseHTTPRequestHandler):
+        """Serve ``GET /healthz`` + ``POST /v1/playback``; else 404."""
+
+        def do_GET(self) -> None:  # noqa: N802 (http.server API)
+            if self.path in ("/", "/healthz", "/health"):
+                self._write_json(200, b'{"status":"ok","component":"playback-orchestrator"}')
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def do_POST(self) -> None:  # noqa: N802 (http.server API)
+            if self.path != PLAYBACK_ROUTE:
+                self.send_response(404)
+                self.end_headers()
+                return
+            body = handle_playback(playback, self._read_json_body())
+            self._write_json(200, json.dumps(body).encode("utf-8"))
+
+        # -- helpers -------------------------------------------------------
+
+        def _read_json_body(self) -> dict[str, Any]:
+            """Read + parse the JSON request body (empty dict on any problem)."""
+            try:
+                length = int(self.headers.get("Content-Length", "0") or "0")
+            except ValueError:
+                return {}
+            if length <= 0 or length > _MAX_BODY_BYTES:
+                return {}
+            try:
+                raw = self.rfile.read(length)
+                parsed = json.loads(raw or b"{}")
+            except (ValueError, OSError):
+                return {}
+            return parsed if isinstance(parsed, dict) else {}
+
+        def _write_json(self, status: int, body: bytes) -> None:
+            """Write a JSON response with the given status + body."""
+            self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
-        else:
-            self.send_response(404)
-            self.end_headers()
 
-    def log_message(self, fmt: str, *args: object) -> None:
-        """Route the stdlib access log through the component logger."""
-        _LOG.debug("health-server: " + fmt, *args)
+        def log_message(self, fmt: str, *args: object) -> None:
+            """Route the stdlib access log through the component logger."""
+            _LOG.debug("health-server: " + fmt, *args)
+
+    return _Handler
 
 
 def _install_signal_handlers(
@@ -89,7 +137,24 @@ def main() -> None:
     )
     host = os.environ.get("HOST", "0.0.0.0")  # noqa: S104 (container bind)
     port = int(os.environ.get("PORT", "8080"))
-    server = ThreadingHTTPServer((host, port), _HealthHandler)
+
+    # Build the playback API service (router + single-writer session store).
+    # Degrades to None when no session table / boto3 is configured; the handler
+    # then serves a clean "not configured" body instead of a 404, so the bot's
+    # /play reply is truthful. This is the endpoint the bot's PlaybackClient
+    # POSTs to (POST /v1/playback) — without it every /play hit the 404 and read
+    # as "Playback service is unavailable right now."
+    from .playback_bootstrap import build_playback_service
+
+    playback = build_playback_service()
+    if playback is None:
+        _LOG.warning(
+            "playback API: no session table configured — /v1/playback will "
+            "report 'not configured' until HELLODJ_SESSION_TABLE + creds are wired"
+        )
+    else:
+        _LOG.info("playback API: serving POST /v1/playback")
+    server = ThreadingHTTPServer((host, port), _make_handler(playback))
 
     # Start the durable token-refresh watchdog on a daemon thread next to the
     # health server (R5.1). It self-degrades to a no-op (logs "degraded:
