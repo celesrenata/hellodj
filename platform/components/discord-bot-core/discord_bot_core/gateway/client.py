@@ -25,6 +25,10 @@ log = logging.getLogger(__name__)
 __all__ = ["BotClient", "build_intents"]
 
 
+class _NeverRaisedError(Exception):
+    """Sentinel used when ``discord`` is unavailable so an ``except`` is inert."""
+
+
 def build_intents() -> Any:
     """Build the Discord gateway intents the bot requires.
 
@@ -165,6 +169,21 @@ class BotClient:
         async def on_guild_remove(guild: Any) -> None:  # pragma: no cover
             self._policy.clear(int(guild.id))
 
+    @staticmethod
+    def _forbidden_type() -> type[BaseException]:
+        """Return ``discord.Forbidden`` (lazy), or an inert sentinel.
+
+        Keeping the import lazy lets this module load in a discord-less test
+        env; when discord isn't installed the returned sentinel is never raised,
+        so the ``except`` clause is simply inert and the generic handler applies.
+        """
+        try:
+            import discord
+
+            return discord.Forbidden
+        except Exception:  # noqa: BLE001 - discord not installed (tests)
+            return _NeverRaisedError
+
     def _guild_activated(self, guild_id: int) -> bool:
         """Return whether ``guild_id`` is activated (secure default: locked).
 
@@ -265,14 +284,42 @@ class BotClient:
                 if cmd.name in visible:
                     tree.add_command(cmd, guild=snowflake, override=True)
             synced = await tree.sync(guild=snowflake)
+            activated = self._guild_activated(gid)
             log.info(
                 "gateway: synced %d app command(s) to guild %s (activated=%s)",
                 len(synced),
                 gid,
-                self._guild_activated(gid),
+                activated,
+            )
+            # An activated guild that ends up with zero visible commands is a
+            # red flag (the bot appears command-less to users): surface it loudly
+            # so it isn't mistaken for a working sync.
+            if activated and not synced:
+                log.error(
+                    "gateway: guild %s is ACTIVATED but synced 0 commands — the "
+                    "command picker will be empty. Check the tree has commands "
+                    "and the bot was invited with the applications.commands scope.",
+                    gid,
+                )
+        except self._forbidden_type() as exc:
+            # A Forbidden here almost always means the bot was invited WITHOUT
+            # the applications.commands scope, so Discord rejects the per-guild
+            # command registration outright. That is a config error worth an
+            # ERROR + a specific, actionable hint — not a low-severity warning
+            # that hides why the picker is empty.
+            log.error(
+                "gateway: app-command sync FORBIDDEN for guild %s (%s) — the "
+                "bot is likely missing the 'applications.commands' scope; "
+                "re-invite it with that scope so slash commands can register.",
+                getattr(guild, "id", "?"),
+                exc,
             )
         except Exception as exc:  # noqa: BLE001 - never crash on a sync failure
-            log.warning("gateway: app-command sync failed: %s", exc)
+            log.error(
+                "gateway: app-command sync failed for guild %s: %s",
+                getattr(guild, "id", "?"),
+                exc,
+            )
 
     async def resync_guild(self, guild_id: int) -> None:  # pragma: no cover - discord runtime
         """Re-sync one guild's visible command set (e.g. right after activation).

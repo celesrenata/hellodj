@@ -49,6 +49,8 @@ import os
 import threading
 from typing import TYPE_CHECKING, Any
 
+from .instance_identity import InstanceIdentityApplier
+from .instance_identity_store import build_instance_identity_store
 from .instance_runtime import AwsInstanceOrchestrator, PoolCredentialSource
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
@@ -101,6 +103,40 @@ def _secrets_client() -> Any | None:
         )
     except Exception:  # noqa: BLE001 - degrade: no secrets client
         return None
+
+
+def _s3_client() -> Any | None:
+    """Build an S3 client for reading avatar bytes, or None when boto3 absent."""
+    try:
+        import boto3
+
+        return boto3.client(
+            "s3", region_name=os.getenv("AWS_REGION", "us-east-1")
+        )
+    except Exception:  # noqa: BLE001 - degrade: no s3 client
+        return None
+
+
+def _build_identity_applier(core: Any) -> InstanceIdentityApplier | None:
+    """Build the per-bot identity applier from env, or None (degraded).
+
+    Enabled only when BOTH an S3 avatar bucket (``HELLODJ_ASSETS_BUCKET``) and an
+    S3 client are available — the applier needs to read avatar bytes and write
+    apply status. A missing bucket / client leaves per-bot identity apply
+    disabled (name+avatar stay default) without affecting the runtime. Mirrors
+    the discord-bot-core ``build_identity_applier`` enable condition so the two
+    processes gate on the same env.
+    """
+    bucket = os.getenv("HELLODJ_ASSETS_BUCKET", "").strip()
+    if not bucket:
+        return None
+    store = build_instance_identity_store(core)
+    if store is None:
+        return None
+    s3 = _s3_client()
+    if s3 is None:
+        return None
+    return InstanceIdentityApplier(store, s3, avatar_bucket=bucket)
 
 
 def _discord_available() -> bool:
@@ -205,7 +241,14 @@ def build_instance_runtime() -> tuple[AwsInstanceOrchestrator, list[str]] | None
     if not guild_ids:
         return None
 
-    orchestrator = AwsInstanceOrchestrator(object(), object(), source)
+    # Optional per-bot identity applier (name + avatar). Enabled only when an
+    # avatar bucket + S3 client are available; otherwise pool bots keep their
+    # default application identity (degraded, never fatal).
+    identity_applier = _build_identity_applier(core)
+
+    orchestrator = AwsInstanceOrchestrator(
+        object(), object(), source, identity_applier=identity_applier
+    )
     return orchestrator, guild_ids
 
 

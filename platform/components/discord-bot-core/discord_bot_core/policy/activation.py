@@ -24,6 +24,7 @@ __all__ = [
     "ActivationStore",
     "CoreTableActivationStore",
     "GuildActivation",
+    "NullActivationStore",
     "build_activation_store",
 ]
 
@@ -86,6 +87,32 @@ class ActivationStore(Protocol):
     def set_activated(self, guild_id: str, activated: bool) -> None:
         """Set the guild's ``activated`` flag, preserving the key."""
         ...
+
+
+class NullActivationStore:
+    """A degraded :class:`ActivationStore` used when no core table is configured.
+
+    Every guild reads as NOT activated (secure default: locked) and a write is a
+    no-op — there is no backing table to persist to. This lets the activation
+    cog (and thus the ``/activate`` slash command) ALWAYS be registered, so a
+    guild is never left with zero commands and no recovery path: ``/activate``
+    is always present. When the store is null, ``/activate`` cannot succeed
+    (there is no stored key to match), which is correct — activation genuinely
+    requires the table; the fix is that the recovery command still EXISTS and
+    the guild is loudly locked rather than silently command-less.
+    """
+
+    def get_activation_data(self, guild_id: str) -> dict[str, Any] | None:
+        """Return ``None`` — no activation state exists without a table."""
+        return None
+
+    def set_activated(self, guild_id: str, activated: bool) -> None:
+        """No-op — there is no backing table to persist activation to."""
+        log.warning(
+            "activation: no core table configured — cannot persist activation "
+            "for guild %s (guild stays locked)",
+            guild_id,
+        )
 
 
 class CoreTableActivationStore:

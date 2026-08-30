@@ -24,7 +24,11 @@ from .gateway.client import BotClient
 from .identity.applier import IdentityApplier
 from .identity.store import build_identity_store
 from .playback.client import PlaybackClient
-from .policy.activation import GuildActivation, build_activation_store
+from .policy.activation import (
+    GuildActivation,
+    NullActivationStore,
+    build_activation_store,
+)
 from .policy.entitlements import build_entitlement_resolver
 from .policy.guild_policy import GuildPolicy
 from .secrets import TokenProvider
@@ -172,25 +176,38 @@ async def run(config: BotConfig | None = None) -> None:
     )
     gateway.set_entitlements(entitlement_resolver)
 
+    # ALWAYS register the activation cog so the ``/activate`` slash command
+    # exists — otherwise a guild whose core table is unconfigured (store None)
+    # would sync only activate/help, neither of which would be defined, leaving
+    # it with ZERO commands and NO recovery path. When no table is configured we
+    # fall back to a NullActivationStore: every guild reads as locked (the secure
+    # default is preserved) but /activate is present, and the failure is loud
+    # (logged) rather than a silent command-less bot.
     activation_store = build_activation_store(cfg.core_table_name, cfg.aws_region)
-    if activation_store is not None:
-        activation = GuildActivation(activation_store)
-        # The gateway uses the activation reader to decide which commands are
-        # VISIBLE per guild (unactivated -> only activate/help), and re-syncs a
-        # guild the moment /activate succeeds (activate disappears, the rest
-        # appear) via the on_activated callback. The entitlement resolver hides
-        # feature commands the guild owner's plan doesn't include, and the cog
-        # gate enforces the same as a runtime backstop.
-        gateway.set_activation(activation)
-        cog = build_activation_cog(
-            bot,
-            activation,
-            on_activated=gateway.resync_guild,
-            entitlements=entitlement_resolver,
+    if activation_store is None:
+        log.warning(
+            "activation: no core table configured (HELLODJ_CORE_TABLE unset or "
+            "boto3 build failed) — every guild stays LOCKED, but /activate is "
+            "still registered so activation can proceed once the table is wired"
         )
-        result = bot.add_cog(cog)
-        if result is not None:
-            await result
+        activation_store = NullActivationStore()
+    activation = GuildActivation(activation_store)
+    # The gateway uses the activation reader to decide which commands are
+    # VISIBLE per guild (unactivated -> only activate/help), and re-syncs a
+    # guild the moment /activate succeeds (activate disappears, the rest
+    # appear) via the on_activated callback. The entitlement resolver hides
+    # feature commands the guild owner's plan doesn't include, and the cog
+    # gate enforces the same as a runtime backstop.
+    gateway.set_activation(activation)
+    cog = build_activation_cog(
+        bot,
+        activation,
+        on_activated=gateway.resync_guild,
+        entitlements=entitlement_resolver,
+    )
+    result = bot.add_cog(cog)
+    if result is not None:
+        await result
 
     # Optional per-guild bot-identity apply: only when the core table + assets
     # bucket are configured. The applier reads persisted BOTIDENTITY items and

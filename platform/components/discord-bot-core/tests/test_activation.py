@@ -131,3 +131,41 @@ def test_visible_unactivated_intersects_defined_commands() -> None:
 def test_visible_activated_without_activate_is_noop_on_activate() -> None:
     # Removing activate when it isn't present is harmless.
     assert allowed_command_names(True, {"play", "skip"}) == {"play", "skip"}
+
+
+# ── NullActivationStore (degraded: no core table configured) ─────────────────
+
+
+def test_null_store_keeps_every_guild_locked() -> None:
+    """Without a table, every guild reads as NOT activated (secure default)."""
+    from discord_bot_core.policy.activation import NullActivationStore
+
+    act = GuildActivation(NullActivationStore())
+    assert act.is_activated(1) is False
+    assert act.is_activated(999) is False
+
+
+def test_null_store_activate_fails_cleanly() -> None:
+    """/activate cannot succeed with no stored key, and never raises."""
+    from discord_bot_core.policy.activation import NullActivationStore
+
+    act = GuildActivation(NullActivationStore())
+    assert act.activate(1, "any-key") is False
+    assert act.is_activated(1) is False
+
+
+def test_null_store_recovery_command_still_visible() -> None:
+    """A locked guild backed by the null store still shows /activate + /help.
+
+    This is the whole point of the always-register-the-cog fix: the guild is
+    locked, but the recovery command is present (not zero commands).
+    """
+    from discord_bot_core.policy.activation import NullActivationStore
+
+    act = GuildActivation(NullActivationStore())
+    all_names = frozenset({"activate", "help", "play", "skip"})
+    visible = allowed_command_names(act.is_activated(1), all_names)
+    assert visible == {"activate", "help"}
+    # And the pure gate blocks a non-activate command in the locked guild.
+    assert command_allowed(act, command_name="play", guild_id=1) is False
+    assert command_allowed(act, command_name="activate", guild_id=1) is True
