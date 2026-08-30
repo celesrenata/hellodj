@@ -59,3 +59,46 @@ def test_empty_when_no_access_token(monkeypatch) -> None:
         auth_oauth, "_discord_access_token", lambda code, redirect_uri: None
     )
     assert auth_oauth.discord_manageable_guilds_from_code("code", "cb") == []
+
+
+def test_token_exchange_logs_discord_error_body(monkeypatch, caplog) -> None:
+    """A Discord token-endpoint HTTPError logs the response body (e.g.
+    ``invalid_client``) so a credential/redirect issue is self-diagnosing,
+    and the helper degrades to ``None`` rather than raising."""
+    import urllib.error
+
+    monkeypatch.setattr(
+        auth_oauth,
+        "discord_client_credentials",
+        lambda: ("client-id", "client-secret"),
+        raising=False,
+    )
+    # Also patch the lazily-imported name used inside the helper.
+    import source_token_exchange
+
+    monkeypatch.setattr(
+        source_token_exchange,
+        "discord_client_credentials",
+        lambda: ("client-id", "client-secret"),
+    )
+
+    body = b'{"error":"invalid_client","error_description":"Invalid client_id or client_secret"}'
+
+    def _raise_401(*a: object, **k: object):
+        raise urllib.error.HTTPError(
+            "https://discord.com/api/oauth2/token",
+            401,
+            "Unauthorized",
+            {},
+            io.BytesIO(body),
+        )
+
+    monkeypatch.setattr(auth_oauth.urllib.request, "urlopen", _raise_401)
+
+    with caplog.at_level("WARNING"):
+        token = auth_oauth._discord_access_token("code", "https://cb")
+
+    assert token is None
+    joined = " ".join(r.getMessage() for r in caplog.records)
+    assert "HTTP 401" in joined
+    assert "invalid_client" in joined

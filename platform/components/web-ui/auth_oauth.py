@@ -259,6 +259,24 @@ def _discord_access_token(code: str, redirect_uri: str) -> str | None:
         )
         with urllib.request.urlopen(req, timeout=8) as resp:  # noqa: S310
             return json.loads(resp.read().decode("utf-8")).get("access_token")
+    except urllib.error.HTTPError as exc:
+        # Discord returns the OAuth error (invalid_client, redirect_uri_mismatch,
+        # invalid_grant, …) in the body. It carries no token/secret material, so
+        # logging it turns a bare HTTP 401 traceback into an actionable fact.
+        # Mirrors ``discord_id_from_code``'s HTTPError handling.
+        try:
+            detail = exc.read().decode("utf-8", "replace")[:500]
+        except Exception:  # noqa: BLE001
+            detail = "<unreadable>"
+        log.warning(
+            "discord guilds token exchange failed: HTTP %s at %s "
+            "(redirect_uri=%s): %s",
+            exc.code,
+            getattr(exc, "url", "?"),
+            redirect_uri,
+            detail,
+        )
+        return None
     except Exception:  # noqa: BLE001
         log.warning(
             "discord guilds token exchange failed (redirect_uri=%s)",
