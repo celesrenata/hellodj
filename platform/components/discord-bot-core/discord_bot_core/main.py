@@ -241,8 +241,20 @@ async def run(config: BotConfig | None = None) -> None:
 
 
 def main() -> None:
-    """Console entry point: configure logging and run the event loop."""
-    logging.basicConfig(level=logging.INFO)
+    """Console entry point: configure logging and run the event loop.
+
+    Honors the ``LOG_LEVEL`` env (set to ``DEBUG`` for beta/staging, ``INFO``
+    for production by the WorkloadsStack) so the bot's debug logs actually
+    surface in the lower stages. Previously this hardcoded ``INFO``, so every
+    ``log.debug(...)`` in the bot was silently dropped even in beta.
+    """
+    import os
+
+    level_name = os.environ.get("LOG_LEVEL", "INFO").upper()
+    logging.basicConfig(
+        level=getattr(logging, level_name, logging.INFO),
+        format="%(asctime)s %(levelname)s %(name)s: %(message)s",
+    )
     asyncio.run(run())
 
 

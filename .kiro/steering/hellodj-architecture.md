@@ -1125,3 +1125,61 @@ for prefix) as a runtime backstop, so a stale client cache can't invoke a
 hidden/denied command. `main.py` wires `gateway.set_activation(...)`,
 `gateway.set_entitlements(build_entitlement_resolver(...))`, and passes both into
 `build_activation_cog(...)`.
+
+## AWS platform: per-stage observability + analytics + component metrics (2026-08-30)
+
+> AWS EKS only. CDK changes in `hellodj-cdk` (foundation stacks deploy via
+> `cdk deploy`; the metrics grants on the per-stage WorkloadsStack ride the
+> pipeline). Component metric emission (`web-ui`, `playback-orchestrator`)
+> deploys via the pipeline image rebuild.
+
+The observability/analytics pipeline is now **per-stage and fully isolated** —
+Beta / Staging / Production logs, metrics, dashboards, alarms, and their
+Glue/Athena/QuickSight analytics live in completely separate resources that
+never intermingle.
+
+### Stacks (per stage, in `bin/hellodj.ts`)
+
+- **`ObservabilityStack`** (`hellodj-<region>-<stage>-observability`): ONE
+  CloudWatch Log Group **per component** (`/hellodj/<region>/hellodj-<stage>/<component>`,
+  14 groups), a `ComponentErrors` metric filter on each, a per-stage dashboard,
+  threshold alarms, and the SNS topic that fans out to
+  `celes+hellodj@celestium.life` + `+14257853431`. Reads the
+  `HelloDJ/Transcode` / `HelloDJ/WebUI` / `HelloDJ/Bot` / `HelloDJ/Logs`
+  namespaces (all stage-dimensioned).
+- **`AnalyticsStack`** (`hellodj-<region>-<stage>-analytics`): S3 Hive
+  Log_Store + a Kinesis Firehose (with an inline CWL-decompress Lambda
+  processor) writing the `year=/month=/day=/hour=/` Hive layout + Glue
+  database/crawler + Athena workgroup + (gated) QuickSight. Each of the stage's
+  log groups is subscription-filtered into THIS stage's Firehose → S3 store.
+
+### Log shipping
+
+One **cluster-wide Fluent Bit DaemonSet** (`eks-addons.ts` `installFluentBit`)
+ships every pod's stdout to `/hellodj/<region>/<namespace>/<component>` using the
+pod's namespace (`hellodj-<stage>`) + `app.kubernetes.io/name` label. Isolation
+is at the destination log group, not the agent. IRSA-scoped to
+`/hellodj/<region>/*`; `auto_create_group Off` (the ObservabilityStack owns the
+groups). Node/systemd logs go to `/hellodj/<region>/system`.
+
+### Component metrics (shared emitter)
+
+`hellodj_platform_logic.platform_metrics.PlatformMetrics` is the single shared,
+injectable, best-effort CloudWatch emitter (lazy boto3; degrades to no-op;
+never raises into the caller). Wired into:
+
+- **web-ui** (`HelloDJ/WebUI`): `metrics_middleware.register_metrics` publishes
+  `HttpRequests` (by status class + method), `HttpServerErrors`,
+  `HttpClientErrors`, `UnhandledExceptions`, `RequestLatencyMs`;
+  `InstrumentedCoreTable` (wired in `bootstrap.py`) publishes `DbReads` /
+  `DbWrites` / `DbErrors` / `DbLatencyMs`.
+- **playback-orchestrator** (`HelloDJ/Bot`): `StreamMetricsPublisher` (daemon
+  thread started in `__main__.main` via `metrics_bootstrap`) publishes
+  `ActiveAudioStreams` / `ActiveVideoStreams` / `ConnectedClients` /
+  `ActiveSessions`; `InstrumentedSessionTable` (wired in `playback_bootstrap.py`)
+  publishes DAX `DaxReads` / `DaxWrites` / `DaxErrors` / `DaxLatencyMs`.
+
+Least privilege: `workloads-grants.ts` grants each emitter
+`cloudwatch:PutMetricData` scoped by a `cloudwatch:namespace` condition to
+EXACTLY its namespace (`COMPONENT_METRICS_NAMESPACES` in `constants.ts`).
+`hls-transcode` keeps its existing `HelloDJ/Transcode` grant.

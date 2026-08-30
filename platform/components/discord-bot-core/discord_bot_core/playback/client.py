@@ -13,9 +13,12 @@ networking dependency, keeping it import-clean and unit-testable.
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Protocol
+
+log = logging.getLogger(__name__)
 
 __all__ = [
     "PlaybackAction",
@@ -157,9 +160,20 @@ class PlaybackClient:
             PlaybackError: If the transport fails or the response is unusable.
         """
         url = f"{self._base_url}/v1/playback"
+        # DEBUG: the outbound orchestrator hop (action + guild), so a beta trace
+        # can follow a command from the cog through to the orchestrator.
+        log.debug(
+            "playback: POST %s action=%s guild=%s",
+            url,
+            request.action.value,
+            request.guild_id,
+        )
         try:
             raw = await self._transport.post_json(url, request.to_payload())
         except Exception as exc:
+            log.debug(
+                "playback: transport error to %s: %s", url, exc, exc_info=True
+            )
             raise PlaybackError(
                 f"failed to reach playback-orchestrator at {url}: {exc}"
             ) from exc

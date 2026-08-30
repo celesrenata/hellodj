@@ -19,6 +19,7 @@ Requirements: 6.1, 6.4, 7.4, 7.5
 
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from enum import Enum
 
@@ -28,6 +29,8 @@ from .persistence import QueueItem, SessionStore
 from .user_bans import UserBans
 
 __all__ = ["PlayRequest", "RouteOutcome", "RouteDecision", "PlaybackRouter"]
+
+_LOG = logging.getLogger("playback_orchestrator.router")
 
 
 class RouteOutcome(Enum):
@@ -111,6 +114,11 @@ class PlaybackRouter:
     def route(self, request: PlayRequest) -> RouteDecision:
         """Run the routing pipeline for a single play request."""
         if self._is_banned(request.guild_id, request.user_id):
+            _LOG.debug(
+                "router: BANNED guild=%s user=%s",
+                request.guild_id,
+                request.user_id,
+            )
             return RouteDecision(outcome=RouteOutcome.BANNED, message=self._BAN_MESSAGE)
 
         classification = classify(
@@ -118,9 +126,23 @@ class PlaybackRouter:
             mode=request.mode,
             attachment_content_type=request.attachment_content_type,
         )
+        # DEBUG: how the request was classified (content type + source hint) —
+        # the key signal for diagnosing wrong-source or misrouted playback.
+        _LOG.debug(
+            "router: classified guild=%s type=%s source_hint=%s",
+            request.guild_id,
+            classification.content_type.value,
+            classification.source_hint or "(none)",
+        )
 
         blocked = self._blocked_rule(request, classification)
         if blocked is not None:
+            _LOG.debug(
+                "router: FILTERED guild=%s by rule_type=%s rule_id=%s",
+                request.guild_id,
+                getattr(blocked, "rule_type", "?"),
+                getattr(blocked, "rule_id", "?"),
+            )
             return RouteDecision(
                 outcome=RouteOutcome.FILTERED,
                 classification=classification,
@@ -131,6 +153,12 @@ class PlaybackRouter:
         queue = self._store.enqueue(
             request.guild_id,
             self._build_item(request, classification),
+        )
+        _LOG.debug(
+            "router: ENQUEUED guild=%s type=%s queue_len=%d",
+            request.guild_id,
+            classification.content_type.value,
+            len(queue),
         )
         return RouteDecision(
             outcome=RouteOutcome.ENQUEUED,

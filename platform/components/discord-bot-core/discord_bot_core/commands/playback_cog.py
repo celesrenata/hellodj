@@ -28,6 +28,17 @@ log = logging.getLogger(__name__)
 
 __all__ = ["build_playback_cog", "build_request"]
 
+#: Max query length logged (a full URL/search shouldn't bloat a log line).
+_MAX_LOGGED_QUERY = 120
+
+
+def _truncate(value: str | None) -> str:
+    """Return a log-safe, length-capped rendering of a user-supplied query."""
+    if not value:
+        return "(none)"
+    text = value.strip()
+    return text if len(text) <= _MAX_LOGGED_QUERY else text[:_MAX_LOGGED_QUERY] + "…"
+
 
 def build_request(
     action: PlaybackAction,
@@ -97,18 +108,56 @@ def build_playback_cog(playback: PlaybackClient) -> Any:
         async def _delegate(
             self, interaction: Any, request: PlaybackRequest
         ) -> None:
+            # INFO: one line per command invocation — the core operational +
+            # audit signal (who ran what, where). Query is truncated so a long
+            # URL/search doesn't blow up the log line.
+            log.info(
+                "command: %s guild=%s channel=%s user=%s query=%s",
+                request.action.value,
+                request.guild_id,
+                request.channel_id,
+                request.requested_by,
+                _truncate(request.query),
+            )
             # Playback delegation is a network hop to the orchestrator; defer so
             # we don't blow Discord's 3s initial-response deadline, then follow
             # up with the result.
             await interaction.response.defer(thinking=True)
+            log.debug(
+                "command: delegating %s for guild=%s to orchestrator",
+                request.action.value,
+                request.guild_id,
+            )
             try:
                 result = await self._playback.submit(request)
             except PlaybackError as exc:
-                log.warning("playback delegation failed: %s", exc)
+                log.warning(
+                    "command: %s delegation FAILED for guild=%s: %s",
+                    request.action.value,
+                    request.guild_id,
+                    exc,
+                )
                 await interaction.followup.send(
                     "Playback service is unavailable right now."
                 )
                 return
+            # DEBUG: the orchestrator's decision (ok + message + any data) so a
+            # beta/staging trace shows the full round-trip outcome.
+            log.debug(
+                "command: %s result guild=%s ok=%s message=%s data=%s",
+                request.action.value,
+                request.guild_id,
+                result.ok,
+                result.message,
+                result.data,
+            )
+            if not result.ok:
+                log.info(
+                    "command: %s not accepted for guild=%s: %s",
+                    request.action.value,
+                    request.guild_id,
+                    result.message,
+                )
             await interaction.followup.send(
                 result.message or ("OK" if result.ok else "Failed.")
             )

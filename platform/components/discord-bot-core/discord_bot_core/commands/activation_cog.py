@@ -210,6 +210,7 @@ def build_activation_cog(
                 )
                 return
             if self._activation.activate(gid, key):
+                log.info("activation: guild %s ACTIVATED", gid)
                 await interaction.response.send_message(
                     "✅ HelloDJ activated! All commands are now available in "
                     "this server."
@@ -227,6 +228,9 @@ def build_activation_cog(
                             exc,
                         )
             else:
+                # INFO (not WARNING): a wrong key is an expected user error, but
+                # worth an audit line since activation is the security gate.
+                log.info("activation: guild %s rejected an invalid key", gid)
                 await interaction.response.send_message(
                     "❌ Invalid activation key. Get the current key from the "
                     "HelloDJ web dashboard.",

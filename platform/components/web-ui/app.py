@@ -45,6 +45,7 @@ from entitlement_routes import build_entitlement_blueprint
 from guild_routes import build_guild_blueprint
 from invite_admin_routes import build_invite_admin_blueprint
 from invite_public_routes import build_invite_public_blueprint
+from metrics_middleware import register_metrics
 from pages import build_pages_blueprint
 from secrets_store import SecretsProvider
 
@@ -146,6 +147,11 @@ def create_app(
     app.register_blueprint(build_guild_blueprint())
     app.register_blueprint(build_invite_admin_blueprint())
     app.register_blueprint(build_entitlement_blueprint())
+
+    # CloudWatch request/response/error + DB metrics (R10.3). Best-effort: the
+    # emitter degrades to a no-op without boto3/credentials, so tests and
+    # partial deploys are unaffected.
+    register_metrics(app)
 
     _register_static_hash(app)
     _register_health(app)

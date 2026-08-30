@@ -242,12 +242,21 @@ def main() -> None:
 
     instance_runtime = start_instance_runtime_thread()
 
-    _install_signal_handlers(
-        server,
-        on_shutdown=(
-            instance_runtime.stop if instance_runtime is not None else None
-        ),
-    )
+    # Start the bot-KPI stream-metrics publisher on its own daemon thread
+    # (R10.3): active audio/video streams + connected clients gauges to the
+    # per-stage HelloDJ/Bot CloudWatch namespace. Self-degrades to a no-op
+    # (logs "degraded: stream metrics publisher disabled") when metrics/the
+    # session sampler are unconfigured, so the health server is unaffected.
+    from .metrics_bootstrap import start_stream_metrics_thread
+
+    stream_metrics = start_stream_metrics_thread()
+
+    def _on_shutdown() -> None:
+        if instance_runtime is not None:
+            instance_runtime.stop()
+        stream_metrics.stop()
+
+    _install_signal_handlers(server, on_shutdown=_on_shutdown)
 
     _LOG.info(
         "playback-orchestrator ready: health server on %s:%s (stage=%s)",

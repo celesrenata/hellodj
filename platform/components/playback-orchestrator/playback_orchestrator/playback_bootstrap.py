@@ -50,11 +50,24 @@ def build_playback_service() -> PlaybackService | None:
     try:
         import boto3
         from hellodj_platform_logic.data_access import SessionTable
+        from hellodj_platform_logic.platform_metrics import PlatformMetrics
+
+        from .metrics import BOT_METRICS_NAMESPACE, InstrumentedSessionTable
 
         ddb = boto3.resource(
             "dynamodb", region_name=os.getenv("AWS_REGION", "us-east-1")
         )
-        store = SessionStore(SessionTable(ddb.Table(table_name)))
+        # Instrument the DAX-fronted session table so every read/write/error is
+        # published to CloudWatch (HelloDJ/Bot) for the per-stage dashboards +
+        # alarms (R10.3). The wrapper delegates unknown attributes verbatim, so
+        # it is transparent to SessionStore.
+        metrics = PlatformMetrics.from_env(
+            BOT_METRICS_NAMESPACE, component="playback-orchestrator"
+        )
+        session_table = InstrumentedSessionTable(
+            SessionTable(ddb.Table(table_name)), metrics
+        )
+        store = SessionStore(session_table)
     except Exception:  # noqa: BLE001 - degrade: no playback service
         _LOG.info(
             "degraded: playback API disabled (no session table / boto3)"

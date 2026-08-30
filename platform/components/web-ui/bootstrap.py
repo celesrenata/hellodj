@@ -39,18 +39,34 @@ __all__ = ["build_services"]
 
 
 def _core_table() -> Any | None:
-    """Build a CoreTable from HELLODJ_CORE_TABLE, or None in degraded mode."""
+    """Build a CoreTable from HELLODJ_CORE_TABLE, or None in degraded mode.
+
+    The table is wrapped in :class:`InstrumentedCoreTable` so every DynamoDB
+    read/write/error the web-ui performs is published to CloudWatch
+    (``HelloDJ/WebUI``) for the per-stage dashboards/alarms (R10.3). The wrapper
+    delegates unknown attributes verbatim, so it is a transparent drop-in.
+    """
     table_name = os.getenv("HELLODJ_CORE_TABLE", "")
     if not table_name:
         return None
     try:
         import boto3
         from hellodj_platform_logic.data_access import CoreTable
+        from hellodj_platform_logic.platform_metrics import PlatformMetrics
+
+        from metrics_middleware import (
+            WEBUI_METRICS_NAMESPACE,
+            InstrumentedCoreTable,
+        )
 
         ddb = boto3.resource(
             "dynamodb", region_name=os.getenv("AWS_REGION", "us-east-1")
         )
-        return CoreTable(ddb.Table(table_name))
+        core = CoreTable(ddb.Table(table_name))
+        metrics = PlatformMetrics.from_env(
+            WEBUI_METRICS_NAMESPACE, component="web-ui"
+        )
+        return InstrumentedCoreTable(core, metrics)
     except Exception:  # noqa: BLE001 - degrade to no datastore
         return None
 

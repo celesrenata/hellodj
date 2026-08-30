@@ -66,7 +66,21 @@ class PlaybackService:
             guild_id = int(body.get("guildId"))
             user_id = int(body.get("requestedBy"))
         except (TypeError, ValueError):
+            _LOG.warning(
+                "playback api: rejected request with bad ids (action=%s)", action
+            )
             return _fail("Invalid request: missing guild or user id.")
+
+        # DEBUG: the decoded request shape (no secrets) so a beta trace shows
+        # exactly what the orchestrator received per action.
+        _LOG.debug(
+            "playback api: action=%s guild=%s user=%s source=%s query=%s",
+            action,
+            guild_id,
+            user_id,
+            body.get("source") or "(default)",
+            _truncate(body.get("query")),
+        )
 
         if action in _ENQUEUE_ACTIONS:
             return self._enqueue(guild_id, user_id, body)
@@ -105,6 +119,21 @@ class PlaybackService:
             )
         )
         ok = decision.outcome is RouteOutcome.ENQUEUED
+        # INFO: the terminal routing outcome per guild — the key playback event
+        # (enqueued / banned / filtered) with content type + queue depth.
+        content_type = (
+            decision.classification.content_type.value
+            if decision.classification is not None
+            else "?"
+        )
+        _LOG.info(
+            "playback api: %s guild=%s user=%s type=%s queue_len=%s",
+            decision.outcome.value,
+            guild_id,
+            user_id,
+            content_type,
+            decision.queue_length if decision.queue_length is not None else "-",
+        )
         data: dict[str, Any] = {"outcome": decision.outcome.value}
         if source:
             data["source"] = str(source)
@@ -118,12 +147,15 @@ class PlaybackService:
         """Pop the head of the queue (skip the current/next track)."""
         popped = self._store.dequeue(guild_id)
         if popped is None:
+            _LOG.info("playback api: skip guild=%s (queue empty)", guild_id)
             return _ok("Nothing to skip — the queue is empty.")
+        _LOG.info("playback api: skip guild=%s track=%s", guild_id, popped.title)
         return _ok(f"Skipped: {popped.title}.", {"skipped": popped.title})
 
     def _stop(self, guild_id: int) -> dict[str, Any]:
         """Clear the queue (stop playback)."""
         self._store.clear_queue(guild_id)
+        _LOG.info("playback api: stop guild=%s (queue cleared)", guild_id)
         return _ok("Stopped and cleared the queue.")
 
     def _queue(self, guild_id: int) -> dict[str, Any]:
@@ -165,6 +197,18 @@ def handle_playback(
     except Exception as exc:  # noqa: BLE001 - always return a body, never 500
         _LOG.warning("playback api: error servicing request: %s", exc)
         return _fail("Playback request could not be processed.")
+
+
+#: Max query length logged (a full URL/search shouldn't bloat a log line).
+_MAX_LOGGED_QUERY = 120
+
+
+def _truncate(value: Any) -> str:
+    """Return a log-safe, length-capped rendering of a user-supplied query."""
+    if not value:
+        return "(none)"
+    text = str(value).strip()
+    return text if len(text) <= _MAX_LOGGED_QUERY else text[:_MAX_LOGGED_QUERY] + "…"
 
 
 def _ok(message: str, data: dict[str, Any] | None = None) -> dict[str, Any]:
