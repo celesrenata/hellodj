@@ -559,6 +559,38 @@ per provider console.
   sidebar nav item; the Config "Sources" tab was removed (sources live on
   Account).
 
+#### Guild-detail "Sources" tab uses the per-account flow (fixed 2026-08-29)
+
+Reported bug: on `/guilds/<gid>` every source Connect failed —
+`?error=provider_not_configured&provider=youtube` (and Spotify/Tidal too). Root
+cause (facts): the guild-detail Sources tab still drove the DEPRECATED per-guild
+connect route `/auth/sources/<gid>/<provider>/connect`
+(`auth.source_connect` → `source_oauth.source_authorize_url`). That legacy path
+(a) has NO device-code branch, so YouTube/YouTube Music — which on AWS
+authenticate via the plugin's PUBLIC device-code client with NO
+`GOOGLE_CLIENT_ID` — always hit the `client_id`-required guard and returned
+`None` → `provider_not_configured`; and (b) for Spotify/Tidal built a
+guild-in-path redirect URI that is NOT in the provider console allowlist (only
+the fixed `/auth/oauth/<provider>/callback` is registered under B2), so those
+would fail at the provider. Meanwhile the guild page's `providers_configured`
+used `source_provider_configured` (which returns True for YouTube by design),
+so it rendered an ACTIVE Connect button pointing at a route that could never
+complete — the contradiction that produced the dead-end.
+
+Fix (`web-ui`, source-only, no infra): the guild-detail Sources tab now mirrors
+the Account page — it renders the MANAGER's OWN per-account source status
+(`_account_source_status(sub)`) via `partials/account_source_list.html` (wrapped
+in `#account-source-list` so the YouTube device-code HTMX swap works there too)
+and drives Connect/Re-authorize/Clear-auth through the per-account flow
+(`auth.source_oauth_connect` → device-code for YouTube, fixed-callback OAuth for
+Spotify/Tidal). This matches the "credentials are PER-USER; a guild binds to a
+managing user's connected credential" model — the guild page no longer performs
+per-guild source OAuth at all. `guild_routes.guild_detail` stopped passing the
+per-guild `sources`/`SUPPORTED_PROVIDERS`; it passes `OAUTH_SOURCE_PROVIDERS` +
+`source_status`. The legacy per-guild `disconnect_source` route and
+`guild_source_list.html` remain for migration but are no longer surfaced.
+Deploys via the pipeline (web-ui source change).
+
 ### Global Discord bot-application pool (multi-bot per guild)
 
 Discord dedupes bot members by application id, so N simultaneous bots in a

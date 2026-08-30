@@ -216,15 +216,20 @@ def build_guild_blueprint() -> Blueprint:
         if not _can_manage(guild_id):
             return redirect(url_for("pages.guilds"))
         guild_admin = _svc("guild_admin")
-        sources = _svc("guild_sources")
         identity_svc = _svc("guild_identity_service")
         activation = _svc("guild_activation")
         bots_ctx = bot_context(guild_id)
-        # Which providers are wired for interactive OAuth (client id present).
-        # Unconfigured providers render a disabled "Needs setup" control rather
-        # than an active Connect link that would silently no-op (R2.1, R1.2).
+        # Sources are PER-USER, not per-guild: a guild "uses" a source by
+        # binding to the managing user's connected credential (unified store,
+        # keyed by the caller's sub). So the Sources tab reflects the manager's
+        # OWN account connections and drives Connect through the per-account
+        # flow (device-code for YouTube, fixed-callback OAuth for Spotify/Tidal)
+        # — NOT the deprecated per-guild connect route, which had no device-code
+        # path (YouTube always failed) and used an unregistered per-guild
+        # redirect URI (Spotify/Tidal failed the provider allowlist).
+        sub = _user().get("sub", "")
         providers_configured = {
-            p: source_provider_configured(p) for p in SUPPORTED_PROVIDERS
+            p: source_provider_configured(p) for p in OAUTH_SOURCE_PROVIDERS
         }
         return render_template(
             "pages/guild_detail.html",
@@ -233,8 +238,8 @@ def build_guild_blueprint() -> Blueprint:
             active="guilds",
             guild_id=guild_id,
             admins=guild_admin.list_admins(guild_id) if guild_admin else [],
-            sources=sources.status(guild_id) if sources else [],
-            providers=SUPPORTED_PROVIDERS,
+            source_status=_account_source_status(sub),
+            providers=OAUTH_SOURCE_PROVIDERS,
             providers_configured=providers_configured,
             identity=(
                 identity_svc.get_identity(guild_id) if identity_svc else {}

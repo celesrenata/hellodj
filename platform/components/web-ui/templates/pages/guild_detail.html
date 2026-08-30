@@ -67,17 +67,19 @@
     <h2 class="panel-section__title">Connected sources</h2>
     {% if error == 'provider_not_configured' %}
       <div class="notice notice--danger" role="alert">
-        {{ error_provider|replace('_', ' ')|title }} is not set up on this server
-        yet, so it can't be connected. An administrator needs to configure its
-        OAuth client id before this source becomes available.
+        {{ error_provider|replace('_', ' ')|title }} is not set up on this
+        platform yet. An administrator needs to configure its OAuth client id
+        before it can be connected.
       </div>
     {% endif %}
     <p class="panel-section__muted">
-      Each source is authorized for THIS guild only. Connecting a source here
-      never affects any other guild.
+      Sources are connected to <strong>your account</strong> and this guild
+      plays through them. Connect or re-authorize a source below (or from your
+      <a href="{{ url_for('guild.account') }}">Account</a> page) — the same
+      credential is shared across every guild you manage.
     </p>
-    <div id="guild-source-list">
-      {% include "partials/guild_source_list.html" %}
+    <div id="account-source-list">
+      {% include "partials/account_source_list.html" %}
     </div>
   </div>
 
