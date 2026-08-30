@@ -1,0 +1,15 @@
+0
+eks_has_webui_manifest:
+0
+list_synthed_stacks:
+hellodj-analytics.template.json
+hellodj-auth.template.json
+hellodj-data.template.json
+hellodj-edge.template.json
+hellodjeksawscdkawseksClusterResourceProviderF42364DB.nested.template.json
+hellodjeksawscdkawseksKubectlProviderA71220E2.nested.template.json
+hellodj-eks.template.json
+hellodj-network.template.json
+hellodj-observability.template.json
+hellodj-pipeline.template.json
+hellodj-source.template.json

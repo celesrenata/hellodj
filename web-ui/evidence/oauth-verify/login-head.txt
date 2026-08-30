@@ -1,9 +1,0 @@
-=== LOGIN PAGE HEAD ===
-HTTP/1.1 500 INTERNAL SERVER ERROR
-Server: gunicorn
-Date: Wed, 12 Aug 2026 19:22:52 GMT
-Connection: close
-Content-Type: application/json
-Content-Length: 44
-Vary: Cookie
-

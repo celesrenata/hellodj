@@ -1,0 +1,85 @@
+e3843a9 push-triggered-rolling-deploy: drain hooks + WorkloadsStack manifest ownership
+a343c40 ami: fix GPU AMI build failure from malformed nvidia-container-toolkit udev rule
+d61451a edge: add sticker assets S3 bucket + CloudFront stickers/* behavior
+--- committed line 983 region ---
+    // IRSA ServiceAccounts actually consume: the cluster name, the OIDC
+    // provider (IRSA), the kubectl role, the kubectl VPC/security-group/env/
+    // memory (so the handler's networking is identical), the kubectl+awscli
+    // layers, and the prune flag. The `clusterEndpoint` / CA data /
+    // cluster-security-group / encryption-key getters are deliberately NOT
+    // read: they are not needed by the provider/manifests, and an imported
+    // source handle (e.g. the pipeline's stage-independent import) throws on
+    // those getters when they were not supplied at its own import time.
+    const refs = this.props.clusterImport;
+
+    // Short, fixed construct id so the derived KubectlProvider NestedStack name
+    // stays under CloudFormation's 128-char limit even at the deep
+    // `pipeline/stage/workloads` construct path (a long id overflowed it).
+    const id = 'WCluster';
+
+    // PREFERRED PATH: re-import from the foundation's STABLE string identifiers.
+    // Referencing the kubectl role + OIDC provider by value (not by the
+    // foundation cluster's constructs) keeps this stack's provider free of any
+    // cross-stage / cross-stack construct dependency, which is required when
+    // this stack runs inside a CDK Pipelines stage (R2.1, R4.1).
+    if (refs) {
+      // A FRESH in-stack kubectl layer — NEVER `source.kubectlLayer` here. The
+      // source layer construct lives in the foundation stack; referencing it
+      // would reintroduce the cross-stage dependency this path exists to avoid
+      // (design: "each importing the shared cluster with its OWN KubectlV36Layer").
+      const kubectlLayer = new KubectlV36Layer(this, 'KubectlLayer');
+      const oidcProvider =
+        refs.oidcProvider ??
+        iam.OpenIdConnectProvider.fromOpenIdConnectProviderArn(
+          this,
+          'WClusterOidc',
+          refs.oidcProviderArn ??
+            // Placeholder issuer when the real OIDC ARN is not threaded: keeps
+            // synth working; a real deploy must supply `oidcProviderArn`.
+            cdk.Stack.of(this).formatArn({
+              service: 'iam',
+              region: '',
+              resource: 'oidc-provider',
+              resourceName: `oidc.eks.${this.region}.amazonaws.com/id/${refs.clusterName}`,
+            }),
+        );
+      // Build the imported handle from stable strings only (no foundation
+      // constructs), so its kubectl provider/barrier are self-contained here.
+      const handle = eks.Cluster.fromClusterAttributes(this, id, {
+        clusterName: refs.clusterName,
+        kubectlRoleArn: refs.kubectlRoleArn,
+        openIdConnectProvider: oidcProvider,
+        kubectlLayer,
+        prune: true,
+      });
+      // PRE-CREATE the KubectlProvider with a SHORT construct id ('K'). Left to
+      // `KubectlProvider.getOrCreate`, the provider's derived NestedStack name
+      // embeds `Names.nodeUniqueId(cluster.node)` (the full, deeply-nested
+      // cluster path) which overflows CloudFormation's 128-char stack-name
+      // limit inside a pipeline `stage/workloads` path. Creating it explicitly
+      // with a short id — and re-importing the handle WITH this provider set so
+      // `getOrCreate` short-circuits to it — keeps the nested stack name short.
+      const kubectlProvider = new eks.KubectlProvider(this, 'K', {
+        cluster: handle,
+      });
+      return eks.Cluster.fromClusterAttributes(this, `${id}2`, {
+        clusterName: refs.clusterName,
+        kubectlRoleArn: refs.kubectlRoleArn,
+        openIdConnectProvider: oidcProvider,
+        kubectlLayer,
+        kubectlProvider,
+        prune: true,
+      });
+    }
+
+    // FALLBACK PATH (standalone / plain-stack synth, cross-stack refs allowed):
+    // derive from the source handle's attributes. The kubectl handler runs
+    // inside the cluster VPC only when the source pins private kubectl subnets
+    // (the owned foundation cluster does; a name-only import does not). Read
+    // `source.vpc` ONLY then — accessing `.vpc` on a VPC-less import throws.
+    const kubectlPrivateSubnets = source.kubectlPrivateSubnets;
+    const kubectlVpc =
+      kubectlPrivateSubnets && kubectlPrivateSubnets.length > 0
+        ? source.vpc
+        : undefined;
+    // Here cross-stack references are permitted (plain App-level stacks), so

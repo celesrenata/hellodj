@@ -1,0 +1,15 @@
+      238 |     this.daxEndpoint = this.daxCluster.attrClusterDiscoveryEndpoint;
+      239 |
+
+      at Proxy.print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at CfnCluster.addDependency (node_modules/aws-cdk-lib/core/lib/cfn-resource.js:1:8277)
+      at new DataStack (lib/data-stack.ts:236:21)
+      at composeWorkloads (test/workloads-test-helpers.ts:99:16)
+      at Object.<anonymous> (test/workloads-ownership.test.ts:359:43)
+
+
+Test Suites: 29 passed, 29 total
+Tests:       378 passed, 378 total
+Snapshots:   0 total
+Time:        32.844 s, estimated 34 s
+Ran all test suites.

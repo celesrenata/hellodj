@@ -1,0 +1,4 @@
+remote: Validating objects: 0%        remote: Validating objects: 100%        
+To https://git-codecommit.us-east-1.amazonaws.com/v1/repos/hellodj-cdk
+   3b52afa..a5cbdc9  main -> main
+push_exit=0

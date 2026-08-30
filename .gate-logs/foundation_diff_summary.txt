@@ -1,0 +1,30 @@
+Stack hellodj-network
+Stack hellodj-data
+[-] Output ExportsOutputFnGetAttSessionTableA016F679ArnBB55F1BB: {"Value":{"Fn::GetAtt":["SessionTableA016F679","Arn"]},"Export":{"Name":"hellodj-data:ExportsOutputFnGetAttSessionTableA016F679ArnBB55F1BB"}}
+[-] Output ExportsOutputFnGetAttCoreTable97EB8292Arn0DE736BD: {"Value":{"Fn::GetAtt":["CoreTable97EB8292","Arn"]},"Export":{"Name":"hellodj-data:ExportsOutputFnGetAttCoreTable97EB8292Arn0DE736BD"}}
+[-] Output ExportsOutputFnGetAttAssetsBucket5CB76180ArnBF60D959: {"Value":{"Fn::GetAtt":["AssetsBucket5CB76180","Arn"]},"Export":{"Name":"hellodj-data:ExportsOutputFnGetAttAssetsBucket5CB76180ArnBF60D959"}}
+[-] Output ExportsOutputFnGetAttSourceCredsKeyB5B8D841Arn658AB38D: {"Value":{"Fn::GetAtt":["SourceCredsKeyB5B8D841","Arn"]},"Export":{"Name":"hellodj-data:ExportsOutputFnGetAttSourceCredsKeyB5B8D841Arn658AB38D"}}
+[-] Output ExportsOutputRefCoreTable97EB8292DFE1E6FC: {"Value":{"Ref":"CoreTable97EB8292"},"Export":{"Name":"hellodj-data:ExportsOutputRefCoreTable97EB8292DFE1E6FC"}}
+[-] Output ExportsOutputRefSessionTableA016F6796391FBE5: {"Value":{"Ref":"SessionTableA016F679"},"Export":{"Name":"hellodj-data:ExportsOutputRefSessionTableA016F6796391FBE5"}}
+[-] Output ExportsOutputRefAssetsBucket5CB761808BF2E271: {"Value":{"Ref":"AssetsBucket5CB76180"},"Export":{"Name":"hellodj-data:ExportsOutputRefAssetsBucket5CB761808BF2E271"}}
+[-] Output ExportsOutputRefSourceCredsKeyB5B8D8413321F20D: {"Value":{"Ref":"SourceCredsKeyB5B8D841"},"Export":{"Name":"hellodj-data:ExportsOutputRefSourceCredsKeyB5B8D8413321F20D"}}
+[-] Output ExportsOutputFnGetAttSearchCacheTable8AFC07AEArn2AF3B2F9: {"Value":{"Fn::GetAtt":["SearchCacheTable8AFC07AE","Arn"]},"Export":{"Name":"hellodj-data:ExportsOutputFnGetAttSearchCacheTable8AFC07AEArn2AF3B2F9"}}
+[-] Output ExportsOutputRefSearchCacheTable8AFC07AE0F7AC330: {"Value":{"Ref":"SearchCacheTable8AFC07AE"},"Export":{"Name":"hellodj-data:ExportsOutputRefSearchCacheTable8AFC07AE0F7AC330"}}
+[-] Output ExportsOutputFnGetAttDaxClusterClusterDiscoveryEndpoint3E74B53D: {"Value":{"Fn::GetAtt":["DaxCluster","ClusterDiscoveryEndpoint"]},"Export":{"Name":"hellodj-data:ExportsOutputFnGetAttDaxClusterClusterDiscoveryEndpoint3E74B53D"}}
+Stack hellodj-auth
+[-] Output ExportsOutputRefFlaskSessionSecret3F7F05ABBF23A452: {"Value":{"Ref":"FlaskSessionSecret3F7F05AB"},"Export":{"Name":"hellodj-auth:ExportsOutputRefFlaskSessionSecret3F7F05ABBF23A452"}}
+[-] Output ExportsOutputRefDiscordBotTokenSecret6314F565555CBCA7: {"Value":{"Ref":"DiscordBotTokenSecret6314F565"},"Export":{"Name":"hellodj-auth:ExportsOutputRefDiscordBotTokenSecret6314F565555CBCA7"}}
+[-] Output ExportsOutputRefBotAppPoolSecretE2D682C360A92F2F: {"Value":{"Ref":"BotAppPoolSecretE2D682C3"},"Export":{"Name":"hellodj-auth:ExportsOutputRefBotAppPoolSecretE2D682C360A92F2F"}}
+[-] Output ExportsOutputRefTidalRefreshSecret03A83141E5DA5CFC: {"Value":{"Ref":"TidalRefreshSecret03A83141"},"Export":{"Name":"hellodj-auth:ExportsOutputRefTidalRefreshSecret03A83141E5DA5CFC"}}
+[-] Output ExportsOutputRefSpotifySecretA8C04999F9466CE2: {"Value":{"Ref":"SpotifySecretA8C04999"},"Export":{"Name":"hellodj-auth:ExportsOutputRefSpotifySecretA8C04999F9466CE2"}}
+[-] Output ExportsOutputRefGoogleOauthSecretE885EF505FD7A484: {"Value":{"Ref":"GoogleOauthSecretE885EF50"},"Export":{"Name":"hellodj-auth:ExportsOutputRefGoogleOauthSecretE885EF505FD7A484"}}
+[-] Output ExportsOutputRefYtCipherSecret9F3260719E9AB809: {"Value":{"Ref":"YtCipherSecret9F326071"},"Export":{"Name":"hellodj-auth:ExportsOutputRefYtCipherSecret9F3260719E9AB809"}}
+[-] Output ExportsOutputRefLavalinkCredentialsSecret05A6746AC3FE07D8: {"Value":{"Ref":"LavalinkCredentialsSecret05A6746A"},"Export":{"Name":"hellodj-auth:ExportsOutputRefLavalinkCredentialsSecret05A6746AC3FE07D8"}}
+[-] Output ExportsOutputFnGetAttAiTaskRole767A74B0Arn01A6F049: {"Value":{"Fn::GetAtt":["AiTaskRole767A74B0","Arn"]},"Export":{"Name":"hellodj-auth:ExportsOutputFnGetAttAiTaskRole767A74B0Arn01A6F049"}}
+[-] Output ExportsOutputRefDiscordOauthSecret867CC41A04BE1A0D: {"Value":{"Ref":"DiscordOauthSecret867CC41A"},"Export":{"Name":"hellodj-auth:ExportsOutputRefDiscordOauthSecret867CC41A04BE1A0D"}}
+[-] Output ExportsOutputRefUserPool6BA7E5F296FD7236: {"Value":{"Ref":"UserPool6BA7E5F2"},"Export":{"Name":"hellodj-auth:ExportsOutputRefUserPool6BA7E5F296FD7236"}}
+[-] Output ExportsOutputRefUserPoolWebUiClient3FC260546B92B833: {"Value":{"Ref":"UserPoolWebUiClient3FC26054"},"Export":{"Name":"hellodj-auth:ExportsOutputRefUserPoolWebUiClient3FC260546B92B833"}}
+Stack hellodj-eks
+Stack hellodj-eks-awscdkawseksClusterResourceProviderNestedStackawscdkawseksClusterResourceP-1TJDXQYLS0NNN
+Stack hellodj-eks-awscdkawseksKubectlProviderNestedStackawscdkawseksKubectlProviderNestedSta-LUT2ZQNRU6AM
+✨  Number of stacks with differences: 2

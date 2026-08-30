@@ -1,0 +1,26 @@
+[
+    {
+        "Prio": "3",
+        "Action": {
+            "Type": "fixed-response",
+            "Order": 1,
+            "FixedResponseConfig": {
+                "MessageBody": "no matching host",
+                "StatusCode": "404",
+                "ContentType": "text/plain"
+            }
+        }
+    },
+    {
+        "Prio": "6",
+        "Action": {
+            "Type": "fixed-response",
+            "Order": 1,
+            "FixedResponseConfig": {
+                "MessageBody": "no matching host",
+                "StatusCode": "404",
+                "ContentType": "text/plain"
+            }
+        }
+    }
+]

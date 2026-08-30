@@ -1,0 +1,4 @@
+bash: patchelf: command not found
+--- try running it (should not be 'no such file or directory') ---
+qemu-aarch64-static: Could not open '/lib/ld-linux-aarch64.so.1': No such file or directory
+run exit: 0

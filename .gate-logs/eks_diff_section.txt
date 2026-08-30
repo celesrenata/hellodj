@@ -1,0 +1,3 @@
+Stack hellodj-eks
+There were no differences
+Stack hellodj-eks-awscdkawseksClusterResourceProviderNestedStackawscdkawseksClusterResourceP-1TJDXQYLS0NNN

@@ -25,12 +25,15 @@ from typing import TYPE_CHECKING, Any, Protocol
 
 from hellodj_platform_logic.bot_app_pool import PoolApp, parse_pool
 
+from .sharding import shard
+
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from hellodj_platform_logic.data_access import CoreTable
 
 _LOG = logging.getLogger("playback_orchestrator.instance_runtime")
 
 __all__ = [
+    "BOTAPP_CLAIM_ENTITY",
     "BOTAPP_SK_PREFIX",
     "PoolCredentialSource",
     "SecretsClient",
@@ -43,6 +46,11 @@ __all__ = [
 #: the web-ui assignment writer (``bot_app_pool.BOTAPP_SK_PREFIX``).
 BOTAPP_SK_PREFIX = "BOTAPP#"
 
+#: entityType of the per-guild claim items (matches the web-ui writer and the
+#: bootstrap's guild-discovery scan). Used for the reverse app→guilds scan that
+#: computes each pool app's single owner replica (distributed-bot-sharding R3.2).
+BOTAPP_CLAIM_ENTITY = "BotAppClaim"
+
 
 def guild_pk(guild_id: str) -> str:
     """Return the ``hellodj-core`` partition key for a guild's items.
@@ -51,6 +59,15 @@ def guild_pk(guild_id: str) -> str:
     exact partition the assignment flow wrote claims into.
     """
     return f"GUILD#{guild_id}"
+
+
+def _guild_id_from_pk(pk: str) -> str | None:
+    """Extract ``<gid>`` from a ``GUILD#<gid>`` partition key, or ``None``."""
+    prefix = "GUILD#"
+    if pk.startswith(prefix):
+        gid = pk[len(prefix):]
+        return gid or None
+    return None
 
 
 def bot_app_pool_secret_name(stage: str) -> str:
@@ -189,3 +206,66 @@ class PoolCredentialSource:
                 continue
             instances.append(app)
         return instances
+
+    def app_owner_map(self, replica_count: int) -> dict[str, int]:
+        """Return ``{client_id: owner_ordinal}`` for every claimed pool app.
+
+        The cross-replica single-owner map (distributed-bot-sharding R3.2): a
+        pool application claimed by one or more guilds is connected by exactly
+        ONE replica — the owner of the lexicographically-smallest claiming guild
+        id, ``shard(min(claiming_guild_ids), replica_count)``. Using the
+        smallest claiming guild (rather than any served guild) makes the owner a
+        deterministic, replica-count-stable property of the APP, so every
+        replica independently computes the same owner and no app is opened
+        twice.
+
+        Built from a single key-projected ``scan_entity('BotAppClaim')`` pass
+        (the same enumeration the bootstrap already does for guild discovery),
+        so it adds no extra scan when the caller shares the result. Degrades to
+        an empty map on any scan error — the caller then treats every app as
+        NOT locally owned (skip, never double-connect: R3 error handling).
+
+        At ``replica_count <= 1`` every owner is ``0`` (single shard owns all).
+
+        Args:
+            replica_count: Total orchestrator replicas (the shard divisor).
+
+        Returns:
+            Mapping of pool application ``client_id`` → owning replica ordinal.
+            Apps with no claims are absent from the map.
+        """
+        # Gather the claiming guild ids per client_id from one claims scan.
+        claiming: dict[str, list[str]] = {}
+        try:
+            for item in self._core.scan_entity(BOTAPP_CLAIM_ENTITY):
+                sk = str(item.get("SK", ""))
+                if not sk.startswith(BOTAPP_SK_PREFIX):
+                    continue
+                client_id = sk[len(BOTAPP_SK_PREFIX):]
+                gid = _guild_id_from_pk(str(item.get("PK", "")))
+                if not client_id or gid is None:
+                    continue
+                claiming.setdefault(client_id, []).append(gid)
+        except Exception:  # noqa: BLE001 - scan error → empty map (skip all)
+            _LOG.warning(
+                "instance runtime: app-owner claim scan failed; "
+                "no app is treated as locally owned this pass"
+            )
+            return {}
+
+        return {
+            client_id: shard(min(gids), replica_count)
+            for client_id, gids in claiming.items()
+        }
+
+    def app_owner_ordinal(
+        self, client_id: str, replica_count: int
+    ) -> int | None:
+        """Return the single owner ordinal for one pool app, or ``None``.
+
+        Convenience single-app lookup over :meth:`app_owner_map` (R3.2). Returns
+        ``None`` when the app has no claims (nothing owns it → not connectable
+        anywhere). Prefer :meth:`app_owner_map` when checking many apps so the
+        claims scan runs once.
+        """
+        return self.app_owner_map(replica_count).get(client_id)

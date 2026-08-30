@@ -1,0 +1,9 @@
+=== ALB direct, Host=staging apex ===
+http=404 server=awselb/2.0
+=== ALB direct, Host=origin.staging ===
+http=404 server=awselb/2.0
+=== staging CF default behavior origin request policy ===
+{
+    "ORP": "216adef6-5c7f-47e4-b989-5492eafa07d3",
+    "Origin": "hellodj-hls-staging-us-east-1.s3.us-east-1.amazonaws.com"
+}

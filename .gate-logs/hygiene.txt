@@ -1,0 +1,7 @@
+staged file count:
+14194
+--- non-node_modules/cdk.out staged (should be just .gitignore) ---
+.gitignore
+--- remaining unstaged working tree ---
+A  .gitignore
+?? .kiro/

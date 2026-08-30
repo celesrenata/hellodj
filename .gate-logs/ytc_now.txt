@@ -1,0 +1,17 @@
+exec /opt/yt-cipher/server: no such file or directory
+=== lavalink init (config-renderer) ===
+    return self._get_cached_credentials()
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^
+  File "/nix/store/lsmqra9mnwrzsngwqw7w5bydg3y52cv1-python3-3.14.7-env/lib/python3.14/site-packages/botocore/credentials.py", line 760, in _get_cached_credentials
+    response = self._get_credentials()
+  File "/nix/store/lsmqra9mnwrzsngwqw7w5bydg3y52cv1-python3-3.14.7-env/lib/python3.14/site-packages/botocore/credentials.py", line 1010, in _get_credentials
+    response = client.assume_role_with_web_identity(**kwargs)
+  File "/nix/store/lsmqra9mnwrzsngwqw7w5bydg3y52cv1-python3-3.14.7-env/lib/python3.14/site-packages/botocore/client.py", line 602, in _api_call
+    return self._make_api_call(operation_name, kwargs)
+           ~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/nix/store/lsmqra9mnwrzsngwqw7w5bydg3y52cv1-python3-3.14.7-env/lib/python3.14/site-packages/botocore/context.py", line 123, in wrapper
+    return func(*args, **kwargs)
+  File "/nix/store/lsmqra9mnwrzsngwqw7w5bydg3y52cv1-python3-3.14.7-env/lib/python3.14/site-packages/botocore/client.py", line 1078, in _make_api_call
+    raise error_class(parsed_response, operation_name)
+botocore.exceptions.ClientError: An error occurred (AccessDenied) when calling the AssumeRoleWithWebIdentity operation: Not authorized to perform sts:AssumeRoleWithWebIdentity
+ERROR: failed to load credentials from Secrets Manager: An error occurred (AccessDenied) when calling the AssumeRoleWithWebIdentity operation: Not authorized to perform sts:AssumeRoleWithWebIdentity

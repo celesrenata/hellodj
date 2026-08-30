@@ -1,0 +1,7 @@
+[
+    "hellodj-auth-staging",
+    "hellodj-edge-staging",
+    "hellodj-edge-production",
+    "hellodj-edge",
+    "hellodj-auth"
+]

@@ -1,0 +1,42 @@
+[
+    {
+        "ts": "2026-08-29T09:58:14.281000+00:00",
+        "logical": "betaSawebuimanifestbetaSawebuiServiceAccountResource92CBBE55",
+        "status": "CREATE_COMPLETE"
+    },
+    {
+        "ts": "2026-08-29T09:58:14.123000+00:00",
+        "logical": "betaSawebuimanifestbetaSawebuiServiceAccountResource92CBBE55",
+        "status": "CREATE_IN_PROGRESS"
+    },
+    {
+        "ts": "2026-08-29T09:58:07.468000+00:00",
+        "logical": "betaSawebuiRoleDefaultPolicy929BFD73",
+        "status": "CREATE_IN_PROGRESS"
+    },
+    {
+        "ts": "2026-08-29T09:58:07.078000+00:00",
+        "logical": "betaSawebuimanifestbetaSawebuiServiceAccountResource92CBBE55",
+        "status": "CREATE_IN_PROGRESS"
+    },
+    {
+        "ts": "2026-08-29T09:58:06.787000+00:00",
+        "logical": "betaSawebuiRoleDefaultPolicy929BFD73",
+        "status": "CREATE_IN_PROGRESS"
+    },
+    {
+        "ts": "2026-08-29T09:58:06.231000+00:00",
+        "logical": "betaSawebuiRole0DCECEEE",
+        "status": "CREATE_COMPLETE"
+    },
+    {
+        "ts": "2026-08-29T09:57:49.830000+00:00",
+        "logical": "betaSawebuiRole0DCECEEE",
+        "status": "CREATE_IN_PROGRESS"
+    },
+    {
+        "ts": "2026-08-29T09:57:49.130000+00:00",
+        "logical": "betaSawebuiRole0DCECEEE",
+        "status": "CREATE_IN_PROGRESS"
+    }
+]

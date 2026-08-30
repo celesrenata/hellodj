@@ -1,0 +1,3 @@
+TIDAL_APP_ID present: True
+TWDgxSYAcqDo31fj present: True
+HELLODJ_DISCORD_TOKEN_SECRET_ID present: True

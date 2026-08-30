@@ -1,0 +1,19 @@
+[
+    {
+        "Name": "staging.us-east-1.hellodj.bot.",
+        "Alias": "k8s-hellodj-15947bf6df-2128421402.us-east-1.elb.amazonaws.com."
+    }
+]
+---cname-staging TXT (external-dns registry)---
+[
+    {
+        "Name": "cname-staging.us-east-1.hellodj.bot.",
+        "Type": "TXT",
+        "TTL": 300,
+        "ResourceRecords": [
+            {
+                "Value": "\"heritage=external-dns,external-dns/owner=hellodj,external-dns/resource=ingress/hellodj-staging/hellodj\""
+            }
+        ]
+    }
+]

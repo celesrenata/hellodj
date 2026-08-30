@@ -1,0 +1,1874 @@
+{
+    "Resources": {
+        "KubectlLayer600207B5": {
+            "Type": "AWS::Lambda::LayerVersion",
+            "Properties": {
+                "Content": {
+                    "S3Bucket": "cdk-hnb659fds-assets-874927898283-us-east-1",
+                    "S3Key": "1bafa5cc7c5715cb55d1b3fa2755b20db63c75d154ba9a23604c103568491420.zip"
+                },
+                "Description": "/opt/kubectl/kubectl 1.36.3; /opt/helm/helm 4.2.3",
+                "LicenseInfo": "Apache-2.0"
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/KubectlLayer/Resource",
+                "aws:asset:path": "asset.1bafa5cc7c5715cb55d1b3fa2755b20db63c75d154ba9a23604c103568491420.zip",
+                "aws:asset:is-bundled": false,
+                "aws:asset:property": "Content"
+            }
+        },
+        "ClusterKubectlHandlerRole94549F93": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": "sts:AssumeRole",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": "lambda.amazonaws.com"
+                            }
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "ManagedPolicyArns": [
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:",
+                                {
+                                    "Ref": "AWS::Partition"
+                                },
+                                ":iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+                            ]
+                        ]
+                    },
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:",
+                                {
+                                    "Ref": "AWS::Partition"
+                                },
+                                ":iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+                            ]
+                        ]
+                    },
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:",
+                                {
+                                    "Ref": "AWS::Partition"
+                                },
+                                ":iam::aws:policy/AmazonEC2ContainerRegistryPullOnly"
+                            ]
+                        ]
+                    },
+                    {
+                        "Fn::If": [
+                            "ClusterHasEcrPublic8EE1114E",
+                            {
+                                "Fn::Join": [
+                                    "",
+                                    [
+                                        "arn:",
+                                        {
+                                            "Ref": "AWS::Partition"
+                                        },
+                                        ":iam::aws:policy/AmazonElasticContainerRegistryPublicReadOnly"
+                                    ]
+                                ]
+                            },
+                            {
+                                "Ref": "AWS::NoValue"
+                            }
+                        ]
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "hellodj:scaleInThreshold",
+                        "Value": "0.4"
+                    },
+                    {
+                        "Key": "hellodj:scaleOutThreshold",
+                        "Value": "0.7"
+                    }
+                ]
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/KubectlHandlerRole/Resource"
+            }
+        },
+        "ClusterKubectlHandlerRoleDefaultPolicyE44083DD": {
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "PolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": "eks:DescribeCluster",
+                            "Effect": "Allow",
+                            "Resource": {
+                                "Fn::GetAtt": [
+                                    "Cluster9EE0221C",
+                                    "Arn"
+                                ]
+                            }
+                        },
+                        {
+                            "Action": "sts:AssumeRole",
+                            "Effect": "Allow",
+                            "Resource": {
+                                "Fn::GetAtt": [
+                                    "ClusterCreationRole360249B6",
+                                    "Arn"
+                                ]
+                            }
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "PolicyName": "ClusterKubectlHandlerRoleDefaultPolicyE44083DD",
+                "Roles": [
+                    {
+                        "Ref": "ClusterKubectlHandlerRole94549F93"
+                    }
+                ]
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/KubectlHandlerRole/DefaultPolicy/Resource"
+            }
+        },
+        "ClusterRoleFA261979": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": "sts:AssumeRole",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": "eks.amazonaws.com"
+                            }
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "ManagedPolicyArns": [
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:",
+                                {
+                                    "Ref": "AWS::Partition"
+                                },
+                                ":iam::aws:policy/AmazonEKSClusterPolicy"
+                            ]
+                        ]
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "hellodj:scaleInThreshold",
+                        "Value": "0.4"
+                    },
+                    {
+                        "Key": "hellodj:scaleOutThreshold",
+                        "Value": "0.7"
+                    }
+                ]
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/Role/Resource"
+            }
+        },
+        "ClusterControlPlaneSecurityGroupD274242C": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "GroupDescription": "EKS Control Plane Security Group",
+                "SecurityGroupEgress": [
+                    {
+                        "CidrIp": "0.0.0.0/0",
+                        "Description": "Allow all outbound traffic by default",
+                        "IpProtocol": "-1"
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "hellodj:scaleInThreshold",
+                        "Value": "0.4"
+                    },
+                    {
+                        "Key": "hellodj:scaleOutThreshold",
+                        "Value": "0.7"
+                    }
+                ],
+                "VpcId": {
+                    "Fn::ImportValue": "hellodj-network:ExportsOutputRefVpc8378EB38272D6E3A"
+                }
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/ControlPlaneSecurityGroup/Resource"
+            }
+        },
+        "ClusterCreationRole360249B6": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": "sts:AssumeRole",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "AWS": [
+                                    {
+                                        "Fn::GetAtt": [
+                                            "ClusterKubectlHandlerRole94549F93",
+                                            "Arn"
+                                        ]
+                                    },
+                                    {
+                                        "Fn::GetAtt": [
+                                            "awscdkawseksClusterResourceProviderNestedStackawscdkawseksClusterResourceProviderNestedStackResource9827C454",
+                                            "Outputs.hellodjeksawscdkawseksClusterResourceProviderIsCompleteHandlerServiceRoleA0D1B6CFArn"
+                                        ]
+                                    },
+                                    {
+                                        "Fn::GetAtt": [
+                                            "awscdkawseksClusterResourceProviderNestedStackawscdkawseksClusterResourceProviderNestedStackResource9827C454",
+                                            "Outputs.hellodjeksawscdkawseksClusterResourceProviderOnEventHandlerServiceRole2410D958Arn"
+                                        ]
+                                    }
+                                ]
+                            }
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "Tags": [
+                    {
+                        "Key": "hellodj:scaleInThreshold",
+                        "Value": "0.4"
+                    },
+                    {
+                        "Key": "hellodj:scaleOutThreshold",
+                        "Value": "0.7"
+                    }
+                ]
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/Resource/CreationRole/Resource"
+            }
+        },
+        "ClusterCreationRoleDefaultPolicyE8BDFC7B": {
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "PolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": "iam:PassRole",
+                            "Effect": "Allow",
+                            "Resource": {
+                                "Fn::GetAtt": [
+                                    "ClusterRoleFA261979",
+                                    "Arn"
+                                ]
+                            }
+                        },
+                        {
+                            "Action": [
+                                "eks:CreateCluster",
+                                "eks:CreateFargateProfile",
+                                "eks:DeleteCluster",
+                                "eks:DescribeCluster",
+                                "eks:DescribeUpdate",
+                                "eks:TagResource",
+                                "eks:UntagResource",
+                                "eks:UpdateClusterConfig",
+                                "eks:UpdateClusterVersion"
+                            ],
+                            "Effect": "Allow",
+                            "Resource": [
+                                "arn:aws:eks:us-east-1:874927898283:cluster/hellodj",
+                                "arn:aws:eks:us-east-1:874927898283:cluster/hellodj/*"
+                            ]
+                        },
+                        {
+                            "Action": [
+                                "eks:DeleteFargateProfile",
+                                "eks:DescribeFargateProfile"
+                            ],
+                            "Effect": "Allow",
+                            "Resource": "arn:aws:eks:us-east-1:874927898283:fargateprofile/hellodj/*"
+                        },
+                        {
+                            "Action": [
+                                "ec2:DescribeDhcpOptions",
+                                "ec2:DescribeInstances",
+                                "ec2:DescribeNetworkInterfaces",
+                                "ec2:DescribeRouteTables",
+                                "ec2:DescribeSecurityGroups",
+                                "ec2:DescribeSubnets",
+                                "ec2:DescribeVpcs",
+                                "iam:CreateServiceLinkedRole",
+                                "iam:GetRole",
+                                "iam:listAttachedRolePolicies"
+                            ],
+                            "Effect": "Allow",
+                            "Resource": "*"
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "PolicyName": "ClusterCreationRoleDefaultPolicyE8BDFC7B",
+                "Roles": [
+                    {
+                        "Ref": "ClusterCreationRole360249B6"
+                    }
+                ]
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/Resource/CreationRole/DefaultPolicy/Resource"
+            }
+        },
+        "Cluster9EE0221C": {
+            "Type": "Custom::AWSCDK-EKS-Cluster",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "awscdkawseksClusterResourceProviderNestedStackawscdkawseksClusterResourceProviderNestedStackResource9827C454",
+                        "Outputs.hellodjeksawscdkawseksClusterResourceProviderframeworkonEventAB69B9E6Arn"
+                    ]
+                },
+                "Config": {
+                    "name": "hellodj",
+                    "version": "1.36",
+                    "roleArn": {
+                        "Fn::GetAtt": [
+                            "ClusterRoleFA261979",
+                            "Arn"
+                        ]
+                    },
+                    "kubernetesNetworkConfig": {
+                        "ipFamily": "ipv4"
+                    },
+                    "resourcesVpcConfig": {
+                        "subnetIds": [
+                            {
+                                "Fn::ImportValue": "hellodj-network:ExportsOutputRefVpcprivateegressSubnet1Subnet830BC88F45116193"
+                            },
+                            {
+                                "Fn::ImportValue": "hellodj-network:ExportsOutputRefVpcprivateegressSubnet2SubnetEB0EA9CBFD91A0CD"
+                            },
+                            {
+                                "Fn::ImportValue": "hellodj-network:ExportsOutputRefVpcprivateegressSubnet3Subnet6C8E65FBD4F775F0"
+                            }
+                        ],
+                        "securityGroupIds": [
+                            {
+                                "Fn::GetAtt": [
+                                    "ClusterControlPlaneSecurityGroupD274242C",
+                                    "GroupId"
+                                ]
+                            }
+                        ],
+                        "endpointPublicAccess": true,
+                        "endpointPrivateAccess": true
+                    },
+                    "accessConfig": {
+                        "authenticationMode": "API_AND_CONFIG_MAP"
+                    }
+                },
+                "AssumeRoleArn": {
+                    "Fn::GetAtt": [
+                        "ClusterCreationRole360249B6",
+                        "Arn"
+                    ]
+                },
+                "AttributesRevision": 5
+            },
+            "DependsOn": [
+                "ClusterCreationRoleDefaultPolicyE8BDFC7B",
+                "ClusterCreationRole360249B6"
+            ],
+            "UpdateReplacePolicy": "Delete",
+            "DeletionPolicy": "Delete",
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/Resource/Resource/Default"
+            }
+        },
+        "ClusterKubectlReadyBarrier200052AF": {
+            "Type": "AWS::SSM::Parameter",
+            "Properties": {
+                "Type": "String",
+                "Value": "aws:cdk:eks:kubectl-ready"
+            },
+            "DependsOn": [
+                "ClusterCreationRoleDefaultPolicyE8BDFC7B",
+                "ClusterCreationRole360249B6",
+                "Cluster9EE0221C"
+            ],
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/KubectlReadyBarrier"
+            }
+        },
+        "ClusterAdminAccess30940FB6": {
+            "Type": "AWS::EKS::AccessEntry",
+            "Properties": {
+                "AccessPolicies": [
+                    {
+                        "AccessScope": {
+                            "Type": "cluster"
+                        },
+                        "PolicyArn": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "arn:",
+                                    {
+                                        "Ref": "AWS::Partition"
+                                    },
+                                    ":eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+                                ]
+                            ]
+                        }
+                    }
+                ],
+                "ClusterName": {
+                    "Ref": "Cluster9EE0221C"
+                },
+                "PrincipalArn": "arn:aws:iam::874927898283:root",
+                "Tags": [
+                    {
+                        "Key": "hellodj:scaleInThreshold",
+                        "Value": "0.4"
+                    },
+                    {
+                        "Key": "hellodj:scaleOutThreshold",
+                        "Value": "0.7"
+                    }
+                ]
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/AdminAccess/Resource"
+            }
+        },
+        "ClusterKubectlRoleAccess52D69B3D": {
+            "Type": "AWS::EKS::AccessEntry",
+            "Properties": {
+                "AccessPolicies": [
+                    {
+                        "AccessScope": {
+                            "Type": "cluster"
+                        },
+                        "PolicyArn": {
+                            "Fn::Join": [
+                                "",
+                                [
+                                    "arn:",
+                                    {
+                                        "Ref": "AWS::Partition"
+                                    },
+                                    ":eks::aws:cluster-access-policy/AmazonEKSClusterAdminPolicy"
+                                ]
+                            ]
+                        }
+                    }
+                ],
+                "ClusterName": {
+                    "Ref": "Cluster9EE0221C"
+                },
+                "PrincipalArn": {
+                    "Fn::GetAtt": [
+                        "KubectlRole4D319128",
+                        "Arn"
+                    ]
+                },
+                "Tags": [
+                    {
+                        "Key": "hellodj:scaleInThreshold",
+                        "Value": "0.4"
+                    },
+                    {
+                        "Key": "hellodj:scaleOutThreshold",
+                        "Value": "0.7"
+                    }
+                ]
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/KubectlRoleAccess/Resource"
+            }
+        },
+        "ClusterOpenIdConnectProviderE7EB0530": {
+            "Type": "Custom::AWSCDKOpenIdConnectProvider",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "CustomAWSCDKOpenIdConnectProviderCustomResourceProviderHandlerF2C543E0",
+                        "Arn"
+                    ]
+                },
+                "ClientIDList": [
+                    "sts.amazonaws.com"
+                ],
+                "Url": {
+                    "Fn::GetAtt": [
+                        "Cluster9EE0221C",
+                        "OpenIdConnectIssuerUrl"
+                    ]
+                },
+                "RejectUnauthorized": false,
+                "CodeHash": "c0d9f24649426c60a1bc01108070535a40353ae6cd8ceccb812969319b936e5d"
+            },
+            "UpdateReplacePolicy": "Delete",
+            "DeletionPolicy": "Delete",
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/OpenIdConnectProvider/Resource/Default"
+            }
+        },
+        "ClusterNodegroupAppOnDemandNodeGroupRole60F562BB": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": "sts:AssumeRole",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": "ec2.amazonaws.com"
+                            }
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "ManagedPolicyArns": [
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:",
+                                {
+                                    "Ref": "AWS::Partition"
+                                },
+                                ":iam::aws:policy/AmazonEKSWorkerNodePolicy"
+                            ]
+                        ]
+                    },
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:",
+                                {
+                                    "Ref": "AWS::Partition"
+                                },
+                                ":iam::aws:policy/AmazonEKS_CNI_Policy"
+                            ]
+                        ]
+                    },
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:",
+                                {
+                                    "Ref": "AWS::Partition"
+                                },
+                                ":iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+                            ]
+                        ]
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "hellodj:scaleInThreshold",
+                        "Value": "0.4"
+                    },
+                    {
+                        "Key": "hellodj:scaleOutThreshold",
+                        "Value": "0.7"
+                    }
+                ]
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/NodegroupAppOnDemand/NodeGroupRole/Resource"
+            }
+        },
+        "ClusterNodegroupAppOnDemand72726DD7": {
+            "Type": "AWS::EKS::Nodegroup",
+            "Properties": {
+                "AmiType": "AL2023_ARM_64_STANDARD",
+                "CapacityType": "ON_DEMAND",
+                "ClusterName": {
+                    "Ref": "Cluster9EE0221C"
+                },
+                "ForceUpdateEnabled": true,
+                "InstanceTypes": [
+                    "m7g.large",
+                    "c7g.large"
+                ],
+                "Labels": {
+                    "workload": "app",
+                    "hellodj.bot/arch": "arm64",
+                    "hellodj.bot/capacity": "on-demand"
+                },
+                "NodeRole": {
+                    "Fn::GetAtt": [
+                        "ClusterNodegroupAppOnDemandNodeGroupRole60F562BB",
+                        "Arn"
+                    ]
+                },
+                "NodegroupName": "hellodj-app-ondemand",
+                "ScalingConfig": {
+                    "DesiredSize": 1,
+                    "MaxSize": 10,
+                    "MinSize": 1
+                },
+                "Subnets": [
+                    {
+                        "Fn::ImportValue": "hellodj-network:ExportsOutputRefVpcprivateegressSubnet1Subnet830BC88F45116193"
+                    },
+                    {
+                        "Fn::ImportValue": "hellodj-network:ExportsOutputRefVpcprivateegressSubnet2SubnetEB0EA9CBFD91A0CD"
+                    },
+                    {
+                        "Fn::ImportValue": "hellodj-network:ExportsOutputRefVpcprivateegressSubnet3Subnet6C8E65FBD4F775F0"
+                    }
+                ],
+                "Tags": {
+                    "hellodj:scaleInThreshold": "0.4",
+                    "hellodj:scaleOutThreshold": "0.7"
+                }
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/NodegroupAppOnDemand/Resource"
+            }
+        },
+        "ClusterAwsAuthmanifestFE51F8AE": {
+            "Type": "Custom::AWSCDK-EKS-KubernetesResource",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "awscdkawseksKubectlProviderNestedStackawscdkawseksKubectlProviderNestedStackResourceA7AEBA6B",
+                        "Outputs.hellodjeksawscdkawseksKubectlProviderframeworkonEvent281E610DArn"
+                    ]
+                },
+                "Manifest": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "[{\"apiVersion\":\"v1\",\"kind\":\"ConfigMap\",\"metadata\":{\"name\":\"aws-auth\",\"namespace\":\"kube-system\",\"labels\":{\"aws.cdk.eks/prune-c820ac33a0addda8c2356242c2cc8a6c4268d98d54\":\"\"}},\"data\":{\"mapRoles\":\"[{\\\"rolearn\\\":\\\"",
+                            {
+                                "Fn::GetAtt": [
+                                    "ClusterNodegroupAppOnDemandNodeGroupRole60F562BB",
+                                    "Arn"
+                                ]
+                            },
+                            "\\\",\\\"username\\\":\\\"system:node:{{EC2PrivateDNSName}}\\\",\\\"groups\\\":[\\\"system:bootstrappers\\\",\\\"system:nodes\\\"]},{\\\"rolearn\\\":\\\"",
+                            {
+                                "Fn::GetAtt": [
+                                    "ClusterNodegroupAppSpotNodeGroupRole3CD2A986",
+                                    "Arn"
+                                ]
+                            },
+                            "\\\",\\\"username\\\":\\\"system:node:{{EC2PrivateDNSName}}\\\",\\\"groups\\\":[\\\"system:bootstrappers\\\",\\\"system:nodes\\\"]},{\\\"rolearn\\\":\\\"",
+                            {
+                                "Fn::GetAtt": [
+                                    "ClusterNodegroupTranscodeNodeGroupRoleD5ED31C5",
+                                    "Arn"
+                                ]
+                            },
+                            "\\\",\\\"username\\\":\\\"system:node:{{EC2PrivateDNSName}}\\\",\\\"groups\\\":[\\\"system:bootstrappers\\\",\\\"system:nodes\\\"]}]\",\"mapUsers\":\"[]\",\"mapAccounts\":\"[]\"}}]"
+                        ]
+                    ]
+                },
+                "ClusterName": {
+                    "Ref": "Cluster9EE0221C"
+                },
+                "RoleArn": {
+                    "Fn::GetAtt": [
+                        "ClusterCreationRole360249B6",
+                        "Arn"
+                    ]
+                },
+                "PruneLabel": "aws.cdk.eks/prune-c820ac33a0addda8c2356242c2cc8a6c4268d98d54",
+                "Overwrite": true
+            },
+            "DependsOn": [
+                "ClusterKubectlReadyBarrier200052AF"
+            ],
+            "UpdateReplacePolicy": "Delete",
+            "DeletionPolicy": "Delete",
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/AwsAuth/manifest/Resource/Default"
+            }
+        },
+        "ClusterNodegroupAppSpotNodeGroupRole3CD2A986": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": "sts:AssumeRole",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": "ec2.amazonaws.com"
+                            }
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "ManagedPolicyArns": [
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:",
+                                {
+                                    "Ref": "AWS::Partition"
+                                },
+                                ":iam::aws:policy/AmazonEKSWorkerNodePolicy"
+                            ]
+                        ]
+                    },
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:",
+                                {
+                                    "Ref": "AWS::Partition"
+                                },
+                                ":iam::aws:policy/AmazonEKS_CNI_Policy"
+                            ]
+                        ]
+                    },
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:",
+                                {
+                                    "Ref": "AWS::Partition"
+                                },
+                                ":iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+                            ]
+                        ]
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "hellodj:scaleInThreshold",
+                        "Value": "0.4"
+                    },
+                    {
+                        "Key": "hellodj:scaleOutThreshold",
+                        "Value": "0.7"
+                    }
+                ]
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/NodegroupAppSpot/NodeGroupRole/Resource"
+            }
+        },
+        "ClusterNodegroupAppSpot806D6B36": {
+            "Type": "AWS::EKS::Nodegroup",
+            "Properties": {
+                "AmiType": "AL2023_ARM_64_STANDARD",
+                "CapacityType": "SPOT",
+                "ClusterName": {
+                    "Ref": "Cluster9EE0221C"
+                },
+                "ForceUpdateEnabled": true,
+                "InstanceTypes": [
+                    "m7g.large",
+                    "c7g.large"
+                ],
+                "Labels": {
+                    "workload": "app",
+                    "hellodj.bot/arch": "arm64",
+                    "hellodj.bot/capacity": "spot"
+                },
+                "NodeRole": {
+                    "Fn::GetAtt": [
+                        "ClusterNodegroupAppSpotNodeGroupRole3CD2A986",
+                        "Arn"
+                    ]
+                },
+                "NodegroupName": "hellodj-app-spot",
+                "ScalingConfig": {
+                    "DesiredSize": 0,
+                    "MaxSize": 20,
+                    "MinSize": 0
+                },
+                "Subnets": [
+                    {
+                        "Fn::ImportValue": "hellodj-network:ExportsOutputRefVpcprivateegressSubnet1Subnet830BC88F45116193"
+                    },
+                    {
+                        "Fn::ImportValue": "hellodj-network:ExportsOutputRefVpcprivateegressSubnet2SubnetEB0EA9CBFD91A0CD"
+                    },
+                    {
+                        "Fn::ImportValue": "hellodj-network:ExportsOutputRefVpcprivateegressSubnet3Subnet6C8E65FBD4F775F0"
+                    }
+                ],
+                "Tags": {
+                    "hellodj:scaleInThreshold": "0.4",
+                    "hellodj:scaleOutThreshold": "0.7"
+                }
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/NodegroupAppSpot/Resource"
+            }
+        },
+        "ClusterNodegroupTranscodeNodeGroupRoleD5ED31C5": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": "sts:AssumeRole",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": "ec2.amazonaws.com"
+                            }
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "ManagedPolicyArns": [
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:",
+                                {
+                                    "Ref": "AWS::Partition"
+                                },
+                                ":iam::aws:policy/AmazonEKSWorkerNodePolicy"
+                            ]
+                        ]
+                    },
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:",
+                                {
+                                    "Ref": "AWS::Partition"
+                                },
+                                ":iam::aws:policy/AmazonEKS_CNI_Policy"
+                            ]
+                        ]
+                    },
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:",
+                                {
+                                    "Ref": "AWS::Partition"
+                                },
+                                ":iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+                            ]
+                        ]
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "hellodj:scaleInThreshold",
+                        "Value": "0.4"
+                    },
+                    {
+                        "Key": "hellodj:scaleOutThreshold",
+                        "Value": "0.7"
+                    }
+                ]
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/NodegroupTranscode/NodeGroupRole/Resource"
+            }
+        },
+        "ClusterNodegroupTranscodeB983ACBB": {
+            "Type": "AWS::EKS::Nodegroup",
+            "Properties": {
+                "AmiType": "AL2023_ARM_64_STANDARD",
+                "CapacityType": "SPOT",
+                "ClusterName": {
+                    "Ref": "Cluster9EE0221C"
+                },
+                "ForceUpdateEnabled": true,
+                "InstanceTypes": [
+                    "c7g.xlarge"
+                ],
+                "Labels": {
+                    "workload": "transcode",
+                    "hellodj.bot/arch": "arm64"
+                },
+                "NodeRole": {
+                    "Fn::GetAtt": [
+                        "ClusterNodegroupTranscodeNodeGroupRoleD5ED31C5",
+                        "Arn"
+                    ]
+                },
+                "NodegroupName": "hellodj-transcode",
+                "ScalingConfig": {
+                    "DesiredSize": 0,
+                    "MaxSize": 8,
+                    "MinSize": 0
+                },
+                "Subnets": [
+                    {
+                        "Fn::ImportValue": "hellodj-network:ExportsOutputRefVpcprivateegressSubnet1Subnet830BC88F45116193"
+                    },
+                    {
+                        "Fn::ImportValue": "hellodj-network:ExportsOutputRefVpcprivateegressSubnet2SubnetEB0EA9CBFD91A0CD"
+                    },
+                    {
+                        "Fn::ImportValue": "hellodj-network:ExportsOutputRefVpcprivateegressSubnet3Subnet6C8E65FBD4F775F0"
+                    }
+                ],
+                "Tags": {
+                    "hellodj:scaleInThreshold": "0.4",
+                    "hellodj:scaleOutThreshold": "0.7"
+                },
+                "Taints": [
+                    {
+                        "Effect": "NO_SCHEDULE",
+                        "Key": "dedicated",
+                        "Value": "transcode"
+                    }
+                ]
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/NodegroupTranscode/Resource"
+            }
+        },
+        "ClusterLbControllerSaConditionJson94DBFC64": {
+            "Type": "Custom::AWSCDKCfnJson",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "AWSCDKCfnUtilsProviderCustomResourceProviderHandlerCF82AA57",
+                        "Arn"
+                    ]
+                },
+                "Value": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "{\"",
+                            {
+                                "Fn::Select": [
+                                    1,
+                                    {
+                                        "Fn::Split": [
+                                            ":oidc-provider/",
+                                            {
+                                                "Ref": "ClusterOpenIdConnectProviderE7EB0530"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            ":aud\":\"sts.amazonaws.com\",\"",
+                            {
+                                "Fn::Select": [
+                                    1,
+                                    {
+                                        "Fn::Split": [
+                                            ":oidc-provider/",
+                                            {
+                                                "Ref": "ClusterOpenIdConnectProviderE7EB0530"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            ":sub\":\"system:serviceaccount:kube-system:aws-lb-controller\"}"
+                        ]
+                    ]
+                }
+            },
+            "UpdateReplacePolicy": "Delete",
+            "DeletionPolicy": "Delete",
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/LbControllerSa/ConditionJson/Resource/Default"
+            }
+        },
+        "ClusterLbControllerSaRole6E668856": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": "sts:AssumeRoleWithWebIdentity",
+                            "Condition": {
+                                "StringEquals": {
+                                    "Fn::GetAtt": [
+                                        "ClusterLbControllerSaConditionJson94DBFC64",
+                                        "Value"
+                                    ]
+                                }
+                            },
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Federated": {
+                                    "Ref": "ClusterOpenIdConnectProviderE7EB0530"
+                                }
+                            }
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "ManagedPolicyArns": [
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:",
+                                {
+                                    "Ref": "AWS::Partition"
+                                },
+                                ":iam::aws:policy/ElasticLoadBalancingFullAccess"
+                            ]
+                        ]
+                    },
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:",
+                                {
+                                    "Ref": "AWS::Partition"
+                                },
+                                ":iam::aws:policy/AmazonEC2FullAccess"
+                            ]
+                        ]
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "hellodj:scaleInThreshold",
+                        "Value": "0.4"
+                    },
+                    {
+                        "Key": "hellodj:scaleOutThreshold",
+                        "Value": "0.7"
+                    }
+                ]
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/LbControllerSa/Role/Resource"
+            }
+        },
+        "ClusterLbControllerSaRoleDefaultPolicy68D9D686": {
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "PolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": [
+                                "acm:DescribeCertificate",
+                                "acm:GetCertificate",
+                                "acm:ListCertificates",
+                                "cognito-idp:DescribeUserPoolClient",
+                                "shield:CreateProtection",
+                                "shield:DeleteProtection",
+                                "shield:DescribeProtection",
+                                "shield:GetSubscriptionState",
+                                "tag:GetResources",
+                                "tag:TagResources",
+                                "wafv2:AssociateWebACL",
+                                "wafv2:DisassociateWebACL",
+                                "wafv2:GetWebACL",
+                                "wafv2:GetWebACLForResource"
+                            ],
+                            "Effect": "Allow",
+                            "Resource": "*"
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "PolicyName": "ClusterLbControllerSaRoleDefaultPolicy68D9D686",
+                "Roles": [
+                    {
+                        "Ref": "ClusterLbControllerSaRole6E668856"
+                    }
+                ]
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/LbControllerSa/Role/DefaultPolicy/Resource"
+            }
+        },
+        "ClusterLbControllerSamanifestLbControllerSaServiceAccountResource8007C186": {
+            "Type": "Custom::AWSCDK-EKS-KubernetesResource",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "awscdkawseksKubectlProviderNestedStackawscdkawseksKubectlProviderNestedStackResourceA7AEBA6B",
+                        "Outputs.hellodjeksawscdkawseksKubectlProviderframeworkonEvent281E610DArn"
+                    ]
+                },
+                "Manifest": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "[{\"apiVersion\":\"v1\",\"kind\":\"ServiceAccount\",\"metadata\":{\"name\":\"aws-lb-controller\",\"namespace\":\"kube-system\",\"labels\":{\"aws.cdk.eks/prune-c8962656650d5c1b64209221ad57deb4a7d041f2a5\":\"\",\"app.kubernetes.io/name\":\"aws-lb-controller\"},\"annotations\":{\"eks.amazonaws.com/role-arn\":\"",
+                            {
+                                "Fn::GetAtt": [
+                                    "ClusterLbControllerSaRole6E668856",
+                                    "Arn"
+                                ]
+                            },
+                            "\"}}}]"
+                        ]
+                    ]
+                },
+                "ClusterName": {
+                    "Ref": "Cluster9EE0221C"
+                },
+                "RoleArn": {
+                    "Fn::GetAtt": [
+                        "ClusterCreationRole360249B6",
+                        "Arn"
+                    ]
+                },
+                "PruneLabel": "aws.cdk.eks/prune-c8962656650d5c1b64209221ad57deb4a7d041f2a5"
+            },
+            "DependsOn": [
+                "ClusterKubectlReadyBarrier200052AF"
+            ],
+            "UpdateReplacePolicy": "Delete",
+            "DeletionPolicy": "Delete",
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/LbControllerSa/manifest-LbControllerSaServiceAccountResource/Resource/Default"
+            }
+        },
+        "ClusterchartAwsLoadBalancerController53A135A4": {
+            "Type": "Custom::AWSCDK-EKS-HelmChart",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "awscdkawseksKubectlProviderNestedStackawscdkawseksKubectlProviderNestedStackResourceA7AEBA6B",
+                        "Outputs.hellodjeksawscdkawseksKubectlProviderframeworkonEvent281E610DArn"
+                    ]
+                },
+                "ClusterName": {
+                    "Ref": "Cluster9EE0221C"
+                },
+                "RoleArn": {
+                    "Fn::GetAtt": [
+                        "ClusterCreationRole360249B6",
+                        "Arn"
+                    ]
+                },
+                "Release": "aws-load-balancer-controller",
+                "Chart": "aws-load-balancer-controller",
+                "Version": "1.10.1",
+                "Values": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "{\"clusterName\":\"",
+                            {
+                                "Ref": "Cluster9EE0221C"
+                            },
+                            "\",\"serviceAccount\":{\"create\":false,\"name\":\"aws-lb-controller\"},\"nodeSelector\":{\"workload\":\"app\"},\"region\":\"us-east-1\",\"vpcId\":\"",
+                            {
+                                "Fn::ImportValue": "hellodj-network:ExportsOutputRefVpc8378EB38272D6E3A"
+                            },
+                            "\"}"
+                        ]
+                    ]
+                },
+                "Namespace": "kube-system",
+                "Repository": "https://aws.github.io/eks-charts",
+                "CreateNamespace": true
+            },
+            "DependsOn": [
+                "ClusterKubectlReadyBarrier200052AF",
+                "ClusterLbControllerSaConditionJson94DBFC64",
+                "ClusterLbControllerSamanifestLbControllerSaServiceAccountResource8007C186",
+                "ClusterLbControllerSaRoleDefaultPolicy68D9D686",
+                "ClusterLbControllerSaRole6E668856"
+            ],
+            "UpdateReplacePolicy": "Delete",
+            "DeletionPolicy": "Delete",
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/chart-AwsLoadBalancerController/Resource/Default"
+            }
+        },
+        "ClusterKarpenterSaConditionJsonAB25B844": {
+            "Type": "Custom::AWSCDKCfnJson",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "AWSCDKCfnUtilsProviderCustomResourceProviderHandlerCF82AA57",
+                        "Arn"
+                    ]
+                },
+                "Value": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "{\"",
+                            {
+                                "Fn::Select": [
+                                    1,
+                                    {
+                                        "Fn::Split": [
+                                            ":oidc-provider/",
+                                            {
+                                                "Ref": "ClusterOpenIdConnectProviderE7EB0530"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            ":aud\":\"sts.amazonaws.com\",\"",
+                            {
+                                "Fn::Select": [
+                                    1,
+                                    {
+                                        "Fn::Split": [
+                                            ":oidc-provider/",
+                                            {
+                                                "Ref": "ClusterOpenIdConnectProviderE7EB0530"
+                                            }
+                                        ]
+                                    }
+                                ]
+                            },
+                            ":sub\":\"system:serviceaccount:karpenter:karpenter\"}"
+                        ]
+                    ]
+                }
+            },
+            "UpdateReplacePolicy": "Delete",
+            "DeletionPolicy": "Delete",
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/KarpenterSa/ConditionJson/Resource/Default"
+            }
+        },
+        "ClusterKarpenterSaRoleE6DD4AE8": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": "sts:AssumeRoleWithWebIdentity",
+                            "Condition": {
+                                "StringEquals": {
+                                    "Fn::GetAtt": [
+                                        "ClusterKarpenterSaConditionJsonAB25B844",
+                                        "Value"
+                                    ]
+                                }
+                            },
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Federated": {
+                                    "Ref": "ClusterOpenIdConnectProviderE7EB0530"
+                                }
+                            }
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "ManagedPolicyArns": [
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:",
+                                {
+                                    "Ref": "AWS::Partition"
+                                },
+                                ":iam::aws:policy/AmazonEC2FullAccess"
+                            ]
+                        ]
+                    },
+                    {
+                        "Fn::Join": [
+                            "",
+                            [
+                                "arn:",
+                                {
+                                    "Ref": "AWS::Partition"
+                                },
+                                ":iam::aws:policy/AmazonSSMManagedInstanceCore"
+                            ]
+                        ]
+                    }
+                ],
+                "Tags": [
+                    {
+                        "Key": "hellodj:scaleInThreshold",
+                        "Value": "0.4"
+                    },
+                    {
+                        "Key": "hellodj:scaleOutThreshold",
+                        "Value": "0.7"
+                    }
+                ]
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/KarpenterSa/Role/Resource"
+            }
+        },
+        "ClusterKarpenterSaRoleDefaultPolicy98006C74": {
+            "Type": "AWS::IAM::Policy",
+            "Properties": {
+                "PolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": [
+                                "ec2:CreateFleet",
+                                "ec2:CreateLaunchTemplate",
+                                "ec2:CreateTags",
+                                "ec2:DeleteLaunchTemplate",
+                                "ec2:DescribeAvailabilityZones",
+                                "ec2:DescribeImages",
+                                "ec2:DescribeInstanceTypeOfferings",
+                                "ec2:DescribeInstanceTypes",
+                                "ec2:DescribeInstances",
+                                "ec2:DescribeLaunchTemplates",
+                                "ec2:DescribeSecurityGroups",
+                                "ec2:DescribeSpotPriceHistory",
+                                "ec2:DescribeSubnets",
+                                "ec2:RunInstances",
+                                "ec2:TerminateInstances",
+                                "eks:DescribeCluster",
+                                "iam:PassRole",
+                                "pricing:GetProducts",
+                                "sqs:DeleteMessage",
+                                "sqs:GetQueueAttributes",
+                                "sqs:GetQueueUrl",
+                                "sqs:ReceiveMessage"
+                            ],
+                            "Effect": "Allow",
+                            "Resource": "*"
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "PolicyName": "ClusterKarpenterSaRoleDefaultPolicy98006C74",
+                "Roles": [
+                    {
+                        "Ref": "ClusterKarpenterSaRoleE6DD4AE8"
+                    }
+                ]
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/KarpenterSa/Role/DefaultPolicy/Resource"
+            }
+        },
+        "ClusterKarpenterSamanifestKarpenterSaServiceAccountResource92C5841B": {
+            "Type": "Custom::AWSCDK-EKS-KubernetesResource",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "awscdkawseksKubectlProviderNestedStackawscdkawseksKubectlProviderNestedStackResourceA7AEBA6B",
+                        "Outputs.hellodjeksawscdkawseksKubectlProviderframeworkonEvent281E610DArn"
+                    ]
+                },
+                "Manifest": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "[{\"apiVersion\":\"v1\",\"kind\":\"ServiceAccount\",\"metadata\":{\"name\":\"karpenter\",\"namespace\":\"karpenter\",\"labels\":{\"aws.cdk.eks/prune-c828710463c4704c131a4625cfc41bfe2c4df10d05\":\"\",\"app.kubernetes.io/name\":\"karpenter\"},\"annotations\":{\"eks.amazonaws.com/role-arn\":\"",
+                            {
+                                "Fn::GetAtt": [
+                                    "ClusterKarpenterSaRoleE6DD4AE8",
+                                    "Arn"
+                                ]
+                            },
+                            "\"}}}]"
+                        ]
+                    ]
+                },
+                "ClusterName": {
+                    "Ref": "Cluster9EE0221C"
+                },
+                "RoleArn": {
+                    "Fn::GetAtt": [
+                        "ClusterCreationRole360249B6",
+                        "Arn"
+                    ]
+                },
+                "PruneLabel": "aws.cdk.eks/prune-c828710463c4704c131a4625cfc41bfe2c4df10d05"
+            },
+            "DependsOn": [
+                "ClusterKubectlReadyBarrier200052AF"
+            ],
+            "UpdateReplacePolicy": "Delete",
+            "DeletionPolicy": "Delete",
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/KarpenterSa/manifest-KarpenterSaServiceAccountResource/Resource/Default"
+            }
+        },
+        "ClusterchartKarpenterAE9676E9": {
+            "Type": "Custom::AWSCDK-EKS-HelmChart",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "awscdkawseksKubectlProviderNestedStackawscdkawseksKubectlProviderNestedStackResourceA7AEBA6B",
+                        "Outputs.hellodjeksawscdkawseksKubectlProviderframeworkonEvent281E610DArn"
+                    ]
+                },
+                "ClusterName": {
+                    "Ref": "Cluster9EE0221C"
+                },
+                "RoleArn": {
+                    "Fn::GetAtt": [
+                        "ClusterCreationRole360249B6",
+                        "Arn"
+                    ]
+                },
+                "Release": "karpenter",
+                "Chart": "karpenter",
+                "Version": "1.0.6",
+                "Values": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "{\"settings\":{\"clusterName\":\"",
+                            {
+                                "Ref": "Cluster9EE0221C"
+                            },
+                            "\",\"interruptionQueue\":\"hellodj-beta-karpenter-interruption\"},\"nodeSelector\":{\"workload\":\"app\"},\"serviceAccount\":{\"create\":false,\"name\":\"karpenter\"},\"controller\":{\"resources\":{\"requests\":{\"cpu\":\"0.25\",\"memory\":\"256Mi\"},\"limits\":{\"cpu\":\"0.5\",\"memory\":\"512Mi\"}}}}"
+                        ]
+                    ]
+                },
+                "Namespace": "karpenter",
+                "Repository": "oci://public.ecr.aws/karpenter/karpenter",
+                "CreateNamespace": true
+            },
+            "DependsOn": [
+                "ClusterKarpenterSaConditionJsonAB25B844",
+                "ClusterKarpenterSamanifestKarpenterSaServiceAccountResource92C5841B",
+                "ClusterKarpenterSaRoleDefaultPolicy98006C74",
+                "ClusterKarpenterSaRoleE6DD4AE8",
+                "ClusterKubectlReadyBarrier200052AF"
+            ],
+            "UpdateReplacePolicy": "Delete",
+            "DeletionPolicy": "Delete",
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/chart-Karpenter/Resource/Default"
+            }
+        },
+        "ClustermanifestGpuTranscodeNodePoolE579568E": {
+            "Type": "Custom::AWSCDK-EKS-KubernetesResource",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "awscdkawseksKubectlProviderNestedStackawscdkawseksKubectlProviderNestedStackResourceA7AEBA6B",
+                        "Outputs.hellodjeksawscdkawseksKubectlProviderframeworkonEvent281E610DArn"
+                    ]
+                },
+                "Manifest": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "[{\"apiVersion\":\"karpenter.k8s.aws/v1\",\"kind\":\"EC2NodeClass\",\"metadata\":{\"name\":\"transcode-gpu\",\"annotations\":{\"hellodj.bot/ami-source\":\"al2023-accelerated-alias\"},\"labels\":{\"aws.cdk.eks/prune-c80fdd5334734c209e7b41d781d24532f797288767\":\"\"}},\"spec\":{\"amiSelectorTerms\":[{\"alias\":\"al2023@latest\"}],\"blockDeviceMappings\":[{\"deviceName\":\"/dev/xvda\",\"ebs\":{\"volumeSize\":\"40Gi\",\"volumeType\":\"gp3\",\"deleteOnTermination\":true,\"encrypted\":true}}],\"subnetSelectorTerms\":[{\"tags\":{\"kubernetes.io/cluster/",
+                            {
+                                "Ref": "Cluster9EE0221C"
+                            },
+                            "\":\"owned\"}}],\"securityGroupSelectorTerms\":[{\"tags\":{\"kubernetes.io/cluster/",
+                            {
+                                "Ref": "Cluster9EE0221C"
+                            },
+                            "\":\"owned\"}}],\"role\":\"",
+                            {
+                                "Ref": "ClusterNodegroupTranscodeNodeGroupRoleD5ED31C5"
+                            },
+                            "\"}},{\"apiVersion\":\"karpenter.sh/v1\",\"kind\":\"NodePool\",\"metadata\":{\"name\":\"transcode-gpu\",\"labels\":{\"aws.cdk.eks/prune-c80fdd5334734c209e7b41d781d24532f797288767\":\"\"}},\"spec\":{\"weight\":100,\"template\":{\"metadata\":{\"labels\":{\"workload\":\"transcode\",\"hellodj.bot/arch\":\"arm64\",\"hellodj.bot/capacity\":\"spot\",\"hellodj.bot/gpu\":\"true\"}},\"spec\":{\"nodeClassRef\":{\"group\":\"karpenter.k8s.aws\",\"kind\":\"EC2NodeClass\",\"name\":\"transcode-gpu\"},\"taints\":[{\"key\":\"dedicated\",\"value\":\"transcode\",\"effect\":\"NoSchedule\"}],\"requirements\":[{\"key\":\"karpenter.sh/capacity-type\",\"operator\":\"In\",\"values\":[\"spot\"]},{\"key\":\"node.kubernetes.io/instance-type\",\"operator\":\"In\",\"values\":[\"g5g.xlarge\"]},{\"key\":\"kubernetes.io/arch\",\"operator\":\"In\",\"values\":[\"arm64\"]}],\"terminationGracePeriod\":\"120s\"}},\"limits\":{\"nvidia.com/gpu\":4},\"disruption\":{\"consolidationPolicy\":\"WhenEmpty\",\"consolidateAfter\":\"600s\"}}}]"
+                        ]
+                    ]
+                },
+                "ClusterName": {
+                    "Ref": "Cluster9EE0221C"
+                },
+                "RoleArn": {
+                    "Fn::GetAtt": [
+                        "ClusterCreationRole360249B6",
+                        "Arn"
+                    ]
+                },
+                "PruneLabel": "aws.cdk.eks/prune-c80fdd5334734c209e7b41d781d24532f797288767"
+            },
+            "DependsOn": [
+                "ClusterKubectlReadyBarrier200052AF",
+                "ClustermanifestNvidiaDevicePlugin60E06FCD"
+            ],
+            "UpdateReplacePolicy": "Delete",
+            "DeletionPolicy": "Delete",
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/manifest-GpuTranscodeNodePool/Resource/Default"
+            }
+        },
+        "ClustermanifestNvidiaDevicePlugin60E06FCD": {
+            "Type": "Custom::AWSCDK-EKS-KubernetesResource",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "awscdkawseksKubectlProviderNestedStackawscdkawseksKubectlProviderNestedStackResourceA7AEBA6B",
+                        "Outputs.hellodjeksawscdkawseksKubectlProviderframeworkonEvent281E610DArn"
+                    ]
+                },
+                "Manifest": "[{\"apiVersion\":\"v1\",\"kind\":\"Namespace\",\"metadata\":{\"name\":\"nvidia-device-plugin\",\"labels\":{\"aws.cdk.eks/prune-c8a687b3e87ca8034b8687fb8bd3a3c013177f4e3d\":\"\"}}},{\"apiVersion\":\"v1\",\"kind\":\"ConfigMap\",\"metadata\":{\"name\":\"time-slicing-config\",\"namespace\":\"nvidia-device-plugin\",\"labels\":{\"aws.cdk.eks/prune-c8a687b3e87ca8034b8687fb8bd3a3c013177f4e3d\":\"\"}},\"data\":{\"any\":\"version: v1\\nflags:\\n  migStrategy: none\\nsharing:\\n  timeSlicing:\\n    resources:\\n    - name: nvidia.com/gpu\\n      replicas: 4\\n\"}},{\"apiVersion\":\"apps/v1\",\"kind\":\"DaemonSet\",\"metadata\":{\"name\":\"nvidia-device-plugin-daemonset\",\"namespace\":\"nvidia-device-plugin\",\"labels\":{\"aws.cdk.eks/prune-c8a687b3e87ca8034b8687fb8bd3a3c013177f4e3d\":\"\"}},\"spec\":{\"selector\":{\"matchLabels\":{\"name\":\"nvidia-device-plugin-ds\"}},\"updateStrategy\":{\"type\":\"RollingUpdate\"},\"template\":{\"metadata\":{\"labels\":{\"name\":\"nvidia-device-plugin-ds\"}},\"spec\":{\"tolerations\":[{\"key\":\"dedicated\",\"operator\":\"Equal\",\"value\":\"transcode\",\"effect\":\"NoSchedule\"},{\"key\":\"nvidia.com/gpu\",\"operator\":\"Exists\",\"effect\":\"NoSchedule\"}],\"nodeSelector\":{\"hellodj.bot/gpu\":\"true\"},\"priorityClassName\":\"system-node-critical\",\"containers\":[{\"name\":\"nvidia-device-plugin-ctr\",\"image\":\"nvcr.io/nvidia/k8s-device-plugin:v0.16.2\",\"env\":[{\"name\":\"CONFIG_FILE\",\"value\":\"/config/any\"}],\"securityContext\":{\"allowPrivilegeEscalation\":false,\"capabilities\":{\"drop\":[\"ALL\"]}},\"volumeMounts\":[{\"name\":\"device-plugin\",\"mountPath\":\"/var/lib/kubelet/device-plugins\"},{\"name\":\"config\",\"mountPath\":\"/config\"}]}],\"volumes\":[{\"name\":\"device-plugin\",\"hostPath\":{\"path\":\"/var/lib/kubelet/device-plugins\"}},{\"name\":\"config\",\"configMap\":{\"name\":\"time-slicing-config\"}}]}}}}]",
+                "ClusterName": {
+                    "Ref": "Cluster9EE0221C"
+                },
+                "RoleArn": {
+                    "Fn::GetAtt": [
+                        "ClusterCreationRole360249B6",
+                        "Arn"
+                    ]
+                },
+                "PruneLabel": "aws.cdk.eks/prune-c8a687b3e87ca8034b8687fb8bd3a3c013177f4e3d"
+            },
+            "DependsOn": [
+                "ClusterchartKarpenterAE9676E9",
+                "ClusterKubectlReadyBarrier200052AF"
+            ],
+            "UpdateReplacePolicy": "Delete",
+            "DeletionPolicy": "Delete",
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Cluster/manifest-NvidiaDevicePlugin/Resource/Default"
+            }
+        },
+        "awscdkawseksClusterResourceProviderNestedStackawscdkawseksClusterResourceProviderNestedStackResource9827C454": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "TemplateURL": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "https://s3.us-east-1.",
+                            {
+                                "Ref": "AWS::URLSuffix"
+                            },
+                            "/cdk-hnb659fds-assets-874927898283-us-east-1/8558ca85fdd93c6afc6d5de4eeab940f42fc14f5091467a54a1e7d2978b3d1b8.json"
+                        ]
+                    ]
+                }
+            },
+            "UpdateReplacePolicy": "Delete",
+            "DeletionPolicy": "Delete",
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/@aws-cdk--aws-eks.ClusterResourceProvider.NestedStack/@aws-cdk--aws-eks.ClusterResourceProvider.NestedStackResource",
+                "aws:asset:path": "hellodjeksawscdkawseksClusterResourceProviderF42364DB.nested.template.json",
+                "aws:asset:property": "TemplateURL"
+            }
+        },
+        "awscdkawseksKubectlProviderNestedStackawscdkawseksKubectlProviderNestedStackResourceA7AEBA6B": {
+            "Type": "AWS::CloudFormation::Stack",
+            "Properties": {
+                "Parameters": {
+                    "referencetohellodjeksKubectlLayer6ACB77B8Ref": {
+                        "Ref": "KubectlLayer600207B5"
+                    },
+                    "referencetohellodjeksClusterKubectlHandlerRole6AFA850EArn": {
+                        "Fn::GetAtt": [
+                            "ClusterKubectlHandlerRole94549F93",
+                            "Arn"
+                        ]
+                    },
+                    "referencetohellodjeksCluster974978EFClusterSecurityGroupId": {
+                        "Fn::GetAtt": [
+                            "Cluster9EE0221C",
+                            "ClusterSecurityGroupId"
+                        ]
+                    }
+                },
+                "TemplateURL": {
+                    "Fn::Join": [
+                        "",
+                        [
+                            "https://s3.us-east-1.",
+                            {
+                                "Ref": "AWS::URLSuffix"
+                            },
+                            "/cdk-hnb659fds-assets-874927898283-us-east-1/e2a4f626d33fc28b6da2cc4964a33dbeb54dbe940d97f65fe3d918fe606dc913.json"
+                        ]
+                    ]
+                }
+            },
+            "DependsOn": [
+                "ClusterKubectlHandlerRoleDefaultPolicyE44083DD",
+                "ClusterKubectlHandlerRole94549F93"
+            ],
+            "UpdateReplacePolicy": "Delete",
+            "DeletionPolicy": "Delete",
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/@aws-cdk--aws-eks.KubectlProvider.NestedStack/@aws-cdk--aws-eks.KubectlProvider.NestedStackResource",
+                "aws:asset:path": "hellodjeksawscdkawseksKubectlProviderA71220E2.nested.template.json",
+                "aws:asset:property": "TemplateURL"
+            }
+        },
+        "KubectlRole4D319128": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Statement": [
+                        {
+                            "Action": "sts:AssumeRole",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "AWS": "arn:aws:iam::874927898283:root"
+                            }
+                        }
+                    ],
+                    "Version": "2012-10-17"
+                },
+                "Description": "Stable kubectl/system:masters role imported by the per-stage WorkloadsStacks to apply Kubernetes manifests to the shared cluster.",
+                "RoleName": "hellodj-kubectl"
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/KubectlRole/Resource"
+            }
+        },
+        "CustomAWSCDKOpenIdConnectProviderCustomResourceProviderRole517FED65": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Action": "sts:AssumeRole",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": "lambda.amazonaws.com"
+                            }
+                        }
+                    ]
+                },
+                "ManagedPolicyArns": [
+                    {
+                        "Fn::Sub": "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+                    }
+                ],
+                "Policies": [
+                    {
+                        "PolicyName": "Inline",
+                        "PolicyDocument": {
+                            "Version": "2012-10-17",
+                            "Statement": [
+                                {
+                                    "Effect": "Allow",
+                                    "Resource": "*",
+                                    "Action": [
+                                        "iam:CreateOpenIDConnectProvider",
+                                        "iam:DeleteOpenIDConnectProvider",
+                                        "iam:UpdateOpenIDConnectProviderThumbprint",
+                                        "iam:AddClientIDToOpenIDConnectProvider",
+                                        "iam:RemoveClientIDFromOpenIDConnectProvider"
+                                    ]
+                                }
+                            ]
+                        }
+                    }
+                ]
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Custom::AWSCDKOpenIdConnectProviderCustomResourceProvider/Role"
+            }
+        },
+        "CustomAWSCDKOpenIdConnectProviderCustomResourceProviderHandlerF2C543E0": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "Code": {
+                    "S3Bucket": "cdk-hnb659fds-assets-874927898283-us-east-1",
+                    "S3Key": "c0d9f24649426c60a1bc01108070535a40353ae6cd8ceccb812969319b936e5d.zip"
+                },
+                "Timeout": 900,
+                "MemorySize": 128,
+                "Handler": "__entrypoint__.handler",
+                "Role": {
+                    "Fn::GetAtt": [
+                        "CustomAWSCDKOpenIdConnectProviderCustomResourceProviderRole517FED65",
+                        "Arn"
+                    ]
+                },
+                "Runtime": "nodejs24.x"
+            },
+            "DependsOn": [
+                "CustomAWSCDKOpenIdConnectProviderCustomResourceProviderRole517FED65"
+            ],
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/Custom::AWSCDKOpenIdConnectProviderCustomResourceProvider/Handler",
+                "aws:asset:path": "asset.c0d9f24649426c60a1bc01108070535a40353ae6cd8ceccb812969319b936e5d",
+                "aws:asset:property": "Code"
+            }
+        },
+        "AWSCDKCfnUtilsProviderCustomResourceProviderRoleFE0EE867": {
+            "Type": "AWS::IAM::Role",
+            "Properties": {
+                "AssumeRolePolicyDocument": {
+                    "Version": "2012-10-17",
+                    "Statement": [
+                        {
+                            "Action": "sts:AssumeRole",
+                            "Effect": "Allow",
+                            "Principal": {
+                                "Service": "lambda.amazonaws.com"
+                            }
+                        }
+                    ]
+                },
+                "ManagedPolicyArns": [
+                    {
+                        "Fn::Sub": "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"
+                    }
+                ]
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/AWSCDKCfnUtilsProviderCustomResourceProvider/Role"
+            }
+        },
+        "AWSCDKCfnUtilsProviderCustomResourceProviderHandlerCF82AA57": {
+            "Type": "AWS::Lambda::Function",
+            "Properties": {
+                "Code": {
+                    "S3Bucket": "cdk-hnb659fds-assets-874927898283-us-east-1",
+                    "S3Key": "3fc3a788e8730811e7ec758fb84134e1e24877f8248901484d1e046dee803b5a.zip"
+                },
+                "Timeout": 900,
+                "MemorySize": 128,
+                "Handler": "__entrypoint__.handler",
+                "Role": {
+                    "Fn::GetAtt": [
+                        "AWSCDKCfnUtilsProviderCustomResourceProviderRoleFE0EE867",
+                        "Arn"
+                    ]
+                },
+                "Runtime": "nodejs24.x"
+            },
+            "DependsOn": [
+                "AWSCDKCfnUtilsProviderCustomResourceProviderRoleFE0EE867"
+            ],
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/AWSCDKCfnUtilsProviderCustomResourceProvider/Handler",
+                "aws:asset:path": "asset.3fc3a788e8730811e7ec758fb84134e1e24877f8248901484d1e046dee803b5a",
+                "aws:asset:property": "Code"
+            }
+        },
+        "BuilderNixCacheTier1343C5CB": {
+            "Type": "Custom::AWSCDK-EKS-KubernetesResource",
+            "Properties": {
+                "ServiceToken": {
+                    "Fn::GetAtt": [
+                        "awscdkawseksKubectlProviderNestedStackawscdkawseksKubectlProviderNestedStackResourceA7AEBA6B",
+                        "Outputs.hellodjeksawscdkawseksKubectlProviderframeworkonEvent281E610DArn"
+                    ]
+                },
+                "Manifest": "[{\"apiVersion\":\"v1\",\"kind\":\"Namespace\",\"metadata\":{\"name\":\"hellodj-builders\",\"labels\":{\"aws.cdk.eks/prune-c888684807d872e8db46a9bb84b883c55abedb2c3f\":\"\"}}},{\"apiVersion\":\"v1\",\"kind\":\"PersistentVolume\",\"metadata\":{\"name\":\"nix-store-local\",\"labels\":{\"aws.cdk.eks/prune-c888684807d872e8db46a9bb84b883c55abedb2c3f\":\"\",\"hellodj.bot/purpose\":\"nix-builder-cache\"}},\"spec\":{\"capacity\":{\"storage\":\"50Gi\"},\"accessModes\":[\"ReadWriteOnce\"],\"persistentVolumeReclaimPolicy\":\"Retain\",\"storageClassName\":\"nix-store-local\",\"local\":{\"path\":\"/var/lib/nix\"},\"nodeAffinity\":{\"required\":{\"nodeSelectorTerms\":[{\"matchExpressions\":[{\"key\":\"kubernetes.io/os\",\"operator\":\"In\",\"values\":[\"linux\"]}]}]}}}},{\"apiVersion\":\"storage.k8s.io/v1\",\"kind\":\"StorageClass\",\"metadata\":{\"name\":\"nix-store-local\",\"labels\":{\"aws.cdk.eks/prune-c888684807d872e8db46a9bb84b883c55abedb2c3f\":\"\"}},\"provisioner\":\"kubernetes.io/no-provisioner\",\"volumeBindingMode\":\"WaitForFirstConsumer\"},{\"apiVersion\":\"v1\",\"kind\":\"PersistentVolumeClaim\",\"metadata\":{\"name\":\"nix-store-cache\",\"namespace\":\"hellodj-builders\",\"labels\":{\"aws.cdk.eks/prune-c888684807d872e8db46a9bb84b883c55abedb2c3f\":\"\"}},\"spec\":{\"accessModes\":[\"ReadWriteOnce\"],\"storageClassName\":\"nix-store-local\",\"resources\":{\"requests\":{\"storage\":\"50Gi\"}}}},{\"apiVersion\":\"v1\",\"kind\":\"ConfigMap\",\"metadata\":{\"name\":\"git-codecommit-config\",\"namespace\":\"hellodj-builders\",\"labels\":{\"aws.cdk.eks/prune-c888684807d872e8db46a9bb84b883c55abedb2c3f\":\"\",\"hellodj.bot/purpose\":\"codecommit-credential-helper\"}},\"data\":{\"gitconfig\":\"[credential]\\n    helper = !aws codecommit credential-helper $@\\n    UseHttpPath = true\\n\\n# Error class mapping for build failures (R2.5/R2.6):\\n# HTTP 403 = authentication failure (credential denial)\\n# HTTP 404 = missing repo/branch (repository does not exist)\\n# The build script maps these exit codes to distinct error\\n# classes, naming the failing input in either case.\"}}]",
+                "ClusterName": {
+                    "Ref": "Cluster9EE0221C"
+                },
+                "RoleArn": {
+                    "Fn::GetAtt": [
+                        "ClusterCreationRole360249B6",
+                        "Arn"
+                    ]
+                },
+                "PruneLabel": "aws.cdk.eks/prune-c888684807d872e8db46a9bb84b883c55abedb2c3f"
+            },
+            "DependsOn": [
+                "ClusterKubectlReadyBarrier200052AF"
+            ],
+            "UpdateReplacePolicy": "Delete",
+            "DeletionPolicy": "Delete",
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/BuilderNixCacheTier/Resource/Default"
+            }
+        },
+        "CDKMetadata": {
+            "Type": "AWS::CDK::Metadata",
+            "Properties": {
+                "Analytics": "v2:deflate64:H4sIAAAAAAAA/1WR3W7CMAyFn4X7NLBU6vVKNe2HbSCQuEUhNRCaJih2ilDVd1/aDm1cHdtyHJ/Pgrciy/hsIq+YqLJKjN7zdkNSVSyWdi2mO4kIhDzvhWHK50FVQHOJwIys96XkxcF+yhv4LXjUzjKokLeFCUjgWa4UIL5Y8jcWG/+nywvY97Jw1oKilXeNLuODb1fC0btw6dv/kvyKeaATW4Q9eAsE+CWtPgAS24BvtII42gVL7A1MXZykp45pWfN27Qz0swZdOaPVsMkYdQyUiJZBBa/p9nr/+KHQdWywH8EctT2yIlpz9RrQBa/G2ff4fzE6KzX1RGLygaOOcB8n3L0PUGPPMtAlxPVn/Gny/Hua6Qg7MT3ppIoUFJmkSTO+GONtmg1X6JiN0PgZp40QXKRcTM6odeIjG10DX4/6A2qbza77AQAA"
+            },
+            "Metadata": {
+                "aws:cdk:path": "hellodj-eks/CDKMetadata/Default"
+            }
+        }
+    },
+    "Conditions": {
+        "ClusterHasEcrPublic8EE1114E": {
+            "Fn::Equals": [
+                {
+                    "Ref": "AWS::Partition"
+                },
+                "aws"
+            ]
+        }
+    },
+    "Outputs": {
+        "KubectlRoleArn": {
+            "Description": "Stable ARN of the shared kubectl (system:masters) role the per-stage WorkloadsStacks import to apply Kubernetes manifests.",
+            "Value": "arn:aws:iam::874927898283:role/hellodj-kubectl"
+        },
+        "OidcProviderArn": {
+            "Description": "The shared cluster's IAM OIDC provider ARN. Feed this into the pipeline synth via `-c hellodj:oidcProviderArn=<arn>` so the per-stage WorkloadsStacks build correct IRSA ServiceAccount trust conditions.",
+            "Value": {
+                "Ref": "ClusterOpenIdConnectProviderE7EB0530"
+            }
+        },
+        "ClusterName": {
+            "Description": "EKS cluster name for HelloDJ workloads (Decision D1).",
+            "Value": {
+                "Ref": "Cluster9EE0221C"
+            }
+        },
+        "GpuIdleWindowSeconds": {
+            "Description": "GPU scale-to-zero idle window (seconds) for the shared transcode GPU NodePool consolidateAfter (R8.5, default 300, range 60-900).",
+            "Value": "600"
+        },
+        "GpuScaleUpLimit": {
+            "Description": "Max time-sliced nvidia.com/gpu units the shared transcode GPU NodePool scales up to on GPU-requiring workload arrival (R8.6).",
+            "Value": "4"
+        }
+    },
+    "Parameters": {
+        "BootstrapVersion": {
+            "Type": "AWS::SSM::Parameter::Value<String>",
+            "Default": "/cdk-bootstrap/hnb659fds/version",
+            "Description": "Version of the CDK Bootstrap resources in this environment, automatically retrieved from SSM Parameter Store. [cdk:skip]"
+        }
+    },
+    "Rules": {
+        "CheckBootstrapVersion": {
+            "Assertions": [
+                {
+                    "Assert": {
+                        "Fn::Not": [
+                            {
+                                "Fn::Contains": [
+                                    [
+                                        "1",
+                                        "2",
+                                        "3",
+                                        "4",
+                                        "5"
+                                    ],
+                                    {
+                                        "Ref": "BootstrapVersion"
+                                    }
+                                ]
+                            }
+                        ]
+                    },
+                    "AssertDescription": "CDK bootstrap stack version 6 required. Please run 'cdk bootstrap' with a recent version of the CDK CLI."
+                }
+            ]
+        }
+    }
+}

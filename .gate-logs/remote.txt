@@ -1,0 +1,7 @@
+fatal: ambiguous argument 'origin/main': unknown revision or path not in the working tree.
+Use '--' to separate paths from revisions, like this:
+'git <command> [<revision>...] -- [<file>...]'
+--- codecommit ---
+--- remotes ---
+codecommit	https://git-codecommit.us-east-1.amazonaws.com/v1/repos/hellodj-cdk (fetch)
+codecommit	https://git-codecommit.us-east-1.amazonaws.com/v1/repos/hellodj-cdk (push)

@@ -1,0 +1,2 @@
+hellodj-kubectl role in DEPLOYED template: [('KubectlRole4D319128', 'hellodj-kubectl')]
+AccessEntry in DEPLOYED template: ['ClusterAdminAccess30940FB6', 'ClusterKubectlRoleAccess52D69B3D']

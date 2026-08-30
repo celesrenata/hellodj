@@ -1,0 +1,9 @@
+{
+    "ChangeInfo": {
+        "Id": "/change/C0980830JK3DRSPGVQ8Y",
+        "Status": "PENDING",
+        "SubmittedAt": "2026-08-29T23:12:26.293000+00:00",
+        "Comment": "Delete the orphaned external-dns ownership TXT for the staging apex. external-dns is now annotation-only (manages only origin.staging.*), so it will not recreate this; removing it clears the false ownership claim on the CloudFront-owned apex A record."
+    }
+}
+exit=0

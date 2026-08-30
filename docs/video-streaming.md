@@ -2,7 +2,7 @@
 
 ## Overview
 
-HelloDJ streams video content into Discord voice channels via Discord's Activity (Embedded App) system. Videos are transcoded to HLS using FFmpeg with Intel QSV hardware acceleration and served through an in-process HTTP server.
+HelloDJ streams video content into Discord voice channels via Discord's Activity (Embedded App) system. Videos are transcoded to HLS using FFmpeg 9 with NVIDIA NVENC hardware acceleration (Graviton-tuned libx264 CPU floor when no GPU is attached) and served through an in-process HTTP server.
 
 ## Architecture
 
@@ -13,7 +13,7 @@ Source (YouTube/Tidal/Upload/URL)
 Source Resolution (yt-dlp / TidalResolver / URLDownloader)
   │
   ▼
-HLS Transcode (FFmpeg 9 + QSV on /dev/dri/renderD128)
+HLS Transcode (FFmpeg 9 + NVIDIA NVENC / h264_nvenc)
   │    Output: /tmp/hellodj_hls/{guild_id}_{channel_id}/
   │            ├── playlist.m3u8
   │            ├── video_0.m3u8 (variant)
@@ -55,26 +55,29 @@ Classifies input into source types:
 
 ### HLS Transcoding (`video/hls_transcode.py`)
 
-FFmpeg 9 pipeline with Intel QSV (VA-API via libvpl):
+FFmpeg 9 pipeline with NVIDIA NVENC (CUDA/NVDEC). Intel QSV / VA-API is not used.
 
 ```
-Input → decode (h264_qsv/hevc_qsv/auto) → scale_vaapi → encode (h264_qsv)
+Input → decode (CUDA/NVDEC, hwaccel=cuda) → scale_cuda → encode (h264_nvenc)
                                                               │
                                                               ▼
-                                                    HLS muxer (segment_time=4s)
+                                                    HLS muxer (segment_time=2s)
 ```
 
 Key parameters:
-- Codec: h264_qsv (hardware) with vaapi fallback
+- Codec: h264_nvenc (hardware) with software-decode fallback (NVENC encode kept)
 - Resolution: 720p (scale to fit)
-- Bitrate: 2.5 Mbps video, 128k audio
-- Segment duration: 4 seconds
+- Bitrate: proportional to resolution, 128k+ audio
+- Segment duration: 2 seconds
 - GOP size: 48 frames (clean segment boundaries)
 
 GPU probe (`video/gpu_probe.py`) validates:
-- `/dev/dri/renderD128` exists
-- VA-API driver responds (Intel iHD driver)
-- Profiles and entrypoints available
+- an NVIDIA device is visible (`nvidia-smi`)
+- ffmpeg advertises the `h264_nvenc` encoder
+
+On AWS the GPU is a time-sliced T4g on a `g5g.xlarge` Spot node provisioned on
+demand by Karpenter; on a CPU-only node the probe reports NVENC unavailable and
+the hybrid controller stays on the Graviton-tuned libx264 CPU floor.
 
 ### Activity Backend (`video/activity_backend.py`)
 
@@ -167,7 +170,7 @@ Collaborative drawing during video playback:
 
 | Setting | Purpose |
 |---------|---------|
-| Intel QSV GPU (`/dev/dri/renderD128`) | Required for hardware transcoding |
+| NVIDIA GPU (NVENC, `nvidia.com/gpu` via device plugin) | Hardware transcode path; libx264 CPU floor when absent |
 | `hls-tmp` volume (2Gi tmpfs) | Segment scratch space |
 | Port 8090 | Activity backend HTTP server |
 | `privileged: true` securityContext | Device access for GPU |

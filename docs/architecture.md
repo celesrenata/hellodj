@@ -142,7 +142,7 @@ WakeWordModel.predict() [every 80ms]
 | `hellodj-config-backups` | emptyDir | `/app/config-backups` | Runtime config backups |
 | `lavalink-config-rendered` | emptyDir | `/opt/Lavalink/application.yml` | Init container output |
 | `hls-tmp` | emptyDir (Memory) 2Gi | `/tmp/hellodj_hls` | HLS segment scratch space |
-| `dev-dri` | hostPath | `/dev/dri` | Intel GPU device for QSV transcoding |
+| `nvidia.com/gpu` | device plugin | (container resource) | NVIDIA GPU for NVENC transcoding (AWS: time-sliced T4g on g5g.xlarge) |
 
 ## Network Architecture
 
@@ -187,7 +187,7 @@ All secrets live in an encrypted SQLite database (`/app/data/hellodj.db`). The e
 |-------|-----------|
 | Bot Runtime | Python 3.11, discord.py 2.x, wavelink 3.5+ |
 | Audio Server | Lavalink v4 (Java, custom SABR-enabled youtube plugin) |
-| Video Transcode | FFmpeg 9 with Intel QSV (libvpl) |
+| Video Transcode | FFmpeg 9 with NVIDIA NVENC (h264_nvenc); Graviton-tuned libx264 CPU floor |
 | Wake Word | ONNX Runtime (custom trained model) |
 | STT | faster-whisper (local) or cloud (AWS Transcribe) |
 | TTS | Speaches (kokoro voices, in-cluster) |

@@ -1,0 +1,4 @@
+hellodj-network: UPDATE_COMPLETE
+hellodj-data: UPDATE_COMPLETE
+hellodj-auth: UPDATE_COMPLETE
+hellodj-eks: UPDATE_COMPLETE

@@ -1,0 +1,5 @@
+/home/celes/sources/celesrenata/hellodj-cdk
+---status---
+?? ../.kiro/
+---branch---
+main

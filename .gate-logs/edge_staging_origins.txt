@@ -1,0 +1,17 @@
+{
+    "DefaultTarget": "hellodjedgestagingEdgeDistributionOrigin1AE8D4347",
+    "Origins": [
+        {
+            "Id": "hellodjedgestagingEdgeDistributionOrigin22E36B3FB",
+            "Domain": "hellodj-hls-staging-us-east-1.s3.us-east-1.amazonaws.com"
+        },
+        {
+            "Id": "hellodjedgestagingEdgeDistributionOrigin1AE8D4347",
+            "Domain": "origin.staging.us-east-1.hellodj.bot"
+        },
+        {
+            "Id": "hellodjedgestagingEdgeDistributionOrigin38EFB90F4",
+            "Domain": "hellodj-stickers-staging-us-east-1.s3.us-east-1.amazonaws.com"
+        }
+    ]
+}

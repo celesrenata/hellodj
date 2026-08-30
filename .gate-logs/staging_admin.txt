@@ -1,0 +1,7 @@
+staging_pool=None
+=== groups ===
+
+aws: [ERROR]: An error occurred (InvalidParameterException) when calling the ListGroups operation: 1 validation error detected: Value 'None' at 'userPoolId' failed to satisfy constraint: Member must satisfy regular expression pattern: [\w-]+_[0-9a-zA-Z]+
+=== existing admin user? ===
+
+aws: [ERROR]: An error occurred (InvalidParameterException) when calling the AdminGetUser operation: 1 validation error detected: Value 'None' at 'userPoolId' failed to satisfy constraint: Member must satisfy regular expression pattern: [\w-]+_[0-9a-zA-Z]+

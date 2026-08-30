@@ -1,0 +1,27 @@
+[
+    {
+        "stage": "UpdatePipeline",
+        "status": "Succeeded",
+        "exec": "0ae368fa-63d8-41b1-8ae9-eb0218dcac65"
+    },
+    {
+        "stage": "ComponentBuilds",
+        "status": "InProgress",
+        "exec": "0ae368fa-63d8-41b1-8ae9-eb0218dcac65"
+    },
+    {
+        "stage": "hellodj-beta-stage",
+        "status": "Succeeded",
+        "exec": "9a67b123-9cb1-4fc2-8c4c-7ac9810f763a"
+    },
+    {
+        "stage": "hellodj-staging-stage",
+        "status": "Succeeded",
+        "exec": "9a67b123-9cb1-4fc2-8c4c-7ac9810f763a"
+    },
+    {
+        "stage": "hellodj-production-stage",
+        "status": "Cancelled",
+        "exec": "b755cad4-e314-4fbf-8a69-cc7e69ce1e12"
+    }
+]

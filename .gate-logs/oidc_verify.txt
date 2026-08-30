@@ -1,0 +1,3 @@
+real issuer BD79C26E present: True
+placeholder .../id/hellodj still present: False
+discord role trust uses real issuer: True

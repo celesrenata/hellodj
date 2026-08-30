@@ -1,0 +1,3 @@
+---ls-files bin---
+infra/bin/hellodj.ts
+---check-ignore---

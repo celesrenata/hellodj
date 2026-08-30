@@ -1,0 +1,3 @@
+?? shared/hellodj_platform_logic/__pycache__/
+?? shared/hellodj_platform_logic/data_access/__pycache__/
+?? shared/hellodj_platform_logic/types/__pycache__/

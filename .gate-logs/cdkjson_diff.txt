@@ -1,0 +1,36 @@
+diff --git a/infra/cdk.json b/infra/cdk.json
+index e5cff50..526ef65 100644
+--- a/infra/cdk.json
++++ b/infra/cdk.json
+@@ -1,7 +1,9 @@
+ {
+   "app": "npx ts-node --prefer-ts-exts bin/hellodj.ts",
+   "watch": {
+-    "include": ["**"],
++    "include": [
++      "**"
++    ],
+     "exclude": [
+       "README.md",
+       "cdk*.json",
+@@ -17,13 +19,18 @@
+   "context": {
+     "@aws-cdk/aws-lambda:recognizeLayerVersion": true,
+     "@aws-cdk/core:checkSecretUsage": true,
+-    "@aws-cdk/core:target-partitions": ["aws", "aws-cn"],
++    "@aws-cdk/core:target-partitions": [
++      "aws",
++      "aws-cn"
++    ],
+     "@aws-cdk-containers/ecs-service-extensions:enableDefaultLogDriver": true,
+     "@aws-cdk/aws-ec2:uniqueImdsv2TemplateName": true,
+     "@aws-cdk/aws-iam:minimizePolicies": true,
+     "@aws-cdk/core:enablePartitionLiterals": true,
+     "@aws-cdk/core:newStyleStackSynthesis": true,
+     "hellodj:zoneName": "hellodj.bot",
+-    "hellodj:defaultRegion": "us-east-1"
++    "hellodj:defaultRegion": "us-east-1",
++    "hellodj:spotifyClientId": "5335dad8d1a34e32b397c7da73c9febc",
++    "hellodj:tidalClientId": "TWDgxSYAcqDo31fj"
+   }
+ }

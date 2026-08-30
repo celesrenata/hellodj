@@ -1,0 +1,2 @@
+lib/workloads-stack.ts(1531,11): error TS6133: 'foundationStage' is declared but its value is never read.
+tsc_exit=2

@@ -1,0 +1,9 @@
+
+aws: [ERROR]: An error occurred (ParamValidation): argument --project-name: expected one argument
+
+usage: aws [options] <command> <subcommand> [<subcommand> ...] [parameters]
+To see help text, you can run:
+
+  aws help
+  aws <command> help
+  aws <command> <subcommand> help

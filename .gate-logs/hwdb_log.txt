@@ -1,0 +1,10 @@
+got build log for '/nix/store/kc9bm9hfrdwcyhh0cvpv0irbayh42wry-hwdb.bin.drv' from 'daemon'
+Adding hwdb files for package /nix/store/pyrvwmigi6qdpz9lbbslj5771pfl7r69-systemd-261.1
+Adding hwdb files for package /nix/store/8v3fnr9wbhim60q85hnaa2f3f3mx0ky3-ipv6-privacy-extensions.rules
+Adding hwdb files for package /nix/store/bmk0829g6wfyxfflbq2iwfimy8b7yn9v-ipv6-privacy-extensions.rules
+Adding hwdb files for package /nix/store/2ip693lw8i0xkcw8qmjzdsdwhgr79wc8-lvm2-2.03.41
+Adding hwdb files for package /nix/store/c2jgzmvplc5vm4rab5033hdw1dvmm9fs-bcache-tools-1.1
+Adding hwdb files for package /nix/store/1yc01k7grdv4q7p9blx53jmvvc3y0iym-extra-udev-rules
+Adding hwdb files for package /nix/store/m7ab4bdcg298pg532lvrz8fqlh860cq3-extra-hwdb-file
+Generating hwdb database...
+

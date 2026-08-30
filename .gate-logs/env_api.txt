@@ -1,0 +1,4 @@
+node_modules/aws-cdk-lib/pipelines/lib/blueprint/shell-step.d.ts:28:    readonly env?: Record<string, string>;
+node_modules/aws-cdk-lib/pipelines/lib/blueprint/shell-step.d.ts:39:    readonly envFromCfnOutputs?: Record<string, CfnOutput>;
+node_modules/aws-cdk-lib/pipelines/lib/blueprint/shell-step.d.ts:107:    readonly env: Record<string, string>;
+node_modules/aws-cdk-lib/pipelines/lib/blueprint/shell-step.d.ts:113:    readonly envFromCfnOutputs: Record<string, StackOutputReference>;

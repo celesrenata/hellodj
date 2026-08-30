@@ -1,0 +1,11 @@
+[
+    {
+        "status": "Failed",
+        "actions": [
+            {
+                "name": "build-gpu-ami",
+                "status": "Failed"
+            }
+        ]
+    }
+]

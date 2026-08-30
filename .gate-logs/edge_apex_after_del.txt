@@ -1,0 +1,12 @@
+[
+    {
+        "Name": "staging.us-east-1.hellodj.bot.",
+        "Type": "TXT",
+        "TTL": 300,
+        "ResourceRecords": [
+            {
+                "Value": "\"heritage=external-dns,external-dns/owner=hellodj,external-dns/resource=ingress/hellodj-staging/hellodj\""
+            }
+        ]
+    }
+]

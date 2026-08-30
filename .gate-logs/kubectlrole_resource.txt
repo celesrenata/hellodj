@@ -1,0 +1,4 @@
+{
+    "phys": "hellodj-kubectl",
+    "status": "CREATE_COMPLETE"
+}

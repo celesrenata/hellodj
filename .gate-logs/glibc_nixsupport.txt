@@ -1,0 +1,50 @@
+ls: cannot access '/nix/store/f8q4w2hbjvwy7qqwpnvbf5f4qwyww6cp-glibc-2.42-67/nix-support/': No such file or directory
+--- dynamic-linker content ---
+cat: /nix/store/f8q4w2hbjvwy7qqwpnvbf5f4qwyww6cp-glibc-2.42-67/nix-support/dynamic-linker: No such file or directory
+
+--- does that loader file exist? ---
+total 19860
+drwxr-xr-x 1 celes users     776 Aug 29 01:20 .
+drwxr-xr-x 1 celes users    1734 Aug 29 00:05 ..
+drwxr-xr-x 1 celes users      76 Aug 13 01:03 .admin-venv
+drwxr-xr-x 1 celes users    1250 Aug 28 23:35 bot
+-rw-r--r-- 1 celes users    1673 Aug 28 22:26 bot-app-pool.json
+drwxr-xr-x 1 celes users      18 Aug 13 01:11 config
+-rw-r--r-- 1 celes users     397 Aug 21 18:04 conftest.py
+-rw-r--r-- 1 celes users    3242 Aug  8 20:48 CONTEXT.md
+drwxr-xr-x 1 celes users      62 Aug 21 18:15 data
+-rw-r--r-- 1 celes users    4500 Aug 17 23:03 docker-compose.yml
+drwxr-xr-x 1 celes users     428 Aug 24 14:47 docs
+drwxr-xr-x 1 celes users    1006 Aug 18 09:13 evidence
+drwxr-xr-x 1 celes users    6732 Aug 29 03:36 .gate-logs
+drwxr-xr-x 1 celes users     192 Aug 29 01:16 .git
+drwxr-xr-x 1 celes users      18 Aug 25 06:28 .github
+-rw-r--r-- 1 celes users    1344 Aug 28 23:33 .gitignore
+-rw-r--r-- 1 celes users     203 Aug 28 03:07 hellodj.code-workspace
+-rw-r--r-- 1 celes users 1262770 Aug 21 17:54 hellodj.jpg
+-rw-r--r-- 1 celes users 9487501 Aug 10 17:50 Hello_DJ.onnx
+-rw-r--r-- 1 celes users 9502264 Aug 10 17:50 Hello_DJ.tflite
+drwxr-xr-x 1 celes users      78 Aug 28 14:47 .hypothesis
+drwxr-xr-x 1 celes users     142 Aug 18 14:51 k8s
+drwxr-xr-x 1 celes users      48 Aug 28 18:12 .kiro
+drwxr-xr-x 1 celes users     826 Aug 24 13:53 kube
+drwxr-xr-x 1 celes users     198 Aug 11 15:04 plans
+drwxr-xr-x 1 celes users     280 Aug 28 18:14 platform
+drwxr-xr-x 1 celes users      64 Aug 19 19:17 .pytest_cache
+-rw-r--r-- 1 celes users    5851 Aug 17 04:15 README.md
+drwxr-xr-x 1 celes users      88 Aug 10 17:50 .roo
+-rw-r--r-- 1 celes users    6785 Aug 10 17:50 .roomodes
+drwxr-xr-x 1 celes users      56 Aug 28 01:37 .ruff_cache
+-rw-r--r-- 1 celes users    1721 Aug 18 14:53 runmefirst.sh
+-rw-r--r-- 1 celes users     695 Aug 10 20:25 runmelast.sh
+drwxr-xr-x 1 celes users     324 Aug 24 16:54 scripts
+drwxr-xr-x 1 celes users      82 Aug 18 14:44 spotify-stream
+drwxr-xr-x 1 celes users     176 Aug 28 23:22 stickers
+drwxr-xr-x 1 celes users    4384 Aug 28 14:04 tests
+drwxr-xr-x 1 celes users     110 Aug 20 16:47 tidal-stream
+-rw-r--r-- 1 celes users     724 Aug 28 22:25 tokens
+drwxr-xr-x 1 celes users      42 Aug 28 22:26 tools
+drwxr-xr-x 1 celes users     308 Aug 27 23:56 training
+-rw-r--r-- 1 celes users   20456 Aug 20 16:47 VALIDATION_TESTS.md
+drwxr-xr-x 1 celes users      26 Aug 18 11:59 .vscode
+drwxr-xr-x 1 celes users     300 Aug 24 15:36 web-ui

@@ -1,0 +1,11 @@
+[
+    {
+        "Id": "ED3GFEKRKFBX4",
+        "Domain": "d2djykl4pnpkyi.cloudfront.net",
+        "Aliases": [
+            "beta.us-east-1.hellodj.bot"
+        ],
+        "Origin": "origin.beta.us-east-1.hellodj.bot",
+        "Enabled": true
+    }
+]

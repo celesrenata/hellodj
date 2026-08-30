@@ -1,0 +1,2 @@
+warning: Git tree '/home/celes/sources/celesrenata/hellodj' is dirty
+"/nix/store/s05yv8cchdhq1lnkklxgzjbpfhg3lb3a-hellodj-yt-cipher.tar.gz.drv"

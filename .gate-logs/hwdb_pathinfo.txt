@@ -1,0 +1,5 @@
+{"/nix/store/alz81v99idj97d6n9793y8ysz5mz2iij-hwdb.bin":{"ca":null,"deriver":"/nix/store/kc9bm9hfrdwcyhh0cvpv0irbayh42wry-hwdb.bin.drv","narHash":"sha256-Z3ex1AUYqH12DH6X1CJS1LwgpVcZAlI1qmmbxo6y7Zk=","narSize":13734744,"references":[],"registrationTime":1787992247,"signatures":[],"storeDir":"/nix/store","ultimate":true,"version":1}}
+--- is it in the S3 cache? ---
+error: unable to download 'https://hellodj-nix-cache.s3.us-east-1.amazonaws.com/nix-cache-info': HTTP error 403
+
+       response body:

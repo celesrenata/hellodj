@@ -1,0 +1,30 @@
+
+==================================== ERRORS ====================================
+___ ERROR collecting shared/hellodj_platform_logic/tests/test_apply_bump.py ____
+ImportError while importing test module '/home/celes/sources/celesrenata/hellodj-cdk/shared/hellodj_platform_logic/tests/test_apply_bump.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/etc/profiles/per-user/celes/lib/python3.14/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+hellodj_platform_logic/tests/test_apply_bump.py:33: in <module>
+    _spec.loader.exec_module(apply_bump_mod)
+../tools/apply_bump.py:59: in <module>
+    from gate_pins import (  # noqa: E402
+E   ImportError: cannot import name 'TEMURIN_FEATURE_VERSION' from 'gate_pins' (/home/celes/sources/celesrenata/hellodj-cdk/tools/gate_pins.py)
+_ ERROR collecting shared/hellodj_platform_logic/tests/test_data_access_property.py _
+ImportError while importing test module '/home/celes/sources/celesrenata/hellodj-cdk/shared/hellodj_platform_logic/tests/test_data_access_property.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/etc/profiles/per-user/celes/lib/python3.14/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+hellodj_platform_logic/tests/test_data_access_property.py:33: in <module>
+    import boto3
+E   ModuleNotFoundError: No module named 'boto3'
+=========================== short test summary info ============================
+ERROR hellodj_platform_logic/tests/test_apply_bump.py
+ERROR hellodj_platform_logic/tests/test_data_access_property.py
+!!!!!!!!!!!!!!!!!!! Interrupted: 2 errors during collection !!!!!!!!!!!!!!!!!!!!
+2 errors in 1.36s
+EXIT=2

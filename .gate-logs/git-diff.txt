@@ -1,0 +1,11 @@
+---grep origin in working file---
+infra/bin/hellodj.ts:77:  // The durable fix: `external-dns` (installed in `eks-stack.ts`, IRSA-scoped
+infra/bin/hellodj.ts:79:  // `external-dns.alpha.kubernetes.io/hostname: origin.<envName>`
+infra/bin/hellodj.ts:87:  // `-c hellodj:originHostname=…` for a non-standard setup.
+infra/bin/hellodj.ts:89:    (app.node.tryGetContext('hellodj:originHostname') as string | undefined) ??
+infra/bin/hellodj.ts:90:    `origin.${envName}`,
+infra/lib/eks-stack.ts:648:    // external-dns — keeps a STABLE Route 53 origin record pointed at the
+infra/lib/eks-stack.ts:657:    // (the CloudFront origin used to) breaks on recreation. external-dns
+infra/lib/eks-stack.ts:665:      name: 'external-dns',
+infra/lib/eks-stack.ts:668:    // Least-privilege IRSA: external-dns may only MUTATE records in the single
+infra/lib/eks-stack.ts:689:        // Read-only discovery actions external-dns needs; these enumerate

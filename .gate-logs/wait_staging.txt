@@ -1,0 +1,7 @@
+]633;E;for i in $(seq 1 30)\x3b do   ST=$(aws codepipeline get-pipeline-state --name hellodj-pipeline --region us-east-1 --profile hellodj --query "stageStates[?stageName=='hellodj-staging-stage'].latestExecution.status | [0]" --output text 2>/dev/null)\x3b   echo "[$i] staging-stage: $ST  ($(date -u +%H:%M:%S))"\x3b   if [ "$ST" != "InProgress" ]\x3b then break\x3b fi\x3b   sleep 30\x3b done > .gate-logs/wait_staging.txt 2>&1\x3b true;e67235e7-7590-4165-94de-7b4d90d3450b]633;C[1] staging-stage: InProgress  (00:40:09)
+[2] staging-stage: InProgress  (00:40:40)
+[3] staging-stage: InProgress  (00:41:11)
+[4] staging-stage: InProgress  (00:41:42)
+[5] staging-stage: InProgress  (00:42:13)
+[6] staging-stage: InProgress  (00:42:44)
+[7] staging-stage: Succeeded  (00:43:15)

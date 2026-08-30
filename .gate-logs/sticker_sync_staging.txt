@@ -1,0 +1,4 @@
+staging_sync_exit=0
+
+Total Objects: 1200
+   Total Size: 58061004

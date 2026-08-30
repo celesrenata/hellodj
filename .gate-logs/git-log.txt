@@ -1,0 +1,19 @@
+eb740b0 eks: transcode pod requests nvidia.com/gpu + hls-transcode env/IAM; external-dns stable origin
+cbc7540 fix(pipeline): resolve real cluster OIDC issuer for IRSA trust in synth
+b43ca0e fix(pipeline): pin image tag to the hellodj bot-repo commit, not the CDK commit
+cad4ea2 fix(workloads): grant kubectl handler sts:AssumeRole on shared hellodj-kubectl role
+530a04e fix(eks): GPU node self-joins via EKS-optimized AL2023 accelerated AMI
+---diff HEAD (unstaged+staged)---
+---show last commit files---
+eb740b0 eks: transcode pod requests nvidia.com/gpu + hls-transcode env/IAM; external-dns stable origin
+ infra/bin/hellodj.ts                 |  28 ++++++++--
+ infra/lib/component-workloads.ts     |  58 ++++++++++++++++++--
+ infra/lib/edge-stack.ts              |  10 ++++
+ infra/lib/eks-stack.ts               |  85 +++++++++++++++++++++++++++++
+ infra/lib/pipeline-stack.ts          |   8 +++
+ infra/lib/workloads-stack.ts         | 102 +++++++++++++++++++++++++++++++++++
+ infra/test/eks-gpu.test.ts           |  83 ++++++++++++++++++++++++++++
+ infra/test/workloads-test-helpers.ts |   8 +++
+ 8 files changed, 376 insertions(+), 6 deletions(-)
+---ahead/behind---
+## main

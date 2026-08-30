@@ -1,0 +1,173 @@
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+
+✨  Synthesis time: 10.86s
+
+hellodj-edge-staging: start: Building hellodj-edge-staging Template
+hellodj-edge-staging: success: Built hellodj-edge-staging Template
+hellodj-edge-production: start: Building hellodj-edge-production Template
+hellodj-edge-production: success: Built hellodj-edge-production Template
+hellodj-edge-production: start: Publishing hellodj-edge-production Template (874927898283-us-east-1-6f672261)
+hellodj-edge-staging: start: Publishing hellodj-edge-staging Template (874927898283-us-east-1-595d2ba9)
+hellodj-edge-production: success: Published hellodj-edge-production Template (874927898283-us-east-1-6f672261)
+hellodj-edge-production
+hellodj-edge-staging: success: Published hellodj-edge-staging Template (874927898283-us-east-1-595d2ba9)
+hellodj-edge-staging
+hellodj-edge-staging: creating CloudFormation changeset...
+hellodj-edge-production: creating CloudFormation changeset...
+hellodj-edge-staging: deploying... [1/2]
+hellodj-edge-production: deploying... [2/2]
+hellodj-edge-staging |  0/17 | 3:43:11 PM | REVIEW_IN_PROGRESS      | AWS::CloudFormation::Stack           | hellodj-edge-staging User Initiated
+hellodj-edge-staging |  0/17 | 3:43:18 PM | CREATE_IN_PROGRESS      | AWS::CloudFormation::Stack           | hellodj-edge-staging User Initiated
+hellodj-edge-production |  0/18 | 3:43:11 PM | REVIEW_IN_PROGRESS      | AWS::CloudFormation::Stack           | hellodj-edge-production User Initiated
+hellodj-edge-production |  0/18 | 3:43:18 PM | CREATE_IN_PROGRESS      | AWS::CloudFormation::Stack           | hellodj-edge-production User Initiated
+hellodj-edge-production |  0/18 | 3:43:20 PM | CREATE_IN_PROGRESS      | AWS::S3::Bucket                      | HlsSegmentsBucket (HlsSegmentsBucket2D3FD8B4) 
+hellodj-edge-production |  0/18 | 3:43:20 PM | CREATE_IN_PROGRESS      | AWS::CDK::Metadata                   | CDKMetadata/Default (CDKMetadata) 
+hellodj-edge-production |  0/18 | 3:43:20 PM | CREATE_IN_PROGRESS      | AWS::S3::Bucket                      | StickerAssetsBucket (StickerAssetsBucket09A8F9CB) 
+hellodj-edge-production |  0/18 | 3:43:20 PM | CREATE_IN_PROGRESS      | AWS::S3::Bucket                      | WebStaticBucket (WebStaticBucketF22B220B) 
+hellodj-edge-production |  0/18 | 3:43:20 PM | CREATE_IN_PROGRESS      | AWS::CertificateManager::Certificate | EdgeCertificate (EdgeCertificate0E8664CD) 
+hellodj-edge-production |  0/18 | 3:43:20 PM | CREATE_IN_PROGRESS      | AWS::IAM::Role                       | Custom::S3AutoDeleteObjectsCustomResourceProvider/Role (CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092) 
+hellodj-edge-production |  0/18 | 3:43:20 PM | CREATE_IN_PROGRESS      | AWS::CloudFront::OriginAccessControl | EdgeDistribution/Origin3/S3OriginAccessControl (EdgeDistributionOrigin3S3OriginAccessControl9EEAB4DC) 
+hellodj-edge-production |  0/18 | 3:43:20 PM | CREATE_IN_PROGRESS      | AWS::CloudFront::OriginAccessControl | EdgeDistribution/Origin2/S3OriginAccessControl (EdgeDistributionOrigin2S3OriginAccessControlB96F710F) 
+hellodj-edge-production |  0/18 | 3:43:21 PM | CREATE_IN_PROGRESS      | AWS::IAM::Role                       | Custom::S3AutoDeleteObjectsCustomResourceProvider/Role (CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092) Resource creation Initiated
+hellodj-edge-production |  0/18 | 3:43:21 PM | CREATE_IN_PROGRESS      | AWS::CDK::Metadata                   | CDKMetadata/Default (CDKMetadata) Resource creation Initiated
+hellodj-edge-production |  0/18 | 3:43:21 PM | CREATE_IN_PROGRESS      | AWS::CloudFront::OriginAccessControl | EdgeDistribution/Origin3/S3OriginAccessControl (EdgeDistributionOrigin3S3OriginAccessControl9EEAB4DC) Resource creation Initiated
+hellodj-edge-production |  0/18 | 3:43:21 PM | CREATE_IN_PROGRESS      | AWS::CertificateManager::Certificate | EdgeCertificate (EdgeCertificate0E8664CD) Resource creation Initiated
+hellodj-edge-production |  1/18 | 3:43:22 PM | CREATE_COMPLETE         | AWS::CDK::Metadata                   | CDKMetadata/Default (CDKMetadata) 
+hellodj-edge-production |  1/18 | 3:43:22 PM | CREATE_IN_PROGRESS      | AWS::S3::Bucket                      | HlsSegmentsBucket (HlsSegmentsBucket2D3FD8B4) Resource creation Initiated
+hellodj-edge-production |  1/18 | 3:43:22 PM | CREATE_IN_PROGRESS      | AWS::CloudFront::OriginAccessControl | EdgeDistribution/Origin2/S3OriginAccessControl (EdgeDistributionOrigin2S3OriginAccessControlB96F710F) Resource creation Initiated
+hellodj-edge-production |  1/18 | 3:43:22 PM | CREATE_IN_PROGRESS      | AWS::S3::Bucket                      | StickerAssetsBucket (StickerAssetsBucket09A8F9CB) Resource creation Initiated
+hellodj-edge-production |  1/18 | 3:43:22 PM | CREATE_IN_PROGRESS      | AWS::S3::Bucket                      | WebStaticBucket (WebStaticBucketF22B220B) Resource creation Initiated
+hellodj-edge-production |  2/18 | 3:43:22 PM | CREATE_COMPLETE         | AWS::CloudFront::OriginAccessControl | EdgeDistribution/Origin3/S3OriginAccessControl (EdgeDistributionOrigin3S3OriginAccessControl9EEAB4DC) 
+hellodj-edge-production |  3/18 | 3:43:22 PM | CREATE_COMPLETE         | AWS::CloudFront::OriginAccessControl | EdgeDistribution/Origin2/S3OriginAccessControl (EdgeDistributionOrigin2S3OriginAccessControlB96F710F) 
+hellodj-edge-staging |  0/17 | 3:43:20 PM | CREATE_IN_PROGRESS      | AWS::CloudFront::OriginAccessControl | EdgeDistribution/Origin2/S3OriginAccessControl (EdgeDistributionOrigin2S3OriginAccessControlB96F710F) 
+hellodj-edge-staging |  0/17 | 3:43:20 PM | CREATE_IN_PROGRESS      | AWS::CertificateManager::Certificate | EdgeCertificate (EdgeCertificate0E8664CD) 
+hellodj-edge-staging |  0/17 | 3:43:20 PM | CREATE_IN_PROGRESS      | AWS::S3::Bucket                      | HlsSegmentsBucket (HlsSegmentsBucket2D3FD8B4) 
+hellodj-edge-staging |  0/17 | 3:43:20 PM | CREATE_IN_PROGRESS      | AWS::S3::Bucket                      | WebStaticBucket (WebStaticBucketF22B220B) 
+hellodj-edge-staging |  0/17 | 3:43:20 PM | CREATE_IN_PROGRESS      | AWS::CDK::Metadata                   | CDKMetadata/Default (CDKMetadata) 
+hellodj-edge-staging |  0/17 | 3:43:20 PM | CREATE_IN_PROGRESS      | AWS::S3::Bucket                      | StickerAssetsBucket (StickerAssetsBucket09A8F9CB) 
+hellodj-edge-staging |  0/17 | 3:43:20 PM | CREATE_IN_PROGRESS      | AWS::CloudFront::OriginAccessControl | EdgeDistribution/Origin3/S3OriginAccessControl (EdgeDistributionOrigin3S3OriginAccessControl9EEAB4DC) 
+hellodj-edge-staging |  0/17 | 3:43:20 PM | CREATE_IN_PROGRESS      | AWS::IAM::Role                       | Custom::S3AutoDeleteObjectsCustomResourceProvider/Role (CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092) 
+hellodj-edge-staging |  0/17 | 3:43:21 PM | CREATE_IN_PROGRESS      | AWS::CloudFront::OriginAccessControl | EdgeDistribution/Origin2/S3OriginAccessControl (EdgeDistributionOrigin2S3OriginAccessControlB96F710F) Resource creation Initiated
+hellodj-edge-staging |  0/17 | 3:43:21 PM | CREATE_IN_PROGRESS      | AWS::CDK::Metadata                   | CDKMetadata/Default (CDKMetadata) Resource creation Initiated
+hellodj-edge-staging |  0/17 | 3:43:21 PM | CREATE_IN_PROGRESS      | AWS::CloudFront::OriginAccessControl | EdgeDistribution/Origin3/S3OriginAccessControl (EdgeDistributionOrigin3S3OriginAccessControl9EEAB4DC) Resource creation Initiated
+hellodj-edge-staging |  0/17 | 3:43:21 PM | CREATE_IN_PROGRESS      | AWS::CertificateManager::Certificate | EdgeCertificate (EdgeCertificate0E8664CD) Resource creation Initiated
+hellodj-edge-staging |  1/17 | 3:43:21 PM | CREATE_COMPLETE         | AWS::CDK::Metadata                   | CDKMetadata/Default (CDKMetadata) 
+hellodj-edge-staging |  1/17 | 3:43:21 PM | CREATE_IN_PROGRESS      | AWS::IAM::Role                       | Custom::S3AutoDeleteObjectsCustomResourceProvider/Role (CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092) Resource creation Initiated
+hellodj-edge-staging |  1/17 | 3:43:22 PM | CREATE_IN_PROGRESS      | AWS::S3::Bucket                      | HlsSegmentsBucket (HlsSegmentsBucket2D3FD8B4) Resource creation Initiated
+hellodj-edge-staging |  1/17 | 3:43:22 PM | CREATE_IN_PROGRESS      | AWS::S3::Bucket                      | StickerAssetsBucket (StickerAssetsBucket09A8F9CB) Resource creation Initiated
+hellodj-edge-staging |  1/17 | 3:43:22 PM | CREATE_IN_PROGRESS      | AWS::S3::Bucket                      | WebStaticBucket (WebStaticBucketF22B220B) Resource creation Initiated
+hellodj-edge-staging |  2/17 | 3:43:22 PM | CREATE_COMPLETE         | AWS::CloudFront::OriginAccessControl | EdgeDistribution/Origin2/S3OriginAccessControl (EdgeDistributionOrigin2S3OriginAccessControlB96F710F) 
+hellodj-edge-staging |  3/17 | 3:43:22 PM | CREATE_COMPLETE         | AWS::CloudFront::OriginAccessControl | EdgeDistribution/Origin3/S3OriginAccessControl (EdgeDistributionOrigin3S3OriginAccessControl9EEAB4DC) 
+hellodj-edge-staging |  4/17 | 3:43:35 PM | CREATE_COMPLETE         | AWS::S3::Bucket                      | StickerAssetsBucket (StickerAssetsBucket09A8F9CB) 
+hellodj-edge-staging |  5/17 | 3:43:35 PM | CREATE_COMPLETE         | AWS::S3::Bucket                      | HlsSegmentsBucket (HlsSegmentsBucket2D3FD8B4) 
+hellodj-edge-staging |  6/17 | 3:43:35 PM | CREATE_COMPLETE         | AWS::S3::Bucket                      | WebStaticBucket (WebStaticBucketF22B220B) 
+hellodj-edge-production |  4/18 | 3:43:35 PM | CREATE_COMPLETE         | AWS::S3::Bucket                      | StickerAssetsBucket (StickerAssetsBucket09A8F9CB) 
+hellodj-edge-production |  5/18 | 3:43:35 PM | CREATE_COMPLETE         | AWS::S3::Bucket                      | WebStaticBucket (WebStaticBucketF22B220B) 
+hellodj-edge-production |  6/18 | 3:43:35 PM | CREATE_COMPLETE         | AWS::S3::Bucket                      | HlsSegmentsBucket (HlsSegmentsBucket2D3FD8B4) 
+hellodj-edge-staging |  7/17 | 3:43:38 PM | CREATE_COMPLETE         | AWS::IAM::Role                       | Custom::S3AutoDeleteObjectsCustomResourceProvider/Role (CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092) 
+hellodj-edge-staging |  7/17 | 3:43:39 PM | CREATE_IN_PROGRESS      | AWS::Lambda::Function                | Custom::S3AutoDeleteObjectsCustomResourceProvider/Handler (CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F) 
+hellodj-edge-staging |  7/17 | 3:43:39 PM | CREATE_IN_PROGRESS      | AWS::S3::BucketPolicy                | WebStaticBucket/Policy (WebStaticBucketPolicy72AC23A1) 
+hellodj-edge-production |  7/18 | 3:43:38 PM | CREATE_COMPLETE         | AWS::IAM::Role                       | Custom::S3AutoDeleteObjectsCustomResourceProvider/Role (CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092) 
+hellodj-edge-production |  7/18 | 3:43:39 PM | CREATE_IN_PROGRESS      | AWS::Lambda::Function                | Custom::S3AutoDeleteObjectsCustomResourceProvider/Handler (CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F) 
+hellodj-edge-production |  7/18 | 3:43:39 PM | CREATE_IN_PROGRESS      | AWS::S3::BucketPolicy                | WebStaticBucket/Policy (WebStaticBucketPolicy72AC23A1) 
+hellodj-edge-staging |  7/17 | 3:43:40 PM | CREATE_IN_PROGRESS      | AWS::S3::BucketPolicy                | WebStaticBucket/Policy (WebStaticBucketPolicy72AC23A1) Resource creation Initiated
+hellodj-edge-staging |  7/17 | 3:43:40 PM | CREATE_IN_PROGRESS      | AWS::Lambda::Function                | Custom::S3AutoDeleteObjectsCustomResourceProvider/Handler (CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F) Resource creation Initiated
+hellodj-edge-staging |  8/17 | 3:43:41 PM | CREATE_COMPLETE         | AWS::S3::BucketPolicy                | WebStaticBucket/Policy (WebStaticBucketPolicy72AC23A1) 
+hellodj-edge-staging |  8/17 | 3:43:41 PM | CREATE_IN_PROGRESS      | AWS::Lambda::Function                | Custom::S3AutoDeleteObjectsCustomResourceProvider/Handler (CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F) Eventual consistency check initiated
+hellodj-edge-production |  7/18 | 3:43:40 PM | CREATE_IN_PROGRESS      | AWS::S3::BucketPolicy                | WebStaticBucket/Policy (WebStaticBucketPolicy72AC23A1) Resource creation Initiated
+hellodj-edge-production |  7/18 | 3:43:40 PM | CREATE_IN_PROGRESS      | AWS::Lambda::Function                | Custom::S3AutoDeleteObjectsCustomResourceProvider/Handler (CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F) Resource creation Initiated
+hellodj-edge-production |  8/18 | 3:43:41 PM | CREATE_COMPLETE         | AWS::S3::BucketPolicy                | WebStaticBucket/Policy (WebStaticBucketPolicy72AC23A1) 
+hellodj-edge-production |  8/18 | 3:43:41 PM | CREATE_IN_PROGRESS      | AWS::Lambda::Function                | Custom::S3AutoDeleteObjectsCustomResourceProvider/Handler (CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F) Eventual consistency check initiated
+hellodj-edge-staging |  9/17 | 3:43:47 PM | CREATE_COMPLETE         | AWS::Lambda::Function                | Custom::S3AutoDeleteObjectsCustomResourceProvider/Handler (CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F) 
+hellodj-edge-production |  9/18 | 3:43:47 PM | CREATE_COMPLETE         | AWS::Lambda::Function                | Custom::S3AutoDeleteObjectsCustomResourceProvider/Handler (CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F) 
+hellodj-edge-production |  9/18 | 3:43:47 PM | CREATE_IN_PROGRESS      | Custom::S3AutoDeleteObjects          | WebStaticBucket/AutoDeleteObjectsCustomResource/Default (WebStaticBucketAutoDeleteObjectsCustomResource6CEB843B) 
+hellodj-edge-staging |  9/17 | 3:43:47 PM | CREATE_IN_PROGRESS      | Custom::S3AutoDeleteObjects          | WebStaticBucket/AutoDeleteObjectsCustomResource/Default (WebStaticBucketAutoDeleteObjectsCustomResource6CEB843B) 
+hellodj-edge-staging |  9/17 | 3:43:49 PM | CREATE_IN_PROGRESS      | Custom::S3AutoDeleteObjects          | WebStaticBucket/AutoDeleteObjectsCustomResource/Default (WebStaticBucketAutoDeleteObjectsCustomResource6CEB843B) Resource creation Initiated
+hellodj-edge-staging | 10/17 | 3:43:49 PM | CREATE_COMPLETE         | Custom::S3AutoDeleteObjects          | WebStaticBucket/AutoDeleteObjectsCustomResource/Default (WebStaticBucketAutoDeleteObjectsCustomResource6CEB843B) 
+hellodj-edge-production |  9/18 | 3:43:50 PM | CREATE_IN_PROGRESS      | Custom::S3AutoDeleteObjects          | WebStaticBucket/AutoDeleteObjectsCustomResource/Default (WebStaticBucketAutoDeleteObjectsCustomResource6CEB843B) Resource creation Initiated
+hellodj-edge-production | 10/18 | 3:43:50 PM | CREATE_COMPLETE         | Custom::S3AutoDeleteObjects          | WebStaticBucket/AutoDeleteObjectsCustomResource/Default (WebStaticBucketAutoDeleteObjectsCustomResource6CEB843B) 
+hellodj-edge-staging | 10/17 | 3:43:53 PM | CREATE_IN_PROGRESS      | AWS::CertificateManager::Certificate | EdgeCertificate (EdgeCertificate0E8664CD) Content of DNS Record is: {Name: _8d27fe6f775e15c163e75ca71f71e21f.staging.us-east-1.hellodj.bot., Type: CNAME, Value: _6627c979d261f21d7fa2e14fd6a3df11.jkddzztszm.acm-validations.aws.}
+hellodj-edge-production | 10/18 | 3:43:53 PM | CREATE_IN_PROGRESS      | AWS::CertificateManager::Certificate | EdgeCertificate (EdgeCertificate0E8664CD) Content of DNS Record is: {Name: _ea7ce166dc5587d132d780e8bc3fd1a9.production.us-east-1.hellodj.bot., Type: CNAME, Value: _4c12d8a469166afeefcba179e5303792.jkddzztszm.acm-validations.aws.}
+hellodj-edge-staging | 11/17 | 3:45:54 PM | CREATE_COMPLETE         | AWS::CertificateManager::Certificate | EdgeCertificate (EdgeCertificate0E8664CD) 
+hellodj-edge-production | 11/18 | 3:45:54 PM | CREATE_COMPLETE         | AWS::CertificateManager::Certificate | EdgeCertificate (EdgeCertificate0E8664CD) 
+hellodj-edge-staging | 11/17 | 3:45:56 PM | CREATE_IN_PROGRESS      | AWS::CloudFront::Distribution        | EdgeDistribution (EdgeDistribution7D23752A) 
+hellodj-edge-production | 11/18 | 3:45:56 PM | CREATE_IN_PROGRESS      | AWS::CloudFront::Distribution        | EdgeDistribution (EdgeDistribution7D23752A) 
+hellodj-edge-staging | 11/17 | 3:45:58 PM | CREATE_IN_PROGRESS      | AWS::CloudFront::Distribution        | EdgeDistribution (EdgeDistribution7D23752A) Resource creation Initiated
+hellodj-edge-production | 11/18 | 3:45:59 PM | CREATE_IN_PROGRESS      | AWS::CloudFront::Distribution        | EdgeDistribution (EdgeDistribution7D23752A) Resource creation Initiated
+hellodj-edge-staging | 11/17 | 3:45:59 PM | CREATE_IN_PROGRESS      | AWS::CloudFront::Distribution        | EdgeDistribution (EdgeDistribution7D23752A) Eventual consistency check initiated
+hellodj-edge-staging | 11/17 | 3:46:00 PM | CREATE_IN_PROGRESS      | AWS::Route53::RecordSet              | EnvAliasRecord (EnvAliasRecordBDEF116F) 
+hellodj-edge-production | 11/18 | 3:46:00 PM | CREATE_IN_PROGRESS      | AWS::CloudFront::Distribution        | EdgeDistribution (EdgeDistribution7D23752A) Eventual consistency check initiated
+hellodj-edge-production | 11/18 | 3:46:01 PM | CREATE_IN_PROGRESS      | AWS::Route53::RecordSet              | EnvAliasRecord (EnvAliasRecordBDEF116F) 
+hellodj-edge-production | 11/18 | 3:46:01 PM | CREATE_IN_PROGRESS      | AWS::Route53::RecordSet              | ApexAliasRecord (ApexAliasRecordCCE6BE0E) 
+hellodj-edge-staging | 11/17 | 3:46:32 PM | CREATE_IN_PROGRESS      | AWS::Route53::RecordSet              | EnvAliasRecord (EnvAliasRecordBDEF116F) Resource creation Initiated
+hellodj-edge-staging | 12/17 | 3:46:32 PM | CREATE_COMPLETE         | AWS::Route53::RecordSet              | EnvAliasRecord (EnvAliasRecordBDEF116F) 
+hellodj-edge-production | 11/18 | 3:46:32 PM | CREATE_IN_PROGRESS      | AWS::Route53::RecordSet              | EnvAliasRecord (EnvAliasRecordBDEF116F) Resource creation Initiated
+hellodj-edge-production | 11/18 | 3:46:32 PM | CREATE_IN_PROGRESS      | AWS::Route53::RecordSet              | ApexAliasRecord (ApexAliasRecordCCE6BE0E) Resource creation Initiated
+hellodj-edge-production | 12/18 | 3:46:33 PM | CREATE_COMPLETE         | AWS::Route53::RecordSet              | EnvAliasRecord (EnvAliasRecordBDEF116F) 
+hellodj-edge-production | 13/18 | 3:46:33 PM | CREATE_COMPLETE         | AWS::Route53::RecordSet              | ApexAliasRecord (ApexAliasRecordCCE6BE0E) 
+hellodj-edge-production | 14/18 | 3:49:02 PM | CREATE_COMPLETE         | AWS::CloudFront::Distribution        | EdgeDistribution (EdgeDistribution7D23752A) 
+hellodj-edge-staging | 13/17 | 3:49:02 PM | CREATE_COMPLETE         | AWS::CloudFront::Distribution        | EdgeDistribution (EdgeDistribution7D23752A) 
+hellodj-edge-staging | 13/17 | 3:49:03 PM | CREATE_IN_PROGRESS      | AWS::S3::BucketPolicy                | StickerAssetsBucket/Policy (StickerAssetsBucketPolicy8B833804) 
+hellodj-edge-staging | 13/17 | 3:49:03 PM | CREATE_IN_PROGRESS      | AWS::S3::BucketPolicy                | HlsSegmentsBucket/Policy (HlsSegmentsBucketPolicy13346DD5) 
+hellodj-edge-staging | 13/17 | 3:49:04 PM | CREATE_IN_PROGRESS      | AWS::S3::BucketPolicy                | StickerAssetsBucket/Policy (StickerAssetsBucketPolicy8B833804) Resource creation Initiated
+hellodj-edge-staging | 13/17 | 3:49:04 PM | CREATE_IN_PROGRESS      | AWS::S3::BucketPolicy                | HlsSegmentsBucket/Policy (HlsSegmentsBucketPolicy13346DD5) Resource creation Initiated
+hellodj-edge-staging | 14/17 | 3:49:04 PM | CREATE_COMPLETE         | AWS::S3::BucketPolicy                | StickerAssetsBucket/Policy (StickerAssetsBucketPolicy8B833804) 
+hellodj-edge-staging | 15/17 | 3:49:04 PM | CREATE_COMPLETE         | AWS::S3::BucketPolicy                | HlsSegmentsBucket/Policy (HlsSegmentsBucketPolicy13346DD5) 
+hellodj-edge-staging | 15/17 | 3:49:05 PM | CREATE_IN_PROGRESS      | Custom::S3AutoDeleteObjects          | HlsSegmentsBucket/AutoDeleteObjectsCustomResource/Default (HlsSegmentsBucketAutoDeleteObjectsCustomResource53110F42) 
+hellodj-edge-staging | 15/17 | 3:49:07 PM | CREATE_IN_PROGRESS      | Custom::S3AutoDeleteObjects          | HlsSegmentsBucket/AutoDeleteObjectsCustomResource/Default (HlsSegmentsBucketAutoDeleteObjectsCustomResource53110F42) Resource creation Initiated
+hellodj-edge-staging | 16/17 | 3:49:07 PM | CREATE_COMPLETE         | Custom::S3AutoDeleteObjects          | HlsSegmentsBucket/AutoDeleteObjectsCustomResource/Default (HlsSegmentsBucketAutoDeleteObjectsCustomResource53110F42) 
+hellodj-edge-staging | 17/17 | 3:49:08 PM | CREATE_COMPLETE         | AWS::CloudFormation::Stack           | hellodj-edge-staging 
+hellodj-edge-production | 14/18 | 3:49:03 PM | CREATE_IN_PROGRESS      | AWS::S3::BucketPolicy                | HlsSegmentsBucket/Policy (HlsSegmentsBucketPolicy13346DD5) 
+hellodj-edge-production | 14/18 | 3:49:03 PM | CREATE_IN_PROGRESS      | AWS::S3::BucketPolicy                | StickerAssetsBucket/Policy (StickerAssetsBucketPolicy8B833804) 
+hellodj-edge-production | 14/18 | 3:49:04 PM | CREATE_IN_PROGRESS      | AWS::S3::BucketPolicy                | HlsSegmentsBucket/Policy (HlsSegmentsBucketPolicy13346DD5) Resource creation Initiated
+hellodj-edge-production | 14/18 | 3:49:04 PM | CREATE_IN_PROGRESS      | AWS::S3::BucketPolicy                | StickerAssetsBucket/Policy (StickerAssetsBucketPolicy8B833804) Resource creation Initiated
+hellodj-edge-production | 15/18 | 3:49:05 PM | CREATE_COMPLETE         | AWS::S3::BucketPolicy                | HlsSegmentsBucket/Policy (HlsSegmentsBucketPolicy13346DD5) 
+hellodj-edge-production | 16/18 | 3:49:05 PM | CREATE_COMPLETE         | AWS::S3::BucketPolicy                | StickerAssetsBucket/Policy (StickerAssetsBucketPolicy8B833804) 
+hellodj-edge-production | 16/18 | 3:49:05 PM | CREATE_IN_PROGRESS      | Custom::S3AutoDeleteObjects          | HlsSegmentsBucket/AutoDeleteObjectsCustomResource/Default (HlsSegmentsBucketAutoDeleteObjectsCustomResource53110F42) 
+hellodj-edge-production | 16/18 | 3:49:07 PM | CREATE_IN_PROGRESS      | Custom::S3AutoDeleteObjects          | HlsSegmentsBucket/AutoDeleteObjectsCustomResource/Default (HlsSegmentsBucketAutoDeleteObjectsCustomResource53110F42) Resource creation Initiated
+hellodj-edge-production | 17/18 | 3:49:07 PM | CREATE_COMPLETE         | Custom::S3AutoDeleteObjects          | HlsSegmentsBucket/AutoDeleteObjectsCustomResource/Default (HlsSegmentsBucketAutoDeleteObjectsCustomResource53110F42) 
+hellodj-edge-production | 18/18 | 3:49:09 PM | CREATE_COMPLETE         | AWS::CloudFormation::Stack           | hellodj-edge-production 
+
+✅  hellodj-edge-production
+
+✨  Deployment time: 355.91s
+
+Outputs:
+hellodj-edge-production.DistributionDomainName = d3m26u7qhu6xpz.cloudfront.net
+hellodj-edge-production.EnvName = production.us-east-1.hellodj.bot
+hellodj-edge-production.HostedZoneId = Z0624252883VKFQ4E14Q
+hellodj-edge-production.StickerBucketName = hellodj-stickers-production-us-east-1
+hellodj-edge-production.StickerCdnUrl = https://production.us-east-1.hellodj.bot/stickers
+Stack ARN:
+arn:aws:cloudformation:us-east-1:874927898283:stack/hellodj-edge-production/034d9190-a3fb-11f1-aa7f-0ebd9adba6b5
+
+✅  hellodj-edge-staging
+
+✨  Deployment time: 355.96s
+
+Outputs:
+hellodj-edge-staging.DistributionDomainName = dadxw4fp7dsix.cloudfront.net
+hellodj-edge-staging.EnvName = staging.us-east-1.hellodj.bot
+hellodj-edge-staging.HostedZoneId = Z0624252883VKFQ4E14Q
+hellodj-edge-staging.StickerBucketName = hellodj-stickers-staging-us-east-1
+hellodj-edge-staging.StickerCdnUrl = https://staging.us-east-1.hellodj.bot/stickers
+Stack ARN:
+arn:aws:cloudformation:us-east-1:874927898283:stack/hellodj-edge-staging/034db8a0-a3fb-11f1-ad39-0ee21cd397ed
+
+✨  Total time: 377.35s
+
+deploy_exit=0

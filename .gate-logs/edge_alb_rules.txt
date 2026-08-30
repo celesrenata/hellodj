@@ -1,0 +1,60 @@
+[
+    {
+        "Prio": "1",
+        "Cond": [
+            [
+                "beta.us-east-1.hellodj.bot"
+            ]
+        ],
+        "Action": "forward",
+        "TG": "arn:aws:elasticloadbalancing:us-east-1:874927898283:targetgroup/k8s-hellodjb-activity-3210a8befd/cf4358e0a2b91d68"
+    },
+    {
+        "Prio": "2",
+        "Cond": [
+            [
+                "beta.us-east-1.hellodj.bot"
+            ]
+        ],
+        "Action": "forward",
+        "TG": "arn:aws:elasticloadbalancing:us-east-1:874927898283:targetgroup/k8s-hellodjb-webui-451adb73dd/067d0c815f2cf5d6"
+    },
+    {
+        "Prio": "3",
+        "Cond": [],
+        "Action": "fixed-response",
+        "TG": null
+    },
+    {
+        "Prio": "4",
+        "Cond": [
+            [
+                "staging.us-east-1.hellodj.bot"
+            ]
+        ],
+        "Action": "forward",
+        "TG": "arn:aws:elasticloadbalancing:us-east-1:874927898283:targetgroup/k8s-hellodjs-activity-28b1c129aa/9bd3de2c936ec5cc"
+    },
+    {
+        "Prio": "5",
+        "Cond": [
+            [
+                "staging.us-east-1.hellodj.bot"
+            ]
+        ],
+        "Action": "forward",
+        "TG": "arn:aws:elasticloadbalancing:us-east-1:874927898283:targetgroup/k8s-hellodjs-webui-406dec68e5/e4336bf21f72b895"
+    },
+    {
+        "Prio": "6",
+        "Cond": [],
+        "Action": "fixed-response",
+        "TG": null
+    },
+    {
+        "Prio": "default",
+        "Cond": [],
+        "Action": "fixed-response",
+        "TG": null
+    }
+]

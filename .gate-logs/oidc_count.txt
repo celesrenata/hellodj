@@ -1,0 +1,2 @@
+/tmp/cdkout-oidc/assembly-hellodj-pipeline-hellodj-beta-stage/hellodjpipelinehellodjbetastagehellodjworkloadsbeta3BA8E38C.template.json:22
+/tmp/cdkout-oidc/assembly-hellodj-pipeline-hellodj-beta-stage/hellodjpipelinehellodjbetastagehellodjworkloadsbetaK209B4302.nested.template.json:0

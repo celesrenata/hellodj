@@ -1,0 +1,10 @@
+]633;E;{ echo "=== GET /login ==="\x3b curl -sS --max-time 20 -c .gate-logs/staging_cookies.txt "https://staging.us-east-1.hellodj.bot/login" -o .gate-logs/login_page.html -w "http=%{http_code}\\n"\x3b echo "=== login form fields ==="\x3b grep -oE 'name="[^"]+"' .gate-logs/login_page.html | sort -u\x3b echo "=== auth admin route ==="\x3b grep -oiE 'action="[^"]*"|/auth/[a-z/]+' .gate-logs/login_page.html | sort -u | head\x3b } > .gate-logs/login_probe.txt 2>&1\x3b true;d6e7e269-353d-46aa-a67b-c14d7e64cf34]633;C=== GET /login ===
+http=200
+=== login form fields ===
+name="password"
+name="username"
+name="viewport"
+=== auth admin route ===
+action="/auth/admin"
+/auth/login
+/auth/recover

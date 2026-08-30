@@ -1,0 +1,26 @@
+131:	building '/nix/store/ffjagr07cp9l0kzy43dcv1wvvjmq2sgl-unit-panic-on-fail.service.drv'...
+201:	building '/nix/store/kc9bm9hfrdwcyhh0cvpv0irbayh42wry-hwdb.bin.drv'...
+245:	building '/nix/store/kc9bm9hfrdwcyhh0cvpv0irbayh42wry-hwdb.bin.drv'...
+246:	building '/nix/store/kc9bm9hfrdwcyhh0cvpv0irbayh42wry-hwdb.bin.drv'...
+248:	error: Cannot build '/nix/store/kc9bm9hfrdwcyhh0cvpv0irbayh42wry-hwdb.bin.drv'.
+249:	       Reason: builder failed with exit code 1.
+251:	         /nix/store/alz81v99idj97d6n9793y8ysz5mz2iij-hwdb.bin
+253:	       > Adding hwdb files for package /nix/store/pyrvwmigi6qdpz9lbbslj5771pfl7r69-systemd-261.1
+254:	       > Adding hwdb files for package /nix/store/8v3fnr9wbhim60q85hnaa2f3f3mx0ky3-ipv6-privacy-extensions.rules
+255:	       > Adding hwdb files for package /nix/store/bmk0829g6wfyxfflbq2iwfimy8b7yn9v-ipv6-privacy-extensions.rules
+256:	       > Adding hwdb files for package /nix/store/2ip693lw8i0xkcw8qmjzdsdwhgr79wc8-lvm2-2.03.41
+257:	       > Adding hwdb files for package /nix/store/c2jgzmvplc5vm4rab5033hdw1dvmm9fs-bcache-tools-1.1
+258:	       > Adding hwdb files for package /nix/store/1yc01k7grdv4q7p9blx53jmvvc3y0iym-extra-udev-rules
+259:	       > Adding hwdb files for package /nix/store/m7ab4bdcg298pg532lvrz8fqlh860cq3-extra-hwdb-file
+260:	       > Generating hwdb database...
+262:	         nix log /nix/store/kc9bm9hfrdwcyhh0cvpv0irbayh42wry-hwdb.bin.drv
+265:	error: Cannot build '/nix/store/8sgxm78bwr8qx6xml6034q8fb5mnk1wv-etc.drv'.
+266:	       Reason: 1 dependency failed.
+270:	error: Cannot build '/nix/store/vgdd54dlzp2b7nxlwghxzj0p0iy4rhr1-nixos-system-nixos-26.11.20260823.56c02bc.drv'.
+271:	       Reason: 1 dependency failed.
+274:	error: Cannot build '/nix/store/9v23zgf8nk1k260p11nb4jfg02hh634i-ukify.conf.drv'.
+275:	       Reason: 1 dependency failed.
+279:	error: Cannot build '/nix/store/wv8rr58a3wb0l4makfd4hhh6bncmsc2f-hellodj-gpu-node.drv'.
+280:	       Reason: 1 dependency failed.
+285:	[Container] 2026/08/29 08:28:15.093398 Phase complete: BUILD State: FAILED
+286:	[Container] 2026/08/29 08:28:15.093416 Phase context status code: COMMAND_EXECUTION_ERROR Message: Error while executing command: cd $CODEBUILD_SRC_DIR/infra/ami && nix build .#packages.aarch64-linux.amazonImage --max-jobs 1 --no-link --print-out-paths > /tmp/gpu-ami-out.txt. Reason: exit status 1

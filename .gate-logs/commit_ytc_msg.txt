@@ -1,0 +1,16 @@
+fix(yt-cipher): patchelf deno-compiled binary interpreter for the minimal image
+
+yt-cipher pods failed with `exec /opt/yt-cipher/server: no such file or
+directory`. The `deno compile` output is a DYNAMICALLY-LINKED glibc binary
+whose ELF interpreter is `/lib/ld-linux-aarch64.so.1`, but the minimal OCI
+image (contents = [ cacert ]) has no such loader — the kernel fails the exec
+with the misleading ENOENT (missing INTERPRETER, not the binary).
+
+Fix: patchelf the binary in installPhase to set the interpreter to the Nix
+glibc loader and the RPATH to glibc + libgcc/libstdc++. Those store paths
+enter the binary's closure so buildLayeredImage includes the loader + libs in
+the image (still no Debian base). Uses explicit patchelf (not
+autoPatchelfHook, which needs pyelftools and is flaky under cross-arch
+emulation), with in-build assertions that the loader exists and the
+interpreter no longer points at /lib. Verified under aarch64 emulation:
+ytCipherApp builds and the binary's interpreter is the Nix store loader.

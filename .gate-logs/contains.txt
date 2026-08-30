@@ -1,0 +1,3 @@
+--- is fix ancestor of 19bcef56? ---
+NO e3843a9 NOT in 19bcef56 (stale, pre-fix)
+--- 19bcef56 log ---

@@ -1,0 +1,18 @@
+=== groups ===
+[
+    "admins"
+]
+=== users ===
+[
+    {
+        "u": "admin",
+        "s": "CONFIRMED"
+    }
+]
+=== web-ui client ===
+[
+    {
+        "Name": "hellodj-web-ui-staging",
+        "Id": "5egl659t3d70q7kmti4ft46e38"
+    }
+]

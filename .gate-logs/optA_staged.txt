@@ -1,0 +1,10 @@
+ infra/ami/README.md                   | 129 ------------
+ infra/ami/flake.lock                  |  27 ---
+ infra/ami/flake.nix                   | 247 ----------------------
+ infra/ami/gpu-node.nix                | 383 ----------------------------------
+ infra/bin/hellodj.ts                  |  18 +-
+ infra/lib/eks-stack.ts                | 110 ++++------
+ infra/lib/pipeline-stack.ts           | 232 +-------------------
+ infra/test/eks-gpu.test.ts            |  29 +--
+ infra/test/endpoint-isolation.test.ts |  59 ++----
+ 9 files changed, 83 insertions(+), 1151 deletions(-)

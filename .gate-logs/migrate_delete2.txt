@@ -1,0 +1,7 @@
+]633;E;for S in hellodj-auth-production hellodj-auth-staging hellodj-edge-staging hellodj-edge-production hellodj-edge hellodj-auth\x3b do echo "deleting $S"\x3b AWS_PROFILE=hellodj aws cloudformation delete-stack --stack-name "$S" --region us-east-1 2>&1\x3b done > .gate-logs/migrate_delete2.txt 2>&1\x3b echo "exit=$?" >> .gate-logs/migrate_delete2.txt\x3b cat .gate-logs/migrate_delete2.txt;c34d39bd-1fa5-4b45-8a3c-d3836428bead]633;Cdeleting hellodj-auth-production
+deleting hellodj-auth-staging
+deleting hellodj-edge-staging
+deleting hellodj-edge-production
+deleting hellodj-edge
+deleting hellodj-auth
+exit=0

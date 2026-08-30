@@ -1,0 +1,33 @@
+]633;E;{ echo "=== production + apex records ==="\x3b AWS_PROFILE=hellodj aws route53 list-resource-record-sets --hosted-zone-id Z0624252883VKFQ4E14Q --query "ResourceRecordSets[?Name=='production.us-east-1.hellodj.bot.' || Name=='hellodj.bot.'].{Name:Name,Type:Type,Alias:AliasTarget.DNSName}" --output json\x3b echo "=== dig production ==="\x3b dig +short production.us-east-1.hellodj.bot\x3b echo "=== dig apex ==="\x3b dig +short hellodj.bot\x3b } > .gate-logs/edge_prod_check.txt 2>&1\x3b cat .gate-logs/edge_prod_check.txt;c08a0620-fdad-4af0-ab48-237647219028]633;C=== production + apex records ===
+[
+    {
+        "Name": "hellodj.bot.",
+        "Type": "A",
+        "Alias": "d3m26u7qhu6xpz.cloudfront.net."
+    },
+    {
+        "Name": "hellodj.bot.",
+        "Type": "NS",
+        "Alias": null
+    },
+    {
+        "Name": "hellodj.bot.",
+        "Type": "SOA",
+        "Alias": null
+    },
+    {
+        "Name": "production.us-east-1.hellodj.bot.",
+        "Type": "A",
+        "Alias": "d3m26u7qhu6xpz.cloudfront.net."
+    }
+]
+=== dig production ===
+18.65.238.92
+18.65.238.91
+18.65.238.44
+18.65.238.88
+=== dig apex ===
+18.65.238.91
+18.65.238.44
+18.65.238.92
+18.65.238.88

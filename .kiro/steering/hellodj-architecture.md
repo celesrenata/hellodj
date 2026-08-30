@@ -2,12 +2,24 @@
 
 This steering file captures the full architecture of the HelloDJ project so agents don't break the carefully constructed integration between services.
 
-## Deployment Targets
+## Deployment Target — AWS ONLY
 
-HelloDJ runs in TWO environments:
-
-1. **On-prem Kubernetes** (gremlin nodes 10.1.1.12–15) — the current live deployment described below
-2. **AWS EKS** (us-east-1, account 874927898283) — the SaaS re-platform, fully deployed infrastructure (9 CDK stacks live), pipeline deploying workloads. See `platform/infra/ARCHITECTURE.md` for the AWS topology.
+> **AWS 100%.** The on-prem Kubernetes deployment (gremlin nodes, the top-level
+> `bot/`, `web-ui/`, `kube/`, `k8s/`, the top-level `spotify-stream/` /
+> `tidal-stream/`, `docker-compose.yml`, and the Harbor `runme*.sh` deploy
+> scripts) has been **removed**. HelloDJ runs solely on **AWS EKS**
+> (us-east-1, account 874927898283). The AWS platform code lives under
+> `platform/components/*` (the workload component sources) and `hellodj-cdk/`
+> (the CDK app + gates + `hellodj_platform_logic`). See
+> `platform/infra/ARCHITECTURE.md` for the AWS topology.
+>
+> **Historical note:** sections further down that describe the on-prem
+> single-pod deployment, `hellodj-service` namespace, `render_lavalink_config.py`
+> init container, encrypted-SQLite credential store, Longhorn/NFS volumes,
+> Traefik ingress, and `registry.celestium.life` (Harbor) are retained only as
+> historical context for how features originated. They do NOT describe a live
+> deployment. The authoritative AWS design is in the `platform/` sections and
+> `platform/infra/ARCHITECTURE.md`. When they conflict, AWS wins.
 
 Source code is hosted in **private AWS CodeCommit** (not public GitHub). The local repos have a `codecommit` remote pointing to `git-codecommit.us-east-1.amazonaws.com/v1/repos/<repo>`.
 
@@ -18,16 +30,16 @@ HelloDJ is a voice-activated Discord music bot with:
 - Multi-source playback (YouTube, Spotify, Tidal, SoundCloud)
 - Direct streaming sidecars (bypass YouTube mirroring for Spotify/Tidal)
 - Discord Activity (video streaming, whiteboard, visualizer, lyrics overlay)
-- Voice command pipeline (wake word → STT → LLM intent → action → TTS response)
+- Voice command pipeline (wake word → STT → Bedrock intent → action → Polly response)
 - Unified playback system (multi-instance orchestrator, content filtering, user bans)
-- Web configuration UI at https://hellodj.celestium.life
-- Kubernetes deployment on gremlin nodes (10.1.1.12–15)
+- Web configuration UI at `https://<stage>.us-east-1.hellodj.bot`
+- Deployed on AWS EKS via the CI/CD pipeline (per-stage WorkloadsStacks)
 
 ## Repository Layout
 
 | Repo / Path | Purpose | CodeCommit |
 |---|---|---|
-| `hellodj/` (this repo) | Bot sources (`bot/`), the 14 workload component sources under `platform/components/*` (12 original + `searxng` + `mcp-searxng-enhanced` for voice web search), and the Kubernetes manifests (`kube/`). Training assets. | `codecommit::us-east-1://hellodj` (branch: main) |
+| `hellodj/` (this repo) | The 14 workload component sources under `platform/components/*` (12 original + `searxng` + `mcp-searxng-enhanced` for voice web search). The on-prem `bot/` and `kube/` trees have been REMOVED (AWS-only). | `codecommit::us-east-1://hellodj` (branch: main) |
 | `hellodj-cdk/` | Standalone CDK application (`infra/`), the repo-wide gates (`tools/`), the encrypted cache secrets (`secrets/`), the closure/pin manifests (`closures.toml`, `pins.toml`, `pins.upstream.toml`), `pyproject.toml`, and the shared pure-logic package `hellodj_platform_logic` (`shared/hellodj_platform_logic/`). Primary synth source for the pipeline. | `codecommit::us-east-1://hellodj-cdk` (branch: main) |
 | `celesrenata/Lavalink` | Fork of lavalink-devs/Lavalink (upstream remote: `upstream`), branch `dev` | `codecommit::us-east-1://Lavalink` (branch: dev) |
 | `celesrenata/lavaplayer` | Fork of lavalink-devs/lavaplayer | `codecommit::us-east-1://lavaplayer` (branch: main) |
@@ -252,7 +264,7 @@ The bot runs a Discord Activity (Embedded App) for video streaming, whiteboard, 
 | `activity_launcher.py` | Launches Discord Activity sessions via the API |
 | `activity_streamer.py` | HLS video transcoding + streaming orchestration |
 | `ws_hub.py` | WebSocket hub for real-time state sync (play/pause/seek/whiteboard) |
-| `hls_transcode.py` | FFmpeg HLS transcode with QSV hardware acceleration |
+| `hls_transcode.py` | FFmpeg 9 HLS transcode with NVIDIA NVENC (h264_nvenc), libx264 CPU fallback |
 | `hls_cleanup.py` | Cleanup of stale HLS segments |
 | `source_router.py` | Routes video requests to source-specific resolvers |
 | `music_video_resolver.py` | Resolves music video URLs from multiple sources |
@@ -266,7 +278,7 @@ The bot runs a Discord Activity (Embedded App) for video streaming, whiteboard, 
 | `visualizer_registry.py` | Available visualizer types |
 | `audio_feature_bus.py` | Real-time audio features for visualizer |
 | `beat_timing.py` | Beat detection for visualizer sync |
-| `gpu_probe.py` | Intel GPU capability detection (QSV/VA-API) |
+| `gpu_probe.py` | NVIDIA GPU capability detection (nvidia-smi + ffmpeg h264_nvenc) |
 
 ### Frontend (activity_frontend/)
 - Single-page HTML/JS app loaded in Discord's Activity iframe
@@ -276,9 +288,11 @@ The bot runs a Discord Activity (Embedded App) for video streaming, whiteboard, 
 - Discord Embedded App SDK for authentication
 
 ### HLS Transcoding
-- FFmpeg 9 (built from source in bot Dockerfile) with QSV/VA-API hardware acceleration
-- Intel iGPU (device 0300-7d55) via `/dev/dri` hostPath mount
-- `supplementalGroups: [26]` (video group) + `privileged: true` for device access
+- FFmpeg 9 (built from source in bot Dockerfile) with **NVIDIA NVENC**
+  (`h264_nvenc`, CUDA/NVDEC decode). Intel QSV / VA-API is NOT used.
+- GPU exposed via the NVIDIA container runtime + k8s device plugin
+  (`nvidia.com/gpu`); on AWS the GPU is a time-sliced T4g on a `g5g.xlarge` Spot
+  node. When no GPU is attached, the Graviton-tuned libx264 CPU floor serves.
 - Segments written to tmpfs emptyDir (`/tmp/hellodj_hls`, 2Gi RAM-backed)
 - Real-time transcoding with `-re` flag for live streaming
 
@@ -367,7 +381,12 @@ DynamoDB access and survives a bot bounce. `__main__.main()` starts it on a
   `hellodj_platform_logic.source_refresh_potoken.PoTokenRefreshClient`, which
   delegates the OAuth refresh to the base (device or web-app) client and then
   fetches a FRESH PoToken from the in-cluster potoken-server (`POTOKEN_SERVER_URL`,
-  defaulting to `http://potoken-server.hellodj-<stage>.svc.cluster.local:4416`),
+  defaulting to `http://potoken-server.hellodj-<stage>.svc.cluster.local:4416`
+  — this default is derived by the SHARED
+  `hellodj_platform_logic.cluster_dns.potoken_server_url(stage)` helper, the
+  single source of truth also used by the web-ui `app.py`, so the two
+  consumers can never drift; the port `4416` lives once as
+  `cluster_dns.POTOKEN_SERVER_PORT`),
   merging the new `pot_token`/`pot_visitor_data` into the refreshed
   `TokenState.extra`. Since YouTube's stored `expires_at` is `0` it is ALWAYS
   near-expiry, so every tick renews both the OAuth token and the PoToken.
@@ -415,7 +434,7 @@ Additional volumes (not PVCs):
 |--------|------|-------|---------|
 | `lavalink-config-rendered` | emptyDir | `/out` (init), `/opt/Lavalink/application.yml` (lavalink) | Rendered Lavalink config from credential store |
 | `hellodj-config-backups` | emptyDir | `/app/config-backups` | Transient backup storage |
-| `dev-dri` | hostPath `/dev/dri` | `/dev/dri` (bot) | Intel iGPU device nodes for QSV transcoding |
+| `dev-dri` | hostPath `/dev/dri` | `/dev/dri` (bot) | **On-prem legacy only** — Intel iGPU device nodes. The NVENC bot image does NOT use `/dev/dri`; AWS uses the `nvidia.com/gpu` device plugin instead. |
 | `hls-tmp` | emptyDir (Memory, 2Gi) | `/tmp/hellodj_hls` (bot) | RAM-backed tmpfs for HLS segments |
 
 NFS paths on Synology:
@@ -482,6 +501,11 @@ NFS paths on Synology:
 
 15. **Kustomize image overrides** — `kube/kustomization.yaml` overrides image tags for bot, web-ui, tidal-stream, and spotify-stream. The Lavalink image tag is set directly in `deployment.yaml` (not overridden by kustomize). Always check BOTH files when verifying image tags.
 
+> **Items 1–15 above are on-prem (`bot/` + `kube/`) specifics and are now
+> historical** — that code has been removed (AWS 100%). They are retained only
+> to explain how features originated. The live equivalents are the AWS
+> `platform/components/*` sources.
+
 ## Config Drift Warning
 
 There are THREE sources of Lavalink config:
@@ -542,9 +566,17 @@ The Dockerfile does NOT use the official `ghcr.io/lavalink-devs/lavalink` image 
 
 ## Bot Dockerfile Key Details
 
-- Base: `python:3.11-slim`
-- FFmpeg 9 built from source with: QSV (libvpl), VA-API, libx264, libx265, libopus, libdav1d, OpenSSL (HTTPS support for Tidal HLS)
-- Intel VA-API driver + libmfx-gen for hardware transcoding
+- Base: `nvidia/cuda:12.6.2-runtime-ubuntu24.04` (ships the NVIDIA userspace
+  that ffmpeg's `h264_nvenc` dlopens at runtime). NOT Intel/QSV.
+- FFmpeg 9 built from source with: **NVENC/CUDA** (via `nv-codec-headers`),
+  libx264, libx265, libopus, libdav1d, OpenSSL (HTTPS support for Tidal HLS).
+  NO `--enable-libvpl` / `--enable-vaapi` — NVIDIA-only GPU path.
+- **Graviton3 (Neoverse-V1) CPU tuning**: the bot runs on the m7g app fleet, so
+  the ffmpeg/x264 build is `-mcpu=neoverse-v1 -O3` (the libx264 CPU floor is the
+  hot path when no GPU is attached). The separate AWS `hls-transcode` image runs
+  on the g5g (Graviton2/Neoverse-N1) GPU node and is tuned `-mcpu=neoverse-n1`
+  instead — do NOT unify the two targets (N1 has no SVE and would SIGILL on V1
+  code).
 - yt-dlp installed for YouTube video downloading
 - Requirements split into layers: core → torch → AI (prevents registry push timeouts)
 - Stickers directory copied for whiteboard feature
@@ -694,22 +726,29 @@ as voice-only secondary bots.
   `instance.<index>.token` / `instance.<index>.app_id` SQLite keys are NOT read
   or required on AWS.
 - **Voice-only secondary gateways.** `AwsInstanceOrchestrator(InstanceOrchestrator)`
-  overrides ONLY `initialize()` to build a `BotInstance` per claimed,
-  token-bearing pool app and connect them in parallel with per-instance
+  overrides `initialize()` (the credential source — bot-app pool, not a `cfg`
+  store) and the entitlement resolver seam (`_resolve_effective` /
+  `_enforce_quotas`, injected resolver), building a `BotInstance` per claimed,
+  token-bearing pool app and connecting them in parallel with per-instance
   isolation (one gateway's connect/health failure marks that instance
   `unhealthy` and continues — it never crashes the loop, the watchdog, or the
   health server). `discord-bot-core` remains the single Primary_Bot that owns
   slash commands; these instances only join voice channels. Assign / release /
-  health-check / quota are inherited from the on-prem orchestrator unchanged.
+  health-check are inherited from the base `InstanceOrchestrator` unchanged.
+  (The base class is now standalone — the on-prem `bot/playback/orchestrator.py`
+  it was ported from has been removed; its quota helpers use the shared
+  `entitlements_core`, not the deleted `bot`/`playback.user_entitlements`.)
 - **Shared Lavalink node.** All Bot_Instances share ONE Lavalink node/session
   (mirroring unified-playback R6.7), wired via the `HELLODJ_LAVALINK_NODE_URL`
   env.
 - **Entitlement quotas.** Assignment resolves the owning user's effective
   entitlements through the SHARED `entitlements_core`
-  (`effective_max_bots_per_guild`, `quota_reached`) so the web-ui, the on-prem
-  orchestrator, and this runtime agree exactly; a resolution failure applies the
-  restrictive `DEFAULT_ENTITLEMENTS` (limits = 1), never a more-permissive
-  fallback.
+  (`effective_max_bots_per_guild`, `quota_reached`) so the web-ui and this
+  runtime agree exactly; a resolution failure applies the restrictive
+  `DEFAULT_ENTITLEMENTS` (limits = 1), never a more-permissive fallback. Both
+  the base `InstanceOrchestrator` and the AWS subclass source these helpers from
+  `entitlements_core`; the base returns the restrictive default (no resolver
+  seam of its own), the subclass consults the injected resolver.
 - **Degraded no-op.** When the pool secret is unconfigured, the pool is empty,
   or `discord.py` is unavailable, the runtime logs `degraded: instance runtime
   disabled` and does NOT start — the health server still comes up. SIGTERM/SIGINT
@@ -718,15 +757,73 @@ as voice-only secondary bots.
   (mirrors `watchdog_bootstrap`) builds the source + orchestrator from env and
   runs the asyncio loop on a daemon thread; `__main__.main()` starts it right
   next to `start_watchdog_thread()`. Guild discovery is a `BotAppClaim` scan.
-- **Single-replica constraint (hard).** The orchestrator runs at
-  `minReplicas=1`/`maxReplicas=1` (pinned in `component-workloads.ts`). A second
-  replica would double-connect the same bot tokens and Discord rejects the
-  second gateway identify. Do NOT scale it horizontally.
+- **Per-node sharded StatefulSet (was single-replica).** The orchestrator is a
+  **sharded StatefulSet** (`ORCHESTRATOR_SHARD_REPLICAS`, default 3, in
+  `component-workloads.ts` via the `shardedStatefulSet`/`shardReplicas` traits),
+  one replica per node via hostname-topology pod anti-affinity — NOT a
+  single-replica Deployment. The OLD hard `minReplicas=1`/`maxReplicas=1` cap
+  existed because a second replica would double-connect the same bot tokens
+  (Discord rejects a duplicate gateway identify). Sharding lifts that cap SAFELY
+  — see the "distributed bot sharding" section below. At runtime with
+  `HELLODJ_ORCHESTRATOR_REPLICAS=1` (single-shard / degraded topology) the
+  behavior is byte-for-byte the old single-replica orchestrator.
 - **CDK least privilege** (`workloads-stack.ts`): `playback-orchestrator` gets
   READ on the pool secret (already granted) + a scoped `BotAppClaimRead`
   statement on the core table's `GUILD#*` items, plus the runtime env (stage,
-  region, `HELLODJ_LAVALINK_NODE_URL`). No static Discord credentials live in
-  the manifest — bot tokens are read from the pool secret at runtime via IRSA.
+  region, `HELLODJ_LAVALINK_NODE_URL`, and `HELLODJ_ORCHESTRATOR_REPLICAS` for
+  the shard divisor). No static Discord credentials live in the manifest — bot
+  tokens are read from the pool secret at runtime via IRSA.
+
+### Distributed bot sharding — one bot per node (distributed-bot-sharding spec)
+
+> AWS EKS only. Lifts the orchestrator's old single-replica constraint by
+> running it as a **sharded StatefulSet** (one replica per node) where each
+> replica owns a DISJOINT slice of the work, so no bot application is ever
+> connected by two replicas — the Discord duplicate-identify invariant still
+> holds while the secondary voice gateways distribute across the app fleet.
+
+- **Shard math** (`playback_orchestrator/sharding.py`, pure): `shard(guild_id,
+  N)` = `blake2b(guild_id) % N` (process-stable, NOT the salted builtin
+  `hash()`); `resolve_topology(hostname, HELLODJ_ORCHESTRATOR_REPLICAS)` derives
+  `(ordinal, replica_count)` from the StatefulSet pod hostname
+  (`playback-orchestrator-<ordinal>`) + env, degrading to `(0, 1)` (single
+  shard) on any bad input.
+- **Disjoint guild ownership** (`instance_bootstrap`): a replica serves a guild
+  iff `shard(guild_id, N) == ordinal`. The served-guild sets partition the
+  claimed guilds (union total, pairwise disjoint), so a guild's secondary bots
+  AND its session/queue writes live on exactly one replica (single-writer
+  preserved).
+- **Single app owner** (`instance_pool_source.app_owner_map` /
+  `instance_runtime.initialize` guard): a pool app claimed by guilds on
+  DIFFERENT shards is connected by exactly ONE replica — the owner of the
+  lexicographically-smallest claiming guild id (`shard(min(claiming guild ids),
+  N)`), computed from a single `scan_entity('BotAppClaim')` pass. `initialize()`
+  connects an app locally ONLY when `app_owner_ordinal == ordinal`; a
+  remote-owned app is skipped (never double-connected — R3.1/R3.2).
+- **Cross-replica play forwarding** (`playback_forwarding.py`, wired in
+  `__main__`): a `POST /v1/playback` for a guild owned by another replica is
+  forwarded ONCE to that replica's stable headless-Service pod DNS
+  (`playback-orchestrator-<owner>.playback-orchestrator.<ns>.svc.cluster.local`)
+  with a `X-HelloDJ-Forwarded: 1` hop guard (forward-at-most-once, no relay
+  loops); the owner's response is relayed verbatim. On transport error the
+  receiver returns a truthful "temporarily unavailable" body — NEVER a false
+  success and NEVER a local connect of the remote-owned app.
+- **CDK** (`workloads-stack.ts`): the `shardedStatefulSet` trait makes
+  `addComponent` render a **StatefulSet + headless Service (`clusterIP: None`)
+  and NO HPA** (fixed shard replicas; a rescale remaps the partition and is an
+  operator action), with `requiredDuringScheduling` pod anti-affinity
+  (`topologyKey: kubernetes.io/hostname`) for one-replica-per-node. The pod
+  carries no `gpuUnits` and no transcode toleration, so it never lands on the
+  `transcode-gpu` node. `HELLODJ_ORCHESTRATOR_REPLICAS` is injected as the shard
+  divisor.
+- **Multi-replica daemons.** The co-hosted token watchdog stays correct under N
+  replicas (its writes are optimistic-locked); an optional scan-shard is
+  deferred (negligible cost at current volume, and all-replicas-scan is more
+  robust to a down replica).
+- **Fleet sizing.** The app node group is `m7g.xlarge` (Graviton3/Neoverse-V1,
+  4 vCPU / 16 GiB — bumped from `m7g.large` in `DEFAULT_APP_INSTANCE_TYPES`) so
+  one orchestrator replica fits per node alongside lavalink + light sidecars,
+  and `ORCHESTRATOR_SHARD_REPLICAS` (3) matches the on-demand app floor.
 
 ### CPU→GPU render/transcode offload (10-minute warm window)
 
@@ -792,8 +889,8 @@ GPU scale-to-zero primitive.
   transcode workload the node scales to zero. While any transcode workload is
   active on the node, `WhenEmpty` does not fire (it only consolidates at zero
   transcode pods), so a busy GPU host is never reclaimed mid-work. GPU
-  autoscaling is orthogonal to the orchestrator's single-replica constraint — it
-  scales the `transcode-gpu` node, not the orchestrator.
+  autoscaling is orthogonal to the orchestrator's sharded StatefulSet — it
+  scales the `transcode-gpu` node, not the orchestrator replicas.
 
 ### GPU node image: EKS-optimized AL2023 accelerated AMI (self-join, updated 2026-08-29)
 

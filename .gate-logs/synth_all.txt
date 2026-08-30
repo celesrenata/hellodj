@@ -1,0 +1,29 @@
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+WARNING Ignoring Egress rule since 'allowAllOutbound' is set to true; To add customized rules, set allowAllOutbound=false on the SecurityGroup (Construct Annotations)
+   hellodj-network/FleetSecurityGroup
+   Acknowledge with 'Construct-Annotations::@aws-cdk/aws-ec2:ipv4IgnoreEgressRule'
+
+WARNING No cross-stack-reference strength configured, defaulting to "strong". We recommend you set feature flag "@aws-cdk/core:defaultCrossStackReferences" to "both", then deploy everywhere, then set it to "weak". Alternatively, set it to "strong" explicitly to lock in the current producer-protecting behavior. (See: https://github.com/aws/aws-cdk/blob/main/packages/aws-cdk-lib/README.md#reference-strength) (Construct Annotations)
+   hellodj-data
+   Acknowledge with 'Construct-Annotations::@aws-cdk/core:crossStackReferencesDefaultStrong'
+
+WARNING V1 pipeline type is implicitly selected when `pipelineType` is not set. If you want to use V2 type, set `PipelineType.V2`. (Construct Annotations)
+   hellodj-pipeline/pipeline
+   Acknowledge with 'Construct-Annotations::@aws-cdk/aws-codepipeline:unspecifiedPipelineType'
+Successfully synthesized to /home/celes/sources/celesrenata/hellodj-cdk/infra/cdk.out
+Supply a stack id (hellodj-network, hellodj-edge, hellodj-data, hellodj-auth, hellodj-eks, hellodj-observability, hellodj-analytics, hellodj-pipeline, hellodj-source) to display its template.
+75 feature flags are not configured. Run 'cdk flags --unstable=flags' to learn more.

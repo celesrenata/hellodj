@@ -1,0 +1,2 @@
+img drv: /nix/store/wnxwsv5qb90v05ap0k8b8n9ip2zfx0s3-hellodj-gpu-node.drv
+/nix/store/bkg0a918gq9g3f07d3n9vb2aliphcxhd-udev-rules.drv

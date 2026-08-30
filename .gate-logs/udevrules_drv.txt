@@ -1,0 +1,5 @@
+/nix/store/nabrv3llx9q1hg851gnry19rxinaxlv8-extra-udev-rules.drv
+/nix/store/2dpxh51jgr93j5rpcbrl708l2xqxqa5z-udev-rules.drv
+/nix/store/lz66x2px8y54xxfj0nqbqnhcmcs1vq9y-initrd-udev-rules.drv
+/nix/store/zyfmjalx0jbqj4z8y8f985iaw0rwfdhj-initrd-udev-rules.drv
+/nix/store/2wb6d2my3x8mfyqz33gc6vsq24riwp0f-initrd-udev-rules.drv

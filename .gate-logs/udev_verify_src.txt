@@ -1,0 +1,93 @@
+10-
+11-  cfg = config.services.udev;
+12-
+13:  initrdUdevRules = pkgs.runCommand "initrd-udev-rules" { } ''
+14-    mkdir -p $out/etc/udev/rules.d
+15-    for f in 60-cdrom_id 60-persistent-storage 75-net-description 80-drivers 80-net-setup-link; do
+16-      ln -s ${config.boot.initrd.systemd.package}/lib/udev/rules.d/$f.rules $out/etc/udev/rules.d
+17-    done
+18-  '';
+19-
+20-  extraUdevRules = pkgs.writeTextFile {
+21:    name = "extra-udev-rules";
+22-    text = cfg.extraRules;
+23-    destination = "/etc/udev/rules.d/99-local.rules";
+24-  };
+25-
+26-  extraHwdbFile = pkgs.writeTextFile {
+27-    name = "extra-hwdb-file";
+28-    text = cfg.extraHwdb;
+29-    destination = "/etc/udev/hwdb.d/99-local.hwdb";
+30-  };
+31-
+32-  nixosRules = ''
+33-    # Needed for gpm.
+34-    SUBSYSTEM=="input", KERNEL=="mice", TAG+="systemd"
+35-  '';
+36-
+--
+155-        fi
+156-
+157-        # Verify all the udev rules
+158:        echo "Verifying udev rules using udevadm verify..."
+159:        udevadm verify --resolve-names=late --no-style $out
+160-        echo "OK"
+161-
+162-        # If auto-configuration is disabled, then remove
+163-        # udev's 80-drivers.rules file, which contains rules for
+164-        # automatically calling modprobe.
+165-        ${lib.optionalString (!config.boot.hardwareScan) ''
+166-          ln -s /dev/null $out/80-drivers.rules
+167-        ''}
+168-      '';
+169-
+170-  hwdbBin =
+171-    pkgs.runCommand "hwdb.bin"
+172-      {
+173-        preferLocalBuild = true;
+174-        allowSubstitutes = false;
+--
+477-    # Generate the udev rules for the initrd
+478-    boot.initrd.systemd.contents = {
+479-      "/etc/udev/rules.d".source = udevRulesFor {
+480:        name = "initrd-udev-rules";
+481-        initrdBin = config.boot.initrd.systemd.contents."/bin".source;
+482-        udevPackages = config.boot.initrd.services.udev.packages;
+483-        udevPath = config.boot.initrd.systemd.contents."/bin".source;
+484-        udev = config.boot.initrd.systemd.package;
+485-        systemd = config.boot.initrd.systemd.package;
+486-        binPackages = config.boot.initrd.services.udev.binPackages ++ [
+487-          config.boot.initrd.systemd.contents."/bin".source
+488-        ];
+489-      };
+490-    };
+491-    # Insert initrd rules
+492-    boot.initrd.services.udev.packages = [
+493-      initrdUdevRules
+494-      (lib.mkIf (config.boot.initrd.services.udev.rules != "") (
+495-        pkgs.writeTextFile {
+496:          name = "initrd-udev-rules";
+497-          destination = "/etc/udev/rules.d/99-local.rules";
+498-          text = config.boot.initrd.services.udev.rules;
+499-        }
+500-      ))
+501-    ];
+502-
+503-    environment.etc = {
+504-      "udev/rules.d".source = udevRulesFor {
+505:        name = "udev-rules";
+506-        udevPackages = cfg.packages;
+507-        systemd = config.systemd.package;
+508-        binPackages = cfg.packages;
+509-        inherit udevPath udev;
+510-      };
+511-      "udev/hwdb.bin".source = hwdbBin;
+512-    }
+513-    // lib.optionalAttrs config.boot.modprobeConfig.enable {
+514-      # We don't place this into `extraModprobeConfig` so that stage-1 ramdisk doesn't bloat.
+515-      "modprobe.d/firmware.conf".text =
+516-        "options firmware_class path=${config.hardware.firmware}/lib/firmware";
+517-    };
+518-
+519-    system.requiredKernelConfig = with config.lib.kernelConfig; [
+520-      (isEnabled "UNIX")

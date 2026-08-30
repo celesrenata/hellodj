@@ -1,0 +1,17 @@
+NAME                                     READY   STATUS                  RESTARTS        AGE
+activity-backend-5dcbfbc8b8-dwcp6        1/1     Running                 0               3m13s
+activity-backend-5dcbfbc8b8-zwxtv        1/1     Running                 0               3m19s
+discord-bot-core-57659cf984-r67tp        0/1     CrashLoopBackOff        5 (88s ago)     4m32s
+hls-transcode-6b6d7c8786-ncc25           0/1     Pending                 0               3m8s
+hls-transcode-899847f8d-gml8g            0/1     Pending                 0               29m
+lavalink-5546c95bb4-pmkhd                0/1     Init:Error              5 (2m34s ago)   4m10s
+lavalink-f4bddd8f6-s4lms                 0/1     Init:ImagePullBackOff   0               34m
+playback-orchestrator-5bb6bf9b48-x9zz7   1/1     Running                 0               4m21s
+potoken-server-5649df5bb7-kndcz          1/1     Running                 0               3m30s
+spotify-stream-689b76cd97-wjk9f          0/1     Error                   5 (2m15s ago)   3m50s
+tidal-stream-5b78dcf4b6-4xxz4            1/1     Running                 0               4m
+voice-pipeline-6946dc4449-qwv8f          1/1     Running                 0               2m57s
+web-ui-56b75558d7-8xgkl                  1/1     Running                 0               2m47s
+web-ui-56b75558d7-hkwcc                  1/1     Running                 0               2m39s
+yt-cipher-795bc74784-jqzhs               0/1     ImagePullBackOff        0               31m
+yt-cipher-9b77595f8-l9tkh                0/1     CrashLoopBackOff        5 (46s ago)     3m39s

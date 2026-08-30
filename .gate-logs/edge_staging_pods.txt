@@ -1,0 +1,21 @@
+]633;E;{ echo "=== staging pods ==="\x3b KUBECONFIG=/tmp/hellodj-eks-kubeconfig kubectl get pods -n hellodj-staging -o wide 2>&1 | head -30\x3b echo\x3b echo "=== staging web-ui/ingress ==="\x3b KUBECONFIG=/tmp/hellodj-eks-kubeconfig kubectl get ingress -n hellodj-staging 2>&1\x3b } > .gate-logs/edge_staging_pods.txt 2>&1\x3b cat .gate-logs/edge_staging_pods.txt;c08a0620-fdad-4af0-ab48-237647219028]633;C=== staging pods ===
+NAME                                     READY   STATUS    RESTARTS   AGE   IP            NODE                          NOMINATED NODE   READINESS GATES
+activity-backend-5f84c6b57b-hd6m7        1/1     Running   0          51m   10.0.53.134   ip-10-0-61-145.ec2.internal   <none>           <none>
+activity-backend-5f84c6b57b-rnzg2        1/1     Running   0          51m   10.0.35.48    ip-10-0-44-148.ec2.internal   <none>           <none>
+discord-bot-core-79f56c85fc-njp6c        1/1     Running   0          56m   10.0.61.215   ip-10-0-61-145.ec2.internal   <none>           <none>
+hls-transcode-dbf6bb887-lsj66            0/1     Pending   0          50m   <none>        <none>                        <none>           <none>
+lavalink-9857b7c67-fvmcz                 0/1     Running   0          55m   10.0.47.212   ip-10-0-33-44.ec2.internal    <none>           <none>
+mcp-searxng-enhanced-7df6f4b659-ndhbr    0/1     Running   0          49m   10.0.30.89    ip-10-0-21-68.ec2.internal    <none>           <none>
+playback-orchestrator-54fc4578bf-mbpsd   1/1     Running   0          55m   10.0.42.5     ip-10-0-33-44.ec2.internal    <none>           <none>
+potoken-server-788bdc5d66-c2wdg          1/1     Running   0          52m   10.0.31.0     ip-10-0-21-68.ec2.internal    <none>           <none>
+searxng-69d98f8f46-rt49f                 1/1     Running   0          49m   10.0.58.28    ip-10-0-61-145.ec2.internal   <none>           <none>
+spotify-stream-8667f8fcdd-8ln8r          1/1     Running   0          53m   10.0.57.113   ip-10-0-61-145.ec2.internal   <none>           <none>
+tidal-stream-6ffb5944b6-fcq42            1/1     Running   0          54m   10.0.24.254   ip-10-0-21-68.ec2.internal    <none>           <none>
+voice-pipeline-5d54d69bdf-rxsm2          1/1     Running   0          50m   10.0.58.102   ip-10-0-58-36.ec2.internal    <none>           <none>
+web-ui-74ff9c9f7f-nv2fk                  1/1     Running   0          48m   10.0.38.102   ip-10-0-44-148.ec2.internal   <none>           <none>
+web-ui-74ff9c9f7f-rmp4k                  1/1     Running   0          48m   10.0.49.171   ip-10-0-58-36.ec2.internal    <none>           <none>
+yt-cipher-f47f57cf9-b5skn                1/1     Running   0          52m   10.0.30.46    ip-10-0-21-68.ec2.internal    <none>           <none>
+
+=== staging web-ui/ingress ===
+NAME      CLASS    HOSTS                           ADDRESS                                                         PORTS   AGE
+hellodj   <none>   staging.us-east-1.hellodj.bot   k8s-hellodj-15947bf6df-2128421402.us-east-1.elb.amazonaws.com   80      48m

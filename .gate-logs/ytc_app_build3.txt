@@ -1,0 +1,5 @@
+warning: Git tree '/home/celes/sources/celesrenata/hellodj' is dirty
+this derivation will be built:
+  /nix/store/r26559qaylq96n506gbbc4sw8jhx5hbi-yt-cipher-0-unstable-2026-08-24.drv
+building '/nix/store/r26559qaylq96n506gbbc4sw8jhx5hbi-yt-cipher-0-unstable-2026-08-24.drv'...
+/nix/store/fw6gnz7d5sd44gq9fa9f9w3b0hnpskpa-yt-cipher-0-unstable-2026-08-24

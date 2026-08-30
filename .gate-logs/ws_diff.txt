@@ -1,0 +1,20 @@
+diff --git a/infra/lib/workloads-stack.ts b/infra/lib/workloads-stack.ts
+index f07f31b..2fd330d 100644
+--- a/infra/lib/workloads-stack.ts
++++ b/infra/lib/workloads-stack.ts
+@@ -2075,8 +2075,14 @@ export class WorkloadsStack extends cdk.Stack {
+       });
+     }
+     if (deps.discordBotToken) {
++      // discord-bot-core's `BotConfig.from_env` REQUIRES
++      // `HELLODJ_DISCORD_TOKEN_SECRET_ID` (the Secrets Manager id/ARN it fetches
++      // the bot token from via `get_secret_value(SecretId=...)`); without it the
++      // component exits with "HELLODJ_DISCORD_TOKEN_SECRET_ID is required".
++      // The ARN is a valid SecretId. The older `HELLODJ_DISCORD_BOT_TOKEN_SECRET_ARN`
++      // name is not read by any component, so set the name the app actually reads.
+       env.push({
+-        name: 'HELLODJ_DISCORD_BOT_TOKEN_SECRET_ARN',
++        name: 'HELLODJ_DISCORD_TOKEN_SECRET_ID',
+         value: this.secrets.discordBotToken.secretArn,
+       });
+     }

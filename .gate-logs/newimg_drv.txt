@@ -1,0 +1,3 @@
+warning: Git tree '/home/celes/sources/celesrenata/hellodj-cdk' is dirty
+building '/nix/store/1rzl72ny4fnc31h27j1mbl2yknrq95pq-udev-module-verify-nonfatal.drv'...
+/nix/store/wnxwsv5qb90v05ap0k8b8n9ip2zfx0s3-hellodj-gpu-node.drv

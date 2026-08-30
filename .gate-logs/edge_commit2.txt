@@ -1,0 +1,3 @@
+[main 3b52afa] workloads: drop per-stage hostless catch-all 404 (shadowed other stages on shared ALB)
+ 2 files changed, 46 insertions(+), 52 deletions(-)
+commit_exit=0

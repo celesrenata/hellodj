@@ -1,0 +1,147 @@
+[
+    {
+        "Name": "beta.us-east-1.hellodj.bot.",
+        "Type": "A",
+        "Alias": "d2djykl4pnpkyi.cloudfront.net.",
+        "TTL": null,
+        "Records": null
+    },
+    {
+        "Name": "_a0b55c86eb4d1e7973a94d09139ad21d.beta.us-east-1.hellodj.bot.",
+        "Type": "CNAME",
+        "Alias": null,
+        "TTL": 300,
+        "Records": [
+            "_23a71d2e733affe287135439262e76b5.jkddzztszm.acm-validations.aws."
+        ]
+    },
+    {
+        "Name": "4nr4fdkmde2megvb7tlm2obv7z75lq2r._domainkey.beta.us-east-1.hellodj.bot.",
+        "Type": "CNAME",
+        "Alias": null,
+        "TTL": 1800,
+        "Records": [
+            "4nr4fdkmde2megvb7tlm2obv7z75lq2r.dkim.amazonses.com"
+        ]
+    },
+    {
+        "Name": "kzvsn2avuclxtdv4xxkj5n76rtzkuiqo._domainkey.beta.us-east-1.hellodj.bot.",
+        "Type": "CNAME",
+        "Alias": null,
+        "TTL": 1800,
+        "Records": [
+            "kzvsn2avuclxtdv4xxkj5n76rtzkuiqo.dkim.amazonses.com"
+        ]
+    },
+    {
+        "Name": "lxkz7u4htp7y55otebd75ddwjtqr3bag._domainkey.beta.us-east-1.hellodj.bot.",
+        "Type": "CNAME",
+        "Alias": null,
+        "TTL": 1800,
+        "Records": [
+            "lxkz7u4htp7y55otebd75ddwjtqr3bag.dkim.amazonses.com"
+        ]
+    },
+    {
+        "Name": "cname-origin.beta.us-east-1.hellodj.bot.",
+        "Type": "TXT",
+        "Alias": null,
+        "TTL": 300,
+        "Records": [
+            "\"heritage=external-dns,external-dns/owner=hellodj,external-dns/resource=ingress/hellodj-beta/hellodj\""
+        ]
+    },
+    {
+        "Name": "origin.beta.us-east-1.hellodj.bot.",
+        "Type": "A",
+        "Alias": "k8s-hellodj-15947bf6df-2128421402.us-east-1.elb.amazonaws.com.",
+        "TTL": null,
+        "Records": null
+    },
+    {
+        "Name": "origin.beta.us-east-1.hellodj.bot.",
+        "Type": "TXT",
+        "Alias": null,
+        "TTL": 300,
+        "Records": [
+            "\"heritage=external-dns,external-dns/owner=hellodj,external-dns/resource=ingress/hellodj-beta/hellodj\""
+        ]
+    },
+    {
+        "Name": "cname-staging.us-east-1.hellodj.bot.",
+        "Type": "TXT",
+        "Alias": null,
+        "TTL": 300,
+        "Records": [
+            "\"heritage=external-dns,external-dns/owner=hellodj,external-dns/resource=ingress/hellodj-staging/hellodj\""
+        ]
+    },
+    {
+        "Name": "staging.us-east-1.hellodj.bot.",
+        "Type": "A",
+        "Alias": "k8s-hellodj-15947bf6df-2128421402.us-east-1.elb.amazonaws.com.",
+        "TTL": null,
+        "Records": null
+    },
+    {
+        "Name": "staging.us-east-1.hellodj.bot.",
+        "Type": "TXT",
+        "Alias": null,
+        "TTL": 300,
+        "Records": [
+            "\"heritage=external-dns,external-dns/owner=hellodj,external-dns/resource=ingress/hellodj-staging/hellodj\""
+        ]
+    },
+    {
+        "Name": "5nvnqq45dhxa3bz5i43gpy2oy2tlchy5._domainkey.staging.us-east-1.hellodj.bot.",
+        "Type": "CNAME",
+        "Alias": null,
+        "TTL": 1800,
+        "Records": [
+            "5nvnqq45dhxa3bz5i43gpy2oy2tlchy5.dkim.amazonses.com"
+        ]
+    },
+    {
+        "Name": "ae2oqwnryrl5p64uya2sgmef6c4pkau2._domainkey.staging.us-east-1.hellodj.bot.",
+        "Type": "CNAME",
+        "Alias": null,
+        "TTL": 1800,
+        "Records": [
+            "ae2oqwnryrl5p64uya2sgmef6c4pkau2.dkim.amazonses.com"
+        ]
+    },
+    {
+        "Name": "jttq5qux6kfhsnqtukqzvipzqvoy6qnr._domainkey.staging.us-east-1.hellodj.bot.",
+        "Type": "CNAME",
+        "Alias": null,
+        "TTL": 1800,
+        "Records": [
+            "jttq5qux6kfhsnqtukqzvipzqvoy6qnr.dkim.amazonses.com"
+        ]
+    },
+    {
+        "Name": "cname-origin.staging.us-east-1.hellodj.bot.",
+        "Type": "TXT",
+        "Alias": null,
+        "TTL": 300,
+        "Records": [
+            "\"heritage=external-dns,external-dns/owner=hellodj,external-dns/resource=ingress/hellodj-staging/hellodj\""
+        ]
+    },
+    {
+        "Name": "origin.staging.us-east-1.hellodj.bot.",
+        "Type": "A",
+        "Alias": "k8s-hellodj-15947bf6df-2128421402.us-east-1.elb.amazonaws.com.",
+        "TTL": null,
+        "Records": null
+    },
+    {
+        "Name": "origin.staging.us-east-1.hellodj.bot.",
+        "Type": "TXT",
+        "Alias": null,
+        "TTL": 300,
+        "Records": [
+            "\"heritage=external-dns,external-dns/owner=hellodj,external-dns/resource=ingress/hellodj-staging/hellodj\""
+        ]
+    }
+]

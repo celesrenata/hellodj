@@ -1,0 +1,16 @@
+{
+  "Comment": "Delete the orphaned external-dns ownership TXT for the staging apex. external-dns is now annotation-only (manages only origin.staging.*), so it will not recreate this; removing it clears the false ownership claim on the CloudFront-owned apex A record.",
+  "Changes": [
+    {
+      "Action": "DELETE",
+      "ResourceRecordSet": {
+        "Name": "staging.us-east-1.hellodj.bot.",
+        "Type": "TXT",
+        "TTL": 300,
+        "ResourceRecords": [
+          { "Value": "\"heritage=external-dns,external-dns/owner=hellodj,external-dns/resource=ingress/hellodj-staging/hellodj\"" }
+        ]
+      }
+    }
+  ]
+}

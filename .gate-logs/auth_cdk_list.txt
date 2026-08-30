@@ -1,0 +1,32 @@
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+hellodj-network
+hellodj-edge
+hellodj-edge-staging
+hellodj-edge-production
+hellodj-data
+hellodj-auth
+hellodj-auth-staging
+hellodj-auth-production
+hellodj-eks
+hellodj-observability
+hellodj-analytics
+hellodj-pipeline
+hellodj-source
+hellodj-pipeline/hellodj-beta-stage/hellodj-workloads-beta (hellodj-beta-stage-hellodj-workloads-beta)
+hellodj-pipeline/hellodj-staging-stage/hellodj-workloads-staging (hellodj-staging-stage-hellodj-workloads-staging)
+hellodj-pipeline/hellodj-production-stage/hellodj-workloads-production (hellodj-production-stage-hellodj-workloads-production)
+list_exit=0

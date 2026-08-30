@@ -1,0 +1,8 @@
+Checking that all programs called by relative paths in udev rules exist in /nix/store/pyrvwmigi6qdpz9lbbslj5771pfl7r69-systemd-261.1/lib/udev... OK
+Checking that all programs called by absolute paths in udev rules exist... OK
+Verifying udev rules using udevadm verify...
+
+10 udev rules files have been checked.
+  Success: 10
+  Fail:    0
+OK

@@ -1,0 +1,16 @@
+]633;E;{ echo "=== staging /healthz ==="\x3b curl -sS --max-time 20 -D - -o /dev/null "https://staging.us-east-1.hellodj.bot/healthz"\x3b echo "exit=$?"\x3b echo\x3b echo "=== staging /login ==="\x3b curl -sS --max-time 20 -o /dev/null -w "http=%{http_code} server=%header{server} via=%header{via}\\n" "https://staging.us-east-1.hellodj.bot/login"\x3b echo "exit=$?"\x3b } > .gate-logs/edge_staging_final.txt 2>&1\x3b cat .gate-logs/edge_staging_final.txt;c08a0620-fdad-4af0-ab48-237647219028]633;C=== staging /healthz ===
+HTTP/2 404 
+content-type: text/plain; charset=utf-8
+content-length: 16
+server: awselb/2.0
+date: Sat, 29 Aug 2026 23:12:34 GMT
+x-cache: Error from cloudfront
+via: 1.1 10bfbac2daf99d585c60cd6a21af0e12.cloudfront.net (CloudFront)
+x-amz-cf-pop: SEA900-P13
+x-amz-cf-id: 0as8aWvB5lQfUDbO1CcZgJQ4x7D4DMrsHBtjtd53GMAkRq6_TZLeLw==
+
+exit=0
+
+=== staging /login ===
+http=404 server=awselb/2.0 via=1.1 ad706511f57beed6a99f38e9d4eb8a2c.cloudfront.net (CloudFront)
+exit=0

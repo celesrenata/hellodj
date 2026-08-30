@@ -1,0 +1,17 @@
+[
+    {
+        "stage": "hellodj-beta-stage",
+        "status": "Succeeded",
+        "exec": "f63ffc81-ba32-4ef7-b6f7-3cde34104ed5"
+    },
+    {
+        "stage": "hellodj-staging-stage",
+        "status": "Succeeded",
+        "exec": "f63ffc81-ba32-4ef7-b6f7-3cde34104ed5"
+    },
+    {
+        "stage": "hellodj-production-stage",
+        "status": "InProgress",
+        "exec": "b755cad4-e314-4fbf-8a69-cc7e69ce1e12"
+    }
+]

@@ -1,0 +1,204 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="view-transition" content="same-origin">
+  <title>Dashboard · HelloDJ</title>
+
+  <link rel="stylesheet" href="/static/css/app.css?v=d8e6e39b">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+
+  <!-- HTMX + Alpine.js (served locally in prod; see static/js). -->
+  <script defer src="/static/js/htmx.min.js?v=19a57377"></script>
+  <script defer src="/static/js/alpine.min.js?v=e42d440f"></script>
+  <script defer src="/static/js/app.js?v=e20ea1b3"></script>
+</head>
+<body class="bg-surface-0 text-text-secondary">
+  <canvas id="bg-shader" class="fixed inset-0 -z-10 w-full h-full pointer-events-none" aria-hidden="true"></canvas>
+
+  <div class="app-shell"
+       x-data="{
+         collapsed: false,
+         path: window.location.pathname,
+         navHrefs: ['/', '/admin', '/admin/entitlements'],
+         matches(href) {
+           if (href === '/') return this.path === '/';
+           return this.path === href || this.path.startsWith(href + '/');
+         },
+         isActive(href) {
+           if (!this.matches(href)) return false;
+           // When multiple nav hrefs match by prefix (e.g. /admin and
+           // /admin/entitlements), only the most specific (longest) one is
+           // active so a sibling page does not also highlight its path-prefix.
+           const best = this.navHrefs
+             .filter(h => this.matches(h))
+             .reduce((a, b) => (b.length > a.length ? b : a), href);
+           return href === best;
+         }
+       }"
+       @htmx:push-url.window="path = window.location.pathname"
+       @htmx:after-settle.window="path = window.location.pathname"
+       @popstate.window="path = window.location.pathname">
+    <aside class="sidebar glass-panel" :class="collapsed && 'sidebar--collapsed'" aria-label="Primary">
+      <div class="sidebar__brand">
+        <span class="sidebar__logo" aria-hidden="true">◆</span>
+        <span class="sidebar__title" x-show="!collapsed">HelloDJ</span>
+        <button type="button" class="sidebar__toggle" @click="collapsed = !collapsed"
+                aria-label="Toggle navigation">☰</button>
+      </div>
+
+      <nav class="sidebar__nav">
+        
+          <a class="nav-item"
+             href="/"
+             hx-get="/"
+             hx-target="#main-content" hx-push-url="true"
+             :class="isActive('/') && 'active'"
+             :aria-current="isActive('/') ? 'page' : null">
+            <span class="nav-item__icon" aria-hidden="true">●</span>
+            <span class="nav-item__label" x-show="!collapsed">Dashboard</span>
+          </a>
+        
+          <a class="nav-item"
+             href="/admin"
+             hx-get="/admin"
+             hx-target="#main-content" hx-push-url="true"
+             :class="isActive('/admin') && 'active'"
+             :aria-current="isActive('/admin') ? 'page' : null">
+            <span class="nav-item__icon" aria-hidden="true">●</span>
+            <span class="nav-item__label" x-show="!collapsed">Admin</span>
+          </a>
+        
+          <a class="nav-item"
+             href="/admin/entitlements"
+             hx-get="/admin/entitlements"
+             hx-target="#main-content" hx-push-url="true"
+             :class="isActive('/admin/entitlements') && 'active'"
+             :aria-current="isActive('/admin/entitlements') ? 'page' : null">
+            <span class="nav-item__icon" aria-hidden="true">●</span>
+            <span class="nav-item__label" x-show="!collapsed">Entitlements</span>
+          </a>
+        
+      </nav>
+
+      <div class="sidebar__footer">
+        <form action="/auth/logout" method="post">
+          <button type="submit" class="nav-item nav-item--button">
+            <span class="nav-item__icon" aria-hidden="true">⏻</span>
+            <span class="nav-item__label" x-show="!collapsed">Logout</span>
+          </button>
+        </form>
+        <div class="sidebar__owner" x-show="!collapsed">
+          
+<p class="owner-attribution" aria-label="Project owner">
+  <span class="owner-attribution__label">Owned &amp; operated by</span>
+  <span class="owner-attribution__name" translate="no">dr&#101;yll&#105;H s&#101;l&#101;C</span>
+</p>
+        </div>
+      </div>
+    </aside>
+
+    <main class="content" role="main">
+      <header class="content__header">
+        <h1 class="content__title" id="content-title">Dashboard</h1>
+      </header>
+      <section id="main-content" class="content__body">
+        
+<div class="dashboard-grid">
+  
+    
+<div class="glass-panel stat-card">
+  <div class="stat-card__icon" aria-hidden="true">
+    <span class="stat-card__glyph">♪</span>
+  </div>
+  <div class="stat-card__body">
+    <p class="stat-card__label">Total Users</p>
+    <p class="stat-card__value">1</p>
+  </div>
+</div>
+
+  
+    
+<div class="glass-panel stat-card">
+  <div class="stat-card__icon" aria-hidden="true">
+    <span class="stat-card__glyph">♪</span>
+  </div>
+  <div class="stat-card__body">
+    <p class="stat-card__label">Administrators</p>
+    <p class="stat-card__value">1</p>
+  </div>
+</div>
+
+  
+    
+<div class="glass-panel stat-card">
+  <div class="stat-card__icon" aria-hidden="true">
+    <span class="stat-card__glyph">♪</span>
+  </div>
+  <div class="stat-card__body">
+    <p class="stat-card__label">Disabled Accounts</p>
+    <p class="stat-card__value">0</p>
+  </div>
+</div>
+
+  
+    
+<div class="glass-panel stat-card">
+  <div class="stat-card__icon" aria-hidden="true">
+    <span class="stat-card__glyph">♪</span>
+  </div>
+  <div class="stat-card__body">
+    <p class="stat-card__label">Pending Invites</p>
+    <p class="stat-card__value">0</p>
+  </div>
+</div>
+
+  
+    
+<div class="glass-panel stat-card">
+  <div class="stat-card__icon" aria-hidden="true">
+    <span class="stat-card__glyph">♪</span>
+  </div>
+  <div class="stat-card__body">
+    <p class="stat-card__label">Guilds</p>
+    <p class="stat-card__value">1</p>
+  </div>
+</div>
+
+  
+    
+<div class="glass-panel stat-card">
+  <div class="stat-card__icon" aria-hidden="true">
+    <span class="stat-card__glyph">♪</span>
+  </div>
+  <div class="stat-card__body">
+    <p class="stat-card__label">Connected Sources</p>
+    <p class="stat-card__value">0</p>
+  </div>
+</div>
+
+  
+</div>
+
+<div class="glass-panel panel-section">
+  <h2 class="panel-section__title">Service Overview</h2>
+  <p class="panel-section__muted">
+    At-a-glance platform metrics. Manage accounts from the
+    <a href="/admin"
+       hx-get="/admin" hx-target="#main-content"
+       hx-push-url="true">Admin</a>
+    panel and per-user limits from
+    <a href="/admin/entitlements"
+       hx-get="/admin/entitlements"
+       hx-target="#main-content" hx-push-url="true">Entitlements</a>.
+  </p>
+</div>
+
+      </section>
+    </main>
+  </div>
+
+  <div id="toast-container" class="toast-container" aria-live="polite"></div>
+</body>
+</html>

@@ -1,2 +1,0 @@
-librespot>=0.0.10
-aiohttp>=3.9.0

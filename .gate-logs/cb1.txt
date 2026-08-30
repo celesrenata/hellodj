@@ -1,0 +1,59 @@
+[
+    {
+        "status": "InProgress",
+        "actions": [
+            {
+                "name": "build-activity-backend",
+                "status": "Succeeded"
+            },
+            {
+                "name": "build-config-renderer",
+                "status": "Succeeded"
+            },
+            {
+                "name": "build-discord-bot-core",
+                "status": "InProgress"
+            },
+            {
+                "name": "build-gpu-ami",
+                "status": "Failed"
+            },
+            {
+                "name": "build-hls-transcode",
+                "status": "InProgress"
+            },
+            {
+                "name": "build-lavalink",
+                "status": "Succeeded"
+            },
+            {
+                "name": "build-playback-orchestrator",
+                "status": "Succeeded"
+            },
+            {
+                "name": "build-potoken-server",
+                "status": "Succeeded"
+            },
+            {
+                "name": "build-spotify-stream",
+                "status": "Succeeded"
+            },
+            {
+                "name": "build-tidal-stream",
+                "status": "Succeeded"
+            },
+            {
+                "name": "build-voice-pipeline",
+                "status": "InProgress"
+            },
+            {
+                "name": "build-web-ui",
+                "status": "Succeeded"
+            },
+            {
+                "name": "build-yt-cipher",
+                "status": "Succeeded"
+            }
+        ]
+    }
+]

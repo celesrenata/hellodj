@@ -1,0 +1,75 @@
+170:  hwdbBin =
+171:    pkgs.runCommand "hwdb.bin"
+172-      {
+173-        preferLocalBuild = true;
+174-        allowSubstitutes = false;
+175-        packages = lib.unique (map toString ([ udev ] ++ cfg.packages));
+176-      }
+177-      ''
+178-        mkdir -p etc/udev/hwdb.d
+179-        for i in $packages; do
+180-          echo "Adding hwdb files for package $i"
+181-          for j in $i/{etc,lib}/udev/hwdb.d/*; do
+182-            # This must be a copy, not a symlink, because --root below will chase links within the root argument.
+183-            cp $j etc/udev/hwdb.d/$(basename $j)
+184-          done
+185-        done
+186-
+187:        echo "Generating hwdb database..."
+188-        # hwdb --update doesn't return error code even on errors!
+189:        res="$(${pkgs.buildPackages.systemd}/bin/systemd-hwdb --root=$(pwd) update 2>&1)"
+190-        echo "$res"
+191-        [ -z "$(echo "$res" | egrep '^Error')" ]
+192:        mv etc/udev/hwdb.bin $out
+193-      '';
+194-
+195-  compressFirmware =
+196-    firmware:
+197-    if
+198-      config.hardware.firmwareCompression == "none" || (firmware.compressFirmware or true) == false
+199-    then
+200-      firmware
+201-    else if config.hardware.firmwareCompression == "zstd" then
+202-      pkgs.compressFirmwareZstd firmware
+203-    else
+204-      pkgs.compressFirmwareXz firmware;
+205-
+206-  # Udev has a 512-character limit for ENV{PATH}, so create a symlink
+207-  # tree to work around this.
+208-  udevPath = pkgs.buildEnv {
+209-    name = "udev-path";
+210-    paths = cfg.path;
+211-    pathsToLink = [
+212-      "/bin"
+213-      "/sbin"
+214-    ];
+215-    ignoreCollisions = true;
+216-  };
+217-
+--
+511:      "udev/hwdb.bin".source = hwdbBin;
+512-    }
+513-    // lib.optionalAttrs config.boot.modprobeConfig.enable {
+514-      # We don't place this into `extraModprobeConfig` so that stage-1 ramdisk doesn't bloat.
+515-      "modprobe.d/firmware.conf".text =
+516-        "options firmware_class path=${config.hardware.firmware}/lib/firmware";
+517-    };
+518-
+519-    system.requiredKernelConfig = with config.lib.kernelConfig; [
+520-      (isEnabled "UNIX")
+521-      (isYes "INOTIFY_USER")
+522-      (isYes "NET")
+523-    ];
+524-
+525-    system.activationScripts.udevd = lib.mkIf config.boot.kernel.enable ''
+526-      # The deprecated hotplug uevent helper is not used anymore
+527-      if [ -e /proc/sys/kernel/hotplug ]; then
+528-        echo "" > /proc/sys/kernel/hotplug
+529-      fi
+530-
+531-      # Allow the kernel to find our firmware.
+532-      if [ -e /sys/module/firmware_class/parameters/path ]; then
+533-        echo -n "${config.hardware.firmware}/lib/firmware" > /sys/module/firmware_class/parameters/path
+534-      fi
+535-    '';
+536-

@@ -1,0 +1,2 @@
+test/pipeline-stack.test.ts(699,7): error TS2353: Object literal may only specify known properties, and 'cognitoClientIdByStage' does not exist in type 'FoundationRefs'.
+tsc_exit=2

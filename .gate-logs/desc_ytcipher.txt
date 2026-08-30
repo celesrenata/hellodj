@@ -1,0 +1,83 @@
+Name:             yt-cipher-7fdfdd9787-g2j99
+Namespace:        hellodj-beta
+Priority:         0
+Service Account:  hellodj-yt-cipher
+Node:             ip-10-0-61-145.ec2.internal/10.0.61.145
+Start Time:       Fri, 28 Aug 2026 22:29:35 -0700
+Labels:           app.kubernetes.io/name=yt-cipher
+                  app.kubernetes.io/part-of=hellodj
+                  hellodj.bot/stage=beta
+                  pod-template-hash=7fdfdd9787
+                  topology.kubernetes.io/region=us-east-1
+                  topology.kubernetes.io/zone=us-east-1c
+Annotations:      <none>
+Status:           Running
+IP:               10.0.57.67
+IPs:
+  IP:           10.0.57.67
+Controlled By:  ReplicaSet/yt-cipher-7fdfdd9787
+Containers:
+  yt-cipher:
+    Container ID:   containerd://0663ea60ac69d67e26cd55d8da40aed53dc89515ffec1ff32223c6383537b2ea
+    Image:          874927898283.dkr.ecr.us-east-1.amazonaws.com/hellodj/yt-cipher:d8a53a84a61c63d4a654c58ac8008d1f29d872d4
+    Image ID:       874927898283.dkr.ecr.us-east-1.amazonaws.com/hellodj/yt-cipher@sha256:ad0c074c18adfa6e3ecd3b9b20975e2596668daf69a58ef2c1d1b06905e41b75
+    Port:           8001/TCP (http)
+    Host Port:      0/TCP (http)
+    State:          Terminated
+      Reason:       Completed
+      Exit Code:    0
+      Started:      Sat, 29 Aug 2026 01:04:00 -0700
+      Finished:     Sat, 29 Aug 2026 01:04:00 -0700
+    Last State:     Terminated
+      Reason:       Completed
+      Exit Code:    0
+      Started:      Sat, 29 Aug 2026 00:58:57 -0700
+      Finished:     Sat, 29 Aug 2026 00:58:57 -0700
+    Ready:          False
+    Restart Count:  35
+    Limits:
+      cpu:     500m
+      memory:  512Mi
+    Requests:
+      cpu:     100m
+      memory:  256Mi
+    Environment:
+      HELLODJ_STAGE:                 beta
+      HELLODJ_NAMESPACE:             hellodj-beta
+      HELLODJ_STAGE_HOSTNAME:        beta.us-east-1.hellodj.bot
+      AWS_REGION:                    us-east-1
+      LOG_LEVEL:                     DEBUG
+      HELLODJ_DEBUG:                 true
+      HELLODJ_YT_CIPHER_SECRET_ARN:  arn:aws:secretsmanager:us-east-1:874927898283:secret:hellodj/beta/yt-cipher-secret-GCUdVy
+      AWS_STS_REGIONAL_ENDPOINTS:    regional
+      AWS_ROLE_ARN:                  arn:aws:iam::874927898283:role/hellodj-eks-ClusterbetaSaytcipherRole8519D09E-Jp5A82PspG9C
+      AWS_WEB_IDENTITY_TOKEN_FILE:   /var/run/secrets/eks.amazonaws.com/serviceaccount/token
+    Mounts:
+      /var/run/secrets/eks.amazonaws.com/serviceaccount from aws-iam-token (ro)
+      /var/run/secrets/kubernetes.io/serviceaccount from kube-api-access-f695q (ro)
+Conditions:
+  Type                        Status
+  PodReadyToStartContainers   True 
+  Initialized                 True 
+  Ready                       False 
+  ContainersReady             False 
+  PodScheduled                True 
+Volumes:
+  aws-iam-token:
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  86400
+  kube-api-access-f695q:
+    Type:                    Projected (a volume that contains injected data from multiple sources)
+    TokenExpirationSeconds:  3607
+    ConfigMapName:           kube-root-ca.crt
+    Optional:                false
+    DownwardAPI:             true
+QoS Class:                   Burstable
+Node-Selectors:              workload=app
+Tolerations:                 node.kubernetes.io/not-ready:NoExecute op=Exists for 300s
+                             node.kubernetes.io/unreachable:NoExecute op=Exists for 300s
+Events:
+  Type     Reason   Age                     From     Message
+  ----     ------   ----                    ----     -------
+  Warning  BackOff  4m17s (x134 over 154m)  kubelet  spec.containers{yt-cipher}: Back-off restarting failed container yt-cipher in pod yt-cipher-7fdfdd9787-g2j99_hellodj-beta(04ab1762-0980-442a-bbaa-d8ea49941a9c)
+  Normal   Pulling  17s (x36 over 154m)     kubelet  spec.containers{yt-cipher}: Pulling image "874927898283.dkr.ecr.us-east-1.amazonaws.com/hellodj/yt-cipher:d8a53a84a61c63d4a654c58ac8008d1f29d872d4"

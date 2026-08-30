@@ -1,0 +1,17 @@
+test file: party/fluent-animated-birthday-cake-animated.webp
+HTTP/2 200 
+content-type: image/webp
+content-length: 198042
+date: Sun, 30 Aug 2026 01:44:13 GMT
+last-modified: Sun, 30 Aug 2026 01:43:39 GMT
+etag: "4027d822c454501a08dd92a60a04a79a"
+x-amz-server-side-encryption: AES256
+cache-control: public, max-age=31536000, immutable
+accept-ranges: bytes
+server: AmazonS3
+x-cache: Miss from cloudfront
+via: 1.1 70bc8c513fe6574269b01e47be267a78.cloudfront.net (CloudFront)
+x-amz-cf-pop: SEA900-P3
+x-amz-cf-id: idRMh-T-pKnRsXmQqboqqTz6iCBlZWb43DE8HiFIktmvRBlwkzv-QA==
+
+http=200 ct=image/webp cache=public, max-age=31536000, immutable xcache=Miss from cloudfront

@@ -1,6 +1,6 @@
 """Tests for HLS Visualizer Pipeline — start_visualizer(), _build_visualizer_ffmpeg_args(), write_frame().
 
-Validates the raw RGBA frame → QSV h264_qsv → HLS segment pipeline used by
+Validates the raw RGBA frame → NVENC h264_nvenc → HLS segment pipeline used by
 GPU visualizer engines to deliver real-time HLS streams to Activity viewers.
 
 Requirements: Req 3 (AC 1-5), Req 13 (AC 1-5)
@@ -127,29 +127,24 @@ class TestBuildVisualizerFfmpegArgs:
         fr_idx = args.index("-framerate")
         assert args[fr_idx + 1] == "60"
 
-    def test_qsv_hardware_device_init(self, pipeline):
-        """QSV hardware device is initialized for encode."""
+    def test_no_qsv_hardware_device(self, pipeline):
+        """No QSV/VA-API hardware device init — h264_nvenc uploads internally."""
         args = pipeline._build_visualizer_ffmpeg_args()
+        assert "-init_hw_device" not in args
+        assert "-filter_hw_device" not in args
+        assert "qsv" not in " ".join(args)
 
-        assert "-init_hw_device" in args
-        hw_idx = args.index("-init_hw_device")
-        assert args[hw_idx + 1] == "qsv=qsv:hw"
-
-        assert "-filter_hw_device" in args
-        fhw_idx = args.index("-filter_hw_device")
-        assert args[fhw_idx + 1] == "qsv"
-
-    def test_nv12_hwupload_filter(self, pipeline):
-        """Filter converts RGBA → NV12 and uploads to QSV surface."""
+    def test_yuv420p_filter(self, pipeline):
+        """Filter converts RGBA → yuv420p (h264_nvenc uploads to GPU itself)."""
         args = pipeline._build_visualizer_ffmpeg_args()
         vf_idx = args.index("-vf")
-        assert args[vf_idx + 1] == "format=nv12,hwupload=extra_hw_frames=64"
+        assert args[vf_idx + 1] == "format=yuv420p"
 
-    def test_h264_qsv_encoder(self, pipeline):
-        """Uses h264_qsv encoder."""
+    def test_h264_nvenc_encoder(self, pipeline):
+        """Uses h264_nvenc encoder."""
         args = pipeline._build_visualizer_ffmpeg_args()
         cv_idx = args.index("-c:v")
-        assert args[cv_idx + 1] == "h264_qsv"
+        assert args[cv_idx + 1] == "h264_nvenc"
 
     def test_main_profile(self, pipeline):
         """Uses H.264 high profile for quality."""
@@ -157,19 +152,18 @@ class TestBuildVisualizerFfmpegArgs:
         pv_idx = args.index("-profile:v")
         assert args[pv_idx + 1] == "high"
 
-    def test_fast_preset(self, pipeline):
-        """Uses veryslow preset for better compression efficiency."""
+    def test_hq_preset(self, pipeline):
+        """Uses the p6 NVENC preset for high-quality compression."""
         args = pipeline._build_visualizer_ffmpeg_args()
         p_idx = args.index("-preset")
-        assert args[p_idx + 1] == "veryslow"
+        assert args[p_idx + 1] == "p6"
 
-    def test_bitrate_2500k_constrained_vbr(self, pipeline):
-        """Uses ICQ mode with global_quality 20, maxrate 6000k, and bufsize 10000k."""
+    def test_bitrate_constrained_vbr(self, pipeline):
+        """Uses VBR with cq 20, maxrate 6000k, and bufsize 10000k."""
         args = pipeline._build_visualizer_ffmpeg_args()
 
-        # ICQ mode uses -global_quality instead of -b:v
-        gq_idx = args.index("-global_quality")
-        assert args[gq_idx + 1] == "20"
+        cq_idx = args.index("-cq")
+        assert args[cq_idx + 1] == "20"
 
         mr_idx = args.index("-maxrate")
         assert args[mr_idx + 1] == "6000k"

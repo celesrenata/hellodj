@@ -1,0 +1,6 @@
+?? .kiro/
+---remotes---
+codecommit	https://git-codecommit.us-east-1.amazonaws.com/v1/repos/hellodj-cdk (fetch)
+codecommit	https://git-codecommit.us-east-1.amazonaws.com/v1/repos/hellodj-cdk (push)
+---branch---
+main

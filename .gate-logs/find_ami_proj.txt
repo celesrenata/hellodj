@@ -1,0 +1,5 @@
+]633;E;for p in pipelinePipelineComponentBu-Ns1nCyndHGBA pipelinePipelineComponentBu-YeuvBpMlA93I pipelinePipelineComponentBu-Q2MN4B4jsFF7 pipelinePipelineComponentBu-Zfow3LIaxcts\x3b do echo "=== $p ==="\x3b AWS_PROFILE=hellodj aws codebuild batch-get-projects --names $p --region us-east-1 --query 'projects[0].source.buildspec' --output text 2>/dev/null | grep -o 'build-gpu-ami\\|amazonImage' | head -1\x3b done > .gate-logs/find_ami_proj.txt 2>&1\x3b echo DONE;cbf5a1af-bf3a-4e92-b443-3bd2b5e7b075]633;C=== pipelinePipelineComponentBu-Ns1nCyndHGBA ===
+amazonImage
+=== pipelinePipelineComponentBu-YeuvBpMlA93I ===
+=== pipelinePipelineComponentBu-Q2MN4B4jsFF7 ===
+=== pipelinePipelineComponentBu-Zfow3LIaxcts ===

@@ -1,0 +1,50 @@
+diff --git a/shared/hellodj_platform_logic/source_refresh.py b/shared/hellodj_platform_logic/source_refresh.py
+index cf272d8..df0762f 100644
+--- a/shared/hellodj_platform_logic/source_refresh.py
++++ b/shared/hellodj_platform_logic/source_refresh.py
+@@ -72,6 +72,17 @@ PROVIDER_TIDAL = "tidal"
+ #: Google (YouTube / YouTube Music) OAuth token endpoint.
+ GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token"
+ 
++#: YouTube device-grant token endpoint + PUBLIC device client used by the
++#: youtube-source plugin. A refresh token from the device-code flow (web-ui
++#: ``youtube_device_oauth``) MUST be refreshed with this same public client at
++#: THIS endpoint (not :data:`GOOGLE_TOKEN_URL`); see
++#: :func:`youtube_device_refresh_client`. These are not secrets (baked in jar).
++YOUTUBE_DEVICE_TOKEN_URL = "https://www.youtube.com/o/oauth2/token"  # noqa: S105 - URL
++YOUTUBE_DEVICE_CLIENT_ID = (
++    "861556708454-d6dlm3lh05idd8npek18k6be8ba3oc68.apps.googleusercontent.com"
++)
++YOUTUBE_DEVICE_CLIENT_SECRET = "SboVhoG9s0rNafixCSGGKXAT"  # noqa: S105 - public plugin client
++
+ #: Spotify OAuth token endpoint.
+ SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
+ 
+@@ -381,6 +392,27 @@ class GoogleRefreshClient:
+         )
+ 
+ 
++def youtube_device_refresh_client(
++    provider: str = PROVIDER_YOUTUBE,
++    *,
++    http_post: HttpFormPost = urllib_form_post,
++) -> GoogleRefreshClient:
++    """Refresh client for a device-code-issued YouTube token (no operator app).
++
++    Pins :class:`GoogleRefreshClient` to the youtube-source plugin's PUBLIC
++    device client + :data:`YOUTUBE_DEVICE_TOKEN_URL` (what the plugin's
++    ``createNewAccessToken`` does), so the watchdog renews device-issued tokens
++    with no ``GOOGLE_CLIENT_ID`` env. ``provider`` is youtube / youtube_music.
++    """
++    return GoogleRefreshClient(
++        client_id=YOUTUBE_DEVICE_CLIENT_ID,
++        client_secret=YOUTUBE_DEVICE_CLIENT_SECRET,
++        provider=provider,
++        token_url=YOUTUBE_DEVICE_TOKEN_URL,
++        http_post=http_post,
++    )
++
++
+ @dataclass
+ class SpotifyRefreshClient:
+     """Refresh client for Spotify.

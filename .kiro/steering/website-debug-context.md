@@ -446,8 +446,9 @@ OAuth env-wiring gaps that used to sit in KNOWN GAPS below.
 - **New CMK:** `alias/hellodj-source-creds-<stage>` (rotation on), created in
   `data-stack.ts`, id wired as `HELLODJ_SOURCE_CREDS_KMS_KEY_ID`. Deploy the CMK
   with `cdk deploy hellodj-data`.
-- **Least privilege** (`SOURCE_CREDENTIAL_KMS_COMPONENTS` in
-  `workloads-stack.ts`): `web-ui` (writer: GenerateDataKey+Encrypt+Decrypt) &
+- **Least privilege** (`SOURCE_CREDENTIAL_KMS_COMPONENTS`, defined in
+  `infra/lib/constants.ts`; the grant is issued by `grantDependencies` in
+  `infra/lib/workloads-grants.ts`): `web-ui` (writer: GenerateDataKey+Encrypt+Decrypt) &
   `playback-orchestrator` (watchdog: same) get RW on the table + full CMK;
   `discord-bot-core`/`tidal-stream`/`spotify-stream` (readers) get table read +
   CMK **Decrypt only**. Nothing else gets a CMK grant.
@@ -626,7 +627,11 @@ AWS_PROFILE=hellodj aws codepipeline get-pipeline-state --name hellodj-pipeline 
 
 ```bash
 # CDK app + gates now live in the hellodj-cdk repo (run from that package):
-cd infra && npx tsc --noEmit && npx jest          # 282 tests (23 suites)
+cd infra && npx tsc --noEmit && npx jest          # 442 tests (34 suites)
+# TS per-file line-count gate (hellodj-cdk repo root) — closes the blind spot
+# the Python gate left (it only scans *.py). Holds infra/lib + infra/bin to a
+# ceiling; two monoliths are grandfathered with refactor notes:
+python3 tools/check_ts_line_count.py
 # Component sources stay in hellodj (run from that repo):
 cd platform/components/web-ui && ruff check --target-version py314 . && python3 -m pytest tests/ -q  # 384 tests
 cd platform/components/playback-orchestrator && ruff check --target-version py314 . && python3 -m pytest tests/ -q  # 55 tests (watchdog)
@@ -634,6 +639,17 @@ cd platform/components/migration && ruff check --target-version py314 . && pytho
 # check_line_count.py moved to hellodj-cdk/tools/; it still targets the hellodj component trees:
 python3 tools/check_line_count.py <hellodj>/platform/components/web-ui <hellodj>/platform/components/playback-orchestrator <hellodj>/platform/components/migration   # 500-line ceiling
 ```
+
+> CDK `infra/lib` module map (post-refactor): pure VALUES live in
+> `lib/constants.ts`; the stacks (`workloads-stack.ts`, `eks-stack.ts`,
+> `pipeline-stack.ts`, `auth-stack.ts`, …) are the CDK constructs; per-dependency
+> dispatch + derivation logic is in sibling helpers — `workloads-env.ts`
+> (`buildContainerEnv`), `workloads-grants.ts` (`grantDependencies`),
+> `workloads-stage.ts` (stage/DNS fns), `eks-addons.ts` (cluster installers),
+> `pipeline-commands.ts` (CodeBuild command builders), `auth-email-templates.ts`.
+> Each stack re-exports what its external consumers import, so `from
+> './<stack>'` paths are unchanged. See `infra/ARCHITECTURE.md` → "CDK Code
+> Layout" for the full map.
 
 > Note: `hellodj_platform_logic` now lives in `hellodj-cdk` at
 > `shared/hellodj_platform_logic/` (it is no longer under

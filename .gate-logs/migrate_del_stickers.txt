@@ -1,0 +1,4 @@
+]633;E;for S in beta staging production\x3b do echo "deleting hellodj-stickers-$S-us-east-1"\x3b AWS_PROFILE=hellodj aws s3api delete-bucket --bucket "hellodj-stickers-$S-us-east-1" --region us-east-1 2>&1\x3b done > .gate-logs/migrate_del_stickers.txt 2>&1\x3b echo "exit=$?" >> .gate-logs/migrate_del_stickers.txt\x3b true;2c96d486-49f9-4294-8b0a-62621f315e9b]633;Cdeleting hellodj-stickers-beta-us-east-1
+deleting hellodj-stickers-staging-us-east-1
+deleting hellodj-stickers-production-us-east-1
+exit=0

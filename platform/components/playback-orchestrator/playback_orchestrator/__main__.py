@@ -36,6 +36,9 @@ from types import FrameType
 from typing import Any
 
 from .playback_api import PLAYBACK_ROUTE, PlaybackService, handle_playback
+from .playback_forwarding import FORWARDED_HEADER as _FORWARDED_HEADER
+from .playback_forwarding import PlaybackForwarder
+from .sharding import resolve_topology
 
 _LOG = logging.getLogger("playback_orchestrator")
 
@@ -46,12 +49,19 @@ _MAX_BODY_BYTES = 64 * 1024
 
 def _make_handler(
     playback: PlaybackService | None,
+    forwarder: PlaybackForwarder | None = None,
 ) -> type[BaseHTTPRequestHandler]:
     """Build the HTTP handler class bound to the (optional) playback service.
 
     The service is captured in a closure so the stdlib handler (which the server
     instantiates per request) can reach it without global state. A ``None``
     service still serves health + a clean "not configured" playback body.
+
+    ``forwarder`` (distributed-bot-sharding R4) is consulted BEFORE local
+    handling: if a remote replica owns the request's guild, the request is
+    forwarded there once (hop-guard header) and the owner's response relayed.
+    ``None`` (single-shard / degraded) means every request is handled locally —
+    identical to today's behavior (R7.1).
     """
 
     class _Handler(BaseHTTPRequestHandler):
@@ -69,7 +79,20 @@ def _make_handler(
                 self.send_response(404)
                 self.end_headers()
                 return
-            body = handle_playback(playback, self._read_json_body())
+            request_body = self._read_json_body()
+            # Cross-replica forwarding (R4): forward to the guild's owner replica
+            # unless this replica owns it, it's already been forwarded once, or
+            # the topology is single-shard. On transport error the forwarder
+            # returns a truthful "unavailable" body (never a local connect).
+            if forwarder is not None:
+                already = self.headers.get(_FORWARDED_HEADER, "") == "1"
+                relayed = forwarder.maybe_forward(
+                    request_body, already_forwarded=already
+                )
+                if relayed is not None:
+                    self._write_json(200, json.dumps(relayed).encode("utf-8"))
+                    return
+            body = handle_playback(playback, request_body)
             self._write_json(200, json.dumps(body).encode("utf-8"))
 
         # -- helpers -------------------------------------------------------
@@ -129,6 +152,45 @@ def _install_signal_handlers(
     signal.signal(signal.SIGINT, _handle)
 
 
+def _build_forwarder() -> PlaybackForwarder | None:
+    """Build the cross-replica play forwarder from env, or ``None`` (R4/R7.1).
+
+    Returns ``None`` (handle every request locally — today's behavior) when the
+    topology is single-shard (``HELLODJ_ORCHESTRATOR_REPLICAS`` unset/1 or the
+    ordinal is unresolvable). When sharded (>1 replica) it forwards a request
+    for a guild owned by another replica to that replica's stable pod DNS.
+    """
+    hostname = os.environ.get("HOSTNAME", "").strip()
+    if not hostname:
+        try:
+            hostname = os.uname().nodename
+        except (OSError, AttributeError):
+            hostname = ""
+    ordinal, replica_count = resolve_topology(
+        hostname, os.environ.get("HELLODJ_ORCHESTRATOR_REPLICAS", "")
+    )
+    if replica_count <= 1:
+        return None
+    namespace = os.environ.get(
+        "HELLODJ_NAMESPACE",
+        f"hellodj-{os.environ.get('HELLODJ_STAGE', 'beta')}",
+    )
+    port = int(os.environ.get("PORT", "8080"))
+    _LOG.info(
+        "playback forwarding enabled: ordinal=%d/%d ns=%s",
+        ordinal,
+        replica_count,
+        namespace,
+    )
+    return PlaybackForwarder(
+        ordinal=ordinal,
+        replica_count=replica_count,
+        service_name="playback-orchestrator",
+        namespace=namespace,
+        port=port,
+    )
+
+
 def main() -> None:
     """Configure logging and run the health server until terminated."""
     logging.basicConfig(
@@ -154,7 +216,12 @@ def main() -> None:
         )
     else:
         _LOG.info("playback API: serving POST /v1/playback")
-    server = ThreadingHTTPServer((host, port), _make_handler(playback))
+    # Cross-replica play forwarder (distributed-bot-sharding R4). None when the
+    # orchestrator is single-shard (default), so behavior is unchanged there.
+    forwarder = _build_forwarder()
+    server = ThreadingHTTPServer(
+        (host, port), _make_handler(playback, forwarder)
+    )
 
     # Start the durable token-refresh watchdog on a daemon thread next to the
     # health server (R5.1). It self-degrades to a no-op (logs "degraded:

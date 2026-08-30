@@ -1,0 +1,6 @@
+these 2 derivations will be built:
+  /nix/store/bk22zqz98dmnqvx3hif3hcpvcifk8c91-extra-udev-rules.drv
+  /nix/store/bkg0a918gq9g3f07d3n9vb2aliphcxhd-udev-rules.drv
+building '/nix/store/bk22zqz98dmnqvx3hif3hcpvcifk8c91-extra-udev-rules.drv'...
+building '/nix/store/bkg0a918gq9g3f07d3n9vb2aliphcxhd-udev-rules.drv'...
+/nix/store/vsxa7qf9cm06gg2hi3z6r6lbfbidmzgp-udev-rules

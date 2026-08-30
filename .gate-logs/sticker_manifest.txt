@@ -1,0 +1,20 @@
+sticker count: 1200
+sample file fields:
+   assets/blobs/blobmoji-blobmoji14-0-1.webp | category= blobs
+   assets/blobs/blobmoji-blobmoji15.webp | category= blobs
+   assets/blobs/blobmoji-blobmoji15-alpha.webp | category= blobs
+   assets/blobs/blobmoji-emoji13-1.webp | category= blobs
+   assets/blobs/blobmoji-emoji14.webp | category= blobs
+categories: {'blobs': 6, 'chaos': 155, 'creatures': 147, 'hands': 174, 'love': 140, 'party': 84, 'reactions': 222, 'stuff': 181, 'symbols': 91}
+--- on-disk assets tree ---
+stickers/hellodj-stickers/assets/party/noto-animated-grinning-face-with-star-eyes.webp
+stickers/hellodj-stickers/assets/party/noto-animated-birthday-cake.webp
+stickers/hellodj-stickers/assets/party/noto-animated-glowing-star.webp
+stickers/hellodj-stickers/assets/party/noto-animated-balloon.webp
+stickers/hellodj-stickers/assets/party/noto-animated-sparkles.webp
+stickers/hellodj-stickers/assets/party/noto-animated-speech-balloon.webp
+stickers/hellodj-stickers/assets/party/noto-animated-white-medium-star.webp
+stickers/hellodj-stickers/assets/party/noto-animated-confetti-ball.webp
+total asset files:
+1200
+58M	stickers/hellodj-stickers/assets

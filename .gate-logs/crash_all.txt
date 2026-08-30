@@ -1,0 +1,56 @@
+=== yt-cipher-7fdfdd9787-g2j99 (current) ===
+=== yt-cipher-7fdfdd9787-g2j99 (previous) ===
+=== potoken-server-7b88b4cd-xq8p5 (current) ===
+placeholder potoken-server; wire artifact-source
+=== potoken-server-7b88b4cd-xq8p5 (previous) ===
+placeholder potoken-server; wire artifact-source
+=== spotify-stream-7cf7d6f567-28dmb (current) ===
+spotify-stream: no Spotify credentials injected.
+  Expected AWS Secrets Manager injection via SPOTIFY_CREDENTIALS_FILE (mounted file)
+  or SPOTIFY_CREDENTIALS (env). Refusing to start without credentials.
+=== spotify-stream-7cf7d6f567-28dmb (previous) ===
+unable to retrieve container logs for containerd://9d6f5d1a086cc81f9ab78ea59b24ab58f1942333c6e820680dfc9c18d0eb1729=== tidal-stream-7fc8566b5c-4cdgx (current) ===
+Traceback (most recent call last):
+  File "<frozen runpy>", line 203, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/opt-app/tidal_stream/__main__.py", line 43, in <module>
+    main()
+    ~~~~^^
+  File "/opt-app/tidal_stream/__main__.py", line 30, in main
+    settings = TidalStreamSettings.from_env()
+  File "/opt-app/tidal_stream/config.py", line 106, in from_env
+    app_id=_require("TIDAL_APP_ID"),
+           ~~~~~~~~^^^^^^^^^^^^^^^^
+  File "/opt-app/tidal_stream/config.py", line 39, in _require
+    raise ValueError(f"required environment variable {name} is not set")
+ValueError: required environment variable TIDAL_APP_ID is not set
+=== tidal-stream-7fc8566b5c-4cdgx (previous) ===
+unable to retrieve container logs for containerd://a088930bd423fff2f9f498d4ec4bad8c01d860ae79ba645a06ecc29d6a6d96dd=== discord-bot-core-8f5558cf9-pbdlg (current) ===
+Traceback (most recent call last):
+  File "<frozen runpy>", line 203, in _run_module_as_main
+  File "<frozen runpy>", line 88, in _run_code
+  File "/opt-app/discord_bot_core/__main__.py", line 18, in <module>
+    main()
+    ~~~~^^
+  File "/opt-app/discord_bot_core/main.py", line 193, in main
+    asyncio.run(run())
+    ~~~~~~~~~~~^^^^^^^
+  File "/nix/store/69rsz6qjanzlkr73w5v698vmnx59ld6s-python3-3.14.7-env/lib/python3.14/asyncio/runners.py", line 205, in run
+    return runner.run(main)
+           ~~~~~~~~~~^^^^^^
+  File "/nix/store/69rsz6qjanzlkr73w5v698vmnx59ld6s-python3-3.14.7-env/lib/python3.14/asyncio/runners.py", line 128, in run
+    return self._loop.run_until_complete(task)
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^
+  File "/nix/store/69rsz6qjanzlkr73w5v698vmnx59ld6s-python3-3.14.7-env/lib/python3.14/asyncio/base_events.py", line 720, in run_until_complete
+    return future.result()
+           ~~~~~~~~~~~~~^^
+  File "/opt-app/discord_bot_core/main.py", line 141, in run
+    cfg = config or BotConfig.from_env()
+                    ~~~~~~~~~~~~~~~~~~^^
+  File "/opt-app/discord_bot_core/config.py", line 98, in from_env
+    raise ValueError(
+    ...<2 lines>...
+    )
+ValueError: HELLODJ_DISCORD_TOKEN_SECRET_ID is required — it names the Secrets Manager secret holding the Discord bot token.
+=== discord-bot-core-8f5558cf9-pbdlg (previous) ===
+unable to retrieve container logs for containerd://6b3d66ad8de4e2da030629b84a9ac74febc8c46737edbbb1fd2fd24172b40fe9

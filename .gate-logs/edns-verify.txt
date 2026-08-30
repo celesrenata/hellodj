@@ -1,0 +1,5 @@
+6
+ChangeResourceRecordSets:
+route53:ChangeResourceRecordSets
+hostedzone_scope:
+hostedzone/Z0624252883VKFQ4E14Q

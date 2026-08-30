@@ -1,0 +1,21 @@
+infra/cdk.out/assembly-hellodj-pipeline-hellodj-beta-stage/cdk.out
+infra/cdk.out/assembly-hellodj-pipeline-hellodj-beta-stage/hellodjpipelinehellodjbetastagehellodjworkloadsbeta3BA8E38C.assets.json
+infra/cdk.out/assembly-hellodj-pipeline-hellodj-beta-stage/hellodjpipelinehellodjbetastagehellodjworkloadsbeta3BA8E38C.metadata.json
+--- count tracked cdk.out files ---
+68
+--- gitignore files ---
+infra/node_modules/aws-cdk/lib/init-templates/app/csharp/.template.gitignore
+infra/node_modules/aws-cdk/lib/init-templates/app/fsharp/.template.gitignore
+infra/node_modules/aws-cdk/lib/init-templates/app/go/.template.gitignore
+infra/node_modules/aws-cdk/lib/init-templates/app/java/.template.gitignore
+infra/node_modules/aws-cdk/lib/init-templates/app/javascript/.template.gitignore
+infra/node_modules/aws-cdk/lib/init-templates/app/python/.template.gitignore
+infra/node_modules/aws-cdk/lib/init-templates/app/typescript/.template.gitignore
+infra/node_modules/aws-cdk/lib/init-templates/lib/typescript/.template.gitignore
+infra/node_modules/aws-cdk/lib/init-templates/sample-app/csharp/.template.gitignore
+infra/node_modules/aws-cdk/lib/init-templates/sample-app/fsharp/.template.gitignore
+infra/node_modules/aws-cdk/lib/init-templates/sample-app/go/.template.gitignore
+infra/node_modules/aws-cdk/lib/init-templates/sample-app/java/.template.gitignore
+infra/node_modules/aws-cdk/lib/init-templates/sample-app/javascript/.template.gitignore
+infra/node_modules/aws-cdk/lib/init-templates/sample-app/python/.template.gitignore
+infra/node_modules/aws-cdk/lib/init-templates/sample-app/typescript/.template.gitignore

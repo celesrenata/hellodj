@@ -157,9 +157,12 @@ KUBECONFIG=/tmp/hellodj-eks-kubeconfig kubectl describe pod <pod> -n hellodj-bet
 - **Ruff**: 0.16.4, target `py314`
 - **CodeBuild image**: `aws/codebuild/amazonlinux-aarch64-standard:3.0` (ARM64 native, privileged for docker)
 
-### On-Prem (separate from AWS — still active)
+### On-Prem — REMOVED (AWS 100%)
 
-- **Cluster**: gremlin nodes (10.1.1.12–15), namespace `hellodj-service`
-- **Bot image**: `registry.celestium.life/hellodj/bot:shader-presets-2026-08-24`
-- **Lavalink image**: `registry.celestium.life/hellodj/lavalink:audio-pipe-2026-08-23`
-- **Registry**: `registry.celestium.life` (Harbor)
+The on-prem deployment has been torn down. The top-level `bot/`, `web-ui/`,
+`kube/`, `k8s/`, `spotify-stream/`, `tidal-stream/`, `data/`,
+`docker-compose.yml`, and the Harbor `runme*.sh` scripts were deleted. The
+gremlin-node cluster (`hellodj-service` namespace) and the
+`registry.celestium.life` (Harbor) images are no longer used. All deployment is
+AWS EKS via the CI/CD pipeline. Do not reference on-prem paths or the Harbor
+registry in new work.

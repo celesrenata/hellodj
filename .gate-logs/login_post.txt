@@ -1,0 +1,18 @@
+=== POST /auth/admin ===
+HTTP/2 302 
+content-type: text/html; charset=utf-8
+content-length: 189
+date: Sun, 30 Aug 2026 01:30:52 GMT
+set-cookie: session=.eJwdyksKgCAUBdC93LFCltjLrUREHw0HZfiySbT3PsMD50Jml2AvLCnmnWFbDPMaNkYnELj_AXuk7AT2FM8wfx9TXLZwRAhwHl8rXVOpFcmmKJWsC5qkrzRJN5jGO_LeGIX7fgAoeyLB.apOHzA.x-1mJSuVoOJ-7ZJfd3pC0fGISwY; Secure; HttpOnly; Path=/; SameSite=Lax
+server: gunicorn
+location: /
+vary: Cookie
+x-cache: Miss from cloudfront
+via: 1.1 156a404018e26073003553397d28f4ea.cloudfront.net (CloudFront)
+x-amz-cf-pop: SEA900-P3
+x-amz-cf-id: N6yJdf2RQkW6urTC6gA30Zj_MZQl8TKEPGwH7P3bWRM2jo_Yo0pnVw==
+
+
+http=302
+=== body (first 60 lines, stripped) ===
+Redirecting... Redirecting... You should be redirected automatically to the target URL: / . If not, click the link.

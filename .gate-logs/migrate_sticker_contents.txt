@@ -1,0 +1,15 @@
+]633;E;for S in beta staging production\x3b do echo "=== hellodj-stickers-$S-us-east-1 ==="\x3b AWS_PROFILE=hellodj aws s3api list-objects-v2 --bucket "hellodj-stickers-$S-us-east-1" --max-items 3 --query "{Count:KeyCount,Sample:Contents[].Key}" --output json 2>&1\x3b done > .gate-logs/migrate_sticker_contents.txt 2>&1\x3b true;2c96d486-49f9-4294-8b0a-62621f315e9b]633;C=== hellodj-stickers-beta-us-east-1 ===
+{
+    "Count": null,
+    "Sample": null
+}
+=== hellodj-stickers-staging-us-east-1 ===
+{
+    "Count": null,
+    "Sample": null
+}
+=== hellodj-stickers-production-us-east-1 ===
+{
+    "Count": null,
+    "Sample": null
+}

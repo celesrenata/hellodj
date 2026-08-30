@@ -27,17 +27,55 @@
 
         pythonEnv = python.withPackages pythonDeps;
 
-        # FFmpeg for BOTH encode paths of the hybrid gas/electric transcoder:
+        # FFmpeg 9 for BOTH encode paths of the hybrid gas/electric transcoder:
         #   * libx264 — the CPU floor on Graviton (always available), and
         #   * h264_nvenc — the GPU path on the g5g/T4G transcode node.
-        # `ffmpeg_7-full` builds with `withNvcodec` (nv-codec-headers) on Linux,
-        # so the `h264_nvenc` encoder is COMPILED IN; at runtime it dlopens the
-        # NVIDIA `libnvidia-encode.so` the accelerated AL2023 host + device
-        # plugin inject into the container. On a CPU-only node the driver lib is
-        # absent, so `runtime.probe_gpu_ready()` reports NVENC unavailable and
-        # the scheduler stays on the libx264 floor. DO NOT swap this for a lean
-        # ffmpeg that drops nvenc — that silently disables the GPU ("gas") path.
-        ffmpeg = pkgs.ffmpeg_7-full;
+        # `ffmpeg-full` on nixos-unstable is FFmpeg 9.x and builds with
+        # `withNvcodec` (nv-codec-headers) on Linux, so the `h264_nvenc` encoder
+        # is COMPILED IN; at runtime it dlopens the NVIDIA `libnvidia-encode.so`
+        # the accelerated AL2023 host + device plugin inject into the container.
+        # On a CPU-only node the driver lib is absent, so
+        # `runtime.probe_gpu_ready()` reports NVENC unavailable and the scheduler
+        # stays on the libx264 floor. DO NOT swap this for a lean ffmpeg that
+        # drops nvenc — that silently disables the GPU ("gas") path. Intel QSV /
+        # VA-API is intentionally NOT used anywhere (NVIDIA-only GPU path).
+        #
+        # Graviton CPU tuning: the libx264 floor is the hot path whenever the
+        # GPU is scaled to zero. This image runs on the `transcode-gpu` node,
+        # which is `g5g.xlarge` = T4g = **Graviton2 = Neoverse-N1** — NOT the
+        # Graviton3/Neoverse-V1 app fleet the bot runs on. N1 has NEON + dotprod
+        # + crypto but NO SVE/bf16/i8mm, so we MUST target `neoverse-n1` here:
+        # emitting V1 SVE instructions on this N1 host would SIGILL. (The bot
+        # image, which lands on m7g/V1, is tuned `neoverse-v1` separately in its
+        # own Dockerfile — do not unify the two targets.) `-mcpu=neoverse-n1`
+        # lets the compiler pick the NEON/dotprod x264 asm + ffmpeg DSP kernels
+        # over the generic armv8-a baseline nixpkgs ships. No-op on x86_64.
+        isAarch64 = system == "aarch64-linux";
+        gravitonCflags = "-mcpu=neoverse-n1 -O3";
+        # Append the Graviton cflags. Newer nixpkgs derivations (ffmpeg-full,
+        # x264) use the structured `env` attribute set for env vars and forbid
+        # the same name at the top level, so merge into `env.NIX_CFLAGS_COMPILE`
+        # when present and fall back to the top-level attr for older ones.
+        tuneForGraviton = pkg:
+          if isAarch64
+          then pkg.overrideAttrs (old:
+            if (old.env or null) != null
+            then {
+              env = old.env // {
+                NIX_CFLAGS_COMPILE =
+                  (old.env.NIX_CFLAGS_COMPILE or "") + " " + gravitonCflags;
+              };
+            }
+            else {
+              NIX_CFLAGS_COMPILE =
+                (old.NIX_CFLAGS_COMPILE or "") + " " + gravitonCflags;
+            })
+          else pkg;
+        # Tune x264 (the CPU floor's actual encoder) AND ffmpeg itself.
+        tunedX264 = tuneForGraviton pkgs.x264;
+        ffmpeg = tuneForGraviton (pkgs.ffmpeg-full.override {
+          x264 = tunedX264;
+        });
 
         # Reproducible source: strip transient files (__pycache__/*.pyc/*.pyo,
         # .git) so the derivation input hash depends ONLY on real source

@@ -1,0 +1,26 @@
+warning: Git tree '/home/celes/sources/celesrenata/hellodj' is dirty
+error:
+       … while calling the 'derivationStrict' builtin
+         at «nix-internal»/derivation-internal.nix:37:12:
+           36|
+           37|   strict = derivationStrict drvAttrs;
+             |            ^
+           38|
+
+       … while evaluating derivation 'hellodj-spotify-stream.tar.gz'
+         whose name attribute is located at «github:NixOS/nixpkgs/56c02bc00adcf003215cc4bd996d6efaf4cff188?narHash=sha256-9i/VTdusq/%2BNM/tz%2BJ1Re%2BojkMB8MBf0QshnYfzHz30%3D»/pkgs/stdenv/generic/make-derivation.nix:651:11
+
+       … while evaluating attribute 'buildCommand' of derivation 'hellodj-spotify-stream.tar.gz'
+         at «github:NixOS/nixpkgs/56c02bc00adcf003215cc4bd996d6efaf4cff188?narHash=sha256-9i/VTdusq/%2BNM/tz%2BJ1Re%2BojkMB8MBf0QshnYfzHz30%3D»/pkgs/build-support/trivial-builders/default.nix:84:17:
+           83|         enableParallelBuilding = true;
+           84|         inherit buildCommand name;
+             |                 ^
+           85|         passAsFile = defaultPassAsFile ++ (derivationArgs.passAsFile or [ ]);
+
+       (stack trace truncated; use '--show-trace' to show the full, detailed trace)
+
+       error: Path 'platform/components/spotify-stream/app.py' in the repository "/home/celes/sources/celesrenata/hellodj" is not tracked by Git.
+
+       To make it visible to Nix, run:
+
+       git -C "/home/celes/sources/celesrenata/hellodj" add "platform/components/spotify-stream/app.py"

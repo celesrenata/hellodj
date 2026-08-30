@@ -1,0 +1,47 @@
+warning: Git tree '/home/celes/sources/celesrenata/hellodj' is dirty
+this derivation will be built:
+  /nix/store/xpzm9rxxlykkbwljp7wiaj2qkfk6z3gp-yt-cipher-0-unstable-2026-08-24.drv
+these 5 paths will be fetched (443.7 KiB download, 3.0 MiB unpacked):
+  /nix/store/sxwz4wzj2507gq0x2dhqfz88g6fh03f3-auto-patchelf-0-unstable-2024-08-14
+  /nix/store/iz458cncv4rxnhsm7zk5h1370lw4wqq0-auto-patchelf-hook
+  /nix/store/4wczdrgafhrx0rdnk5vy94nj5g2vxaa4-binutils-wrapper-2.46
+  /nix/store/z231wdsnxnjpy829famjvfxhs7hqysr3-python3-3.14.7-env
+  /nix/store/gzwzmz6h9p5538nksrjd9qvfwq7fhqvn-python3.14-pyelftools-0.32
+copying path '/nix/store/4wczdrgafhrx0rdnk5vy94nj5g2vxaa4-binutils-wrapper-2.46' from 'https://cache.nixos.org'...
+copying path '/nix/store/gzwzmz6h9p5538nksrjd9qvfwq7fhqvn-python3.14-pyelftools-0.32' from 'https://cache.nixos.org'...
+copying path '/nix/store/z231wdsnxnjpy829famjvfxhs7hqysr3-python3-3.14.7-env' from 'https://cache.nixos.org'...
+copying path '/nix/store/sxwz4wzj2507gq0x2dhqfz88g6fh03f3-auto-patchelf-0-unstable-2024-08-14' from 'https://cache.nixos.org'...
+copying path '/nix/store/iz458cncv4rxnhsm7zk5h1370lw4wqq0-auto-patchelf-hook' from 'https://cache.nixos.org'...
+building '/nix/store/xpzm9rxxlykkbwljp7wiaj2qkfk6z3gp-yt-cipher-0-unstable-2026-08-24.drv'...
+error: Cannot build '/nix/store/xpzm9rxxlykkbwljp7wiaj2qkfk6z3gp-yt-cipher-0-unstable-2026-08-24.drv'.
+       Reason: builder failed with exit code 1.
+       Output paths:
+         /nix/store/n22bhs95sx68khmlwzcbgj7va5r9b4sx-yt-cipher-0-unstable-2026-08-24
+       Last 25 log lines:
+       > │ ├── player.ts (13.83KB)
+       > │ ├── playerCache.ts (10.49KB)
+       > │ ├── preprocessedCache.ts (976B)
+       > │ ├── solver.ts (3.29KB)
+       > │ ├── solverCache.ts (852B)
+       > │ ├── stsCache.ts (781B)
+       > │ ├── validation.ts (4.15KB)
+       > │ └── workerPool.ts (3.91KB)
+       > └── worker.ts (1.01KB)
+       >
+       > Files: 1.79MB
+       > Metadata: 1.34KB
+       > Remote modules: 625.87KB
+       >
+       > Running phase: installPhase
+       > Running phase: fixupPhase
+       > shrinking RPATHs of ELF executables and libraries in /nix/store/n22bhs95sx68khmlwzcbgj7va5r9b4sx-yt-cipher-0-unstable-2026-08-24
+       > shrinking /nix/store/n22bhs95sx68khmlwzcbgj7va5r9b4sx-yt-cipher-0-unstable-2026-08-24/opt/yt-cipher/server
+       > checking for references to /build/ in /nix/store/n22bhs95sx68khmlwzcbgj7va5r9b4sx-yt-cipher-0-unstable-2026-08-24...
+       > patching script interpreter paths in /nix/store/n22bhs95sx68khmlwzcbgj7va5r9b4sx-yt-cipher-0-unstable-2026-08-24
+       > Traceback (most recent call last):
+       >   File "/nix/store/sxwz4wzj2507gq0x2dhqfz88g6fh03f3-auto-patchelf-0-unstable-2024-08-14/bin/auto-patchelf", line 18, in <module>
+       >     from elftools.common.exceptions import ELFError  # type: ignore
+       >     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+       > ModuleNotFoundError: No module named 'elftools'
+       For full logs, run:
+         nix log /nix/store/xpzm9rxxlykkbwljp7wiaj2qkfk6z3gp-yt-cipher-0-unstable-2026-08-24.drv

@@ -1,0 +1,10 @@
+(dryrun) upload: stickers/hellodj-stickers/assets/chaos/fluent-animated-alien-animated.webp to s3://hellodj-stickers-beta-us-east-1/stickers/chaos/fluent-animated-alien-animated.webp
+(dryrun) upload: stickers/hellodj-stickers/assets/chaos/fluent-animated-alien-monster-animated.webp to s3://hellodj-stickers-beta-us-east-1/stickers/chaos/fluent-animated-alien-monster-animated.webp
+(dryrun) upload: stickers/hellodj-stickers/assets/chaos/fluent-animated-bomb-animated.webp to s3://hellodj-stickers-beta-us-east-1/stickers/chaos/fluent-animated-bomb-animated.webp
+(dryrun) upload: stickers/hellodj-stickers/assets/chaos/fluent-animated-cloud-with-lightning-and-rain-animated.webp to s3://hellodj-stickers-beta-us-east-1/stickers/chaos/fluent-animated-cloud-with-lightning-and-rain-animated.webp
+(dryrun) upload: stickers/hellodj-stickers/assets/chaos/fluent-animated-cloud-with-lightning-animated.webp to s3://hellodj-stickers-beta-us-east-1/stickers/chaos/fluent-animated-cloud-with-lightning-animated.webp
+(dryrun) upload: stickers/hellodj-stickers/assets/chaos/fluent-animated-clown-face-animated.webp to s3://hellodj-stickers-beta-us-east-1/stickers/chaos/fluent-animated-clown-face-animated.webp
+(dryrun) upload: stickers/hellodj-stickers/assets/chaos/fluent-animated-fire-animated.webp to s3://hellodj-stickers-beta-us-east-1/stickers/chaos/fluent-animated-fire-animated.webp
+(dryrun) upload: stickers/hellodj-stickers/assets/chaos/fluent-animated-fire-engine-animated.webp to s3://hellodj-stickers-beta-us-east-1/stickers/chaos/fluent-animated-fire-engine-animated.webp
+...
+1200

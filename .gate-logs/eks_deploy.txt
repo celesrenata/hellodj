@@ -1,0 +1,419 @@
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+Including dependency stacks: hellodj-network
+WARNING Ignoring Egress rule since 'allowAllOutbound' is set to true; To add customized rules, set allowAllOutbound=false on the SecurityGroup (Construct Annotations)
+   hellodj-network/FleetSecurityGroup
+   Acknowledge with 'Construct-Annotations::@aws-cdk/aws-ec2:ipv4IgnoreEgressRule'
+
+✨  Synthesis time: 10.66s
+
+hellodj-network
+hellodj-eks: start: Building hellodj-eks Template
+hellodj-eks: success: Built hellodj-eks Template
+hellodj-network: creating CloudFormation changeset...
+hellodj-network: deploying... [1/2]
+
+✅  hellodj-network (no changes)
+
+✨  Deployment time: 0s
+
+Outputs:
+hellodj-network.AlbDnsName = hellod-AppLo-5ebRMXtKcl6d-223787727.us-east-1.elb.amazonaws.com
+hellodj-network.ExportsOutputRefVpc8378EB38272D6E3A = vpc-0f9afceef13c04d55
+hellodj-network.ExportsOutputRefVpcprivateegressSubnet1Subnet830BC88F45116193 = subnet-05b1d975fba448593
+hellodj-network.ExportsOutputRefVpcprivateegressSubnet2SubnetEB0EA9CBFD91A0CD = subnet-0fff9a02f630107e6
+hellodj-network.ExportsOutputRefVpcprivateegressSubnet3Subnet6C8E65FBD4F775F0 = subnet-07c4ec1134edc462f
+hellodj-network.NlbDnsName = hellod-Gatew-diL6G8vpwL3u-3d8023dc03f773fe.elb.us-east-1.amazonaws.com
+hellodj-network.VpcId = vpc-0f9afceef13c04d55
+Stack ARN:
+arn:aws:cloudformation:us-east-1:874927898283:stack/hellodj-network/ada7e740-a125-11f1-8166-0affca082aef
+hellodj-eks: start: Publishing hellodj-eks Template (874927898283-us-east-1-aa5b4cd8)
+hellodj-eks: success: Published hellodj-eks Template (874927898283-us-east-1-aa5b4cd8)
+hellodj-eks
+hellodj-eks: creating CloudFormation changeset...
+hellodj-eks: deploying... [2/2]
+hellodj-eks |   0/177 | 2:37:03 AM | UPDATE_IN_PROGRESS      | AWS::CloudFormation::Stack            | hellodj-eks User Initiated
+hellodj-eks |   0/177 | 2:37:07 AM | CREATE_IN_PROGRESS      | AWS::IAM::Role                        | KubectlRole (KubectlRole4D319128) 
+hellodj-eks |   0/177 | 2:37:07 AM | UPDATE_IN_PROGRESS      | AWS::CDK::Metadata                    | CDKMetadata/Default (CDKMetadata) 
+hellodj-eks |   0/177 | 2:37:08 AM | CREATE_IN_PROGRESS      | AWS::IAM::Role                        | KubectlRole (KubectlRole4D319128) Resource creation Initiated
+hellodj-eks |   1/177 | 2:37:08 AM | UPDATE_COMPLETE         | AWS::CDK::Metadata                    | CDKMetadata/Default (CDKMetadata) 
+hellodj-eks |   1/177 | 2:37:09 AM | CREATE_IN_PROGRESS      | Custom::AWSCDK-EKS-KubernetesResource | Cluster/manifest-GpuTranscodeNodePool/Resource/Default (ClustermanifestGpuTranscodeNodePoolE579568E) 
+hellodj-eks |   1/177 | 2:37:20 AM | CREATE_IN_PROGRESS      | Custom::AWSCDK-EKS-KubernetesResource | Cluster/manifest-GpuTranscodeNodePool/Resource/Default (ClustermanifestGpuTranscodeNodePoolE579568E) Resource creation Initiated
+hellodj-eks |   2/177 | 2:37:20 AM | CREATE_COMPLETE         | Custom::AWSCDK-EKS-KubernetesResource | Cluster/manifest-GpuTranscodeNodePool/Resource/Default (ClustermanifestGpuTranscodeNodePoolE579568E) 
+hellodj-eks |   3/177 | 2:37:26 AM | CREATE_COMPLETE         | AWS::IAM::Role                        | KubectlRole (KubectlRole4D319128) 
+hellodj-eks |   3/177 | 2:37:26 AM | CREATE_IN_PROGRESS      | AWS::EKS::AccessEntry                 | Cluster/KubectlRoleAccess (ClusterKubectlRoleAccess52D69B3D) 
+hellodj-eks |   3/177 | 2:37:29 AM | CREATE_IN_PROGRESS      | AWS::EKS::AccessEntry                 | Cluster/KubectlRoleAccess (ClusterKubectlRoleAccess52D69B3D) Resource creation Initiated
+hellodj-eks |   4/177 | 2:37:30 AM | CREATE_COMPLETE         | AWS::EKS::AccessEntry                 | Cluster/KubectlRoleAccess (ClusterKubectlRoleAccess52D69B3D) 
+hellodj-eks |   5/177 | 2:37:32 AM | UPDATE_COMPLETE_CLEANUP | AWS::CloudFormation::Stack            | hellodj-eks 
+hellodj-eks |   5/177 | 2:37:33 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestbetaHelloDjIngressB0652CB6 
+hellodj-eks |   5/177 | 2:37:33 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifeststagingHelloDjIngress28B6D80C 
+hellodj-eks |   5/177 | 2:37:33 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestproductionHelloDjIngressE34D883D 
+hellodj-eks |   6/177 | 2:37:42 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifeststagingHelloDjIngress28B6D80C 
+hellodj-eks |   6/177 | 2:37:42 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloadwebuiF961BB64 
+hellodj-eks |   7/177 | 2:37:45 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestbetaHelloDjIngressB0652CB6 
+hellodj-eks |   7/177 | 2:37:45 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloadwebui8F491D80 
+hellodj-eks |   8/177 | 2:37:48 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloadwebuiF961BB64 
+hellodj-eks |   8/177 | 2:37:49 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWebUiFlaskSecret22487959 
+hellodj-eks |   8/177 | 2:37:49 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWebUiOauthSecret8BE5337B 
+hellodj-eks |   8/177 | 2:37:49 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterstagingSawebuiRoleDefaultPolicyBB938C3D 
+hellodj-eks |   8/177 | 2:37:49 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSawebuimanifeststagingSawebuiServiceAccountResourceE547D594 
+hellodj-eks |   9/177 | 2:37:49 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterstagingSawebuiRoleDefaultPolicyBB938C3D 
+hellodj-eks |  10/177 | 2:37:51 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloadwebui8F491D80 
+hellodj-eks |  10/177 | 2:37:52 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWebUiOauthSecret167C27DA 
+hellodj-eks |  10/177 | 2:37:52 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSawebuimanifestbetaSawebuiServiceAccountResourceDEAAA3F4 
+hellodj-eks |  10/177 | 2:37:52 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterbetaSawebuiRoleDefaultPolicyB46879DA 
+hellodj-eks |  10/177 | 2:37:52 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWebUiFlaskSecretF6444AFE 
+hellodj-eks |  11/177 | 2:37:53 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterbetaSawebuiRoleDefaultPolicyB46879DA 
+hellodj-eks |  12/177 | 2:37:55 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWebUiFlaskSecret22487959 
+hellodj-eks |  13/177 | 2:37:56 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWebUiOauthSecret8BE5337B 
+hellodj-eks |  14/177 | 2:37:58 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSawebuimanifeststagingSawebuiServiceAccountResourceE547D594 
+hellodj-eks |  14/177 | 2:37:58 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterstagingSawebuiRoleA504B82B 
+hellodj-eks |  15/177 | 2:38:00 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWebUiOauthSecret167C27DA 
+hellodj-eks |  16/177 | 2:38:01 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSawebuimanifestbetaSawebuiServiceAccountResourceDEAAA3F4 
+hellodj-eks |  17/177 | 2:38:01 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWebUiFlaskSecretF6444AFE 
+hellodj-eks |  17/177 | 2:38:01 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterbetaSawebuiRole4C666471 
+hellodj-eks |  18/177 | 2:38:10 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterstagingSawebuiRoleA504B82B 
+hellodj-eks |  18/177 | 2:38:10 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSawebuiConditionJson6CD2ED4D 
+hellodj-eks |  19/177 | 2:38:11 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterbetaSawebuiRole4C666471 
+hellodj-eks |  19/177 | 2:38:12 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSawebuiConditionJson04D3A84C 
+hellodj-eks |  20/177 | 2:38:12 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSawebuiConditionJson6CD2ED4D 
+hellodj-eks |  20/177 | 2:38:12 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloadvoicepipeline9223430E 
+hellodj-eks |  21/177 | 2:38:14 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSawebuiConditionJson04D3A84C 
+hellodj-eks |  22/177 | 2:38:14 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestproductionHelloDjIngressE34D883D 
+hellodj-eks |  22/177 | 2:38:14 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloadvoicepipeline4E390033 
+hellodj-eks |  22/177 | 2:38:14 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloadwebui723AFABF 
+hellodj-eks |  23/177 | 2:38:18 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloadvoicepipeline9223430E 
+hellodj-eks |  23/177 | 2:38:19 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterstagingSavoicepipelineRoleDefaultPolicy0841B9DE 
+hellodj-eks |  23/177 | 2:38:19 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSavoicepipelinemanifeststagingSavoicepipelineServiceAccountResourceA9188982 
+hellodj-eks |  24/177 | 2:38:20 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterstagingSavoicepipelineRoleDefaultPolicy0841B9DE 
+hellodj-eks |  25/177 | 2:38:20 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloadvoicepipeline4E390033 
+hellodj-eks |  26/177 | 2:38:20 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloadwebui723AFABF 
+hellodj-eks |  26/177 | 2:38:21 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterbetaSavoicepipelineRoleDefaultPolicy2BDAF4CE 
+hellodj-eks |  26/177 | 2:38:21 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSavoicepipelinemanifestbetaSavoicepipelineServiceAccountResource9299DCE4 
+hellodj-eks |  26/177 | 2:38:21 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSawebuimanifestproductionSawebuiServiceAccountResourceB206586C 
+hellodj-eks |  26/177 | 2:38:21 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWebUiFlaskSecret2782DC45 
+hellodj-eks |  26/177 | 2:38:21 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWebUiOauthSecretDCED6118 
+hellodj-eks |  26/177 | 2:38:21 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterproductionSawebuiRoleDefaultPolicyA84D0E49 
+hellodj-eks |  27/177 | 2:38:21 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterbetaSavoicepipelineRoleDefaultPolicy2BDAF4CE 
+hellodj-eks |  28/177 | 2:38:22 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterproductionSawebuiRoleDefaultPolicyA84D0E49 
+hellodj-eks |  29/177 | 2:38:25 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSavoicepipelinemanifeststagingSavoicepipelineServiceAccountResourceA9188982 
+hellodj-eks |  29/177 | 2:38:25 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterstagingSavoicepipelineRole185296A4 
+hellodj-eks |  30/177 | 2:38:27 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSavoicepipelinemanifestbetaSavoicepipelineServiceAccountResource9299DCE4 
+hellodj-eks |  31/177 | 2:38:27 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWebUiOauthSecretDCED6118 
+hellodj-eks |  31/177 | 2:38:27 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterbetaSavoicepipelineRoleD21C5800 
+hellodj-eks |  32/177 | 2:38:27 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWebUiFlaskSecret2782DC45 
+hellodj-eks |  33/177 | 2:38:27 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSawebuimanifestproductionSawebuiServiceAccountResourceB206586C 
+hellodj-eks |  33/177 | 2:38:28 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterproductionSawebuiRoleD9D9D269 
+hellodj-eks |  34/177 | 2:38:35 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterstagingSavoicepipelineRole185296A4 
+hellodj-eks |  34/177 | 2:38:36 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSavoicepipelineConditionJson5413010C 
+hellodj-eks |  35/177 | 2:38:38 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSavoicepipelineConditionJson5413010C 
+hellodj-eks |  35/177 | 2:38:38 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloadhlstranscode413875BE 
+hellodj-eks |  36/177 | 2:38:38 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterbetaSavoicepipelineRoleD21C5800 
+hellodj-eks |  36/177 | 2:38:39 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSavoicepipelineConditionJson7884E853 
+hellodj-eks |  37/177 | 2:38:39 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterproductionSawebuiRoleD9D9D269 
+hellodj-eks |  37/177 | 2:38:39 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSawebuiConditionJson6B2ADA57 
+hellodj-eks |  38/177 | 2:38:40 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSavoicepipelineConditionJson7884E853 
+hellodj-eks |  38/177 | 2:38:41 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloadhlstranscodeAB2A7CE7 
+hellodj-eks |  39/177 | 2:38:41 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSawebuiConditionJson6B2ADA57 
+hellodj-eks |  39/177 | 2:38:42 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloadvoicepipeline3DC3B1A9 
+hellodj-eks |  40/177 | 2:38:44 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloadhlstranscode413875BE 
+hellodj-eks |  40/177 | 2:38:44 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSahlstranscodemanifeststagingSahlstranscodeServiceAccountResourceAB7850E3 
+hellodj-eks |  41/177 | 2:38:47 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloadhlstranscodeAB2A7CE7 
+hellodj-eks |  41/177 | 2:38:47 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSahlstranscodemanifestbetaSahlstranscodeServiceAccountResource1603AF87 
+hellodj-eks |  42/177 | 2:38:48 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloadvoicepipeline3DC3B1A9 
+hellodj-eks |  42/177 | 2:38:48 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSavoicepipelinemanifestproductionSavoicepipelineServiceAccountResourceFF2805F0 
+hellodj-eks |  42/177 | 2:38:48 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterproductionSavoicepipelineRoleDefaultPolicyCA9D6F06 
+hellodj-eks |  43/177 | 2:38:49 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterproductionSavoicepipelineRoleDefaultPolicyCA9D6F06 
+hellodj-eks |  44/177 | 2:38:51 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSahlstranscodemanifeststagingSahlstranscodeServiceAccountResourceAB7850E3 
+hellodj-eks |  44/177 | 2:38:51 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterstagingSahlstranscodeRole8CD31185 
+hellodj-eks |  45/177 | 2:38:54 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSahlstranscodemanifestbetaSahlstranscodeServiceAccountResource1603AF87 
+hellodj-eks |  46/177 | 2:38:54 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSavoicepipelinemanifestproductionSavoicepipelineServiceAccountResourceFF2805F0 
+hellodj-eks |  46/177 | 2:38:54 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterbetaSahlstranscodeRoleFED82D0C 
+hellodj-eks |  46/177 | 2:38:55 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterproductionSavoicepipelineRole487F8300 
+hellodj-eks |  47/177 | 2:39:01 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterstagingSahlstranscodeRole8CD31185 
+hellodj-eks |  47/177 | 2:39:01 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSahlstranscodeConditionJsonE92A6EC0 
+hellodj-eks |  48/177 | 2:39:03 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSahlstranscodeConditionJsonE92A6EC0 
+hellodj-eks |  48/177 | 2:39:04 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloadactivitybackend6336FF83 
+hellodj-eks |  49/177 | 2:39:05 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterproductionSavoicepipelineRole487F8300 
+hellodj-eks |  49/177 | 2:39:05 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSavoicepipelineConditionJsonFAFFC89D 
+hellodj-eks |  50/177 | 2:39:05 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterbetaSahlstranscodeRoleFED82D0C 
+hellodj-eks |  50/177 | 2:39:06 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSahlstranscodeConditionJsonDE2A1390 
+hellodj-eks |  51/177 | 2:39:07 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSavoicepipelineConditionJsonFAFFC89D 
+hellodj-eks |  51/177 | 2:39:07 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloadhlstranscode195B019E 
+hellodj-eks |  52/177 | 2:39:08 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSahlstranscodeConditionJsonDE2A1390 
+hellodj-eks |  52/177 | 2:39:08 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloadactivitybackend8BFFFC81 
+hellodj-eks |  53/177 | 2:39:10 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloadactivitybackend6336FF83 
+hellodj-eks |  53/177 | 2:39:10 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterstagingSaactivitybackendRoleDefaultPolicy90F2E207 
+hellodj-eks |  53/177 | 2:39:10 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSaactivitybackendmanifeststagingSaactivitybackendServiceAccountResourceAC912CA5 
+hellodj-eks |  54/177 | 2:39:11 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterstagingSaactivitybackendRoleDefaultPolicy90F2E207 
+hellodj-eks |  55/177 | 2:39:14 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloadhlstranscode195B019E 
+hellodj-eks |  55/177 | 2:39:14 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSahlstranscodemanifestproductionSahlstranscodeServiceAccountResource59E30914 
+hellodj-eks |  56/177 | 2:39:14 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloadactivitybackend8BFFFC81 
+hellodj-eks |  56/177 | 2:39:15 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterbetaSaactivitybackendRoleDefaultPolicyAF8F893A 
+hellodj-eks |  56/177 | 2:39:15 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSaactivitybackendmanifestbetaSaactivitybackendServiceAccountResourceE0AD416F 
+hellodj-eks |  57/177 | 2:39:16 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterbetaSaactivitybackendRoleDefaultPolicyAF8F893A 
+hellodj-eks |  58/177 | 2:39:16 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSaactivitybackendmanifeststagingSaactivitybackendServiceAccountResourceAC912CA5 
+hellodj-eks |  58/177 | 2:39:17 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterstagingSaactivitybackendRole0533FB17 
+hellodj-eks |  59/177 | 2:39:20 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSahlstranscodemanifestproductionSahlstranscodeServiceAccountResource59E30914 
+hellodj-eks |  60/177 | 2:39:21 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSaactivitybackendmanifestbetaSaactivitybackendServiceAccountResourceE0AD416F 
+hellodj-eks |  60/177 | 2:39:21 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterproductionSahlstranscodeRole850BEC2C 
+hellodj-eks |  60/177 | 2:39:21 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterbetaSaactivitybackendRole59787BB9 
+hellodj-eks |  61/177 | 2:39:28 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterstagingSaactivitybackendRole0533FB17 
+hellodj-eks |  61/177 | 2:39:29 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSaactivitybackendConditionJsonE0DF91F3 
+hellodj-eks |  62/177 | 2:39:30 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterproductionSahlstranscodeRole850BEC2C 
+hellodj-eks |  63/177 | 2:39:31 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSaactivitybackendConditionJsonE0DF91F3 
+hellodj-eks |  63/177 | 2:39:31 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSahlstranscodeConditionJson8A56698F 
+hellodj-eks |  63/177 | 2:39:31 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloadpotokenserver0AA58768 
+hellodj-eks |  64/177 | 2:39:32 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterbetaSaactivitybackendRole59787BB9 
+hellodj-eks |  64/177 | 2:39:33 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSaactivitybackendConditionJson2774A134 
+hellodj-eks |  65/177 | 2:39:33 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSahlstranscodeConditionJson8A56698F 
+hellodj-eks |  65/177 | 2:39:33 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloadactivitybackend86753E20 
+hellodj-eks |  66/177 | 2:39:34 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSaactivitybackendConditionJson2774A134 
+hellodj-eks |  66/177 | 2:39:35 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloadpotokenserver0939B2B6 
+hellodj-eks |  67/177 | 2:39:37 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloadpotokenserver0AA58768 
+hellodj-eks |  67/177 | 2:39:38 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSapotokenservermanifeststagingSapotokenserverServiceAccountResourceB2E9BB34 
+hellodj-eks |  68/177 | 2:39:39 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloadactivitybackend86753E20 
+hellodj-eks |  68/177 | 2:39:40 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSaactivitybackendmanifestproductionSaactivitybackendServiceAccountResourceCB3DD293 
+hellodj-eks |  68/177 | 2:39:40 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterproductionSaactivitybackendRoleDefaultPolicy6154A3BC 
+hellodj-eks |  69/177 | 2:39:41 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterproductionSaactivitybackendRoleDefaultPolicy6154A3BC 
+hellodj-eks |  70/177 | 2:39:41 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloadpotokenserver0939B2B6 
+hellodj-eks |  70/177 | 2:39:41 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSapotokenservermanifestbetaSapotokenserverServiceAccountResourceCBF51E35 
+hellodj-eks |  71/177 | 2:39:44 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSapotokenservermanifeststagingSapotokenserverServiceAccountResourceB2E9BB34 
+hellodj-eks |  71/177 | 2:39:44 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterstagingSapotokenserverRole469B5803 
+hellodj-eks |  72/177 | 2:39:46 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSaactivitybackendmanifestproductionSaactivitybackendServiceAccountResourceCB3DD293 
+hellodj-eks |  72/177 | 2:39:46 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterproductionSaactivitybackendRole7907C96D 
+hellodj-eks |  73/177 | 2:39:48 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSapotokenservermanifestbetaSapotokenserverServiceAccountResourceCBF51E35 
+hellodj-eks |  73/177 | 2:39:48 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterbetaSapotokenserverRole43E02C14 
+hellodj-eks |  74/177 | 2:39:55 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterstagingSapotokenserverRole469B5803 
+hellodj-eks |  74/177 | 2:39:55 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSapotokenserverConditionJsonA92CB074 
+hellodj-eks |  75/177 | 2:39:57 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSapotokenserverConditionJsonA92CB074 
+hellodj-eks |  76/177 | 2:39:58 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterproductionSaactivitybackendRole7907C96D 
+hellodj-eks |  76/177 | 2:39:58 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloadytcipherDF0C2CAE 
+hellodj-eks |  76/177 | 2:39:58 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSaactivitybackendConditionJson9FDD66C5 
+hellodj-eks |  77/177 | 2:39:59 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterbetaSapotokenserverRole43E02C14 
+hellodj-eks |  77/177 | 2:40:00 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSapotokenserverConditionJson73433845 
+hellodj-eks |  78/177 | 2:40:00 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSaactivitybackendConditionJson9FDD66C5 
+hellodj-eks |  78/177 | 2:40:00 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloadpotokenserverCBBBC3E4 
+hellodj-eks |  79/177 | 2:40:00 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSapotokenserverConditionJson73433845 
+hellodj-eks |  79/177 | 2:40:01 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloadytcipherB193E7C5 
+hellodj-eks |  80/177 | 2:40:05 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloadytcipherDF0C2CAE 
+hellodj-eks |  80/177 | 2:40:05 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSaytciphermanifeststagingSaytcipherServiceAccountResourceAE5EB80F 
+hellodj-eks |  80/177 | 2:40:05 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterstagingSaytcipherRoleDefaultPolicy322A4DB2 
+hellodj-eks |  81/177 | 2:40:06 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterstagingSaytcipherRoleDefaultPolicy322A4DB2 
+hellodj-eks |  82/177 | 2:40:07 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloadytcipherB193E7C5 
+hellodj-eks |  82/177 | 2:40:07 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSaytciphermanifestbetaSaytcipherServiceAccountResource6DF47183 
+hellodj-eks |  82/177 | 2:40:07 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterbetaSaytcipherRoleDefaultPolicyF4D9CDE3 
+hellodj-eks |  83/177 | 2:40:07 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloadpotokenserverCBBBC3E4 
+hellodj-eks |  83/177 | 2:40:08 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSapotokenservermanifestproductionSapotokenserverServiceAccountResource9655E56D 
+hellodj-eks |  84/177 | 2:40:08 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterbetaSaytcipherRoleDefaultPolicyF4D9CDE3 
+hellodj-eks |  85/177 | 2:40:11 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSaytciphermanifeststagingSaytcipherServiceAccountResourceAE5EB80F 
+hellodj-eks |  85/177 | 2:40:12 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterstagingSaytcipherRoleC25CC6E0 
+hellodj-eks |  86/177 | 2:40:14 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSaytciphermanifestbetaSaytcipherServiceAccountResource6DF47183 
+hellodj-eks |  87/177 | 2:40:14 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSapotokenservermanifestproductionSapotokenserverServiceAccountResource9655E56D 
+hellodj-eks |  87/177 | 2:40:14 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterbetaSaytcipherRole8519D09E 
+hellodj-eks |  87/177 | 2:40:14 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterproductionSapotokenserverRole3FAFBDAA 
+hellodj-eks |  88/177 | 2:40:22 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterstagingSaytcipherRoleC25CC6E0 
+hellodj-eks |  88/177 | 2:40:22 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSaytcipherConditionJsonB96B4664 
+hellodj-eks |  89/177 | 2:40:24 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSaytcipherConditionJsonB96B4664 
+hellodj-eks |  90/177 | 2:40:24 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterbetaSaytcipherRole8519D09E 
+hellodj-eks |  90/177 | 2:40:24 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloadspotifystream23E0A0A7 
+hellodj-eks |  90/177 | 2:40:24 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSaytcipherConditionJson446F278C 
+hellodj-eks |  91/177 | 2:40:26 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterproductionSapotokenserverRole3FAFBDAA 
+hellodj-eks |  91/177 | 2:40:26 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSapotokenserverConditionJson72B58D69 
+hellodj-eks |  92/177 | 2:40:26 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSaytcipherConditionJson446F278C 
+hellodj-eks |  92/177 | 2:40:27 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloadspotifystreamF73C82C8 
+hellodj-eks |  93/177 | 2:40:28 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSapotokenserverConditionJson72B58D69 
+hellodj-eks |  93/177 | 2:40:28 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloadytcipherD98F0DEE 
+hellodj-eks |  94/177 | 2:40:30 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloadspotifystream23E0A0A7 
+hellodj-eks |  94/177 | 2:40:31 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterstagingSaspotifystreamRoleDefaultPolicy068C3A9C 
+hellodj-eks |  94/177 | 2:40:31 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSaspotifystreammanifeststagingSaspotifystreamServiceAccountResource31A849D2 
+hellodj-eks |  95/177 | 2:40:32 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterstagingSaspotifystreamRoleDefaultPolicy068C3A9C 
+hellodj-eks |  96/177 | 2:40:33 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloadspotifystreamF73C82C8 
+hellodj-eks |  96/177 | 2:40:33 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterbetaSaspotifystreamRoleDefaultPolicyD4B0DE6B 
+hellodj-eks |  96/177 | 2:40:33 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSaspotifystreammanifestbetaSaspotifystreamServiceAccountResource0761E815 
+hellodj-eks |  97/177 | 2:40:34 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterbetaSaspotifystreamRoleDefaultPolicyD4B0DE6B 
+hellodj-eks |  98/177 | 2:40:35 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloadytcipherD98F0DEE 
+hellodj-eks |  98/177 | 2:40:36 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSaytciphermanifestproductionSaytcipherServiceAccountResource8C572775 
+hellodj-eks |  98/177 | 2:40:36 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterproductionSaytcipherRoleDefaultPolicy29800F1F 
+hellodj-eks |  99/177 | 2:40:37 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterproductionSaytcipherRoleDefaultPolicy29800F1F 
+hellodj-eks | 100/177 | 2:40:37 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSaspotifystreammanifeststagingSaspotifystreamServiceAccountResource31A849D2 
+hellodj-eks | 100/177 | 2:40:37 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterstagingSaspotifystreamRoleBD25F728 
+hellodj-eks | 101/177 | 2:40:39 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSaspotifystreammanifestbetaSaspotifystreamServiceAccountResource0761E815 
+hellodj-eks | 101/177 | 2:40:40 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterbetaSaspotifystreamRoleB5BBF01B 
+hellodj-eks | 102/177 | 2:40:42 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSaytciphermanifestproductionSaytcipherServiceAccountResource8C572775 
+hellodj-eks | 102/177 | 2:40:42 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterproductionSaytcipherRoleF8F1619F 
+hellodj-eks | 103/177 | 2:40:47 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterstagingSaspotifystreamRoleBD25F728 
+hellodj-eks | 103/177 | 2:40:48 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSaspotifystreamConditionJson03CBF07C 
+hellodj-eks | 104/177 | 2:40:49 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSaspotifystreamConditionJson03CBF07C 
+hellodj-eks | 104/177 | 2:40:49 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloadtidalstream983FE666 
+hellodj-eks | 105/177 | 2:40:50 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterbetaSaspotifystreamRoleB5BBF01B 
+hellodj-eks | 105/177 | 2:40:50 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSaspotifystreamConditionJson2F3F58B6 
+hellodj-eks | 106/177 | 2:40:52 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSaspotifystreamConditionJson2F3F58B6 
+hellodj-eks | 106/177 | 2:40:52 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloadtidalstreamDB3CD448 
+hellodj-eks | 107/177 | 2:40:53 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterproductionSaytcipherRoleF8F1619F 
+hellodj-eks | 107/177 | 2:40:53 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSaytcipherConditionJsonA8ACECA0 
+hellodj-eks | 108/177 | 2:40:55 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSaytcipherConditionJsonA8ACECA0 
+hellodj-eks | 109/177 | 2:40:55 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloadtidalstream983FE666 
+hellodj-eks | 109/177 | 2:40:55 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloadspotifystream121C79E6 
+hellodj-eks | 109/177 | 2:40:56 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterstagingSatidalstreamRoleDefaultPolicy657D58FB 
+hellodj-eks | 109/177 | 2:40:56 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSatidalstreammanifeststagingSatidalstreamServiceAccountResource9210D4AB 
+hellodj-eks | 110/177 | 2:40:57 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterstagingSatidalstreamRoleDefaultPolicy657D58FB 
+hellodj-eks | 111/177 | 2:40:59 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloadtidalstreamDB3CD448 
+hellodj-eks | 111/177 | 2:40:59 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSatidalstreammanifestbetaSatidalstreamServiceAccountResourceBB8A2242 
+hellodj-eks | 111/177 | 2:40:59 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterbetaSatidalstreamRoleDefaultPolicyD8574E9E 
+hellodj-eks | 112/177 | 2:41:00 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterbetaSatidalstreamRoleDefaultPolicyD8574E9E 
+hellodj-eks | 113/177 | 2:41:01 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloadspotifystream121C79E6 
+hellodj-eks | 114/177 | 2:41:02 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSatidalstreammanifeststagingSatidalstreamServiceAccountResource9210D4AB 
+hellodj-eks | 114/177 | 2:41:02 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSaspotifystreammanifestproductionSaspotifystreamServiceAccountResourceE7F49AA8 
+hellodj-eks | 114/177 | 2:41:02 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterproductionSaspotifystreamRoleDefaultPolicy9CEF60B4 
+hellodj-eks | 114/177 | 2:41:02 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterstagingSatidalstreamRole88DE29A8 
+hellodj-eks | 115/177 | 2:41:03 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterproductionSaspotifystreamRoleDefaultPolicy9CEF60B4 
+hellodj-eks | 116/177 | 2:41:05 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSatidalstreammanifestbetaSatidalstreamServiceAccountResourceBB8A2242 
+hellodj-eks | 116/177 | 2:41:05 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterbetaSatidalstreamRole8559177A 
+hellodj-eks | 117/177 | 2:41:08 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSaspotifystreammanifestproductionSaspotifystreamServiceAccountResourceE7F49AA8 
+hellodj-eks | 117/177 | 2:41:08 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterproductionSaspotifystreamRole1C0BCEB4 
+hellodj-eks | 118/177 | 2:41:13 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterstagingSatidalstreamRole88DE29A8 
+hellodj-eks | 118/177 | 2:41:14 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSatidalstreamConditionJsonC97EFBAF 
+hellodj-eks | 119/177 | 2:41:16 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSatidalstreamConditionJsonC97EFBAF 
+hellodj-eks | 119/177 | 2:41:16 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloadlavalink35321E97 
+hellodj-eks | 120/177 | 2:41:17 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterbetaSatidalstreamRole8559177A 
+hellodj-eks | 120/177 | 2:41:17 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSatidalstreamConditionJson6E443B9C 
+hellodj-eks | 121/177 | 2:41:19 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSatidalstreamConditionJson6E443B9C 
+hellodj-eks | 121/177 | 2:41:19 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloadlavalinkF6E1A2ED 
+hellodj-eks | 122/177 | 2:41:20 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterproductionSaspotifystreamRole1C0BCEB4 
+hellodj-eks | 122/177 | 2:41:20 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSaspotifystreamConditionJson52B99935 
+hellodj-eks | 123/177 | 2:41:22 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSaspotifystreamConditionJson52B99935 
+hellodj-eks | 124/177 | 2:41:22 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloadlavalink35321E97 
+hellodj-eks | 124/177 | 2:41:22 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloadtidalstream349E807E 
+hellodj-eks | 124/177 | 2:41:22 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterstagingSalavalinkRoleDefaultPolicyDC3FDEE9 
+hellodj-eks | 124/177 | 2:41:23 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSalavalinkmanifeststagingSalavalinkServiceAccountResourceC878646A 
+hellodj-eks | 125/177 | 2:41:23 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterstagingSalavalinkRoleDefaultPolicyDC3FDEE9 
+hellodj-eks | 126/177 | 2:41:25 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloadlavalinkF6E1A2ED 
+hellodj-eks | 126/177 | 2:41:26 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterbetaSalavalinkRoleDefaultPolicyFC3C7164 
+hellodj-eks | 126/177 | 2:41:26 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSalavalinkmanifestbetaSalavalinkServiceAccountResource0315EDB2 
+hellodj-eks | 127/177 | 2:41:27 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterbetaSalavalinkRoleDefaultPolicyFC3C7164 
+hellodj-eks | 128/177 | 2:41:29 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSalavalinkmanifeststagingSalavalinkServiceAccountResourceC878646A 
+hellodj-eks | 129/177 | 2:41:29 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloadtidalstream349E807E 
+hellodj-eks | 129/177 | 2:41:29 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSatidalstreammanifestproductionSatidalstreamServiceAccountResourceE36C6A2D 
+hellodj-eks | 129/177 | 2:41:29 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterproductionSatidalstreamRoleDefaultPolicyFA7ECECE 
+hellodj-eks | 129/177 | 2:41:29 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterstagingSalavalinkRoleD9EF00E8 
+hellodj-eks | 130/177 | 2:41:30 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterproductionSatidalstreamRoleDefaultPolicyFA7ECECE 
+hellodj-eks | 131/177 | 2:41:32 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSalavalinkmanifestbetaSalavalinkServiceAccountResource0315EDB2 
+hellodj-eks | 131/177 | 2:41:33 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterbetaSalavalinkRole1B2F3226 
+hellodj-eks | 132/177 | 2:41:35 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSatidalstreammanifestproductionSatidalstreamServiceAccountResourceE36C6A2D 
+hellodj-eks | 132/177 | 2:41:36 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterproductionSatidalstreamRole0D8AF840 
+hellodj-eks | 133/177 | 2:41:39 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterstagingSalavalinkRoleD9EF00E8 
+hellodj-eks | 133/177 | 2:41:40 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSalavalinkConditionJson36FD1D4B 
+hellodj-eks | 134/177 | 2:41:42 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSalavalinkConditionJson36FD1D4B 
+hellodj-eks | 134/177 | 2:41:42 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloadplaybackorchestrator4FDAC71D 
+hellodj-eks | 135/177 | 2:41:43 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterbetaSalavalinkRole1B2F3226 
+hellodj-eks | 135/177 | 2:41:43 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSalavalinkConditionJson06736B2E 
+hellodj-eks | 136/177 | 2:41:45 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSalavalinkConditionJson06736B2E 
+hellodj-eks | 136/177 | 2:41:45 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloadplaybackorchestrator03DB65A4 
+hellodj-eks | 137/177 | 2:41:45 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterproductionSatidalstreamRole0D8AF840 
+hellodj-eks | 137/177 | 2:41:46 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSatidalstreamConditionJsonB4727D49 
+hellodj-eks | 138/177 | 2:41:48 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSatidalstreamConditionJsonB4727D49 
+hellodj-eks | 138/177 | 2:41:48 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloadlavalinkF8D2F1E9 
+hellodj-eks | 139/177 | 2:41:48 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloadplaybackorchestrator4FDAC71D 
+hellodj-eks | 139/177 | 2:41:49 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterstagingSaplaybackorchestratorRoleDefaultPolicy1570D826 
+hellodj-eks | 139/177 | 2:41:49 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSaplaybackorchestratormanifeststagingSaplaybackorchestratorServiceAccountResource3B1907CF 
+hellodj-eks | 140/177 | 2:41:50 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterstagingSaplaybackorchestratorRoleDefaultPolicy1570D826 
+hellodj-eks | 141/177 | 2:41:51 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloadplaybackorchestrator03DB65A4 
+hellodj-eks | 141/177 | 2:41:52 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSaplaybackorchestratormanifestbetaSaplaybackorchestratorServiceAccountResourceD59A40F4 
+hellodj-eks | 141/177 | 2:41:52 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterbetaSaplaybackorchestratorRoleDefaultPolicyD1EFBCD3 
+hellodj-eks | 142/177 | 2:41:53 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterbetaSaplaybackorchestratorRoleDefaultPolicyD1EFBCD3 
+hellodj-eks | 143/177 | 2:41:54 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloadlavalinkF8D2F1E9 
+hellodj-eks | 143/177 | 2:41:55 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterproductionSalavalinkRoleDefaultPolicy3C8B1042 
+hellodj-eks | 143/177 | 2:41:55 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSalavalinkmanifestproductionSalavalinkServiceAccountResource9F5B94B5 
+hellodj-eks | 144/177 | 2:41:55 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSaplaybackorchestratormanifeststagingSaplaybackorchestratorServiceAccountResource3B1907CF 
+hellodj-eks | 144/177 | 2:41:55 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterstagingSaplaybackorchestratorRoleBD865EAA 
+hellodj-eks | 145/177 | 2:41:56 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterproductionSalavalinkRoleDefaultPolicy3C8B1042 
+hellodj-eks | 146/177 | 2:41:58 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSaplaybackorchestratormanifestbetaSaplaybackorchestratorServiceAccountResourceD59A40F4 
+hellodj-eks | 146/177 | 2:41:58 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterbetaSaplaybackorchestratorRoleA7D39EDD 
+hellodj-eks | 147/177 | 2:42:01 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSalavalinkmanifestproductionSalavalinkServiceAccountResource9F5B94B5 
+hellodj-eks | 147/177 | 2:42:01 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterproductionSalavalinkRole9BADA619 
+hellodj-eks | 148/177 | 2:42:05 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterstagingSaplaybackorchestratorRoleBD865EAA 
+hellodj-eks | 148/177 | 2:42:05 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSaplaybackorchestratorConditionJson03F1A15F 
+hellodj-eks | 149/177 | 2:42:07 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSaplaybackorchestratorConditionJson03F1A15F 
+hellodj-eks | 149/177 | 2:42:08 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloaddiscordbotcore8A7AA1CC 
+hellodj-eks | 150/177 | 2:42:10 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterbetaSaplaybackorchestratorRoleA7D39EDD 
+hellodj-eks | 150/177 | 2:42:10 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSaplaybackorchestratorConditionJsonF1250C03 
+hellodj-eks | 151/177 | 2:42:11 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSaplaybackorchestratorConditionJsonF1250C03 
+hellodj-eks | 151/177 | 2:42:11 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloaddiscordbotcoreEEA20059 
+hellodj-eks | 152/177 | 2:42:13 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterproductionSalavalinkRole9BADA619 
+hellodj-eks | 152/177 | 2:42:13 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSalavalinkConditionJson963977A4 
+hellodj-eks | 153/177 | 2:42:14 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifeststagingWorkloaddiscordbotcore8A7AA1CC 
+hellodj-eks | 153/177 | 2:42:14 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterstagingSadiscordbotcoreRoleDefaultPolicy42735EC5 
+hellodj-eks | 153/177 | 2:42:14 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSadiscordbotcoremanifeststagingSadiscordbotcoreServiceAccountResource3DF78228 
+hellodj-eks | 154/177 | 2:42:15 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSalavalinkConditionJson963977A4 
+hellodj-eks | 155/177 | 2:42:15 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterstagingSadiscordbotcoreRoleDefaultPolicy42735EC5 
+hellodj-eks | 155/177 | 2:42:15 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloadplaybackorchestrator8D735F5A 
+hellodj-eks | 156/177 | 2:42:17 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestbetaWorkloaddiscordbotcoreEEA20059 
+hellodj-eks | 156/177 | 2:42:18 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSadiscordbotcoremanifestbetaSadiscordbotcoreServiceAccountResourceAB323C1C 
+hellodj-eks | 156/177 | 2:42:18 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterbetaSadiscordbotcoreRoleDefaultPolicy28DA48D7 
+hellodj-eks | 157/177 | 2:42:19 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterbetaSadiscordbotcoreRoleDefaultPolicy28DA48D7 
+hellodj-eks | 158/177 | 2:42:20 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSadiscordbotcoremanifeststagingSadiscordbotcoreServiceAccountResource3DF78228 
+hellodj-eks | 158/177 | 2:42:21 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterstagingSadiscordbotcoreRole776A25F4 
+hellodj-eks | 159/177 | 2:42:22 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloadplaybackorchestrator8D735F5A 
+hellodj-eks | 159/177 | 2:42:22 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSaplaybackorchestratormanifestproductionSaplaybackorchestratorServiceAccountResource09967AA5 
+hellodj-eks | 159/177 | 2:42:22 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterproductionSaplaybackorchestratorRoleDefaultPolicy60A14945 
+hellodj-eks | 160/177 | 2:42:23 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterproductionSaplaybackorchestratorRoleDefaultPolicy60A14945 
+hellodj-eks | 161/177 | 2:42:24 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSadiscordbotcoremanifestbetaSadiscordbotcoreServiceAccountResourceAB323C1C 
+hellodj-eks | 161/177 | 2:42:24 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterbetaSadiscordbotcoreRole1068ADAA 
+hellodj-eks | 162/177 | 2:42:28 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSaplaybackorchestratormanifestproductionSaplaybackorchestratorServiceAccountResource09967AA5 
+hellodj-eks | 162/177 | 2:42:29 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterproductionSaplaybackorchestratorRole566AD0D4 
+hellodj-eks | 163/177 | 2:42:32 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterstagingSadiscordbotcoreRole776A25F4 
+hellodj-eks | 163/177 | 2:42:33 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterstagingSadiscordbotcoreConditionJson5B91E05E 
+hellodj-eks | 164/177 | 2:42:35 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterstagingSadiscordbotcoreConditionJson5B91E05E 
+hellodj-eks | 164/177 | 2:42:35 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifeststagingHelloDjNamespace2D22221D 
+hellodj-eks | 165/177 | 2:42:37 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterbetaSadiscordbotcoreRole1068ADAA 
+hellodj-eks | 165/177 | 2:42:37 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterbetaSadiscordbotcoreConditionJson6E4586E9 
+hellodj-eks | 166/177 | 2:42:39 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterproductionSaplaybackorchestratorRole566AD0D4 
+hellodj-eks | 166/177 | 2:42:39 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSaplaybackorchestratorConditionJsonF38E589C 
+hellodj-eks | 167/177 | 2:42:39 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterbetaSadiscordbotcoreConditionJson6E4586E9 
+hellodj-eks | 167/177 | 2:42:40 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestbetaHelloDjNamespaceABD746EF 
+hellodj-eks | 168/177 | 2:42:41 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSaplaybackorchestratorConditionJsonF38E589C 
+hellodj-eks | 168/177 | 2:42:41 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloaddiscordbotcore765907A7 
+hellodj-eks | 169/177 | 2:42:48 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestproductionWorkloaddiscordbotcore765907A7 
+hellodj-eks | 169/177 | 2:42:48 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSadiscordbotcoremanifestproductionSadiscordbotcoreServiceAccountResource4F55883F 
+hellodj-eks | 169/177 | 2:42:48 AM | DELETE_IN_PROGRESS      | AWS::IAM::Policy                      | ClusterproductionSadiscordbotcoreRoleDefaultPolicyC4847860 
+hellodj-eks | 170/177 | 2:42:49 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifeststagingHelloDjNamespace2D22221D 
+hellodj-eks | 171/177 | 2:42:49 AM | DELETE_COMPLETE         | AWS::IAM::Policy                      | ClusterproductionSadiscordbotcoreRoleDefaultPolicyC4847860 
+hellodj-eks | 172/177 | 2:42:53 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestbetaHelloDjNamespaceABD746EF 
+hellodj-eks | 173/177 | 2:42:54 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSadiscordbotcoremanifestproductionSadiscordbotcoreServiceAccountResource4F55883F 
+hellodj-eks | 173/177 | 2:42:55 AM | DELETE_IN_PROGRESS      | AWS::IAM::Role                        | ClusterproductionSadiscordbotcoreRoleE07D8339 
+hellodj-eks | 174/177 | 2:43:04 AM | DELETE_COMPLETE         | AWS::IAM::Role                        | ClusterproductionSadiscordbotcoreRoleE07D8339 
+hellodj-eks | 174/177 | 2:43:05 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClusterproductionSadiscordbotcoreConditionJson0C7E9723 
+hellodj-eks | 175/177 | 2:43:06 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClusterproductionSadiscordbotcoreConditionJson0C7E9723 
+hellodj-eks | 175/177 | 2:43:07 AM | DELETE_IN_PROGRESS      | AWS::CloudFormation::CustomResource   | ClustermanifestproductionHelloDjNamespace47AAB290 
+hellodj-eks | 176/177 | 2:43:20 AM | DELETE_COMPLETE         | AWS::CloudFormation::CustomResource   | ClustermanifestproductionHelloDjNamespace47AAB290 
+hellodj-eks | 177/177 | 2:43:21 AM | UPDATE_COMPLETE         | AWS::CloudFormation::Stack            | hellodj-eks 
+
+✅  hellodj-eks
+
+✨  Deployment time: 382.67s
+
+Outputs:
+hellodj-eks.ClusterName = hellodj
+hellodj-eks.GpuIdleWindowSeconds = 600
+hellodj-eks.GpuScaleUpLimit = 4
+hellodj-eks.KubectlRoleArn = arn:aws:iam::874927898283:role/hellodj-kubectl
+hellodj-eks.OidcProviderArn = arn:aws:iam::874927898283:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/BD79C26E1F7E7B496D661B72809FDAC0
+Stack ARN:
+arn:aws:cloudformation:us-east-1:874927898283:stack/hellodj-eks/3b54c7d0-a17a-11f1-86b1-124a33e4cf99
+
+✨  Total time: 418.09s
+

@@ -1,5 +1,21 @@
 # HelloDJ Documentation
 
+> ⚠️ **HISTORICAL — describes the removed on-prem deployment.** HelloDJ is now
+> **AWS 100%**. The on-prem trees this documentation refers to (`bot/`,
+> `web-ui/`, `kube/`, `training/`, `tidal-stream/`, `spotify-stream/`,
+> `docker-compose.yml`, the gremlin K3s cluster, the `registry.celestium.life`
+> Harbor registry, the encrypted-SQLite credential store) have been **deleted**.
+> The pages below (`bot-core`, `playback-engine`, `kubernetes`, `DEPLOY-SAAS`,
+> `development`, `configuration`, `architecture-diagram`, …) are retained ONLY
+> as historical context for how features originated; the commands, paths, and
+> deploy steps in them no longer apply.
+>
+> **Authoritative current architecture:**
+> - `.kiro/steering/hellodj-architecture.md` (AWS platform)
+> - `platform/infra/ARCHITECTURE.md` (AWS topology)
+> - `platform/components/*/README.md` (per-component)
+> - The AWS workload/deploy design lives in `hellodj-cdk/` (CDK) — not `kube/`.
+
 Voice-activated Discord music bot with multi-source playback, video streaming, and intelligent voice commands.
 
 ## Table of Contents

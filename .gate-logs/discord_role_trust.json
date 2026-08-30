@@ -1,0 +1,18 @@
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Effect": "Allow",
+            "Principal": {
+                "Federated": "arn:aws:iam::874927898283:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/hellodj"
+            },
+            "Action": "sts:AssumeRoleWithWebIdentity",
+            "Condition": {
+                "StringEquals": {
+                    "oidc.eks.us-east-1.amazonaws.com/id/hellodj:aud": "sts.amazonaws.com",
+                    "oidc.eks.us-east-1.amazonaws.com/id/hellodj:sub": "system:serviceaccount:hellodj-beta:hellodj-discord-bot-core"
+                }
+            }
+        }
+    ]
+}

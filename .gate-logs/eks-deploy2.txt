@@ -1,0 +1,82 @@
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+Including dependency stacks: hellodj-network
+WARNING Ignoring Egress rule since 'allowAllOutbound' is set to true; To add customized rules, set allowAllOutbound=false on the SecurityGroup (Construct Annotations)
+   hellodj-network/FleetSecurityGroup
+   Acknowledge with 'Construct-Annotations::@aws-cdk/aws-ec2:ipv4IgnoreEgressRule'
+
+✨  Synthesis time: 10.83s
+
+hellodj-network
+hellodj-eks: start: Building hellodj-eks Template
+hellodj-eks: success: Built hellodj-eks Template
+hellodj-network: creating CloudFormation changeset...
+hellodj-network: deploying... [1/2]
+
+✅  hellodj-network (no changes)
+
+✨  Deployment time: 0s
+
+Outputs:
+hellodj-network.AlbDnsName = hellod-AppLo-5ebRMXtKcl6d-223787727.us-east-1.elb.amazonaws.com
+hellodj-network.ExportsOutputRefVpc8378EB38272D6E3A = vpc-0f9afceef13c04d55
+hellodj-network.ExportsOutputRefVpcprivateegressSubnet1Subnet830BC88F45116193 = subnet-05b1d975fba448593
+hellodj-network.ExportsOutputRefVpcprivateegressSubnet2SubnetEB0EA9CBFD91A0CD = subnet-0fff9a02f630107e6
+hellodj-network.ExportsOutputRefVpcprivateegressSubnet3Subnet6C8E65FBD4F775F0 = subnet-07c4ec1134edc462f
+hellodj-network.NlbDnsName = hellod-Gatew-diL6G8vpwL3u-3d8023dc03f773fe.elb.us-east-1.amazonaws.com
+hellodj-network.VpcId = vpc-0f9afceef13c04d55
+Stack ARN:
+arn:aws:cloudformation:us-east-1:874927898283:stack/hellodj-network/ada7e740-a125-11f1-8166-0affca082aef
+hellodj-eks: start: Publishing hellodj-eks Template (874927898283-us-east-1-5b02f758)
+hellodj-eks: success: Published hellodj-eks Template (874927898283-us-east-1-5b02f758)
+hellodj-eks
+hellodj-eks: creating CloudFormation changeset...
+hellodj-eks: deploying... [2/2]
+hellodj-eks | 0/7 | 4:13:58 AM | UPDATE_IN_PROGRESS      | AWS::CloudFormation::Stack            | hellodj-eks User Initiated
+hellodj-eks | 0/7 | 4:14:02 AM | CREATE_IN_PROGRESS      | Custom::AWSCDKCfnJson                 | Cluster/ExternalDnsSa/ConditionJson/Resource/Default (ClusterExternalDnsSaConditionJsonDC442591) 
+hellodj-eks | 0/7 | 4:14:04 AM | CREATE_IN_PROGRESS      | Custom::AWSCDKCfnJson                 | Cluster/ExternalDnsSa/ConditionJson/Resource/Default (ClusterExternalDnsSaConditionJsonDC442591) Resource creation Initiated
+hellodj-eks | 1/7 | 4:14:04 AM | CREATE_COMPLETE         | Custom::AWSCDKCfnJson                 | Cluster/ExternalDnsSa/ConditionJson/Resource/Default (ClusterExternalDnsSaConditionJsonDC442591) 
+hellodj-eks | 1/7 | 4:14:05 AM | CREATE_IN_PROGRESS      | AWS::IAM::Role                        | Cluster/ExternalDnsSa/Role (ClusterExternalDnsSaRole708FD034) 
+hellodj-eks | 1/7 | 4:14:06 AM | CREATE_IN_PROGRESS      | AWS::IAM::Role                        | Cluster/ExternalDnsSa/Role (ClusterExternalDnsSaRole708FD034) Resource creation Initiated
+hellodj-eks | 2/7 | 4:14:22 AM | CREATE_COMPLETE         | AWS::IAM::Role                        | Cluster/ExternalDnsSa/Role (ClusterExternalDnsSaRole708FD034) 
+hellodj-eks | 2/7 | 4:14:23 AM | CREATE_IN_PROGRESS      | AWS::IAM::Policy                      | Cluster/ExternalDnsSa/Role/DefaultPolicy (ClusterExternalDnsSaRoleDefaultPolicyE1E48CF8) 
+hellodj-eks | 2/7 | 4:14:23 AM | CREATE_IN_PROGRESS      | Custom::AWSCDK-EKS-KubernetesResource | Cluster/ExternalDnsSa/manifest-ExternalDnsSaServiceAccountResource/Resource/Default (ClusterExternalDnsSamanifestExternalDnsSaServiceAccountResource85E0962A) 
+hellodj-eks | 2/7 | 4:14:24 AM | CREATE_IN_PROGRESS      | AWS::IAM::Policy                      | Cluster/ExternalDnsSa/Role/DefaultPolicy (ClusterExternalDnsSaRoleDefaultPolicyE1E48CF8) Resource creation Initiated
+hellodj-eks | 2/7 | 4:14:35 AM | CREATE_IN_PROGRESS      | Custom::AWSCDK-EKS-KubernetesResource | Cluster/ExternalDnsSa/manifest-ExternalDnsSaServiceAccountResource/Resource/Default (ClusterExternalDnsSamanifestExternalDnsSaServiceAccountResource85E0962A) Resource creation Initiated
+hellodj-eks | 3/7 | 4:14:35 AM | CREATE_COMPLETE         | Custom::AWSCDK-EKS-KubernetesResource | Cluster/ExternalDnsSa/manifest-ExternalDnsSaServiceAccountResource/Resource/Default (ClusterExternalDnsSamanifestExternalDnsSaServiceAccountResource85E0962A) 
+hellodj-eks | 4/7 | 4:14:40 AM | CREATE_COMPLETE         | AWS::IAM::Policy                      | Cluster/ExternalDnsSa/Role/DefaultPolicy (ClusterExternalDnsSaRoleDefaultPolicyE1E48CF8) 
+hellodj-eks | 4/7 | 4:14:40 AM | CREATE_IN_PROGRESS      | Custom::AWSCDK-EKS-HelmChart          | Cluster/chart-ExternalDns/Resource/Default (ClusterchartExternalDns260491C5) 
+hellodj-eks | 4/7 | 4:14:48 AM | CREATE_IN_PROGRESS      | Custom::AWSCDK-EKS-HelmChart          | Cluster/chart-ExternalDns/Resource/Default (ClusterchartExternalDns260491C5) Resource creation Initiated
+hellodj-eks | 5/7 | 4:14:49 AM | CREATE_COMPLETE         | Custom::AWSCDK-EKS-HelmChart          | Cluster/chart-ExternalDns/Resource/Default (ClusterchartExternalDns260491C5) 
+hellodj-eks | 6/7 | 4:14:50 AM | UPDATE_COMPLETE_CLEANUP | AWS::CloudFormation::Stack            | hellodj-eks 
+hellodj-eks | 7/7 | 4:14:51 AM | UPDATE_COMPLETE         | AWS::CloudFormation::Stack            | hellodj-eks 
+
+✅  hellodj-eks
+
+✨  Deployment time: 54.58s
+
+Outputs:
+hellodj-eks.ClusterName = hellodj
+hellodj-eks.GpuIdleWindowSeconds = 600
+hellodj-eks.GpuScaleUpLimit = 4
+hellodj-eks.KubectlRoleArn = arn:aws:iam::874927898283:role/hellodj-kubectl
+hellodj-eks.OidcProviderArn = arn:aws:iam::874927898283:oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/BD79C26E1F7E7B496D661B72809FDAC0
+Stack ARN:
+arn:aws:cloudformation:us-east-1:874927898283:stack/hellodj-eks/3b54c7d0-a17a-11f1-86b1-124a33e4cf99
+
+✨  Total time: 84.16s
+
+exit=0

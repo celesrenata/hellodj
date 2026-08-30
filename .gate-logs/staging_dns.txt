@@ -1,0 +1,13 @@
+]633;E;{ echo "=== DNS staging ==="\x3b getent hosts staging.us-east-1.hellodj.bot || echo "no getent result"\x3b echo "=== dig staging ==="\x3b dig +short staging.us-east-1.hellodj.bot\x3b echo "=== dig beta (known working) ==="\x3b dig +short beta.us-east-1.hellodj.bot\x3b } > .gate-logs/staging_dns.txt 2>&1\x3b cat .gate-logs/staging_dns.txt;c08a0620-fdad-4af0-ab48-237647219028]633;C=== DNS staging ===
+54.147.4.91     staging.us-east-1.hellodj.bot
+44.210.225.155  staging.us-east-1.hellodj.bot
+100.56.159.197  staging.us-east-1.hellodj.bot
+=== dig staging ===
+44.210.225.155
+100.56.159.197
+54.147.4.91
+=== dig beta (known working) ===
+18.172.185.8
+18.172.185.105
+18.172.185.59
+18.172.185.37

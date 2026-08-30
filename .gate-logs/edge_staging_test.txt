@@ -1,0 +1,17 @@
+=== dig staging ===
+99.86.101.88
+99.86.101.127
+99.86.101.123
+99.86.101.45
+=== healthz ===
+HTTP/2 404 
+content-type: text/plain; charset=utf-8
+content-length: 16
+server: awselb/2.0
+date: Sat, 29 Aug 2026 23:10:16 GMT
+x-cache: Error from cloudfront
+via: 1.1 530e539d73ace990292a1f622c82aeea.cloudfront.net (CloudFront)
+x-amz-cf-pop: SEA900-P13
+x-amz-cf-id: MwET1qVwX-jmH0s1ROQobJyfx6pOFyigRdj1OZp4CakvGYWwt9y6YQ==
+
+curl_exit=0

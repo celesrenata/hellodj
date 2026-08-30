@@ -1,0 +1,128 @@
+commit a343c40c65b660a5ad3d4f1d47fe15e0bbe57e8a
+Author: Celes Renata <cele@frameshift.net>
+Date:   Sat Aug 29 00:43:14 2026 -0700
+
+    ami: fix GPU AMI build failure from malformed nvidia-container-toolkit udev rule
+    
+    The GPU AMI build failed at the udev-rules derivation. Upstream nixpkgs
+    services/hardware/nvidia-container-toolkit/default.nix emits a udev rule with
+    an unbalanced single quote:
+    
+      KERNEL=="nvidia", RUN+="... restart nvidia-container-toolkit-cdi-generator.service'"
+    
+    The trailing `'` is an upstream typo. It was harmless until the NixOS
+    udev-rules builder began running `udevadm verify` on the assembled rules,
+    which now reports the line as "Invalid key/value pair" and fails the
+    udev-rules derivation, cascading to the whole GPU AMI build.
+    
+    We need hardware.nvidia-container-toolkit enabled for CDI GPU-in-container
+    access, so dropping the module is not an option. Instead, build a
+    quote-balanced copy of the pinned module directory (single-line sed),
+    disable the upstream module, and import the patched copy. This tracks
+    upstream automatically: `nix flake update nixpkgs` re-copies and re-applies
+    the sed; if upstream fixes the typo the sed matches nothing and the build
+    still succeeds.
+    
+    Verified: the aarch64 udev-rules derivation now builds under emulation with
+    udevadm verify reporting Fail: 0.
+
+ infra/ami/flake.nix | 54 ++++++++++++++++++++++++++++++++++++++++++++++++++++-
+ 1 file changed, 53 insertions(+), 1 deletion(-)
+=== DIFF ===
+commit a343c40c65b660a5ad3d4f1d47fe15e0bbe57e8a
+Author: Celes Renata <cele@frameshift.net>
+Date:   Sat Aug 29 00:43:14 2026 -0700
+
+    ami: fix GPU AMI build failure from malformed nvidia-container-toolkit udev rule
+    
+    The GPU AMI build failed at the udev-rules derivation. Upstream nixpkgs
+    services/hardware/nvidia-container-toolkit/default.nix emits a udev rule with
+    an unbalanced single quote:
+    
+      KERNEL=="nvidia", RUN+="... restart nvidia-container-toolkit-cdi-generator.service'"
+    
+    The trailing `'` is an upstream typo. It was harmless until the NixOS
+    udev-rules builder began running `udevadm verify` on the assembled rules,
+    which now reports the line as "Invalid key/value pair" and fails the
+    udev-rules derivation, cascading to the whole GPU AMI build.
+    
+    We need hardware.nvidia-container-toolkit enabled for CDI GPU-in-container
+    access, so dropping the module is not an option. Instead, build a
+    quote-balanced copy of the pinned module directory (single-line sed),
+    disable the upstream module, and import the patched copy. This tracks
+    upstream automatically: `nix flake update nixpkgs` re-copies and re-applies
+    the sed; if upstream fixes the typo the sed matches nothing and the build
+    still succeeds.
+    
+    Verified: the aarch64 udev-rules derivation now builds under emulation with
+    udevadm verify reporting Fail: 0.
+
+diff --git a/infra/ami/flake.nix b/infra/ami/flake.nix
+index 9d21a11..cde1b86 100644
+--- a/infra/ami/flake.nix
++++ b/infra/ami/flake.nix
+@@ -72,11 +72,63 @@
+ 
+       pkgs = import nixpkgs { inherit system; };
+ 
++      # -----------------------------------------------------------------------
++      # Upstream nixpkgs bug workaround: nvidia-container-toolkit udev rule
++      # emits an unbalanced single quote (`...cdi-generator.service'"`).
++      # -----------------------------------------------------------------------
++      #
++      # The nixpkgs `services/hardware/nvidia-container-toolkit/default.nix`
++      # module contributes this to `services.udev.extraRules`:
++      #
++      #   KERNEL=="nvidia", RUN+="… restart nvidia-container-toolkit-cdi-generator.service'"
++      #                                                                            ^ stray '
++      #
++      # That trailing `'` is an upstream typo (the closing should be just `"`).
++      # It was harmless until the NixOS `udev-rules` builder started running
++      # `udevadm verify` on the assembled rules — that check now reports the
++      # line as an "Invalid key/value pair" and FAILS the `udev-rules`
++      # derivation, which cascades to the whole GPU AMI build (the pipeline's
++      # `build-gpu-ami` step). We enable `hardware.nvidia-container-toolkit`
++      # (gpu-node.nix) for CDI GPU-in-container access, so we cannot simply
++      # drop the module.
++      #
++      # Fix: build a patched copy of the pinned module directory with the stray
++      # quote removed, `disabledModules` the upstream one, and import the
++      # patched copy. This tracks upstream automatically — `nix flake update
++      # nixpkgs` re-copies the current module and re-applies the single-line
++      # sed; if upstream fixes the typo the sed simply matches nothing (the
++      # rule already balanced) and the build still succeeds. Doing this here in
++      # `flake.nix` (not inside a module's `imports`) avoids the module-system
++      # restriction that `imports` cannot depend on `pkgs`.
++      nvidiaCtkModuleDir =
++        "${nixpkgs}/nixos/modules/services/hardware/nvidia-container-toolkit";
++      patchedNvidiaCtkModule =
++        pkgs.runCommand "nvidia-container-toolkit-module-fixed" { } ''
++          mkdir -p $out
++          cp ${nvidiaCtkModuleDir}/*.nix $out/
++          chmod -R u+w $out
++          # Balance the stray single quote in the cdi-generator udev rule.
++          # Idempotent: a no-op if upstream has already fixed the typo.
++          sed -i "s/cdi-generator\.service'\"/cdi-generator.service\"/" \
++            $out/default.nix
++        '';
++
+       # The NixOS system behind the image. `image/repart.nix` is imported by
+       # gpu-node.nix and sets `config.system.build.image` (the raw GPT disk).
+       nixos = nixpkgs.lib.nixosSystem {
+         inherit system;
+-        modules = [ ./gpu-node.nix ];
++        modules = [
++          # Replace the upstream nvidia-container-toolkit module with the
++          # quote-balanced copy built above (see rationale on
++          # `patchedNvidiaCtkModule`).
++          {
++            disabledModules = [
++              "services/hardware/nvidia-container-toolkit"
++            ];
++          }
++          "${patchedNvidiaCtkModule}/default.nix"
++          ./gpu-node.nix
++        ];
+       };
+ 
+       # The repart disk image (systemd-repart, no VM). The output store path

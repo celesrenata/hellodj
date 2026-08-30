@@ -1,0 +1,2 @@
+Sid: AssumeSharedKubectlRole Action: sts:AssumeRole Resource: arn:aws:iam::874927898283:role/hellodj-kubectl
+FOUND

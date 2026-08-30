@@ -1,0 +1,4 @@
+Error from server (NotFound): serviceaccounts "discord-bot-core" not found
+
+--- real cluster OIDC issuer ---
+https://oidc.eks.us-east-1.amazonaws.com/id/BD79C26E1F7E7B496D661B72809FDAC0

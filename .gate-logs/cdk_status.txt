@@ -1,0 +1,45 @@
+ M infra/cdk.json
+ M infra/cdk.out/assembly-hellodj-pipeline-hellodj-beta-stage/hellodjpipelinehellodjbetastagehellodjworkloadsbeta3BA8E38C.assets.json
+ M infra/cdk.out/assembly-hellodj-pipeline-hellodj-beta-stage/hellodjpipelinehellodjbetastagehellodjworkloadsbeta3BA8E38C.metadata.json
+ M infra/cdk.out/assembly-hellodj-pipeline-hellodj-beta-stage/hellodjpipelinehellodjbetastagehellodjworkloadsbeta3BA8E38C.template.json
+ M infra/cdk.out/assembly-hellodj-pipeline-hellodj-beta-stage/manifest.json
+ M infra/cdk.out/assembly-hellodj-pipeline-hellodj-production-stage/hellodjpipelinehellodjproductionstagehellodjworkloadsproductionD90052A9.assets.json
+ M infra/cdk.out/assembly-hellodj-pipeline-hellodj-production-stage/hellodjpipelinehellodjproductionstagehellodjworkloadsproductionD90052A9.metadata.json
+ M infra/cdk.out/assembly-hellodj-pipeline-hellodj-production-stage/hellodjpipelinehellodjproductionstagehellodjworkloadsproductionD90052A9.template.json
+ M infra/cdk.out/assembly-hellodj-pipeline-hellodj-production-stage/manifest.json
+ M infra/cdk.out/assembly-hellodj-pipeline-hellodj-staging-stage/hellodjpipelinehellodjstagingstagehellodjworkloadsstagingFCC6DE41.assets.json
+ M infra/cdk.out/assembly-hellodj-pipeline-hellodj-staging-stage/hellodjpipelinehellodjstagingstagehellodjworkloadsstagingFCC6DE41.metadata.json
+ M infra/cdk.out/assembly-hellodj-pipeline-hellodj-staging-stage/hellodjpipelinehellodjstagingstagehellodjworkloadsstagingFCC6DE41.template.json
+ M infra/cdk.out/assembly-hellodj-pipeline-hellodj-staging-stage/manifest.json
+ M infra/cdk.out/hellodj-analytics.metadata.json
+ M infra/cdk.out/hellodj-auth.assets.json
+ M infra/cdk.out/hellodj-auth.metadata.json
+ M infra/cdk.out/hellodj-auth.template.json
+ M infra/cdk.out/hellodj-data.assets.json
+ M infra/cdk.out/hellodj-data.metadata.json
+ M infra/cdk.out/hellodj-data.template.json
+ M infra/cdk.out/hellodj-edge.assets.json
+ M infra/cdk.out/hellodj-edge.metadata.json
+ M infra/cdk.out/hellodj-edge.template.json
+ M infra/cdk.out/hellodj-eks.assets.json
+ M infra/cdk.out/hellodj-eks.metadata.json
+ M infra/cdk.out/hellodj-eks.template.json
+ M infra/cdk.out/hellodj-network.metadata.json
+ M infra/cdk.out/hellodj-observability.metadata.json
+ M infra/cdk.out/hellodj-pipeline.assets.json
+ M infra/cdk.out/hellodj-pipeline.metadata.json
+ M infra/cdk.out/hellodj-pipeline.template.json
+ M infra/cdk.out/hellodj-source.metadata.json
+ M infra/cdk.out/hellodjpipeline422D9D58.dot
+ M infra/cdk.out/manifest.json
+ M infra/cdk.out/tree.json
+?? .kiro/
+?? infra/alltests_tmp.txt
+?? infra/cdk.out/assembly-hellodj-pipeline-hellodj-beta-stage/hellodjpipelinehellodjbetastagehellodjworkloadsbetaK209B4302.nested.template.json
+?? infra/cdk.out/assembly-hellodj-pipeline-hellodj-production-stage/hellodjpipelinehellodjproductionstagehellodjworkloadsproductionK1B1EBCE8.nested.template.json
+?? infra/cdk.out/assembly-hellodj-pipeline-hellodj-staging-stage/hellodjpipelinehellodjstagingstagehellodjworkloadsstagingKB796AC6D.nested.template.json
+?? infra/pl_sm_tmp.txt
+?? infra/synth_pipeline_tmp.txt
+?? shared/hellodj_platform_logic/__pycache__/
+?? shared/hellodj_platform_logic/data_access/__pycache__/
+?? shared/hellodj_platform_logic/types/__pycache__/

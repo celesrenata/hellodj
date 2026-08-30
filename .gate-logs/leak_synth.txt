@@ -1,0 +1,38 @@
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.Stack#addDependency is deprecated.
+  Use `addStackDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.Stack#addDependency is deprecated.
+  Use `addStackDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.Stack#addDependency is deprecated.
+  Use `addStackDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.Stack#addDependency is deprecated.
+  Use `addStackDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.Stack#addDependency is deprecated.
+  Use `addStackDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.Stack#addDependency is deprecated.
+  Use `addStackDependency` instead.
+  This API will be removed in the next major release.
+WARNING No cross-stack-reference strength configured, defaulting to "strong". We recommend you set feature flag "@aws-cdk/core:defaultCrossStackReferences" to "both", then deploy everywhere, then set it to "weak". Alternatively, set it to "strong" explicitly to lock in the current producer-protecting behavior. (See: https://github.com/aws/aws-cdk/blob/main/packages/aws-cdk-lib/README.md#reference-strength) (Construct Annotations)
+   hellodj-pipeline/hellodj-beta-stage/hellodj-workloads-beta
+   Acknowledge with 'Construct-Annotations::@aws-cdk/core:crossStackReferencesDefaultStrong'
+75 feature flags are not configured. Run 'cdk flags --unstable=flags' to learn more.
+synth_exit=0

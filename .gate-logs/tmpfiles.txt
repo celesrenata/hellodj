@@ -1,0 +1,9 @@
+]633;E;for f in infra/alltests_tmp.txt infra/pl_sm_tmp.txt infra/synth_pipeline_tmp.txt\x3b do echo "=== $f ($(wc -l < $f 2>/dev/null) lines) ==="\x3b head -2 "$f" 2>/dev/null\x3b done > ../hellodj/.gate-logs/tmpfiles.txt 2>&1\x3b echo DONE;9ca84ee4-05f0-4016-8d4c-defb8c3d2330]633;C=== infra/alltests_tmp.txt (11526 lines) ===
+PASS test/data-stack.test.ts (7.55 s)
+  ● Console
+=== infra/pl_sm_tmp.txt (13 lines) ===
+PASS test/pipeline-selfmutation.test.ts
+  PipelineStack — selfMutation enabled (pipeline-self-mutation)
+=== infra/synth_pipeline_tmp.txt (19 lines) ===
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead

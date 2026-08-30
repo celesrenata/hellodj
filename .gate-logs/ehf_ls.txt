@@ -1,0 +1,6 @@
+total 0
+dr-xr-xr-x 1 root root          6 Dec 31  1969 .
+drwxrwxr-t 1 root nixbld 17048180 Aug 29 01:31 ..
+dr-xr-xr-x 1 root root          8 Dec 31  1969 etc
+--- content ---
+0 /nix/store/m7ab4bdcg298pg532lvrz8fqlh860cq3-extra-hwdb-file/etc/udev/hwdb.d/99-local.hwdb

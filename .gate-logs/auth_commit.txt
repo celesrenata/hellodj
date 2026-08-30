@@ -1,0 +1,4 @@
+[main a5cbdc9] auth: one Cognito pool per stage (staging/production had no pool -> no admin login)
+ 2 files changed, 153 insertions(+), 6 deletions(-)
+ create mode 100644 infra/test/auth-per-stage.test.ts
+commit_exit=0

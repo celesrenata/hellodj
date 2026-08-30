@@ -1,0 +1,3 @@
+874927898283.dkr.ecr.us-east-1.amazonaws.com/hellodj/web-ui:cad4ea272c6cedf14f54385d317b4af806bd72e0
+--- pull error ---
+rpc error: code = NotFound desc = failed to pull and unpack image "874927898283.dkr.ecr.us-east-1.amazonaws.com/hellodj/web-ui:cad4ea272c6cedf14f54385d317b4af806bd72e0": failed to resolve reference "874927898283.dkr.ecr.us-east-1.amazonaws.com/hellodj/web-ui:cad4ea272c6cedf14f54385d317b4af806bd72e0": 874927898283.dkr.ecr.us-east-1.amazonaws.com/hellodj/web-ui:cad4ea272c6cedf14f54385d317b4af806bd72e0: not found

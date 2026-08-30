@@ -1,0 +1,3 @@
+159:        udevadm verify --resolve-names=late --no-style $out
+--- also check for other .nix files imported by udev module ---
+udev.nix

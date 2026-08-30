@@ -1,0 +1,1 @@
+/nix/store/m7ab4bdcg298pg532lvrz8fqlh860cq3-extra-hwdb-file

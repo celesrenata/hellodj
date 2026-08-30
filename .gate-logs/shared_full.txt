@@ -1,0 +1,74 @@
+........................................................................ [ 30%]
+.................F..F................................................... [ 60%]
+........................................................................ [ 91%]
+.....................                                                    [100%]
+==================================== ERRORS ====================================
+___ ERROR collecting shared/hellodj_platform_logic/tests/test_apply_bump.py ____
+ImportError while importing test module '/home/celes/sources/celesrenata/hellodj-cdk/shared/hellodj_platform_logic/tests/test_apply_bump.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/etc/profiles/per-user/celes/lib/python3.14/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+hellodj_platform_logic/tests/test_apply_bump.py:33: in <module>
+    _spec.loader.exec_module(apply_bump_mod)
+../tools/apply_bump.py:59: in <module>
+    from gate_pins import (  # noqa: E402
+E   ImportError: cannot import name 'TEMURIN_FEATURE_VERSION' from 'gate_pins' (/home/celes/sources/celesrenata/hellodj-cdk/tools/gate_pins.py)
+_ ERROR collecting shared/hellodj_platform_logic/tests/test_data_access_property.py _
+ImportError while importing test module '/home/celes/sources/celesrenata/hellodj-cdk/shared/hellodj_platform_logic/tests/test_data_access_property.py'.
+Hint: make sure your test modules/packages have valid Python names.
+Traceback:
+/etc/profiles/per-user/celes/lib/python3.14/importlib/__init__.py:88: in import_module
+    return _bootstrap._gcd_import(name[level:], package, level)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+hellodj_platform_logic/tests/test_data_access_property.py:33: in <module>
+    import boto3
+E   ModuleNotFoundError: No module named 'boto3'
+=================================== FAILURES ===================================
+_______________ test_shipped_manifest_pins_every_required_input ________________
+
+    def test_shipped_manifest_pins_every_required_input() -> None:
+        """pins.toml enumerates every input Requirement 11.1 calls out.
+    
+        Validates: Requirements 11.1
+        """
+        pins = gate_pins.load_pins(gate_pins.DEFAULT_MANIFEST)
+>       for required in gate_pins.REQUIRED_INPUTS:
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'gate_pins' has no attribute 'REQUIRED_INPUTS'
+
+hellodj_platform_logic/tests/test_gate_pins.py:60: AttributeError
+----------------------------- Captured stdout call -----------------------------
+  hellodj: git+https://git-codecommit.us-east-1.amazonaws.com/v1/repos/hellodj?ref=main
+  lavalink: git+https://git-codecommit.us-east-1.amazonaws.com/v1/repos/Lavalink?ref=dev
+  lavaplayer: git+https://git-codecommit.us-east-1.amazonaws.com/v1/repos/lavaplayer?ref=main
+  lavasrc: git+https://git-codecommit.us-east-1.amazonaws.com/v1/repos/LavaSrc?ref=tidal-v2-api
+  youtube-source: git+https://git-codecommit.us-east-1.amazonaws.com/v1/repos/youtube-source?ref=main
+_____________________ test_temurin_pins_feature_version_25 _____________________
+
+    def test_temurin_pins_feature_version_25() -> None:
+        """The Temurin/JDK pin is Temurin 25 (LTS) — a non-25 feature version fails.
+    
+        Validates: Requirements 11.2
+        """
+        pins = gate_pins.load_pins(gate_pins.DEFAULT_MANIFEST)
+        assert "temurin" in pins
+>       assert gate_pins.TEMURIN_FEATURE_VERSION == 25
+               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E       AttributeError: module 'gate_pins' has no attribute 'TEMURIN_FEATURE_VERSION'
+
+hellodj_platform_logic/tests/test_gate_pins.py:95: AttributeError
+----------------------------- Captured stdout call -----------------------------
+  hellodj: git+https://git-codecommit.us-east-1.amazonaws.com/v1/repos/hellodj?ref=main
+  lavalink: git+https://git-codecommit.us-east-1.amazonaws.com/v1/repos/Lavalink?ref=dev
+  lavaplayer: git+https://git-codecommit.us-east-1.amazonaws.com/v1/repos/lavaplayer?ref=main
+  lavasrc: git+https://git-codecommit.us-east-1.amazonaws.com/v1/repos/LavaSrc?ref=tidal-v2-api
+  youtube-source: git+https://git-codecommit.us-east-1.amazonaws.com/v1/repos/youtube-source?ref=main
+=========================== short test summary info ============================
+FAILED hellodj_platform_logic/tests/test_gate_pins.py::test_shipped_manifest_pins_every_required_input
+FAILED hellodj_platform_logic/tests/test_gate_pins.py::test_temurin_pins_feature_version_25
+ERROR hellodj_platform_logic/tests/test_apply_bump.py
+ERROR hellodj_platform_logic/tests/test_data_access_property.py
+2 failed, 235 passed, 2 errors in 23.23s
+EXIT=1

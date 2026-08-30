@@ -1,0 +1,7 @@
+fatal: repository 'https://git-codecommit.us-east-1.amazonaws.com/v1/repos/hellodj-cdk/' not found
+---rev HEAD---
+eb740b0520c295d3b2c297a975d463683c6814ce
+---rev remote---
+eb740b0520c295d3b2c297a975d463683c6814ce
+---ahead/behind counts (behind ahead)---
+0	0

@@ -1,21 +1,18 @@
-"""Instance orchestrator base class — vendored port of the on-prem source.
+"""Instance orchestrator base class for the ``playback-orchestrator`` component.
 
-Faithful port of the on-prem ``bot/playback/orchestrator.py``
-:class:`InstanceOrchestrator` into the standalone ``playback-orchestrator``
-component. The on-prem file stays the SOURCE OF TRUTH for the assign / release /
-health / quota logic; this component ships as an independent Nix image that does
-NOT vendor the ``bot/`` tree, so the base class is copied here (like the sibling
-ports ``router.py`` / ``content_filter.py`` / ``user_bans.py``) rather than
-imported across repos.
+Owns the assign / release / health / quota logic for secondary bot instances.
+Originated as a port of the (now-removed) on-prem
+``bot/playback/orchestrator.py``; with on-prem retired (AWS 100%) this file is
+the standalone source of truth. The AWS subclass
+(:class:`~playback_orchestrator.instance_runtime.AwsInstanceOrchestrator`)
+overrides ONLY :meth:`initialize` (the credential source) plus the entitlement
+resolver seam (:meth:`_resolve_effective`), inheriting the assignment logic
+unchanged.
 
-The class body is identical to on-prem so the AWS subclass
-(:class:`~playback_orchestrator.instance_runtime.AwsInstanceOrchestrator`) can
-override ONLY :meth:`initialize` (the credential source) without forking the
-assignment logic. The on-prem-specific imports the methods make (``config.cfg``
-in ``initialize``; ``bot`` / ``playback.user_entitlements`` in the quota helpers)
-are all LAZY, so this port imports cleanly where those modules are absent; the
-AWS subclass overrides ``initialize`` outright and Task 4 rewires the quota
-resolver on the AWS path.
+The quota helpers source their pure decision functions and default entitlements
+from the SHARED ``entitlements_core`` module, so the web-ui and this runtime
+agree exactly. The base :meth:`_resolve_effective` returns the restrictive
+default (no resolver seam of its own); subclasses inject a resolver.
 
 Requirements: 2.1, 2.5, 3.1, 3.2, 3.3, 3.4, 5.1, 5.2, 5.3
 """
@@ -109,7 +106,13 @@ class InstanceOrchestrator:
         try:
             from config import cfg
         except ImportError:
-            from bot.config import cfg
+            # No standalone ``config`` in this component; the AWS runtime
+            # overrides ``initialize`` (its creds come from the bot-app pool).
+            # Degrade to "no secondary instances" rather than reference the
+            # removed on-prem ``bot.config``.
+            log.info("No config source for base initialize() — no instances.")
+            self._initialized = True
+            return
 
         count_raw = cfg("playback.instance_count")
         if count_raw is None:
@@ -368,7 +371,7 @@ class InstanceOrchestrator:
         the shared pure helpers, raising :class:`QuotaExceededError` when reached.
         """
         effective = self._resolve_effective(user_id)
-        from playback.user_entitlements import (
+        from entitlements_core import (
             effective_max_bots_per_guild,
             quota_reached,
         )
@@ -395,23 +398,17 @@ class InstanceOrchestrator:
     def _resolve_effective(self, user_id: int) -> dict:
         """Resolve the owning user's effective entitlements (fail-safe, R14.3).
 
-        On any failure applies restrictive DEFAULT_ENTITLEMENTS (limits = 1).
+        The base class has no entitlement-resolver seam of its own, so it returns
+        the restrictive shared ``DEFAULT_ENTITLEMENTS`` (limits = 1) — the
+        secure default. Subclasses that carry a resolver (the AWS
+        :class:`AwsInstanceOrchestrator`, which injects one) override this to
+        consult it, falling back to the same restrictive default on any failure.
+        Both source the map from the SHARED ``entitlements_core`` so every path
+        agrees exactly.
         """
-        try:
-            import bot as _bot_module  # lazy to avoid a circular import at load
+        from entitlements_core import DEFAULT_ENTITLEMENTS, merge_effective
 
-            resolver = _bot_module.get_user_entitlements()
-            if resolver is not None:
-                return resolver.effective_for_discord(user_id)
-        except Exception as exc:  # noqa: BLE001 - fail safe to restrictive
-            log.warning(
-                "quota entitlement resolution failed for user=%s (%s) — "
-                "applying restrictive defaults", user_id, exc,
-            )
-
-        from playback.user_entitlements import DEFAULT_ENTITLEMENTS
-
-        return DEFAULT_ENTITLEMENTS
+        return merge_effective(dict(DEFAULT_ENTITLEMENTS))
 
     async def _connect_instance(self, instance: BotInstance) -> None:
         """Log in a secondary bot client (non-blocking start).

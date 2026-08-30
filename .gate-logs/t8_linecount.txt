@@ -1,0 +1,2 @@
+max-line-count check passed (limit=500).
+linecount_exit=0

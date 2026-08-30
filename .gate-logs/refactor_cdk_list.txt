@@ -1,0 +1,50 @@
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.Stack#addDependency is deprecated.
+  Use `addStackDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.Stack#addDependency is deprecated.
+  Use `addStackDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.Stack#addDependency is deprecated.
+  Use `addStackDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.Stack#addDependency is deprecated.
+  Use `addStackDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.Stack#addDependency is deprecated.
+  Use `addStackDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.Stack#addDependency is deprecated.
+  Use `addStackDependency` instead.
+  This API will be removed in the next major release.
+hellodj-network
+hellodj-data
+hellodj-eks
+hellodj-observability
+hellodj-analytics
+hellodj-pipeline
+hellodj-source
+hellodj-pipeline/hellodj-beta-stage/hellodj-auth-beta (hellodj-beta-stage-hellodj-auth-beta)
+hellodj-pipeline/hellodj-beta-stage/hellodj-edge-beta (hellodj-beta-stage-hellodj-edge-beta)
+hellodj-pipeline/hellodj-beta-stage/hellodj-workloads-beta (hellodj-beta-stage-hellodj-workloads-beta)
+hellodj-pipeline/hellodj-staging-stage/hellodj-auth-staging (hellodj-staging-stage-hellodj-auth-staging)
+hellodj-pipeline/hellodj-staging-stage/hellodj-edge-staging (hellodj-staging-stage-hellodj-edge-staging)
+hellodj-pipeline/hellodj-staging-stage/hellodj-workloads-staging (hellodj-staging-stage-hellodj-workloads-staging)
+hellodj-pipeline/hellodj-production-stage/hellodj-auth-production (hellodj-production-stage-hellodj-auth-production)
+hellodj-pipeline/hellodj-production-stage/hellodj-edge-production (hellodj-production-stage-hellodj-edge-production)
+hellodj-pipeline/hellodj-production-stage/hellodj-workloads-production (hellodj-production-stage-hellodj-workloads-production)
+list_exit=0

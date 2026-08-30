@@ -1,0 +1,1374 @@
+PASS test/edge-stack.test.ts
+FAIL test/edge-per-stage.test.ts
+  ● one CloudFront edge per stage (staging/production must not be dead) › every stage synthesizes exactly one CloudFront distribution
+
+    «ConstructTreeModifiedAfterSynth» Synthesis has been called multiple times and the construct tree was modified after the first synthesis (+hellodj-edge-staging) This is not allowed. Remove multple synth() calls and do not modify the construct tree after the first synth().
+        ...Function.fromStack in aws-cdk-lib...
+
+      42 |       applicationLoadBalancerDnsName: `origin.${stageEnvName}`,
+      43 |     });
+    > 44 |     out[stage] = Template.fromStack(stack);
+         |                           ^
+      45 |   }
+      46 |   return out;
+      47 | }
+
+      at synthAllEdges (test/edge-per-stage.test.ts:44:27)
+          ...Promise.then.completed in jest-circus...
+          at new Promise (:)
+          ...jest-circus, node internals, jest-circus, jest-runner...
+      Relates to construct:
+          <.> (aws-cdk-lib.App)
+
+  ● one CloudFront edge per stage (staging/production must not be dead) › every stage synthesizes its own ACM certificate
+
+    «ConstructTreeModifiedAfterSynth» Synthesis has been called multiple times and the construct tree was modified after the first synthesis (+hellodj-edge-staging) This is not allowed. Remove multple synth() calls and do not modify the construct tree after the first synth().
+        ...Function.fromStack in aws-cdk-lib...
+
+      42 |       applicationLoadBalancerDnsName: `origin.${stageEnvName}`,
+      43 |     });
+    > 44 |     out[stage] = Template.fromStack(stack);
+         |                           ^
+      45 |   }
+      46 |   return out;
+      47 | }
+
+      at synthAllEdges (test/edge-per-stage.test.ts:44:27)
+          ...Promise.then.completed in jest-circus...
+          at new Promise (:)
+          ...jest-circus, node internals, jest-circus, jest-runner...
+      Relates to construct:
+          <.> (aws-cdk-lib.App)
+
+  ● one CloudFront edge per stage (staging/production must not be dead) › each stage publishes its <stage>.<region>.hellodj.bot A-alias record
+
+    «ConstructTreeModifiedAfterSynth» Synthesis has been called multiple times and the construct tree was modified after the first synthesis (+hellodj-edge-staging) This is not allowed. Remove multple synth() calls and do not modify the construct tree after the first synth().
+        ...Function.fromStack in aws-cdk-lib...
+
+      42 |       applicationLoadBalancerDnsName: `origin.${stageEnvName}`,
+      43 |     });
+    > 44 |     out[stage] = Template.fromStack(stack);
+         |                           ^
+      45 |   }
+      46 |   return out;
+      47 | }
+
+      at synthAllEdges (test/edge-per-stage.test.ts:44:27)
+          ...Promise.then.completed in jest-circus...
+          at new Promise (:)
+          ...jest-circus, node internals, jest-circus, jest-runner...
+      Relates to construct:
+          <.> (aws-cdk-lib.App)
+
+  ● one CloudFront edge per stage (staging/production must not be dead) › staging's env record is NOT pointed at the raw ALB (it aliases CloudFront)
+
+    «ConstructTreeModifiedAfterSynth» Synthesis has been called multiple times and the construct tree was modified after the first synthesis (+hellodj-edge-staging) This is not allowed. Remove multple synth() calls and do not modify the construct tree after the first synth().
+        ...Function.fromStack in aws-cdk-lib...
+
+      42 |       applicationLoadBalancerDnsName: `origin.${stageEnvName}`,
+      43 |     });
+    > 44 |     out[stage] = Template.fromStack(stack);
+         |                           ^
+      45 |   }
+      46 |   return out;
+      47 | }
+
+      at synthAllEdges (test/edge-per-stage.test.ts:44:27)
+          ...Promise.then.completed in jest-circus...
+          at new Promise (:)
+          ...jest-circus, node internals, jest-circus, jest-runner...
+      Relates to construct:
+          <.> (aws-cdk-lib.App)
+
+  ● one CloudFront edge per stage (staging/production must not be dead) › only production creates the apex hellodj.bot alias record
+
+    «ConstructTreeModifiedAfterSynth» Synthesis has been called multiple times and the construct tree was modified after the first synthesis (+hellodj-edge-staging) This is not allowed. Remove multple synth() calls and do not modify the construct tree after the first synth().
+        ...Function.fromStack in aws-cdk-lib...
+
+      42 |       applicationLoadBalancerDnsName: `origin.${stageEnvName}`,
+      43 |     });
+    > 44 |     out[stage] = Template.fromStack(stack);
+         |                           ^
+      45 |   }
+      46 |   return out;
+      47 | }
+
+      at synthAllEdges (test/edge-per-stage.test.ts:44:27)
+          ...Promise.then.completed in jest-circus...
+          at new Promise (:)
+          ...jest-circus, node internals, jest-circus, jest-runner...
+      Relates to construct:
+          <.> (aws-cdk-lib.App)
+
+  ● one CloudFront edge per stage (staging/production must not be dead) › per-stage S3 bucket names are stage-scoped (no cross-stage collision)
+
+    «ConstructTreeModifiedAfterSynth» Synthesis has been called multiple times and the construct tree was modified after the first synthesis (+hellodj-edge-staging) This is not allowed. Remove multple synth() calls and do not modify the construct tree after the first synth().
+        ...Function.fromStack in aws-cdk-lib...
+
+      42 |       applicationLoadBalancerDnsName: `origin.${stageEnvName}`,
+      43 |     });
+    > 44 |     out[stage] = Template.fromStack(stack);
+         |                           ^
+      45 |   }
+      46 |   return out;
+      47 | }
+
+      at synthAllEdges (test/edge-per-stage.test.ts:44:27)
+          ...Promise.then.completed in jest-circus...
+          at new Promise (:)
+          ...jest-circus, node internals, jest-circus, jest-runner...
+      Relates to construct:
+          <.> (aws-cdk-lib.App)
+
+PASS test/endpoint-isolation.test.ts (12.569 s)
+  ● Console
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      138 |     // Core single-table: hellodj-core (PK/SK + GSI1). (R7.1)
+      139 |     // -----------------------------------------------------------------------
+    > 140 |     this.coreTable = new dynamodb.Table(this, 'CoreTable', {
+          |                      ^
+      141 |       tableName: CORE_TABLE_NAME,
+      142 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      143 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:140:22)
+      at synthClusterTemplate (test/endpoint-isolation.test.ts:285:18)
+      at Object.<anonymous> (test/endpoint-isolation.test.ts:363:38)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      173 |     // Hot table: session/queue state (hellodj-session), PK/SK. (R7.5)
+      174 |     // -----------------------------------------------------------------------
+    > 175 |     this.sessionTable = new dynamodb.Table(this, 'SessionTable', {
+          |                         ^
+      176 |       tableName: SESSION_TABLE_NAME,
+      177 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      178 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:175:25)
+      at synthClusterTemplate (test/endpoint-isolation.test.ts:285:18)
+      at Object.<anonymous> (test/endpoint-isolation.test.ts:363:38)
+
+    console.warn
+      [WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+        Use `addResourceDependency` instead.
+        This API will be removed in the next major release.
+
+      234 |     });
+      235 |     // The cluster references the subnet group by name, so enforce ordering.
+    > 236 |     this.daxCluster.addDependency(daxSubnetGroup);
+          |                     ^
+      237 |
+      238 |     this.daxEndpoint = this.daxCluster.attrClusterDiscoveryEndpoint;
+      239 |
+
+      at Proxy.print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at CfnCluster.addDependency (node_modules/aws-cdk-lib/core/lib/cfn-resource.js:1:8277)
+      at new DataStack (lib/data-stack.ts:236:21)
+      at synthClusterTemplate (test/endpoint-isolation.test.ts:285:18)
+      at Object.<anonymous> (test/endpoint-isolation.test.ts:363:38)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      138 |     // Core single-table: hellodj-core (PK/SK + GSI1). (R7.1)
+      139 |     // -----------------------------------------------------------------------
+    > 140 |     this.coreTable = new dynamodb.Table(this, 'CoreTable', {
+          |                      ^
+      141 |       tableName: CORE_TABLE_NAME,
+      142 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      143 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:140:22)
+      at synthClusterTemplate (test/endpoint-isolation.test.ts:285:18)
+      at Object.<anonymous> (test/endpoint-isolation.test.ts:386:38)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      173 |     // Hot table: session/queue state (hellodj-session), PK/SK. (R7.5)
+      174 |     // -----------------------------------------------------------------------
+    > 175 |     this.sessionTable = new dynamodb.Table(this, 'SessionTable', {
+          |                         ^
+      176 |       tableName: SESSION_TABLE_NAME,
+      177 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      178 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:175:25)
+      at synthClusterTemplate (test/endpoint-isolation.test.ts:285:18)
+      at Object.<anonymous> (test/endpoint-isolation.test.ts:386:38)
+
+    console.warn
+      [WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+        Use `addResourceDependency` instead.
+        This API will be removed in the next major release.
+
+      234 |     });
+      235 |     // The cluster references the subnet group by name, so enforce ordering.
+    > 236 |     this.daxCluster.addDependency(daxSubnetGroup);
+          |                     ^
+      237 |
+      238 |     this.daxEndpoint = this.daxCluster.attrClusterDiscoveryEndpoint;
+      239 |
+
+      at Proxy.print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at CfnCluster.addDependency (node_modules/aws-cdk-lib/core/lib/cfn-resource.js:1:8277)
+      at new DataStack (lib/data-stack.ts:236:21)
+      at synthClusterTemplate (test/endpoint-isolation.test.ts:285:18)
+      at Object.<anonymous> (test/endpoint-isolation.test.ts:386:38)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      138 |     // Core single-table: hellodj-core (PK/SK + GSI1). (R7.1)
+      139 |     // -----------------------------------------------------------------------
+    > 140 |     this.coreTable = new dynamodb.Table(this, 'CoreTable', {
+          |                      ^
+      141 |       tableName: CORE_TABLE_NAME,
+      142 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      143 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:140:22)
+      at synthClusterTemplate (test/endpoint-isolation.test.ts:285:18)
+      at Object.<anonymous> (test/endpoint-isolation.test.ts:468:38)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      173 |     // Hot table: session/queue state (hellodj-session), PK/SK. (R7.5)
+      174 |     // -----------------------------------------------------------------------
+    > 175 |     this.sessionTable = new dynamodb.Table(this, 'SessionTable', {
+          |                         ^
+      176 |       tableName: SESSION_TABLE_NAME,
+      177 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      178 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:175:25)
+      at synthClusterTemplate (test/endpoint-isolation.test.ts:285:18)
+      at Object.<anonymous> (test/endpoint-isolation.test.ts:468:38)
+
+    console.warn
+      [WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+        Use `addResourceDependency` instead.
+        This API will be removed in the next major release.
+
+      234 |     });
+      235 |     // The cluster references the subnet group by name, so enforce ordering.
+    > 236 |     this.daxCluster.addDependency(daxSubnetGroup);
+          |                     ^
+      237 |
+      238 |     this.daxEndpoint = this.daxCluster.attrClusterDiscoveryEndpoint;
+      239 |
+
+      at Proxy.print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at CfnCluster.addDependency (node_modules/aws-cdk-lib/core/lib/cfn-resource.js:1:8277)
+      at new DataStack (lib/data-stack.ts:236:21)
+      at synthClusterTemplate (test/endpoint-isolation.test.ts:285:18)
+      at Object.<anonymous> (test/endpoint-isolation.test.ts:468:38)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      138 |     // Core single-table: hellodj-core (PK/SK + GSI1). (R7.1)
+      139 |     // -----------------------------------------------------------------------
+    > 140 |     this.coreTable = new dynamodb.Table(this, 'CoreTable', {
+          |                      ^
+      141 |       tableName: CORE_TABLE_NAME,
+      142 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      143 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:140:22)
+      at synthClusterTemplate (test/endpoint-isolation.test.ts:285:18)
+      at Object.<anonymous> (test/endpoint-isolation.test.ts:503:38)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      173 |     // Hot table: session/queue state (hellodj-session), PK/SK. (R7.5)
+      174 |     // -----------------------------------------------------------------------
+    > 175 |     this.sessionTable = new dynamodb.Table(this, 'SessionTable', {
+          |                         ^
+      176 |       tableName: SESSION_TABLE_NAME,
+      177 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      178 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:175:25)
+      at synthClusterTemplate (test/endpoint-isolation.test.ts:285:18)
+      at Object.<anonymous> (test/endpoint-isolation.test.ts:503:38)
+
+    console.warn
+      [WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+        Use `addResourceDependency` instead.
+        This API will be removed in the next major release.
+
+      234 |     });
+      235 |     // The cluster references the subnet group by name, so enforce ordering.
+    > 236 |     this.daxCluster.addDependency(daxSubnetGroup);
+          |                     ^
+      237 |
+      238 |     this.daxEndpoint = this.daxCluster.attrClusterDiscoveryEndpoint;
+      239 |
+
+      at Proxy.print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at CfnCluster.addDependency (node_modules/aws-cdk-lib/core/lib/cfn-resource.js:1:8277)
+      at new DataStack (lib/data-stack.ts:236:21)
+      at synthClusterTemplate (test/endpoint-isolation.test.ts:285:18)
+      at Object.<anonymous> (test/endpoint-isolation.test.ts:503:38)
+
+PASS test/foundation.test.ts (15.084 s)
+  ● Console
+
+    console.error
+      [Warning] Template validation found issues in your templates (reported as warnings).
+      Set feature flag "@aws-cdk/core:validateAgainstDefaultRules" to true to turn these into errors.
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'IAMRoleARN' is a required property (CloudFormation Validate)
+         OneEachStack/Dax0 (Dax0) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'IAMRoleARN'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'IAMRoleARN' is a required property (CloudFormation Validate)
+         OneEachStack/Dax0 (Dax0) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'IAMRoleARN'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'IAMRoleARN' is a required property (CloudFormation Validate)
+         OneEachStack/Dax0 (Dax0) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'IAMRoleARN'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'IAMRoleARN' is a required property (CloudFormation Validate)
+         OneEachStack/Ng0 (Ng0) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'IAMRoleARN'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'IAMRoleARN' is a required property (CloudFormation Validate)
+         OneEachStack/Ng0 (Ng0) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'IAMRoleARN'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'IAMRoleARN' is a required property (CloudFormation Validate)
+         OneEachStack/Ng0 (Ng0) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'IAMRoleARN'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: Exactly one of ['CidrBlock', 'Ipv4IpamPoolId'] must be specified (CloudFormation Validate)
+         OneEachStack/Vpc0 (Vpc0) aws-cdk-lib.CfnResource
+         Acknowledge with 'CloudFormation-Validate::F3014'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: Exactly one of ['CidrBlock', 'Ipv4IpamPoolId'] must be specified (CloudFormation Validate)
+         OneEachStack/Alb0 (Alb0) aws-cdk-lib.CfnResource
+         Acknowledge with 'CloudFormation-Validate::F3014'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: Exactly one of ['CidrBlock', 'Ipv4IpamPoolId'] must be specified (CloudFormation Validate)
+         OneEachStack/Nlb0 (Nlb0) aws-cdk-lib.CfnResource
+         Acknowledge with 'CloudFormation-Validate::F3014'
+      
+      A copy of this report can be found in: /tmp/cdk.outxlPQyD/validation-report.json
+
+      261 |   // Synthesize once and inspect every stack's template. Passing an existing
+      262 |   // synthesized assembly through is harmless — CDK returns the cached assembly.
+    > 263 |   const assembly = app.synth();
+          |                        ^
+      264 |
+      265 |   // Initialize a counter per distinct foundation kind. The two load-balancer
+      266 |   // variants are tracked separately from the raw CloudFormation type.
+
+      at validateTemplates (node_modules/aws-cdk-lib/core/lib/private/synthesis-validation.js:6:173)
+      at synthesize (node_modules/aws-cdk-lib/core/lib/private/synthesis.js:1:3191)
+      at App.synth (node_modules/aws-cdk-lib/core/lib/stage.js:1:5163)
+      at App.synth (node_modules/aws-cdk-lib/core/lib/app.js:1:5152)
+      at assertFoundationSingleton (lib/foundation.ts:263:24)
+      at test/foundation.test.ts:104:43
+      at Object.<anonymous> (node_modules/expect/build/toThrowMatchers.js:74:11)
+      at Object.throwingMatcher [as toThrow] (node_modules/expect/build/index.js:320:21)
+      at Object.<anonymous> (test/foundation.test.ts:104:54)
+
+    console.error
+      [Warning] Template validation found issues in your templates (reported as warnings).
+      Set feature flag "@aws-cdk/core:validateAgainstDefaultRules" to true to turn these into errors.
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: Exactly one of ['CidrBlock', 'Ipv4IpamPoolId'] must be specified (CloudFormation Validate)
+         StackB/Vpc0 (Vpc0) aws-cdk-lib.CfnResource
+         Acknowledge with 'CloudFormation-Validate::F3014'
+      
+      A copy of this report can be found in: /tmp/cdk.outCN9vf4/validation-report.json
+
+      261 |   // Synthesize once and inspect every stack's template. Passing an existing
+      262 |   // synthesized assembly through is harmless — CDK returns the cached assembly.
+    > 263 |   const assembly = app.synth();
+          |                        ^
+      264 |
+      265 |   // Initialize a counter per distinct foundation kind. The two load-balancer
+      266 |   // variants are tracked separately from the raw CloudFormation type.
+
+      at validateTemplates (node_modules/aws-cdk-lib/core/lib/private/synthesis-validation.js:6:173)
+      at synthesize (node_modules/aws-cdk-lib/core/lib/private/synthesis.js:1:3191)
+      at App.synth (node_modules/aws-cdk-lib/core/lib/stage.js:1:5163)
+      at App.synth (node_modules/aws-cdk-lib/core/lib/app.js:1:5152)
+      at assertFoundationSingleton (lib/foundation.ts:263:24)
+      at test/foundation.test.ts:117:43
+      at Object.<anonymous> (node_modules/expect/build/toThrowMatchers.js:74:11)
+      at Object.throwingMatcher [as toThrow] (node_modules/expect/build/index.js:320:21)
+      at Object.<anonymous> (test/foundation.test.ts:117:54)
+
+    console.error
+      [Warning] Template validation found issues in your templates (reported as warnings).
+      Set feature flag "@aws-cdk/core:validateAgainstDefaultRules" to true to turn these into errors.
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: Exactly one of ['CidrBlock', 'Ipv4IpamPoolId'] must be specified (CloudFormation Validate)
+         TwoVpcStack/Vpc0 (Vpc0) aws-cdk-lib.CfnResource
+         Acknowledge with 'CloudFormation-Validate::F3014'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: Exactly one of ['CidrBlock', 'Ipv4IpamPoolId'] must be specified (CloudFormation Validate)
+         TwoVpcStack/Vpc1 (Vpc1) aws-cdk-lib.CfnResource
+         Acknowledge with 'CloudFormation-Validate::F3014'
+      
+      A copy of this report can be found in: /tmp/cdk.outjBv3zg/validation-report.json
+
+      261 |   // Synthesize once and inspect every stack's template. Passing an existing
+      262 |   // synthesized assembly through is harmless — CDK returns the cached assembly.
+    > 263 |   const assembly = app.synth();
+          |                        ^
+      264 |
+      265 |   // Initialize a counter per distinct foundation kind. The two load-balancer
+      266 |   // variants are tracked separately from the raw CloudFormation type.
+
+      at validateTemplates (node_modules/aws-cdk-lib/core/lib/private/synthesis-validation.js:6:173)
+      at synthesize (node_modules/aws-cdk-lib/core/lib/private/synthesis.js:1:3191)
+      at App.synth (node_modules/aws-cdk-lib/core/lib/stage.js:1:5163)
+      at App.synth (node_modules/aws-cdk-lib/core/lib/app.js:1:5152)
+      at assertFoundationSingleton (lib/foundation.ts:263:24)
+      at test/foundation.test.ts:125:43
+      at Object.<anonymous> (node_modules/expect/build/toThrowMatchers.js:74:11)
+      at Object.throwingMatcher [as toThrow] (node_modules/expect/build/index.js:320:21)
+      at Object.<anonymous> (test/foundation.test.ts:125:50)
+
+    console.error
+      [Warning] Template validation found issues in your templates (reported as warnings).
+      Set feature flag "@aws-cdk/core:validateAgainstDefaultRules" to true to turn these into errors.
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'IAMRoleARN' is a required property (CloudFormation Validate)
+         DaxA/Dax0 (Dax0) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'IAMRoleARN'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'IAMRoleARN' is a required property (CloudFormation Validate)
+         DaxA/Dax0 (Dax0) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'IAMRoleARN'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'IAMRoleARN' is a required property (CloudFormation Validate)
+         DaxA/Dax0 (Dax0) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'IAMRoleARN'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'IAMRoleARN' is a required property (CloudFormation Validate)
+         DaxB/Dax0 (Dax0) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'IAMRoleARN'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'IAMRoleARN' is a required property (CloudFormation Validate)
+         DaxB/Dax0 (Dax0) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'IAMRoleARN'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'IAMRoleARN' is a required property (CloudFormation Validate)
+         DaxB/Dax0 (Dax0) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'IAMRoleARN'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      A copy of this report can be found in: /tmp/cdk.out33n569/validation-report.json
+
+      261 |   // Synthesize once and inspect every stack's template. Passing an existing
+      262 |   // synthesized assembly through is harmless — CDK returns the cached assembly.
+    > 263 |   const assembly = app.synth();
+          |                        ^
+      264 |
+      265 |   // Initialize a counter per distinct foundation kind. The two load-balancer
+      266 |   // variants are tracked separately from the raw CloudFormation type.
+
+      at validateTemplates (node_modules/aws-cdk-lib/core/lib/private/synthesis-validation.js:6:173)
+      at synthesize (node_modules/aws-cdk-lib/core/lib/private/synthesis.js:1:3191)
+      at App.synth (node_modules/aws-cdk-lib/core/lib/stage.js:1:5163)
+      at App.synth (node_modules/aws-cdk-lib/core/lib/app.js:1:5152)
+      at assertFoundationSingleton (lib/foundation.ts:263:24)
+      at test/foundation.test.ts:142:43
+      at Object.<anonymous> (node_modules/expect/build/toThrowMatchers.js:74:11)
+      at Object.throwingMatcher [as toThrow] (node_modules/expect/build/index.js:320:21)
+      at Object.<anonymous> (test/foundation.test.ts:142:50)
+
+    console.error
+      [Warning] Template validation found issues in your templates (reported as warnings).
+      Set feature flag "@aws-cdk/core:validateAgainstDefaultRules" to true to turn these into errors.
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'IAMRoleARN' is a required property (CloudFormation Validate)
+         DupStack/Dup0 (Dup0) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'IAMRoleARN'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'IAMRoleARN' is a required property (CloudFormation Validate)
+         DupStack/Dup0 (Dup0) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'IAMRoleARN'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'IAMRoleARN' is a required property (CloudFormation Validate)
+         DupStack/Dup0 (Dup0) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'IAMRoleARN'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'IAMRoleARN' is a required property (CloudFormation Validate)
+         DupStack/Dup1 (Dup1) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'IAMRoleARN'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'IAMRoleARN' is a required property (CloudFormation Validate)
+         DupStack/Dup1 (Dup1) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'IAMRoleARN'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'IAMRoleARN' is a required property (CloudFormation Validate)
+         DupStack/Dup1 (Dup1) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'IAMRoleARN'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      A copy of this report can be found in: /tmp/cdk.outHTNVRj/validation-report.json
+
+      261 |   // Synthesize once and inspect every stack's template. Passing an existing
+      262 |   // synthesized assembly through is harmless — CDK returns the cached assembly.
+    > 263 |   const assembly = app.synth();
+          |                        ^
+      264 |
+      265 |   // Initialize a counter per distinct foundation kind. The two load-balancer
+      266 |   // variants are tracked separately from the raw CloudFormation type.
+
+      at validateTemplates (node_modules/aws-cdk-lib/core/lib/private/synthesis-validation.js:6:173)
+      at synthesize (node_modules/aws-cdk-lib/core/lib/private/synthesis.js:1:3191)
+      at App.synth (node_modules/aws-cdk-lib/core/lib/stage.js:1:5163)
+      at App.synth (node_modules/aws-cdk-lib/core/lib/app.js:1:5152)
+      at assertFoundationSingleton (lib/foundation.ts:263:24)
+      at test/foundation.test.ts:157:43
+      at Object.<anonymous> (node_modules/expect/build/toThrowMatchers.js:74:11)
+      at Object.throwingMatcher [as toThrow] (node_modules/expect/build/index.js:320:21)
+      at test/foundation.test.ts:157:50
+
+    console.error
+      [Warning] Template validation found issues in your templates (reported as warnings).
+      Set feature flag "@aws-cdk/core:validateAgainstDefaultRules" to true to turn these into errors.
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'ClusterName' is a required property (CloudFormation Validate)
+         DupStack/Dup0 (Dup0) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'ClusterName'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'ClusterName' is a required property (CloudFormation Validate)
+         DupStack/Dup0 (Dup0) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'ClusterName'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'ClusterName' is a required property (CloudFormation Validate)
+         DupStack/Dup0 (Dup0) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'ClusterName'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'ClusterName' is a required property (CloudFormation Validate)
+         DupStack/Dup1 (Dup1) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'ClusterName'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'ClusterName' is a required property (CloudFormation Validate)
+         DupStack/Dup1 (Dup1) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'ClusterName'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: 'ClusterName' is a required property (CloudFormation Validate)
+         DupStack/Dup1 (Dup1) aws-cdk-lib.CfnResource
+         Suggested fix: Add the required property 'ClusterName'
+         Acknowledge with 'CloudFormation-Validate::F3003'
+      
+      A copy of this report can be found in: /tmp/cdk.outjnpAuw/validation-report.json
+
+      261 |   // Synthesize once and inspect every stack's template. Passing an existing
+      262 |   // synthesized assembly through is harmless — CDK returns the cached assembly.
+    > 263 |   const assembly = app.synth();
+          |                        ^
+      264 |
+      265 |   // Initialize a counter per distinct foundation kind. The two load-balancer
+      266 |   // variants are tracked separately from the raw CloudFormation type.
+
+      at validateTemplates (node_modules/aws-cdk-lib/core/lib/private/synthesis-validation.js:6:173)
+      at synthesize (node_modules/aws-cdk-lib/core/lib/private/synthesis.js:1:3191)
+      at App.synth (node_modules/aws-cdk-lib/core/lib/stage.js:1:5163)
+      at App.synth (node_modules/aws-cdk-lib/core/lib/app.js:1:5152)
+      at assertFoundationSingleton (lib/foundation.ts:263:24)
+      at test/foundation.test.ts:157:43
+      at Object.<anonymous> (node_modules/expect/build/toThrowMatchers.js:74:11)
+      at Object.throwingMatcher [as toThrow] (node_modules/expect/build/index.js:320:21)
+      at test/foundation.test.ts:157:50
+
+    console.error
+      [Warning] Template validation found issues in your templates (reported as warnings).
+      Set feature flag "@aws-cdk/core:validateAgainstDefaultRules" to true to turn these into errors.
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: Exactly one of ['Subnets', 'SubnetMappings'] must be specified (CloudFormation Validate)
+         OneAlbOneNlb/Alb0 (Alb0) aws-cdk-lib.CfnResource
+         Acknowledge with 'CloudFormation-Validate::F3014'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: Exactly one of ['Subnets', 'SubnetMappings'] must be specified (CloudFormation Validate)
+         OneAlbOneNlb/Nlb0 (Nlb0) aws-cdk-lib.CfnResource
+         Acknowledge with 'CloudFormation-Validate::F3014'
+      
+      A copy of this report can be found in: /tmp/cdk.outGLpBMF/validation-report.json
+
+      261 |   // Synthesize once and inspect every stack's template. Passing an existing
+      262 |   // synthesized assembly through is harmless — CDK returns the cached assembly.
+    > 263 |   const assembly = app.synth();
+          |                        ^
+      264 |
+      265 |   // Initialize a counter per distinct foundation kind. The two load-balancer
+      266 |   // variants are tracked separately from the raw CloudFormation type.
+
+      at validateTemplates (node_modules/aws-cdk-lib/core/lib/private/synthesis-validation.js:6:173)
+      at synthesize (node_modules/aws-cdk-lib/core/lib/private/synthesis.js:1:3191)
+      at App.synth (node_modules/aws-cdk-lib/core/lib/stage.js:1:5163)
+      at App.synth (node_modules/aws-cdk-lib/core/lib/app.js:1:5152)
+      at assertFoundationSingleton (lib/foundation.ts:263:24)
+      at test/foundation.test.ts:174:43
+      at Object.<anonymous> (node_modules/expect/build/toThrowMatchers.js:74:11)
+      at Object.throwingMatcher [as toThrow] (node_modules/expect/build/index.js:320:21)
+      at Object.<anonymous> (test/foundation.test.ts:174:54)
+
+    console.error
+      [Warning] Template validation found issues in your templates (reported as warnings).
+      Set feature flag "@aws-cdk/core:validateAgainstDefaultRules" to true to turn these into errors.
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: Exactly one of ['Subnets', 'SubnetMappings'] must be specified (CloudFormation Validate)
+         TwoAlbStack/Alb0 (Alb0) aws-cdk-lib.CfnResource
+         Acknowledge with 'CloudFormation-Validate::F3014'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: Exactly one of ['Subnets', 'SubnetMappings'] must be specified (CloudFormation Validate)
+         TwoAlbStack/Alb1 (Alb1) aws-cdk-lib.CfnResource
+         Acknowledge with 'CloudFormation-Validate::F3014'
+      
+      A copy of this report can be found in: /tmp/cdk.outt1Ezq3/validation-report.json
+
+      261 |   // Synthesize once and inspect every stack's template. Passing an existing
+      262 |   // synthesized assembly through is harmless — CDK returns the cached assembly.
+    > 263 |   const assembly = app.synth();
+          |                        ^
+      264 |
+      265 |   // Initialize a counter per distinct foundation kind. The two load-balancer
+      266 |   // variants are tracked separately from the raw CloudFormation type.
+
+      at validateTemplates (node_modules/aws-cdk-lib/core/lib/private/synthesis-validation.js:6:173)
+      at synthesize (node_modules/aws-cdk-lib/core/lib/private/synthesis.js:1:3191)
+      at App.synth (node_modules/aws-cdk-lib/core/lib/stage.js:1:5163)
+      at App.synth (node_modules/aws-cdk-lib/core/lib/app.js:1:5152)
+      at assertFoundationSingleton (lib/foundation.ts:263:24)
+      at test/foundation.test.ts:184:43
+      at Object.<anonymous> (node_modules/expect/build/toThrowMatchers.js:74:11)
+      at Object.throwingMatcher [as toThrow] (node_modules/expect/build/index.js:320:21)
+      at Object.<anonymous> (test/foundation.test.ts:184:50)
+
+    console.error
+      [Warning] Template validation found issues in your templates (reported as warnings).
+      Set feature flag "@aws-cdk/core:validateAgainstDefaultRules" to true to turn these into errors.
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: Exactly one of ['Subnets', 'SubnetMappings'] must be specified (CloudFormation Validate)
+         TwoNlbStack/Nlb0 (Nlb0) aws-cdk-lib.CfnResource
+         Acknowledge with 'CloudFormation-Validate::F3014'
+      
+      test/foundation.test.ts:52:5
+      WARNING Properties: Exactly one of ['Subnets', 'SubnetMappings'] must be specified (CloudFormation Validate)
+         TwoNlbStack/Nlb1 (Nlb1) aws-cdk-lib.CfnResource
+         Acknowledge with 'CloudFormation-Validate::F3014'
+      
+      A copy of this report can be found in: /tmp/cdk.outHVYKF7/validation-report.json
+
+      261 |   // Synthesize once and inspect every stack's template. Passing an existing
+      262 |   // synthesized assembly through is harmless — CDK returns the cached assembly.
+    > 263 |   const assembly = app.synth();
+          |                        ^
+      264 |
+      265 |   // Initialize a counter per distinct foundation kind. The two load-balancer
+      266 |   // variants are tracked separately from the raw CloudFormation type.
+
+      at validateTemplates (node_modules/aws-cdk-lib/core/lib/private/synthesis-validation.js:6:173)
+      at synthesize (node_modules/aws-cdk-lib/core/lib/private/synthesis.js:1:3191)
+      at App.synth (node_modules/aws-cdk-lib/core/lib/stage.js:1:5163)
+      at App.synth (node_modules/aws-cdk-lib/core/lib/app.js:1:5152)
+      at assertFoundationSingleton (lib/foundation.ts:263:24)
+      at test/foundation.test.ts:200:43
+      at Object.<anonymous> (node_modules/expect/build/toThrowMatchers.js:74:11)
+      at Object.throwingMatcher [as toThrow] (node_modules/expect/build/index.js:320:21)
+      at Object.<anonymous> (test/foundation.test.ts:200:50)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      138 |     // Core single-table: hellodj-core (PK/SK + GSI1). (R7.1)
+      139 |     // -----------------------------------------------------------------------
+    > 140 |     this.coreTable = new dynamodb.Table(this, 'CoreTable', {
+          |                      ^
+      141 |       tableName: CORE_TABLE_NAME,
+      142 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      143 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:140:22)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:412:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      173 |     // Hot table: session/queue state (hellodj-session), PK/SK. (R7.5)
+      174 |     // -----------------------------------------------------------------------
+    > 175 |     this.sessionTable = new dynamodb.Table(this, 'SessionTable', {
+          |                         ^
+      176 |       tableName: SESSION_TABLE_NAME,
+      177 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      178 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:175:25)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:412:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+        Use `addResourceDependency` instead.
+        This API will be removed in the next major release.
+
+      234 |     });
+      235 |     // The cluster references the subnet group by name, so enforce ordering.
+    > 236 |     this.daxCluster.addDependency(daxSubnetGroup);
+          |                     ^
+      237 |
+      238 |     this.daxEndpoint = this.daxCluster.attrClusterDiscoveryEndpoint;
+      239 |
+
+      at Proxy.print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at CfnCluster.addDependency (node_modules/aws-cdk-lib/core/lib/cfn-resource.js:1:8277)
+      at new DataStack (lib/data-stack.ts:236:21)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:412:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      138 |     // Core single-table: hellodj-core (PK/SK + GSI1). (R7.1)
+      139 |     // -----------------------------------------------------------------------
+    > 140 |     this.coreTable = new dynamodb.Table(this, 'CoreTable', {
+          |                      ^
+      141 |       tableName: CORE_TABLE_NAME,
+      142 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      143 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:140:22)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:417:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      173 |     // Hot table: session/queue state (hellodj-session), PK/SK. (R7.5)
+      174 |     // -----------------------------------------------------------------------
+    > 175 |     this.sessionTable = new dynamodb.Table(this, 'SessionTable', {
+          |                         ^
+      176 |       tableName: SESSION_TABLE_NAME,
+      177 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      178 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:175:25)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:417:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+        Use `addResourceDependency` instead.
+        This API will be removed in the next major release.
+
+      234 |     });
+      235 |     // The cluster references the subnet group by name, so enforce ordering.
+    > 236 |     this.daxCluster.addDependency(daxSubnetGroup);
+          |                     ^
+      237 |
+      238 |     this.daxEndpoint = this.daxCluster.attrClusterDiscoveryEndpoint;
+      239 |
+
+      at Proxy.print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at CfnCluster.addDependency (node_modules/aws-cdk-lib/core/lib/cfn-resource.js:1:8277)
+      at new DataStack (lib/data-stack.ts:236:21)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:417:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      138 |     // Core single-table: hellodj-core (PK/SK + GSI1). (R7.1)
+      139 |     // -----------------------------------------------------------------------
+    > 140 |     this.coreTable = new dynamodb.Table(this, 'CoreTable', {
+          |                      ^
+      141 |       tableName: CORE_TABLE_NAME,
+      142 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      143 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:140:22)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:422:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      173 |     // Hot table: session/queue state (hellodj-session), PK/SK. (R7.5)
+      174 |     // -----------------------------------------------------------------------
+    > 175 |     this.sessionTable = new dynamodb.Table(this, 'SessionTable', {
+          |                         ^
+      176 |       tableName: SESSION_TABLE_NAME,
+      177 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      178 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:175:25)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:422:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+        Use `addResourceDependency` instead.
+        This API will be removed in the next major release.
+
+      234 |     });
+      235 |     // The cluster references the subnet group by name, so enforce ordering.
+    > 236 |     this.daxCluster.addDependency(daxSubnetGroup);
+          |                     ^
+      237 |
+      238 |     this.daxEndpoint = this.daxCluster.attrClusterDiscoveryEndpoint;
+      239 |
+
+      at Proxy.print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at CfnCluster.addDependency (node_modules/aws-cdk-lib/core/lib/cfn-resource.js:1:8277)
+      at new DataStack (lib/data-stack.ts:236:21)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:422:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      138 |     // Core single-table: hellodj-core (PK/SK + GSI1). (R7.1)
+      139 |     // -----------------------------------------------------------------------
+    > 140 |     this.coreTable = new dynamodb.Table(this, 'CoreTable', {
+          |                      ^
+      141 |       tableName: CORE_TABLE_NAME,
+      142 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      143 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:140:22)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:431:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      173 |     // Hot table: session/queue state (hellodj-session), PK/SK. (R7.5)
+      174 |     // -----------------------------------------------------------------------
+    > 175 |     this.sessionTable = new dynamodb.Table(this, 'SessionTable', {
+          |                         ^
+      176 |       tableName: SESSION_TABLE_NAME,
+      177 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      178 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:175:25)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:431:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+        Use `addResourceDependency` instead.
+        This API will be removed in the next major release.
+
+      234 |     });
+      235 |     // The cluster references the subnet group by name, so enforce ordering.
+    > 236 |     this.daxCluster.addDependency(daxSubnetGroup);
+          |                     ^
+      237 |
+      238 |     this.daxEndpoint = this.daxCluster.attrClusterDiscoveryEndpoint;
+      239 |
+
+      at Proxy.print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at CfnCluster.addDependency (node_modules/aws-cdk-lib/core/lib/cfn-resource.js:1:8277)
+      at new DataStack (lib/data-stack.ts:236:21)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:431:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      138 |     // Core single-table: hellodj-core (PK/SK + GSI1). (R7.1)
+      139 |     // -----------------------------------------------------------------------
+    > 140 |     this.coreTable = new dynamodb.Table(this, 'CoreTable', {
+          |                      ^
+      141 |       tableName: CORE_TABLE_NAME,
+      142 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      143 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:140:22)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:471:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      173 |     // Hot table: session/queue state (hellodj-session), PK/SK. (R7.5)
+      174 |     // -----------------------------------------------------------------------
+    > 175 |     this.sessionTable = new dynamodb.Table(this, 'SessionTable', {
+          |                         ^
+      176 |       tableName: SESSION_TABLE_NAME,
+      177 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      178 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:175:25)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:471:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+        Use `addResourceDependency` instead.
+        This API will be removed in the next major release.
+
+      234 |     });
+      235 |     // The cluster references the subnet group by name, so enforce ordering.
+    > 236 |     this.daxCluster.addDependency(daxSubnetGroup);
+          |                     ^
+      237 |
+      238 |     this.daxEndpoint = this.daxCluster.attrClusterDiscoveryEndpoint;
+      239 |
+
+      at Proxy.print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at CfnCluster.addDependency (node_modules/aws-cdk-lib/core/lib/cfn-resource.js:1:8277)
+      at new DataStack (lib/data-stack.ts:236:21)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:471:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      138 |     // Core single-table: hellodj-core (PK/SK + GSI1). (R7.1)
+      139 |     // -----------------------------------------------------------------------
+    > 140 |     this.coreTable = new dynamodb.Table(this, 'CoreTable', {
+          |                      ^
+      141 |       tableName: CORE_TABLE_NAME,
+      142 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      143 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:140:22)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:476:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      173 |     // Hot table: session/queue state (hellodj-session), PK/SK. (R7.5)
+      174 |     // -----------------------------------------------------------------------
+    > 175 |     this.sessionTable = new dynamodb.Table(this, 'SessionTable', {
+          |                         ^
+      176 |       tableName: SESSION_TABLE_NAME,
+      177 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      178 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:175:25)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:476:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+        Use `addResourceDependency` instead.
+        This API will be removed in the next major release.
+
+      234 |     });
+      235 |     // The cluster references the subnet group by name, so enforce ordering.
+    > 236 |     this.daxCluster.addDependency(daxSubnetGroup);
+          |                     ^
+      237 |
+      238 |     this.daxEndpoint = this.daxCluster.attrClusterDiscoveryEndpoint;
+      239 |
+
+      at Proxy.print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at CfnCluster.addDependency (node_modules/aws-cdk-lib/core/lib/cfn-resource.js:1:8277)
+      at new DataStack (lib/data-stack.ts:236:21)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:476:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      138 |     // Core single-table: hellodj-core (PK/SK + GSI1). (R7.1)
+      139 |     // -----------------------------------------------------------------------
+    > 140 |     this.coreTable = new dynamodb.Table(this, 'CoreTable', {
+          |                      ^
+      141 |       tableName: CORE_TABLE_NAME,
+      142 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      143 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:140:22)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:487:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      173 |     // Hot table: session/queue state (hellodj-session), PK/SK. (R7.5)
+      174 |     // -----------------------------------------------------------------------
+    > 175 |     this.sessionTable = new dynamodb.Table(this, 'SessionTable', {
+          |                         ^
+      176 |       tableName: SESSION_TABLE_NAME,
+      177 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      178 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:175:25)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:487:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+        Use `addResourceDependency` instead.
+        This API will be removed in the next major release.
+
+      234 |     });
+      235 |     // The cluster references the subnet group by name, so enforce ordering.
+    > 236 |     this.daxCluster.addDependency(daxSubnetGroup);
+          |                     ^
+      237 |
+      238 |     this.daxEndpoint = this.daxCluster.attrClusterDiscoveryEndpoint;
+      239 |
+
+      at Proxy.print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at CfnCluster.addDependency (node_modules/aws-cdk-lib/core/lib/cfn-resource.js:1:8277)
+      at new DataStack (lib/data-stack.ts:236:21)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:487:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      138 |     // Core single-table: hellodj-core (PK/SK + GSI1). (R7.1)
+      139 |     // -----------------------------------------------------------------------
+    > 140 |     this.coreTable = new dynamodb.Table(this, 'CoreTable', {
+          |                      ^
+      141 |       tableName: CORE_TABLE_NAME,
+      142 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      143 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:140:22)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:498:32)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      173 |     // Hot table: session/queue state (hellodj-session), PK/SK. (R7.5)
+      174 |     // -----------------------------------------------------------------------
+    > 175 |     this.sessionTable = new dynamodb.Table(this, 'SessionTable', {
+          |                         ^
+      176 |       tableName: SESSION_TABLE_NAME,
+      177 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      178 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:175:25)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:498:32)
+
+    console.warn
+      [WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+        Use `addResourceDependency` instead.
+        This API will be removed in the next major release.
+
+      234 |     });
+      235 |     // The cluster references the subnet group by name, so enforce ordering.
+    > 236 |     this.daxCluster.addDependency(daxSubnetGroup);
+          |                     ^
+      237 |
+      238 |     this.daxEndpoint = this.daxCluster.attrClusterDiscoveryEndpoint;
+      239 |
+
+      at Proxy.print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at CfnCluster.addDependency (node_modules/aws-cdk-lib/core/lib/cfn-resource.js:1:8277)
+      at new DataStack (lib/data-stack.ts:236:21)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:498:32)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      138 |     // Core single-table: hellodj-core (PK/SK + GSI1). (R7.1)
+      139 |     // -----------------------------------------------------------------------
+    > 140 |     this.coreTable = new dynamodb.Table(this, 'CoreTable', {
+          |                      ^
+      141 |       tableName: CORE_TABLE_NAME,
+      142 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      143 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:140:22)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:508:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+        use `pointInTimeRecoverySpecification` instead
+        This API will be removed in the next major release.
+
+      173 |     // Hot table: session/queue state (hellodj-session), PK/SK. (R7.5)
+      174 |     // -----------------------------------------------------------------------
+    > 175 |     this.sessionTable = new dynamodb.Table(this, 'SessionTable', {
+          |                         ^
+      176 |       tableName: SESSION_TABLE_NAME,
+      177 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      178 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:175:25)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:508:21)
+
+    console.warn
+      [WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+        Use `addResourceDependency` instead.
+        This API will be removed in the next major release.
+
+      234 |     });
+      235 |     // The cluster references the subnet group by name, so enforce ordering.
+    > 236 |     this.daxCluster.addDependency(daxSubnetGroup);
+          |                     ^
+      237 |
+      238 |     this.daxEndpoint = this.daxCluster.attrClusterDiscoveryEndpoint;
+      239 |
+
+      at Proxy.print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at CfnCluster.addDependency (node_modules/aws-cdk-lib/core/lib/cfn-resource.js:1:8277)
+      at new DataStack (lib/data-stack.ts:236:21)
+      at composeApp (test/foundation.test.ts:335:18)
+      at Object.<anonymous> (test/foundation.test.ts:508:21)
+
+
+Test Suites: 1 failed, 3 passed, 4 total
+Tests:       6 failed, 51 passed, 57 total
+Snapshots:   0 total
+Time:        15.795 s, estimated 30 s
+Ran all test suites matching /edge-per-stage|edge-stack|endpoint-isolation|foundation/i.
+jest_exit=1

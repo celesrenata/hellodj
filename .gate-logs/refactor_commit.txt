@@ -1,0 +1,5 @@
+[main 8caca1c] refactor: edge + auth are per-stage, deployed INSIDE HelloDjStage by the pipeline
+ 7 files changed, 415 insertions(+), 441 deletions(-)
+ create mode 100644 .kiro/specs/per-stage-edge-auth-in-stage/design.md
+ create mode 100644 .kiro/specs/per-stage-edge-auth-in-stage/requirements.md
+commit_exit=0

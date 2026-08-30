@@ -56,7 +56,7 @@ The engine ("Drift") uses a **ping-pong FBO feedback loop** with multiple render
 | Framebuffers | 2 FBOs with RGBA8 color attachments | Ping-pong feedback (current/prev) |
 | Warp mesh | OpenGL 3.3 VBO/VAO with dynamic vertex updates | 48×36 vertex grid (1728 quads) |
 | Blur | Separable Gaussian needs 2 extra FBOs | 2 half-res FBOs for bloom |
-| Encoding | QSV h264_qsv already in pipeline | Raise quality: CRF 22, maxrate 6000k |
+| Encoding | NVENC h264_nvenc (FFmpeg 9) in pipeline | Raise quality: cq 20, maxrate 6000k |
 | Delivery | HLS 2s segments | Keep — possibly drop to 1s segments for lower latency |
 | Audio | AudioFeatureBus @ 47fps (beat, FFT, 7-band, BPM) | All of it, plus smoothed interpolation |
 
@@ -142,21 +142,24 @@ Presets crossfade by interpolating all numeric parameters over 3 seconds.
 
 ## Encoding Quality Fix
 
-Current ffmpeg command uses `global_quality 28` which is too lossy for detailed visuals. New parameters:
+The visualizer encodes on NVIDIA NVENC (FFmpeg 9, `h264_nvenc`). Parameters
+tuned for detailed visuals:
 
 ```
--c:v h264_qsv -profile:v high -preset veryslow
--global_quality 20 -look_ahead 1 -look_ahead_depth 60
--maxrate 6000k -bufsize 10000k
+-c:v h264_nvenc -profile:v high -preset p6 -tune hq
+-rc vbr -cq 20 -rc-lookahead 40 -spatial_aq 1 -temporal_aq 1
+-b:v 6000k -maxrate 6000k -bufsize 10000k
 -g 30 -force_key_frames expr:gte(t,n_forced*1)
 ```
 
-Changes:
-- `global_quality`: 28 → 20 (much higher quality, still reasonable file size)
-- `maxrate`: 3000k → 6000k (allows more detail)
-- `bufsize`: 5000k → 10000k (smoother rate control)
-- Key frames every 1s instead of 2s (less quality drop at segment boundaries)
-- `preset veryslow`: better compression efficiency (the iGPU has capacity)
+Changes / rationale:
+- `h264_nvenc` (not `h264_qsv`) — NVIDIA-only GPU path; RGBA frames from the
+  OpenGL renderer are fed as `format=yuv420p` and NVENC uploads internally (no
+  QSV `hwupload`/`init_hw_device`).
+- `cq 20` + spatial/temporal AQ for high visual quality at a controlled bitrate.
+- `maxrate 6000k` / `bufsize 10000k` for detail headroom + smooth rate control.
+- Key frames every 1s (less quality drop at segment boundaries).
+- `preset p6` (high-quality NVENC preset) — the T4-class GPU has capacity.
 
 ## Resolution
 

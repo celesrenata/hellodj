@@ -1,0 +1,102 @@
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.Stack#addDependency is deprecated.
+  Use `addStackDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.Stack#addDependency is deprecated.
+  Use `addStackDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.Stack#addDependency is deprecated.
+  Use `addStackDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.Stack#addDependency is deprecated.
+  Use `addStackDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.Stack#addDependency is deprecated.
+  Use `addStackDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.Stack#addDependency is deprecated.
+  Use `addStackDependency` instead.
+  This API will be removed in the next major release.
+Including dependency stacks: hellodj-network
+WARNING Ignoring Egress rule since 'allowAllOutbound' is set to true; To add customized rules, set allowAllOutbound=false on the SecurityGroup (Construct Annotations)
+   hellodj-network/FleetSecurityGroup
+   Acknowledge with 'Construct-Annotations::@aws-cdk/aws-ec2:ipv4IgnoreEgressRule'
+
+✨  Synthesis time: 11.61s
+
+hellodj-network
+hellodj-data: start: Building hellodj-data Template
+hellodj-data: success: Built hellodj-data Template
+hellodj-network: creating CloudFormation changeset...
+hellodj-network: deploying... [1/2]
+
+✅  hellodj-network (no changes)
+
+✨  Deployment time: 0s
+
+Outputs:
+hellodj-network.AlbDnsName = hellod-AppLo-5ebRMXtKcl6d-223787727.us-east-1.elb.amazonaws.com
+hellodj-network.ExportsOutputRefVpc8378EB38272D6E3A = vpc-0f9afceef13c04d55
+hellodj-network.ExportsOutputRefVpcprivateegressSubnet1Subnet830BC88F45116193 = subnet-05b1d975fba448593
+hellodj-network.ExportsOutputRefVpcprivateegressSubnet2SubnetEB0EA9CBFD91A0CD = subnet-0fff9a02f630107e6
+hellodj-network.ExportsOutputRefVpcprivateegressSubnet3Subnet6C8E65FBD4F775F0 = subnet-07c4ec1134edc462f
+hellodj-network.NlbDnsName = hellod-Gatew-diL6G8vpwL3u-3d8023dc03f773fe.elb.us-east-1.amazonaws.com
+hellodj-network.VpcId = vpc-0f9afceef13c04d55
+Stack ARN:
+arn:aws:cloudformation:us-east-1:874927898283:stack/hellodj-network/ada7e740-a125-11f1-8166-0affca082aef
+hellodj-data: start: Publishing hellodj-data Template (874927898283-us-east-1-79bf68bc)
+hellodj-data: success: Published hellodj-data Template (874927898283-us-east-1-79bf68bc)
+hellodj-data
+hellodj-data: creating CloudFormation changeset...
+hellodj-data: deploying... [2/2]
+hellodj-data | 0/6 | 6:40:10 PM | UPDATE_IN_PROGRESS      | AWS::CloudFormation::Stack | hellodj-data User Initiated
+hellodj-data | 0/6 | 6:40:13 PM | UPDATE_IN_PROGRESS      | AWS::KMS::Key              | SourceCredsKey (SourceCredsKeyB5B8D841) 
+hellodj-data | 0/6 | 6:40:14 PM | UPDATE_IN_PROGRESS      | AWS::S3::Bucket            | AssetsBucket (AssetsBucket5CB76180) Requested update requires the creation of a new physical resource; hence creating one.
+hellodj-data | 0/6 | 6:40:15 PM | UPDATE_IN_PROGRESS      | AWS::S3::Bucket            | AssetsBucket (AssetsBucket5CB76180) Resource creation Initiated
+hellodj-data | 1/6 | 6:40:28 PM | UPDATE_COMPLETE         | AWS::S3::Bucket            | AssetsBucket (AssetsBucket5CB76180) 
+hellodj-data | 1/6 | 6:40:30 PM | UPDATE_IN_PROGRESS      | AWS::S3::BucketPolicy      | AssetsBucket/Policy (AssetsBucketPolicyFFACF6C4) Requested update requires the creation of a new physical resource; hence creating one.
+hellodj-data | 1/6 | 6:40:31 PM | UPDATE_IN_PROGRESS      | AWS::S3::BucketPolicy      | AssetsBucket/Policy (AssetsBucketPolicyFFACF6C4) Resource creation Initiated
+hellodj-data | 2/6 | 6:40:31 PM | UPDATE_COMPLETE         | AWS::S3::BucketPolicy      | AssetsBucket/Policy (AssetsBucketPolicyFFACF6C4) 
+hellodj-data | 3/6 | 6:41:15 PM | UPDATE_COMPLETE         | AWS::KMS::Key              | SourceCredsKey (SourceCredsKeyB5B8D841) 
+hellodj-data | 3/6 | 6:41:16 PM | UPDATE_IN_PROGRESS      | AWS::KMS::Alias            | SourceCredsKey/Alias (SourceCredsKeyAlias3E39EE30) Requested update requires the creation of a new physical resource; hence creating one.
+hellodj-data | 3/6 | 6:41:17 PM | UPDATE_IN_PROGRESS      | AWS::KMS::Alias            | SourceCredsKey/Alias (SourceCredsKeyAlias3E39EE30) Resource creation Initiated
+hellodj-data | 4/6 | 6:41:34 PM | UPDATE_COMPLETE         | AWS::KMS::Alias            | SourceCredsKey/Alias (SourceCredsKeyAlias3E39EE30) 
+hellodj-data | 5/6 | 6:41:35 PM | UPDATE_COMPLETE_CLEANUP | AWS::CloudFormation::Stack | hellodj-data 
+hellodj-data | 5/6 | 6:41:36 PM | DELETE_IN_PROGRESS      | AWS::KMS::Alias            | SourceCredsKey/Alias (SourceCredsKeyAlias3E39EE30) 
+hellodj-data | 5/6 | 6:41:36 PM | DELETE_IN_PROGRESS      | AWS::S3::BucketPolicy      | AssetsBucket/Policy (AssetsBucketPolicyFFACF6C4) 
+hellodj-data | 4/6 | 6:41:37 PM | DELETE_COMPLETE         | AWS::KMS::Alias            | SourceCredsKey/Alias (SourceCredsKeyAlias3E39EE30) 
+hellodj-data | 3/6 | 6:41:37 PM | DELETE_COMPLETE         | AWS::S3::BucketPolicy      | AssetsBucket/Policy (AssetsBucketPolicyFFACF6C4) 
+hellodj-data | 3/6 | 6:41:38 PM | DELETE_SKIPPED          | AWS::S3::Bucket            | AssetsBucket (AssetsBucket5CB76180) 
+hellodj-data | 4/6 | 6:41:38 PM | UPDATE_COMPLETE         | AWS::CloudFormation::Stack | hellodj-data 
+
+✅  hellodj-data
+
+✨  Deployment time: 96.58s
+
+Outputs:
+hellodj-data.AssetsBucketNameOutput = hellodj-assets-us-east-1
+hellodj-data.CoreTableNameOutput = hellodj-core
+hellodj-data.DaxEndpointOutput = hellodj-dax.fjwhyp.dax-clusters.us-east-1.amazonaws.com:8111
+hellodj-data.SearchCacheTableNameOutput = hellodj-search-cache
+hellodj-data.SessionTableNameOutput = hellodj-session
+hellodj-data.SourceCredsKmsKeyIdOutput = 30e299e0-e3b9-44ca-ad70-65ed1e8c3e9c
+Stack ARN:
+arn:aws:cloudformation:us-east-1:874927898283:stack/hellodj-data/db075290-a128-11f1-9ea6-12407f53f237
+
+✨  Total time: 121.19s
+
+deploy_exit=0

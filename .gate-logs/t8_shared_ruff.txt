@@ -1,0 +1,2 @@
+All checks passed!
+shared_exit=0

@@ -1,0 +1,18 @@
+fix(pipeline): resolve real cluster OIDC issuer for IRSA trust in synth
+
+Every IRSA pod (discord-bot-core, etc.) crash-looped with
+"Not authorized to perform: sts:AssumeRoleWithWebIdentity". The per-stage
+WorkloadsStacks build each ServiceAccount role's trust from the cluster OIDC
+issuer, but the pipeline synth has no -c hellodj:oidcProviderArn context, so
+importFoundationRefs fell back to a NAME-derived placeholder
+(.../oidc-provider/oidc.eks.us-east-1.amazonaws.com/id/hellodj) instead of the
+real issuer id (.../id/BD79C26E...). AssumeRoleWithWebIdentity can never
+succeed against a non-existent OIDC provider path.
+
+Fix: the synth step resolves the real issuer via aws eks describe-cluster,
+formats the oidc-provider ARN, and passes -c hellodj:oidcProviderArn=<arn> to
+cdk synth (bin/hellodj.ts already threads that context into
+foundation.oidcProviderArn -> the WorkloadsStack SA role trust). Verified the
+synthesized beta workloads template now carries the real issuer in every SA
+role trust and no .../id/hellodj placeholder remains. Granted the synth role
+eks:DescribeCluster (scoped to cluster/hellodj). tsc clean; 374 jest tests pass.

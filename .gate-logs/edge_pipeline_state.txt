@@ -1,0 +1,35 @@
+[
+    {
+        "stage": "Source",
+        "status": "InProgress"
+    },
+    {
+        "stage": "Build",
+        "status": "Succeeded"
+    },
+    {
+        "stage": "UpdatePipeline",
+        "status": "Succeeded"
+    },
+    {
+        "stage": "Assets",
+        "status": "Succeeded"
+    },
+    {
+        "stage": "ComponentBuilds",
+        "status": "Succeeded"
+    },
+    {
+        "stage": "hellodj-beta-stage",
+        "status": "Succeeded"
+    },
+    {
+        "stage": "hellodj-staging-stage",
+        "status": "Succeeded"
+    },
+    {
+        "stage": "hellodj-production-stage",
+        "status": "InProgress"
+    }
+]
+exit=0

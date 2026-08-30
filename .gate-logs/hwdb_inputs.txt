@@ -1,0 +1,2 @@
+/nix/store/9zncnnnlcfz19smcdxk7l457bn6q91cg-extra-hwdb-file.drv
+/nix/store/nabrv3llx9q1hg851gnry19rxinaxlv8-extra-udev-rules.drv

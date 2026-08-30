@@ -36,8 +36,15 @@ Env:
 * ``AWS_REGION``          Region for boto3 clients.
 * ``HELLODJ_LAVALINK_NODE_URL``  Shared Lavalink node URL (recorded for the
   single shared node; the secondaries reuse the primary's node, R2.5).
+* ``HELLODJ_ORCHESTRATOR_REPLICAS``  Total orchestrator StatefulSet replicas
+  (distributed-bot-sharding R1.2). With the pod ``HOSTNAME``
+  (``playback-orchestrator-<ordinal>``) this yields the replica's shard
+  ``(ordinal, replica_count)`` via :func:`~playback_orchestrator.sharding.resolve_topology`;
+  the replica then serves ONLY the guilds it owns (``shard(gid) == ordinal``),
+  a disjoint partition (R2.1/R2.2). Absent/unparseable → ``(0, 1)`` = the
+  single-shard behavior identical to today's single-replica runtime (R1.3/R7.1).
 
-Requirements: 2.1, 2.2, 2.3, 2.4
+Requirements: 2.1, 2.2, 2.3, 2.4 (distributed-bot-sharding 1.2, 1.3, 2.1, 2.2, 7.1)
 """
 
 from __future__ import annotations
@@ -52,6 +59,7 @@ from typing import TYPE_CHECKING, Any
 from .instance_identity import InstanceIdentityApplier
 from .instance_identity_store import build_instance_identity_store
 from .instance_runtime import AwsInstanceOrchestrator, PoolCredentialSource
+from .sharding import resolve_topology, shard
 
 if TYPE_CHECKING:  # pragma: no cover - typing only
     from hellodj_platform_logic.data_access import CoreTable
@@ -63,6 +71,10 @@ _BOTAPP_CLAIM_ENTITY = "BotAppClaim"
 
 #: How long to give the runtime's loop to disconnect instances on shutdown.
 _SHUTDOWN_TIMEOUT_SECONDS = 10.0
+
+#: Env carrying the total orchestrator StatefulSet replica count (the shard
+#: divisor). Absent/unparseable → single-shard topology (0, 1) (R1.3).
+_REPLICAS_ENV = "HELLODJ_ORCHESTRATOR_REPLICAS"
 
 __all__ = [
     "InstanceRuntimeHandle",
@@ -199,6 +211,53 @@ def discover_claimed_guild_ids(core_table: CoreTable) -> list[str]:
     return sorted(guild_ids)
 
 
+def _resolve_shard_topology() -> tuple[int, int]:
+    """Resolve this replica's ``(ordinal, replica_count)`` from env (R1.2/R1.3).
+
+    Reads the pod hostname (``$HOSTNAME`` first, then ``os.uname().nodename``)
+    and ``HELLODJ_ORCHESTRATOR_REPLICAS``. Any unparseable/out-of-range input
+    degrades to ``(0, 1)`` (single shard = today's behavior) and logs it, never
+    raising. Logged once at build time so the served-guild slice is auditable.
+    """
+    hostname = os.getenv("HOSTNAME", "").strip()
+    if not hostname:
+        try:
+            hostname = os.uname().nodename
+        except (OSError, AttributeError):
+            hostname = ""
+    ordinal, replica_count = resolve_topology(
+        hostname, os.getenv(_REPLICAS_ENV, "")
+    )
+    if replica_count > 1:
+        _LOG.info(
+            "instance runtime: shard topology ordinal=%d/%d (host=%s)",
+            ordinal,
+            replica_count,
+            hostname or "<unknown>",
+        )
+    else:
+        _LOG.info(
+            "instance runtime: single-shard topology (replicas=1); "
+            "serving all claimed guilds"
+        )
+    return ordinal, replica_count
+
+
+def _served_guild_ids(
+    claimed_guild_ids: list[str], ordinal: int, replica_count: int
+) -> list[str]:
+    """Filter claimed guilds to the ones THIS replica owns (R2.1/R2.2).
+
+    A guild is served by this replica iff ``shard(gid, replica_count) ==
+    ordinal``. At ``replica_count == 1`` every guild maps to ordinal 0, so this
+    is the full input list (R7.1 identity). The returned order preserves the
+    input order (already sorted by :func:`discover_claimed_guild_ids`).
+    """
+    if replica_count <= 1:
+        return list(claimed_guild_ids)
+    return [g for g in claimed_guild_ids if shard(g, replica_count) == ordinal]
+
+
 def build_instance_runtime() -> tuple[AwsInstanceOrchestrator, list[str]] | None:
     """Build the AWS orchestrator + served guild ids from env, or None (degraded).
 
@@ -237,7 +296,14 @@ def build_instance_runtime() -> tuple[AwsInstanceOrchestrator, list[str]] | None
     if not source.pool():
         return None
 
-    guild_ids = discover_claimed_guild_ids(core)
+    # Shard-aware served-guild filter (distributed-bot-sharding R2.1/R2.2): this
+    # replica serves ONLY the guilds it owns under its shard ordinal. At
+    # replica_count == 1 (the default / degraded topology) `_served_guild_ids`
+    # returns every claimed guild — byte-for-byte today's behavior (R7.1).
+    ordinal, replica_count = _resolve_shard_topology()
+    guild_ids = _served_guild_ids(
+        discover_claimed_guild_ids(core), ordinal, replica_count
+    )
     if not guild_ids:
         return None
 
@@ -247,7 +313,12 @@ def build_instance_runtime() -> tuple[AwsInstanceOrchestrator, list[str]] | None
     identity_applier = _build_identity_applier(core)
 
     orchestrator = AwsInstanceOrchestrator(
-        object(), object(), source, identity_applier=identity_applier
+        object(),
+        object(),
+        source,
+        identity_applier=identity_applier,
+        ordinal=ordinal,
+        replica_count=replica_count,
     )
     return orchestrator, guild_ids
 

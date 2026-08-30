@@ -1,0 +1,12 @@
+38:     * The IAM role to assume in order to perform kubectl operations against this cluster.
+40:    readonly kubectlRoleArn: string;
+42:     * The IAM execution role of the handler. This role must be able to assume kubectlRoleArn
+44:    readonly handlerRole: iam.IRole;
+55:     * The IAM role to assume in order to perform kubectl operations against this cluster.
+57:    readonly roleArn: string;
+59:     * The IAM execution role of the handler.
+61:    readonly handlerRole: iam.IRole;
+87:     * The IAM role to assume in order to perform kubectl operations against this cluster.
+89:    readonly roleArn: string;
+91:     * The IAM execution role of the handler.
+93:    readonly handlerRole: iam.IRole;

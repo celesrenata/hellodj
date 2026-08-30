@@ -1,0 +1,7 @@
+hellodjpipelinehellodjbetastagehellodjworkloadsbetaK209B4302.nested.template.json
+--- names longest ---
+81 hellodjpipelinehellodjbetastagehellodjworkloadsbetaK209B4302.nested.template.json
+73 hellodjpipelinehellodjbetastagehellodjworkloadsbeta3BA8E38C.template.json
+73 hellodjpipelinehellodjbetastagehellodjworkloadsbeta3BA8E38C.metadata.json
+71 hellodjpipelinehellodjbetastagehellodjworkloadsbeta3BA8E38C.assets.json
+13 manifest.json

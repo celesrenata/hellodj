@@ -1,0 +1,175 @@
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+
+✨  Synthesis time: 10.86s
+
+hellodj-auth-staging: start: Building hellodj-auth-staging Template
+hellodj-auth-staging: success: Built hellodj-auth-staging Template
+hellodj-auth-production: start: Building hellodj-auth-production Template
+hellodj-auth-production: success: Built hellodj-auth-production Template
+hellodj-auth-production: start: Publishing hellodj-auth-production Template (874927898283-us-east-1-e39ae5e5)
+hellodj-auth-staging: start: Publishing hellodj-auth-staging Template (874927898283-us-east-1-0b81d533)
+hellodj-auth-production: success: Published hellodj-auth-production Template (874927898283-us-east-1-e39ae5e5)
+hellodj-auth-production
+hellodj-auth-staging: success: Published hellodj-auth-staging Template (874927898283-us-east-1-0b81d533)
+hellodj-auth-staging
+hellodj-auth-production: creating CloudFormation changeset...
+hellodj-auth-staging: creating CloudFormation changeset...
+hellodj-auth-staging: deploying... [1/2]
+hellodj-auth-production: deploying... [2/2]
+hellodj-auth-staging |  0/17 | 4:46:41 PM | REVIEW_IN_PROGRESS      | AWS::CloudFormation::Stack   | hellodj-auth-staging User Initiated
+hellodj-auth-staging |  0/17 | 4:46:48 PM | CREATE_IN_PROGRESS      | AWS::CloudFormation::Stack   | hellodj-auth-staging User Initiated
+hellodj-auth-production |  0/17 | 4:46:41 PM | REVIEW_IN_PROGRESS      | AWS::CloudFormation::Stack   | hellodj-auth-production User Initiated
+hellodj-auth-production |  0/17 | 4:46:48 PM | CREATE_IN_PROGRESS      | AWS::CloudFormation::Stack   | hellodj-auth-production User Initiated
+hellodj-auth-production |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::Cognito::UserPool       | UserPool (UserPool6BA7E5F2) 
+hellodj-auth-production |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | TidalRefreshSecret (TidalRefreshSecret03A83141) 
+hellodj-auth-production |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | DiscordOauthSecret (DiscordOauthSecret867CC41A) 
+hellodj-auth-production |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | GoogleOauthSecret (GoogleOauthSecretE885EF50) 
+hellodj-auth-production |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | SpotifySecret (SpotifySecretA8C04999) 
+hellodj-auth-production |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::CDK::Metadata           | CDKMetadata/Default (CDKMetadata) 
+hellodj-auth-production |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::IAM::Role               | AiTaskRole (AiTaskRole767A74B0) 
+hellodj-auth-production |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | LavalinkCredentialsSecret (LavalinkCredentialsSecret05A6746A) 
+hellodj-auth-production |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | DiscordBotTokenSecret (DiscordBotTokenSecret6314F565) 
+hellodj-auth-production |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | YtCipherSecret (YtCipherSecret9F326071) 
+hellodj-auth-production |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | BotAppPoolSecret (BotAppPoolSecretE2D682C3) 
+hellodj-auth-staging |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | DiscordBotTokenSecret (DiscordBotTokenSecret6314F565) 
+hellodj-auth-staging |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::CDK::Metadata           | CDKMetadata/Default (CDKMetadata) 
+hellodj-auth-staging |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | YtCipherSecret (YtCipherSecret9F326071) 
+hellodj-auth-staging |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | GoogleOauthSecret (GoogleOauthSecretE885EF50) 
+hellodj-auth-staging |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | DiscordOauthSecret (DiscordOauthSecret867CC41A) 
+hellodj-auth-staging |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | FlaskSessionSecret (FlaskSessionSecret3F7F05AB) 
+hellodj-auth-staging |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | LavalinkCredentialsSecret (LavalinkCredentialsSecret05A6746A) 
+hellodj-auth-staging |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::Cognito::UserPool       | UserPool (UserPool6BA7E5F2) 
+hellodj-auth-staging |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::IAM::Role               | AiTaskRole (AiTaskRole767A74B0) 
+hellodj-auth-staging |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | BotAppPoolSecret (BotAppPoolSecretE2D682C3) 
+hellodj-auth-staging |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | SpotifySecret (SpotifySecretA8C04999) 
+hellodj-auth-staging |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | TidalRefreshSecret (TidalRefreshSecret03A83141) 
+hellodj-auth-staging |  0/17 | 4:46:51 PM | CREATE_IN_PROGRESS      | AWS::IAM::Role               | AiTaskRole (AiTaskRole767A74B0) Resource creation Initiated
+hellodj-auth-staging |  0/17 | 4:46:51 PM | CREATE_IN_PROGRESS      | AWS::CDK::Metadata           | CDKMetadata/Default (CDKMetadata) Resource creation Initiated
+hellodj-auth-staging |  1/17 | 4:46:51 PM | CREATE_COMPLETE         | AWS::CDK::Metadata           | CDKMetadata/Default (CDKMetadata) 
+hellodj-auth-staging |  1/17 | 4:46:51 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | YtCipherSecret (YtCipherSecret9F326071) Resource creation Initiated
+hellodj-auth-staging |  1/17 | 4:46:51 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | GoogleOauthSecret (GoogleOauthSecretE885EF50) Resource creation Initiated
+hellodj-auth-staging |  1/17 | 4:46:51 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | FlaskSessionSecret (FlaskSessionSecret3F7F05AB) Resource creation Initiated
+hellodj-auth-staging |  1/17 | 4:46:51 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | SpotifySecret (SpotifySecretA8C04999) Resource creation Initiated
+hellodj-auth-staging |  1/17 | 4:46:51 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | LavalinkCredentialsSecret (LavalinkCredentialsSecret05A6746A) Resource creation Initiated
+hellodj-auth-staging |  1/17 | 4:46:51 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | DiscordOauthSecret (DiscordOauthSecret867CC41A) Resource creation Initiated
+hellodj-auth-staging |  1/17 | 4:46:51 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | DiscordBotTokenSecret (DiscordBotTokenSecret6314F565) Resource creation Initiated
+hellodj-auth-staging |  2/17 | 4:46:52 PM | CREATE_COMPLETE         | AWS::SecretsManager::Secret  | YtCipherSecret (YtCipherSecret9F326071) 
+hellodj-auth-staging |  3/17 | 4:46:52 PM | CREATE_COMPLETE         | AWS::SecretsManager::Secret  | GoogleOauthSecret (GoogleOauthSecretE885EF50) 
+hellodj-auth-staging |  4/17 | 4:46:52 PM | CREATE_COMPLETE         | AWS::SecretsManager::Secret  | FlaskSessionSecret (FlaskSessionSecret3F7F05AB) 
+hellodj-auth-staging |  5/17 | 4:46:52 PM | CREATE_COMPLETE         | AWS::SecretsManager::Secret  | DiscordOauthSecret (DiscordOauthSecret867CC41A) 
+hellodj-auth-staging |  6/17 | 4:46:52 PM | CREATE_COMPLETE         | AWS::SecretsManager::Secret  | SpotifySecret (SpotifySecretA8C04999) 
+hellodj-auth-staging |  7/17 | 4:46:52 PM | CREATE_COMPLETE         | AWS::SecretsManager::Secret  | LavalinkCredentialsSecret (LavalinkCredentialsSecret05A6746A) 
+hellodj-auth-staging |  8/17 | 4:46:52 PM | CREATE_COMPLETE         | AWS::SecretsManager::Secret  | DiscordBotTokenSecret (DiscordBotTokenSecret6314F565) 
+hellodj-auth-production |  0/17 | 4:46:50 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | FlaskSessionSecret (FlaskSessionSecret3F7F05AB) 
+hellodj-auth-production |  0/17 | 4:46:51 PM | CREATE_IN_PROGRESS      | AWS::IAM::Role               | AiTaskRole (AiTaskRole767A74B0) Resource creation Initiated
+hellodj-auth-production |  0/17 | 4:46:51 PM | CREATE_IN_PROGRESS      | AWS::CDK::Metadata           | CDKMetadata/Default (CDKMetadata) Resource creation Initiated
+hellodj-auth-production |  0/17 | 4:46:51 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | YtCipherSecret (YtCipherSecret9F326071) Resource creation Initiated
+hellodj-auth-production |  0/17 | 4:46:51 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | TidalRefreshSecret (TidalRefreshSecret03A83141) Resource creation Initiated
+hellodj-auth-production |  1/17 | 4:46:51 PM | CREATE_COMPLETE         | AWS::CDK::Metadata           | CDKMetadata/Default (CDKMetadata) 
+hellodj-auth-production |  1/17 | 4:46:51 PM | CREATE_FAILED           | AWS::Cognito::UserPool       | UserPool (UserPool6BA7E5F2) Resource handler returned message: "Cognito received the following error from Amazon SES when attempting to send email: Email address is not verified. The following identities failed the check in region US-EAST-1: arn:aws:ses:us-east-1:874927898283:identity/production.us-east-1.hellodj.bot (Service: CognitoIdentityProvider, Status Code: 400, Request ID: 1e4808e0-bf63-45b6-babe-af1eea817c57) (SDK Attempt Count: 1)" (RequestToken: e969b9b4-23e0-98a3-4ad3-8ee77c5ec637, HandlerErrorCode: InvalidRequest)
+hellodj-auth-production |  1/17 | 4:46:51 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | GoogleOauthSecret (GoogleOauthSecretE885EF50) Resource creation Initiated
+hellodj-auth-production |  1/17 | 4:46:51 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | FlaskSessionSecret (FlaskSessionSecret3F7F05AB) Resource creation Initiated
+hellodj-auth-production |  1/17 | 4:46:51 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | DiscordBotTokenSecret (DiscordBotTokenSecret6314F565) Resource creation Initiated
+hellodj-auth-production |  1/17 | 4:46:51 PM | CREATE_FAILED           | AWS::SecretsManager::Secret  | GoogleOauthSecret (GoogleOauthSecretE885EF50) Resource creation cancelled
+hellodj-auth-production |  1/17 | 4:46:51 PM | CREATE_FAILED           | AWS::SecretsManager::Secret  | DiscordBotTokenSecret (DiscordBotTokenSecret6314F565) Resource creation cancelled
+hellodj-auth-production |  1/17 | 4:46:51 PM | CREATE_FAILED           | AWS::IAM::Role               | AiTaskRole (AiTaskRole767A74B0) Resource creation cancelled
+hellodj-auth-production |  1/17 | 4:46:51 PM | CREATE_FAILED           | AWS::SecretsManager::Secret  | FlaskSessionSecret (FlaskSessionSecret3F7F05AB) Resource creation cancelled
+hellodj-auth-production |  1/17 | 4:46:52 PM | CREATE_FAILED           | AWS::SecretsManager::Secret  | YtCipherSecret (YtCipherSecret9F326071) Resource creation cancelled
+hellodj-auth-production |  1/17 | 4:46:52 PM | CREATE_FAILED           | AWS::SecretsManager::Secret  | TidalRefreshSecret (TidalRefreshSecret03A83141) Resource creation cancelled
+hellodj-auth-production |  1/17 | 4:46:52 PM | CREATE_FAILED           | AWS::SecretsManager::Secret  | DiscordOauthSecret (DiscordOauthSecret867CC41A) Resource creation cancelled
+hellodj-auth-production |  1/17 | 4:46:52 PM | CREATE_FAILED           | AWS::SecretsManager::Secret  | BotAppPoolSecret (BotAppPoolSecretE2D682C3) Resource creation cancelled
+hellodj-auth-production |  1/17 | 4:46:52 PM | CREATE_FAILED           | AWS::SecretsManager::Secret  | SpotifySecret (SpotifySecretA8C04999) Resource creation cancelled
+hellodj-auth-staging |  8/17 | 4:46:52 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | TidalRefreshSecret (TidalRefreshSecret03A83141) Resource creation Initiated
+hellodj-auth-staging |  8/17 | 4:46:52 PM | CREATE_IN_PROGRESS      | AWS::Cognito::UserPool       | UserPool (UserPool6BA7E5F2) Resource creation Initiated
+hellodj-auth-staging |  9/17 | 4:46:53 PM | CREATE_COMPLETE         | AWS::SecretsManager::Secret  | TidalRefreshSecret (TidalRefreshSecret03A83141) 
+hellodj-auth-staging | 10/17 | 4:46:54 PM | CREATE_COMPLETE         | AWS::Cognito::UserPool       | UserPool (UserPool6BA7E5F2) 
+hellodj-auth-staging | 10/17 | 4:46:54 PM | CREATE_IN_PROGRESS      | AWS::Cognito::UserPoolGroup  | AdminGroup 
+hellodj-auth-staging | 10/17 | 4:46:54 PM | CREATE_IN_PROGRESS      | AWS::Cognito::UserPoolClient | UserPool/WebUiClient (UserPoolWebUiClient3FC26054) 
+hellodj-auth-staging | 10/17 | 4:46:54 PM | CREATE_IN_PROGRESS      | AWS::Cognito::UserPoolDomain | UserPool/HostedUiDomain (UserPoolHostedUiDomainE021B0B6) 
+hellodj-auth-staging | 10/17 | 4:46:55 PM | CREATE_IN_PROGRESS      | AWS::Cognito::UserPoolDomain | UserPool/HostedUiDomain (UserPoolHostedUiDomainE021B0B6) Resource creation Initiated
+hellodj-auth-production |  1/17 | 4:46:53 PM | CREATE_FAILED           | AWS::SecretsManager::Secret  | LavalinkCredentialsSecret (LavalinkCredentialsSecret05A6746A) Resource creation cancelled
+hellodj-auth-production |  1/17 | 4:46:54 PM | ROLLBACK_IN_PROGRESS    | AWS::CloudFormation::Stack   | hellodj-auth-production The following resource(s) failed to create: [YtCipherSecret9F326071, FlaskSessionSecret3F7F05AB, TidalRefreshSecret03A83141, AiTaskRole767A74B0, BotAppPoolSecretE2D682C3, DiscordOauthSecret867CC41A, SpotifySecretA8C04999, LavalinkCredentialsSecret05A6746A, GoogleOauthSecretE885EF50, UserPool6BA7E5F2, DiscordBotTokenSecret6314F565]. Rollback requested by user.
+hellodj-auth-staging | 10/17 | 4:46:55 PM | CREATE_IN_PROGRESS      | AWS::Cognito::UserPoolClient | UserPool/WebUiClient (UserPoolWebUiClient3FC26054) Resource creation Initiated
+hellodj-auth-staging | 11/17 | 4:46:56 PM | CREATE_COMPLETE         | AWS::Cognito::UserPoolClient | UserPool/WebUiClient (UserPoolWebUiClient3FC26054) 
+hellodj-auth-staging | 11/17 | 4:46:56 PM | CREATE_IN_PROGRESS      | AWS::SecretsManager::Secret  | BotAppPoolSecret (BotAppPoolSecretE2D682C3) Resource creation Initiated
+hellodj-auth-staging | 12/17 | 4:46:56 PM | CREATE_COMPLETE         | AWS::SecretsManager::Secret  | BotAppPoolSecret (BotAppPoolSecretE2D682C3) 
+hellodj-auth-staging | 13/17 | 4:46:57 PM | CREATE_COMPLETE         | AWS::Cognito::UserPoolDomain | UserPool/HostedUiDomain (UserPoolHostedUiDomainE021B0B6) 
+hellodj-auth-production |  1/17 | 4:46:55 PM | DELETE_IN_PROGRESS      | AWS::CDK::Metadata           | CDKMetadata/Default (CDKMetadata) 
+hellodj-auth-production |  1/17 | 4:46:55 PM | DELETE_IN_PROGRESS      | AWS::IAM::Role               | AiTaskRole (AiTaskRole767A74B0) 
+hellodj-auth-production |  1/17 | 4:46:55 PM | DELETE_IN_PROGRESS      | AWS::SecretsManager::Secret  | TidalRefreshSecret (TidalRefreshSecret03A83141) 
+hellodj-auth-production |  1/17 | 4:46:55 PM | DELETE_IN_PROGRESS      | AWS::SecretsManager::Secret  | SpotifySecret (SpotifySecretA8C04999) 
+hellodj-auth-production |  1/17 | 4:46:55 PM | DELETE_IN_PROGRESS      | AWS::SecretsManager::Secret  | YtCipherSecret (YtCipherSecret9F326071) 
+hellodj-auth-production |  1/17 | 4:46:55 PM | DELETE_IN_PROGRESS      | AWS::SecretsManager::Secret  | DiscordOauthSecret (DiscordOauthSecret867CC41A) 
+hellodj-auth-production |  1/17 | 4:46:55 PM | DELETE_IN_PROGRESS      | AWS::SecretsManager::Secret  | DiscordBotTokenSecret (DiscordBotTokenSecret6314F565) 
+hellodj-auth-production |  1/17 | 4:46:55 PM | DELETE_IN_PROGRESS      | AWS::SecretsManager::Secret  | GoogleOauthSecret (GoogleOauthSecretE885EF50) 
+hellodj-auth-production |  1/17 | 4:46:55 PM | DELETE_IN_PROGRESS      | AWS::SecretsManager::Secret  | BotAppPoolSecret (BotAppPoolSecretE2D682C3) 
+hellodj-auth-production |  1/17 | 4:46:55 PM | DELETE_IN_PROGRESS      | AWS::SecretsManager::Secret  | FlaskSessionSecret (FlaskSessionSecret3F7F05AB) 
+hellodj-auth-production |  1/17 | 4:46:55 PM | DELETE_IN_PROGRESS      | AWS::SecretsManager::Secret  | LavalinkCredentialsSecret (LavalinkCredentialsSecret05A6746A) 
+hellodj-auth-production |  1/17 | 4:46:56 PM | DELETE_IN_PROGRESS      | AWS::IAM::Role               | AiTaskRole (AiTaskRole767A74B0) The role with name hellodj-ai-task-production cannot be found. (Service: Iam, Status Code: 404, Request ID: 7406ef24-d5fc-4f23-bc6a-c9f1edfb0bc4) (SDK Attempt Count: 1)
+hellodj-auth-production |  0/17 | 4:46:56 PM | DELETE_COMPLETE         | AWS::CDK::Metadata           | CDKMetadata/Default (CDKMetadata) 
+hellodj-auth-production |  1/17 | 4:46:56 PM | DELETE_COMPLETE         | AWS::IAM::Role               | AiTaskRole (AiTaskRole767A74B0) 
+hellodj-auth-staging | 13/17 | 4:46:59 PM | CREATE_IN_PROGRESS      | AWS::Cognito::UserPoolGroup  | AdminGroup Resource creation Initiated
+hellodj-auth-production |  2/17 | 4:47:01 PM | DELETE_COMPLETE         | AWS::SecretsManager::Secret  | TidalRefreshSecret (TidalRefreshSecret03A83141) 
+hellodj-auth-production |  3/17 | 4:47:01 PM | DELETE_COMPLETE         | AWS::SecretsManager::Secret  | DiscordOauthSecret (DiscordOauthSecret867CC41A) 
+hellodj-auth-production |  4/17 | 4:47:01 PM | DELETE_COMPLETE         | AWS::SecretsManager::Secret  | DiscordBotTokenSecret (DiscordBotTokenSecret6314F565) 
+hellodj-auth-production |  5/17 | 4:47:01 PM | DELETE_COMPLETE         | AWS::SecretsManager::Secret  | SpotifySecret (SpotifySecretA8C04999) 
+hellodj-auth-production |  6/17 | 4:47:01 PM | DELETE_COMPLETE         | AWS::SecretsManager::Secret  | FlaskSessionSecret (FlaskSessionSecret3F7F05AB) 
+hellodj-auth-production |  7/17 | 4:47:01 PM | DELETE_COMPLETE         | AWS::SecretsManager::Secret  | LavalinkCredentialsSecret (LavalinkCredentialsSecret05A6746A) 
+hellodj-auth-production |  8/17 | 4:47:02 PM | DELETE_COMPLETE         | AWS::SecretsManager::Secret  | GoogleOauthSecret (GoogleOauthSecretE885EF50) 
+hellodj-auth-production |  9/17 | 4:47:03 PM | DELETE_COMPLETE         | AWS::SecretsManager::Secret  | YtCipherSecret (YtCipherSecret9F326071) 
+hellodj-auth-staging | 13/17 | 4:47:05 PM | CREATE_IN_PROGRESS      | AWS::Cognito::UserPoolGroup  | AdminGroup Eventual consistency check initiated
+hellodj-auth-production | 10/17 | 4:47:07 PM | DELETE_COMPLETE         | AWS::SecretsManager::Secret  | BotAppPoolSecret (BotAppPoolSecretE2D682C3) 
+hellodj-auth-staging | 14/17 | 4:47:08 PM | CREATE_COMPLETE         | AWS::IAM::Role               | AiTaskRole (AiTaskRole767A74B0) 
+hellodj-auth-staging | 14/17 | 4:47:09 PM | CREATE_IN_PROGRESS      | AWS::IAM::Policy             | AiTaskRole/DefaultPolicy (AiTaskRoleDefaultPolicy3A4BF822) 
+hellodj-auth-staging | 14/17 | 4:47:10 PM | CREATE_IN_PROGRESS      | AWS::IAM::Policy             | AiTaskRole/DefaultPolicy (AiTaskRoleDefaultPolicy3A4BF822) Resource creation Initiated
+hellodj-auth-staging | 15/17 | 4:47:22 PM | CREATE_COMPLETE         | AWS::Cognito::UserPoolGroup  | AdminGroup 
+hellodj-auth-staging | 16/17 | 4:47:25 PM | CREATE_COMPLETE         | AWS::IAM::Policy             | AiTaskRole/DefaultPolicy (AiTaskRoleDefaultPolicy3A4BF822) 
+hellodj-auth-staging | 17/17 | 4:47:26 PM | CREATE_COMPLETE         | AWS::CloudFormation::Stack   | hellodj-auth-staging 
+
+Failed resources:
+hellodj-auth-production | 4:46:51 PM | CREATE_FAILED           | AWS::Cognito::UserPool       | UserPool (UserPool6BA7E5F2) Resource handler returned message: "Cognito received the following error from Amazon SES when attempting to send email: Email address is not verified. The following identities failed the check in region US-EAST-1: arn:aws:ses:us-east-1:874927898283:identity/production.us-east-1.hellodj.bot (Service: CognitoIdentityProvider, Status Code: 400, Request ID: 1e4808e0-bf63-45b6-babe-af1eea817c57) (SDK Attempt Count: 1)" (RequestToken: e969b9b4-23e0-98a3-4ad3-8ee77c5ec637, HandlerErrorCode: InvalidRequest)
+
+✅  hellodj-auth-staging
+
+✨  Deployment time: 43.92s
+
+Outputs:
+hellodj-auth-staging.AiTaskRoleArn = arn:aws:iam::874927898283:role/hellodj-ai-task-staging
+hellodj-auth-staging.UserPoolClientId = 5g8iben9ps11tr3b8uqlqsrp16
+hellodj-auth-staging.UserPoolId = us-east-1_vFkn36JQN
+Stack ARN:
+arn:aws:cloudformation:us-east-1:874927898283:stack/hellodj-auth-staging/e250f690-a403-11f1-9405-0affca5a0d95
+hellodj-auth-production | 10/17 | 4:49:18 PM | DELETE_SKIPPED          | AWS::Cognito::UserPool       | UserPool (UserPool6BA7E5F2) 
+hellodj-auth-production | 11/17 | 4:49:18 PM | ROLLBACK_COMPLETE       | AWS::CloudFormation::Stack   | hellodj-auth-production 
+
+Failed resources:
+hellodj-auth-production | 4:46:51 PM | CREATE_FAILED           | AWS::Cognito::UserPool       | UserPool (UserPool6BA7E5F2) Resource handler returned message: "Cognito received the following error from Amazon SES when attempting to send email: Email address is not verified. The following identities failed the check in region US-EAST-1: arn:aws:ses:us-east-1:874927898283:identity/production.us-east-1.hellodj.bot (Service: CognitoIdentityProvider, Status Code: 400, Request ID: 1e4808e0-bf63-45b6-babe-af1eea817c57) (SDK Attempt Count: 1)" (RequestToken: e969b9b4-23e0-98a3-4ad3-8ee77c5ec637, HandlerErrorCode: InvalidRequest)
+❌  hellodj-auth-production failed: DeploymentError: Resource updates failed:
+hellodj-auth-production/UserPool/Resource  (AWS::Cognito::UserPool UserPool6BA7E5F2)
+  Resource handler returned message: "Cognito received the following error from Amazon SES when attempting to send email:
+  Email address is not verified. The following identities failed the check in region US-EAST-1:
+  arn:aws:ses:us-east-1:874927898283:identity/production.us-east-1.hellodj.bot (Service: CognitoIdentityProvider, Status
+  Code: 400, Request ID: 1e4808e0-bf63-45b6-babe-af1eea817c57) (SDK Attempt Count: 1)" (RequestToken:
+  e969b9b4-23e0-98a3-4ad3-8ee77c5ec637, HandlerErrorCode: InvalidRequest)
+Source Location: ...new UserPool2 in aws-cdk-lib...
+                 new AuthStack (/home/celes/sources/celesrenata/hellodj-cdk/infra/lib/auth-stack.ts:216:21)
+                 <anonymous> (/home/celes/sources/celesrenata/hellodj-cdk/infra/bin/hellodj.ts:220:22)
+                 ...node internals, ts-node, ts-node...
+
+   (only the most recent 500 CloudTrail events in the window were checked)
+   CloudTrail delivery can lag up to 15 minutes behind the failure; re-run `cdk diagnose` in a few minutes to check for additional control-plane errors (e.g. AccessDenied).
+deploy_exit=1

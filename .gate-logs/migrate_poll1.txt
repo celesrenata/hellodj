@@ -1,0 +1,14 @@
+[
+    {
+        "Name": "hellodj-edge-staging",
+        "Status": "DELETE_IN_PROGRESS"
+    },
+    {
+        "Name": "hellodj-edge-production",
+        "Status": "DELETE_IN_PROGRESS"
+    },
+    {
+        "Name": "hellodj-edge",
+        "Status": "DELETE_IN_PROGRESS"
+    }
+]

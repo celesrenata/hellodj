@@ -1,0 +1,4 @@
+{
+    "arn": "arn:aws:iam::874927898283:role/hellodj-kubectl",
+    "created": "2026-08-29T09:37:09+00:00"
+}

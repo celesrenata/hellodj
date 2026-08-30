@@ -1,0 +1,27 @@
+]633;E;{ echo "=== live apex staging A record ==="\x3b AWS_PROFILE=hellodj aws route53 list-resource-record-sets --hosted-zone-id Z0624252883VKFQ4E14Q --query "ResourceRecordSets[?Name=='staging.us-east-1.hellodj.bot.']" --output json\x3b echo "=== dig ==="\x3b dig +short staging.us-east-1.hellodj.bot\x3b } > .gate-logs/edge_apex_check.txt 2>&1\x3b cat .gate-logs/edge_apex_check.txt;36d02665-5f2b-4ae2-bb16-b1632e2987f6]633;C=== live apex staging A record ===
+[
+    {
+        "Name": "staging.us-east-1.hellodj.bot.",
+        "Type": "A",
+        "AliasTarget": {
+            "HostedZoneId": "Z2FDTNDATAQYW2",
+            "DNSName": "dadxw4fp7dsix.cloudfront.net.",
+            "EvaluateTargetHealth": false
+        }
+    },
+    {
+        "Name": "staging.us-east-1.hellodj.bot.",
+        "Type": "TXT",
+        "TTL": 300,
+        "ResourceRecords": [
+            {
+                "Value": "\"heritage=external-dns,external-dns/owner=hellodj,external-dns/resource=ingress/hellodj-staging/hellodj\""
+            }
+        ]
+    }
+]
+=== dig ===
+99.86.57.121
+99.86.57.85
+99.86.57.34
+99.86.57.15

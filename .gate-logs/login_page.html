@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Sign in · HelloDJ</title>
+  <link rel="stylesheet" href="/static/css/app.css?v=d8e6e39b">
+</head>
+<body class="bg-surface-0 text-text-secondary login-body">
+  <canvas id="bg-shader" class="fixed inset-0 -z-10 w-full h-full pointer-events-none" aria-hidden="true"></canvas>
+
+  <main class="login-shell" role="main">
+    <div class="glass-panel login-card">
+      <h1 class="login-card__title">HelloDJ</h1>
+      <p class="login-card__subtitle">Sign in to the control panel</p>
+
+      <div aria-live="polite">
+        
+        <p class="notice notice--info registration-banner" role="status">Registration is currently closed — invite only</p>
+      </div>
+
+      <form method="post" action="/auth/admin" class="auth-form">
+        <label class="field">
+          <span class="field__label">Username or email</span>
+          <input class="field__input" type="text" name="username"
+                 autocomplete="username" required autofocus>
+        </label>
+        <label class="field">
+          <span class="field__label">Password</span>
+          <input class="field__input" type="password" name="password"
+                 autocomplete="current-password" required>
+        </label>
+        <button type="submit" class="btn btn-primary btn-block">Sign in</button>
+      </form>
+
+      <div class="login-card__divider" aria-hidden="true">or</div>
+
+      <a class="btn btn-ghost btn-block" href="/auth/login">
+        Log in with Discord
+      </a>
+
+      <div class="login-card__links">
+        
+        <a href="/auth/recover">Forgot password?</a>
+      </div>
+
+      
+<p class="owner-attribution" aria-label="Project owner">
+  <span class="owner-attribution__label">Owned &amp; operated by</span>
+  <span class="owner-attribution__name" translate="no">dr&#101;yll&#105;H s&#101;l&#101;C</span>
+</p>
+    </div>
+  </main>
+</body>
+</html>

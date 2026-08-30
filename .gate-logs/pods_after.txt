@@ -1,0 +1,14 @@
+NAME                                     READY   STATUS                  RESTARTS   AGE
+activity-backend-67bdfbf7d6-p8ts5        0/1     ErrImagePull            0          3m30s
+activity-backend-67bdfbf7d6-tgtkd        0/1     ErrImagePull            0          3m30s
+discord-bot-core-6b9f4c98c8-9fgbb        0/1     ImagePullBackOff        0          8m30s
+hls-transcode-899847f8d-gml8g            0/1     Pending                 0          2m55s
+lavalink-f4bddd8f6-s4lms                 0/1     Init:ImagePullBackOff   0          7m2s
+playback-orchestrator-6b46975754-jw7m7   0/1     ImagePullBackOff        0          7m46s
+potoken-server-84974857fc-nqkdb          0/1     ImagePullBackOff        0          4m15s
+spotify-stream-85d9c8dbb7-76xzw          0/1     ImagePullBackOff        0          5m34s
+tidal-stream-6fb69dc69b-q2g85            0/1     ImagePullBackOff        0          6m18s
+voice-pipeline-79ddc5ccd7-g445c          0/1     ImagePullBackOff        0          2m10s
+web-ui-548c4c7cd9-2hbwq                  0/1     ImagePullBackOff        0          86s
+web-ui-548c4c7cd9-6r8pt                  0/1     ImagePullBackOff        0          86s
+yt-cipher-795bc74784-jqzhs               0/1     ImagePullBackOff        0          4m49s

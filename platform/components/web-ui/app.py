@@ -32,6 +32,7 @@ from pathlib import Path
 from typing import Any
 
 from flask import Flask, redirect, session, url_for
+from hellodj_platform_logic.cluster_dns import potoken_server_url
 
 from admin_directory import AdminDirectory, build_admin_directory
 from auth import build_auth_blueprint
@@ -209,9 +210,10 @@ def _configure(app: Flask, overrides: dict[str, Any]) -> None:
             "HELLODJ_DISCORD_OAUTH_SECRET_ARN", ""
         ),
         # In-cluster potoken-server (bgutil-ytdlp-pot-provider) POST /get_pot.
-        POTOKEN_SERVER_URL=os.getenv(
-            "POTOKEN_SERVER_URL",
-            f"http://potoken-server.hellodj-{stage}.svc.cluster.local:4416",
+        # URL derivation lives in the shared ``cluster_dns`` helper (single
+        # source of truth, also used by the playback-orchestrator watchdog).
+        POTOKEN_SERVER_URL=potoken_server_url(
+            stage, explicit=os.getenv("POTOKEN_SERVER_URL")
         ),
         # Source-credentials CMK id for envelope-encrypting stored tokens
         # (unified-oauth-and-token-watchdog). Absent -> no unified store wired.

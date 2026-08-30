@@ -1,0 +1,6 @@
+322:	building '/nix/store/fdxhb6zhka71gzlmlam4ys8bmmjdilgh-hwdb.bin.drv'...
+333:	       Reason: builder failed with exit code 1.
+351:	       > Adding rules for package /nix/store/m7ab4bdcg298pg532lvrz8fqlh860cq3-extra-hwdb-file
+378:	❌ path:/codebuild/output/src682169406/src/infra/ami#packages.aarch64-linux.amazonImage
+384:	[Container] 2026/08/29 06:53:31.109506 Command did not exit successfully cd $CODEBUILD_SRC_DIR/infra/ami && nix build .#packages.aarch64-linux.amazonImage --max-jobs 1 --no-link --print-out-paths > /tmp/gpu-ami-out.txt exit status 1
+386:	[Container] 2026/08/29 06:53:31.140673 Phase context status code: COMMAND_EXECUTION_ERROR Message: Error while executing command: cd $CODEBUILD_SRC_DIR/infra/ami && nix build .#packages.aarch64-linux.amazonImage --max-jobs 1 --no-link --print-out-paths > /tmp/gpu-ami-out.txt. Reason: exit status 1

@@ -67,17 +67,17 @@ def _potoken_server_url() -> str:
     """Return the in-cluster potoken-server base URL (env or stage-derived).
 
     Prefers an explicit ``POTOKEN_SERVER_URL``; otherwise derives the standard
-    in-namespace service DNS name from ``HELLODJ_STAGE`` (mirroring the web-ui's
-    ``app.py`` default), so the watchdog can renew PoTokens with no extra CDK
-    env wiring. Returns ``""`` only when neither is resolvable.
+    in-namespace service DNS name from ``HELLODJ_STAGE`` via the shared
+    ``cluster_dns`` helper (single source of truth, also used by the web-ui), so
+    the watchdog can renew PoTokens with no extra CDK env wiring. Returns ``""``
+    only when neither is resolvable.
     """
-    explicit = os.getenv("POTOKEN_SERVER_URL", "").strip()
-    if explicit:
-        return explicit
-    stage = os.getenv("HELLODJ_STAGE", "").strip()
-    if not stage:
-        return ""
-    return f"http://potoken-server.hellodj-{stage}.svc.cluster.local:4416"
+    from hellodj_platform_logic.cluster_dns import potoken_server_url
+
+    return potoken_server_url(
+        os.getenv("HELLODJ_STAGE", ""),
+        explicit=os.getenv("POTOKEN_SERVER_URL", ""),
+    )
 
 
 def _build_potoken_fetcher():  # noqa: ANN202 - returns a PoTokenFetcher

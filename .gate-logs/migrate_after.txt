@@ -1,0 +1,26 @@
+[
+    {
+        "Name": "hellodj-auth-production",
+        "Status": "ROLLBACK_COMPLETE"
+    },
+    {
+        "Name": "hellodj-auth-staging",
+        "Status": "CREATE_COMPLETE"
+    },
+    {
+        "Name": "hellodj-edge-staging",
+        "Status": "CREATE_COMPLETE"
+    },
+    {
+        "Name": "hellodj-edge-production",
+        "Status": "CREATE_COMPLETE"
+    },
+    {
+        "Name": "hellodj-edge",
+        "Status": "UPDATE_COMPLETE"
+    },
+    {
+        "Name": "hellodj-auth",
+        "Status": "UPDATE_COMPLETE"
+    }
+]

@@ -1,0 +1,5 @@
+=== GET / with session cookie (should be dashboard, not login) ===
+http=200
+=== is it the dashboard or the login card? ===
+AUTHENTICATED PAGE
+Dashboard · HelloDJ this.matches(h)) .reduce((a, b) => (b.length > a.length ? b : a), href); return href === best; } }" @htmx:push-url.window="path = window.location.pathname" @htmx:after-settle.window="path = window.location.pathname" @popstate.window="path = window.location.pathname"> ◆ HelloDJ ☰ ● Dashboard ● Admin ● Entitlements ⏻ Logout Owned &amp; operated by dr&#101;yll&#105;H s&#101;l&#101

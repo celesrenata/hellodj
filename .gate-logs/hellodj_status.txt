@@ -1,0 +1,7 @@
+?? .ex.txt
+?? .gate-logs/
+?? .kiro/specs/cdk-own-repo-migration/
+?? .kiro/specs/cdk-standalone-package/
+?? .mdi.txt
+?? .rp.txt
+?? .task4_path.txt

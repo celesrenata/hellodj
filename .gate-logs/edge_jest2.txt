@@ -1,0 +1,15 @@
+PASS test/edge-per-stage.test.ts
+  one CloudFront edge per stage (staging/production must not be dead)
+    ✓ every stage synthesizes exactly one CloudFront distribution (1 ms)
+    ✓ every stage synthesizes its own ACM certificate
+    ✓ each stage publishes its <stage>.<region>.hellodj.bot A-alias record (3 ms)
+    ✓ staging's env record is NOT pointed at the raw ALB (it aliases CloudFront) (1 ms)
+    ✓ only production creates the apex hellodj.bot alias record (1 ms)
+    ✓ per-stage S3 bucket names are stage-scoped (no cross-stage collision) (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+Snapshots:   0 total
+Time:        2.34 s, estimated 3 s
+Ran all test suites matching /edge-per-stage/i.
+jest_exit=0

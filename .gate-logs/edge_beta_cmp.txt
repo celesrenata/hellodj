@@ -1,0 +1,21 @@
+]633;E;{ echo "=== BETA /login (known working) ==="\x3b curl -sS --max-time 20 -o /dev/null -w "http=%{http_code} server=%header{server}\\n" "https://beta.us-east-1.hellodj.bot/login"\x3b echo\x3b echo "=== beta origin host header behavior: distribution default behavior origin request policy ==="\x3b AWS_PROFILE=hellodj aws cloudfront get-distribution-config --id ED3GFEKRKFBX4 --query "DistributionConfig.{DefaultOriginRequestPolicy:DefaultCacheBehavior.OriginRequestPolicyId,Origins:Origins.Items[*].{Id:Id,Domain:DomainName}}" --output json\x3b } > .gate-logs/edge_beta_cmp.txt 2>&1\x3b cat .gate-logs/edge_beta_cmp.txt;c08a0620-fdad-4af0-ab48-237647219028]633;C=== BETA /login (known working) ===
+http=200 server=gunicorn
+
+=== beta origin host header behavior: distribution default behavior origin request policy ===
+{
+    "DefaultOriginRequestPolicy": "216adef6-5c7f-47e4-b989-5492eafa07d3",
+    "Origins": [
+        {
+            "Id": "hellodjedgeEdgeDistributionOrigin1529C6160",
+            "Domain": "origin.beta.us-east-1.hellodj.bot"
+        },
+        {
+            "Id": "hellodjedgeEdgeDistributionOrigin3DB99F3F8",
+            "Domain": "hellodj-stickers-beta-us-east-1.s3.us-east-1.amazonaws.com"
+        },
+        {
+            "Id": "hellodjedgeEdgeDistributionOrigin23F5683D5",
+            "Domain": "hellodj-hls-beta-us-east-1.s3.us-east-1.amazonaws.com"
+        }
+    ]
+}

@@ -1,0 +1,24 @@
+got build log for '/nix/store/2dpxh51jgr93j5rpcbrl708l2xqxqa5z-udev-rules.drv' from 'daemon'
+Adding rules for package /nix/store/8v3fnr9wbhim60q85hnaa2f3f3mx0ky3-ipv6-privacy-extensions.rules
+Copying /nix/store/8v3fnr9wbhim60q85hnaa2f3f3mx0ky3-ipv6-privacy-extensions.rules/etc/udev/rules.d/98-ipv6-privacy-extensions.rules to /nix/store/f1x02332zpa06z6blj32wsabkdrxwacr-udev-rules/98-ipv6-privacy-extensions.rules
+Adding rules for package /nix/store/bmk0829g6wfyxfflbq2iwfimy8b7yn9v-ipv6-privacy-extensions.rules
+Copying /nix/store/bmk0829g6wfyxfflbq2iwfimy8b7yn9v-ipv6-privacy-extensions.rules/etc/udev/rules.d/99-ipv6-privacy-extensions.rules to /nix/store/f1x02332zpa06z6blj32wsabkdrxwacr-udev-rules/99-ipv6-privacy-extensions.rules
+Adding rules for package /nix/store/2ip693lw8i0xkcw8qmjzdsdwhgr79wc8-lvm2-2.03.41
+Copying /nix/store/2ip693lw8i0xkcw8qmjzdsdwhgr79wc8-lvm2-2.03.41/lib/udev/rules.d/10-dm.rules to /nix/store/f1x02332zpa06z6blj32wsabkdrxwacr-udev-rules/10-dm.rules
+Copying /nix/store/2ip693lw8i0xkcw8qmjzdsdwhgr79wc8-lvm2-2.03.41/lib/udev/rules.d/11-dm-lvm.rules to /nix/store/f1x02332zpa06z6blj32wsabkdrxwacr-udev-rules/11-dm-lvm.rules
+Copying /nix/store/2ip693lw8i0xkcw8qmjzdsdwhgr79wc8-lvm2-2.03.41/lib/udev/rules.d/13-dm-disk.rules to /nix/store/f1x02332zpa06z6blj32wsabkdrxwacr-udev-rules/13-dm-disk.rules
+Copying /nix/store/2ip693lw8i0xkcw8qmjzdsdwhgr79wc8-lvm2-2.03.41/lib/udev/rules.d/69-dm-lvm.rules to /nix/store/f1x02332zpa06z6blj32wsabkdrxwacr-udev-rules/69-dm-lvm.rules
+Copying /nix/store/2ip693lw8i0xkcw8qmjzdsdwhgr79wc8-lvm2-2.03.41/lib/udev/rules.d/95-dm-notify.rules to /nix/store/f1x02332zpa06z6blj32wsabkdrxwacr-udev-rules/95-dm-notify.rules
+Adding rules for package /nix/store/c2jgzmvplc5vm4rab5033hdw1dvmm9fs-bcache-tools-1.1
+Copying /nix/store/c2jgzmvplc5vm4rab5033hdw1dvmm9fs-bcache-tools-1.1/lib/udev/rules.d/69-bcache.rules to /nix/store/f1x02332zpa06z6blj32wsabkdrxwacr-udev-rules/69-bcache.rules
+Adding rules for package /nix/store/1yc01k7grdv4q7p9blx53jmvvc3y0iym-extra-udev-rules
+Copying /nix/store/1yc01k7grdv4q7p9blx53jmvvc3y0iym-extra-udev-rules/etc/udev/rules.d/99-local.rules to /nix/store/f1x02332zpa06z6blj32wsabkdrxwacr-udev-rules/99-local.rules
+Adding rules for package /nix/store/m7ab4bdcg298pg532lvrz8fqlh860cq3-extra-hwdb-file
+Checking that all programs called by relative paths in udev rules exist in /nix/store/pyrvwmigi6qdpz9lbbslj5771pfl7r69-systemd-261.1/lib/udev... OK
+Checking that all programs called by absolute paths in udev rules exist... OK
+Verifying udev rules using udevadm verify...
+
+10 udev rules files have been checked.
+  Success: 10
+  Fail:    0
+OK

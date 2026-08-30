@@ -1,0 +1,10 @@
+.kiro/specs/cdk-own-repo-migration/:
+
+.kiro/specs/cdk-standalone-package/:
+design.md
+requirements.md
+tasks.md
+--- is .kiro tracked at all? ---
+.kiro/hooks/check-env-sync.json
+.kiro/hooks/deployment-check.json
+.kiro/hooks/lint-on-save.json

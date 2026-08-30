@@ -1,0 +1,14 @@
+{
+    "status": "UPDATE_ROLLBACK_COMPLETE",
+    "updated": "2026-08-29T09:40:53.582000+00:00"
+}
+[
+    {
+        "id": "da8b3f0a-3d92-4c76-9a25-abb40574a50b",
+        "status": "InProgress"
+    },
+    {
+        "id": "0be1b7ea-9414-4fd5-9efe-81395791a2c2",
+        "status": "InProgress"
+    }
+]

@@ -1,0 +1,22 @@
+[
+    {
+        "name": "youtube_source_Source",
+        "rev": "ce0329d007ed04bd33a585d9c4b4df2cc1ff44d9"
+    },
+    {
+        "name": "hellodj_cdk_Source",
+        "rev": "d898a7267d86109c3eff9f34f0993d04eecaa691"
+    },
+    {
+        "name": "lavaplayer_Source",
+        "rev": "14f090f575892d42c658fe3a52b9524566d1e3be"
+    },
+    {
+        "name": "Lavalink_Source",
+        "rev": "62476251e7a1ce496d27354e7ee3b4fd64512fe9"
+    },
+    {
+        "name": "LavaSrc_Source",
+        "rev": "19bcef566c8bb8802c42e22021c3dbfdd7ab16c0"
+    }
+]

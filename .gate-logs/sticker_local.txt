@@ -1,0 +1,24 @@
+]633;E;{ echo "=== local sticker assets present? ==="\x3b ls -la stickers/hellodj-stickers/ 2>&1 | head -20\x3b echo "--- assets dir ---"\x3b find stickers -maxdepth 3 -type d 2>/dev/null | head\x3b echo "--- manifest tracked? ---"\x3b ls -la stickers/hellodj-stickers/manifest.json bot/stickers/manifest.json 2>&1\x3b } > .gate-logs/sticker_local.txt 2>&1\x3b true;02363aa9-6188-4f88-9b3c-89fb4155a86c]633;C=== local sticker assets present? ===
+total 744
+drwxr-xr-x 1 celes users    170 Aug 22 00:28 .
+drwxr-xr-x 1 celes users    176 Aug 28 23:22 ..
+drwxr-xr-x 1 celes users    108 Aug 22 00:22 assets
+-rw-r--r-- 1 celes users    576 Aug 22 00:28 BUILD_REPORT.txt
+-rw-r--r-- 1 celes users     55 Aug 22 00:28 DOCKERFILE.snippet
+drwxr-xr-x 1 celes users    378 Aug 22 00:28 legacy-zips
+-rw-r--r-- 1 celes users 746672 Aug 22 00:28 manifest.json
+-rw-r--r-- 1 celes users    598 Aug 22 00:28 THIRD_PARTY_ASSETS.md
+--- assets dir ---
+stickers
+stickers/stickers-upstream
+stickers/stickers-upstream/Noto-Animated
+stickers/stickers-upstream/Fluent-Emoji-Animated
+stickers/stickers-upstream/Fluent-Emoji-Animated/.git
+stickers/stickers-upstream/Fluent-Emoji-Animated/.github
+stickers/stickers-upstream/Fluent-Emoji-Animated/assets
+stickers/hellodj-stickers
+stickers/hellodj-stickers/assets
+stickers/hellodj-stickers/assets/party
+--- manifest tracked? ---
+-rw-r--r-- 1 celes users 746672 Aug 22 00:35 bot/stickers/manifest.json
+-rw-r--r-- 1 celes users 746672 Aug 22 00:28 stickers/hellodj-stickers/manifest.json

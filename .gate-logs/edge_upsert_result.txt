@@ -1,0 +1,9 @@
+{
+    "ChangeInfo": {
+        "Id": "/change/C01518252LKXC4MKK1VWP",
+        "Status": "PENDING",
+        "SubmittedAt": "2026-08-29T23:09:23.197000+00:00",
+        "Comment": "Reassert the staging apex A-alias to the per-stage EdgeStack CloudFront distribution (matches hellodj-edge-staging EnvAliasRecord exactly)."
+    }
+}
+upsert_exit=0

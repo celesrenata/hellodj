@@ -1,0 +1,37 @@
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+
+✨  Synthesis time: 10.82s
+
+hellodj-edge-staging: creating CloudFormation changeset...
+hellodj-edge-staging: deploying... [1/1]
+
+✅  hellodj-edge-staging (no changes)
+
+✨  Deployment time: 0s
+
+Outputs:
+hellodj-edge-staging.DistributionDomainName = dadxw4fp7dsix.cloudfront.net
+hellodj-edge-staging.EnvName = staging.us-east-1.hellodj.bot
+hellodj-edge-staging.HostedZoneId = Z0624252883VKFQ4E14Q
+hellodj-edge-staging.StickerBucketName = hellodj-stickers-staging-us-east-1
+hellodj-edge-staging.StickerCdnUrl = https://staging.us-east-1.hellodj.bot/stickers
+Stack ARN:
+arn:aws:cloudformation:us-east-1:874927898283:stack/hellodj-edge-staging/034db8a0-a3fb-11f1-ad39-0ee21cd397ed
+
+✨  Total time: 15.02s
+
+deploy_exit=0

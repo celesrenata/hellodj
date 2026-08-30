@@ -1,2 +1,0 @@
-=== STEP 2: LOGIN PAGE CONTENT ===
-{"error":"DISCORD_APPID is not configured"}.--- grep for Discord link ---

@@ -1,0 +1,6 @@
+x86_64
+nix (Nix) 2.34.8
+--- git log ami ---
+a343c40 ami: fix GPU AMI build failure from malformed nvidia-container-toolkit udev rule
+b3dc3a2 fix(lavalink): render config via subPath so jar/plugins survive; seed JSON-bundle secrets
+a1e05e4 Initial hellodj-cdk standalone package (cdk-standalone-package migration)

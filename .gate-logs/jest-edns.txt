@@ -1,0 +1,40 @@
+    > 175 |     this.sessionTable = new dynamodb.Table(this, 'SessionTable', {
+          |                         ^
+      176 |       tableName: SESSION_TABLE_NAME,
+      177 |       partitionKey: { name: 'PK', type: dynamodb.AttributeType.STRING },
+      178 |       sortKey: { name: 'SK', type: dynamodb.AttributeType.STRING },
+
+      at print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at Proxy.aws_cdk_lib_aws_dynamodb_TableProps (node_modules/aws-cdk-lib/.warnings.jsii.js:1:36818)
+      at new Table2 (node_modules/aws-cdk-lib/aws-dynamodb/lib/table.js:1:25168)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/no-box-stack-traces.js:1:447)
+      at new Table2 (node_modules/aws-cdk-lib/core/lib/prop-injectable.js:1:957)
+      at new DataStack (lib/data-stack.ts:175:25)
+      at synthClusterTemplate (test/endpoint-isolation.test.ts:285:18)
+      at Object.<anonymous> (test/endpoint-isolation.test.ts:503:38)
+
+    console.warn
+      [WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+        Use `addResourceDependency` instead.
+        This API will be removed in the next major release.
+
+      234 |     });
+      235 |     // The cluster references the subnet group by name, so enforce ordering.
+    > 236 |     this.daxCluster.addDependency(daxSubnetGroup);
+          |                     ^
+      237 |
+      238 |     this.daxEndpoint = this.daxCluster.attrClusterDiscoveryEndpoint;
+      239 |
+
+      at Proxy.print (node_modules/aws-cdk-lib/.warnings.jsii.js:11:146)
+      at CfnCluster.addDependency (node_modules/aws-cdk-lib/core/lib/cfn-resource.js:1:8277)
+      at new DataStack (lib/data-stack.ts:236:21)
+      at synthClusterTemplate (test/endpoint-isolation.test.ts:285:18)
+      at Object.<anonymous> (test/endpoint-isolation.test.ts:503:38)
+
+
+Test Suites: 3 passed, 3 total
+Tests:       43 passed, 43 total
+Snapshots:   0 total
+Time:        12.56 s, estimated 28 s
+Ran all test suites matching /eks-stack|edge-stack|endpoint-isolation/i.

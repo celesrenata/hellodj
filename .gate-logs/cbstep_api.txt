@@ -1,0 +1,2 @@
+node_modules/aws-cdk-lib/pipelines/lib/codepipeline/codebuild-step.d.ts:60:    readonly rolePolicyStatements?: iam.PolicyStatement[];
+node_modules/aws-cdk-lib/pipelines/lib/codepipeline/codebuild-step.d.ts:159:    readonly rolePolicyStatements?: iam.PolicyStatement[];

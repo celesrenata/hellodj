@@ -1,0 +1,11 @@
+=== staging apex record now ===
+[
+    {
+        "Name": "staging.us-east-1.hellodj.bot.",
+        "Alias": "k8s-hellodj-15947bf6df-2128421402.us-east-1.elb.amazonaws.com."
+    }
+]
+=== dig staging ===
+54.147.4.91
+100.56.159.197
+44.210.225.155

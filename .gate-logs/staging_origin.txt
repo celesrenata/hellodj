@@ -1,0 +1,13 @@
+]633;E;{ echo "=== origin.staging via HTTPS (ALB directly) ==="\x3b curl -sS --max-time 15 -D - -o /dev/null "https://origin.staging.us-east-1.hellodj.bot/healthz"\x3b echo "curl_exit=$?"\x3b echo\x3b echo "=== origin.staging via HTTP :80 ==="\x3b curl -sS --max-time 15 -D - -o /dev/null "http://origin.staging.us-east-1.hellodj.bot/healthz"\x3b echo "curl_exit=$?"\x3b } > .gate-logs/staging_origin.txt 2>&1\x3b cat .gate-logs/staging_origin.txt;c08a0620-fdad-4af0-ab48-237647219028]633;C=== origin.staging via HTTPS (ALB directly) ===
+curl: (28) Connection timed out after 15000 milliseconds
+curl_exit=28
+
+=== origin.staging via HTTP :80 ===
+HTTP/1.1 404 Not Found
+Server: awselb/2.0
+Date: Sat, 29 Aug 2026 22:34:02 GMT
+Content-Type: text/plain; charset=utf-8
+Content-Length: 16
+Connection: keep-alive
+
+curl_exit=0

@@ -1,0 +1,2 @@
+hellodj-54944cbf96-mt6vx          3/4     Error     73 (6m36s ago)   4d7h    10.42.1.22    gremlin-3   <none>           <none>
+hellodj-web-ui-749dd46fc5-nq859   1/1     Running   0                4d7h    10.42.1.21    gremlin-3   <none>           <none>

@@ -1,0 +1,5 @@
+M  infra/bin/hellodj.ts
+M  infra/lib/workloads-stack.ts
+A  infra/test/edge-per-stage.test.ts
+M  infra/test/endpoint-isolation.test.ts
+?? .kiro/

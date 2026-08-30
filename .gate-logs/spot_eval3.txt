@@ -1,0 +1,2 @@
+warning: Git tree '/home/celes/sources/celesrenata/hellodj' is dirty
+"/nix/store/w5vkympljqp695zmlmhmh4gfak332k6i-hellodj-spotify-stream.tar.gz.drv"

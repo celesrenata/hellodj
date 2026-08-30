@@ -1,0 +1,4 @@
+[
+    "hellodj-stickers-beta-us-east-1",
+    "hellodj-stickers-staging-us-east-1"
+]

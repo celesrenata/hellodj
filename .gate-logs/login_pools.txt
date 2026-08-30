@@ -1,0 +1,10 @@
+[
+    {
+        "Name": "hellodj-beta",
+        "Id": "us-east-1_HdG8f93QA"
+    },
+    {
+        "Name": "hellodj-staging",
+        "Id": "us-east-1_eLwuITSGz"
+    }
+]

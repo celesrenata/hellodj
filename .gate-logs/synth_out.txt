@@ -1,0 +1,46 @@
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+ERROR Found zones: [] for dns:hellodj.bot, privateZone:undefined, vpcId:undefined, but wanted exactly 1 zone (Construct Annotations)
+   hellodj-pipeline/hellodj-beta-stage/hellodj-workloads-beta
+   Rule Construct-Annotations::error-annotation
+
+ERROR Found zones: [] for dns:hellodj.bot, privateZone:undefined, vpcId:undefined, but wanted exactly 1 zone (Construct Annotations)
+   hellodj-pipeline/hellodj-staging-stage/hellodj-workloads-staging
+   Rule Construct-Annotations::error-annotation
+
+ERROR Found zones: [] for dns:hellodj.bot, privateZone:undefined, vpcId:undefined, but wanted exactly 1 zone (Construct Annotations)
+   hellodj-pipeline/hellodj-production-stage/hellodj-workloads-production
+   Rule Construct-Annotations::error-annotation
+
+WARNING V1 pipeline type is implicitly selected when `pipelineType` is not set. If you want to use V2 type, set `PipelineType.V2`. (Construct Annotations)
+   hellodj-pipeline/pipeline
+   Acknowledge with 'Construct-Annotations::@aws-cdk/aws-codepipeline:unspecifiedPipelineType'
+Synthesis finished with errors

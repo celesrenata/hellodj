@@ -1,0 +1,7 @@
+/nix/store/nc5j4w8v3gz9q0hv3dhblck16fblj8gz-31w94yhfpllma9jnlgavjkzsfs548ijx-source
+--- locked rev store path ---
+Traceback (most recent call last):
+  File "<string>", line 1, in <module>
+    import json,sys; d=json.load(sys.stdin); print(d['locks']['nodes'][d['locks']['nodes'][d['locks']['root']['inputs']['nixpkgs'] if isinstance(d['locks']['root']['inputs']['nixpkgs'],str) else d['locks']['root']['inputs']['nixpkgs'][0]].get('locked') and d['locks']['root']['inputs']['nixpkgs']]['locked'].get('rev',''))
+                                                                                                                                                 ~~~~~~~~~~~~~~~~~~^^^^^^^^^^
+TypeError: string indices must be integers, not 'str'

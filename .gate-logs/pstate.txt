@@ -1,0 +1,37 @@
+[
+    {
+        "stage": "Source",
+        "status": "Succeeded",
+        "rev": "19bcef566c8bb8802c42e22021c3dbfdd7ab16c0"
+    },
+    {
+        "stage": "Build",
+        "status": "Failed",
+        "rev": null
+    },
+    {
+        "stage": "UpdatePipeline",
+        "status": "Succeeded",
+        "rev": null
+    },
+    {
+        "stage": "ComponentBuilds",
+        "status": "Failed",
+        "rev": null
+    },
+    {
+        "stage": "hellodj-beta-stage",
+        "status": "Succeeded",
+        "rev": null
+    },
+    {
+        "stage": "hellodj-staging-stage",
+        "status": null,
+        "rev": null
+    },
+    {
+        "stage": "hellodj-production-stage",
+        "status": null,
+        "rev": null
+    }
+]

@@ -1,0 +1,5 @@
+A  platform/components/spotify-stream/app.py
+M  platform/components/spotify-stream/arch-deps.toml
+D  platform/components/spotify-stream/crate/Cargo.toml
+D  platform/components/spotify-stream/crate/src/main.rs
+M  platform/components/spotify-stream/flake.nix

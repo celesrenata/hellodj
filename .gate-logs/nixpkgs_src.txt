@@ -1,0 +1,2 @@
+/nix/store/z4wkdlk69gck09s64a8ghpn6h7bxhkyy-source
+/nix/store/z4wkdlk69gck09s64a8ghpn6h7bxhkyy-source/nixos/modules/services/hardware/udev.nix

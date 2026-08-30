@@ -1,0 +1,4 @@
+b43ca0e fix(pipeline): pin image tag to the hellodj bot-repo commit, not the CDK commit
+ infra/bin/hellodj.ts        | 44 ++++++++++++++++++++++++++------------------
+ infra/lib/pipeline-stack.ts | 41 ++++++++++++++++++++++++++++++++++++++++-
+ 2 files changed, 66 insertions(+), 19 deletions(-)

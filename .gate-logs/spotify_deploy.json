@@ -1,0 +1,150 @@
+{
+    "apiVersion": "apps/v1",
+    "kind": "Deployment",
+    "metadata": {
+        "annotations": {
+            "deployment.kubernetes.io/revision": "11",
+            "hellodj.bot/description": "Direct Spotify streaming sidecar (Rust librespot) (R6.1).",
+            "hellodj.bot/image-tag": "874927898283.dkr.ecr.us-east-1.amazonaws.com/hellodj/spotify-stream:d8a53a84a61c63d4a654c58ac8008d1f29d872d4",
+            "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"apps/v1\",\"kind\":\"Deployment\",\"metadata\":{\"annotations\":{\"hellodj.bot/description\":\"Direct Spotify streaming sidecar (Rust librespot) (R6.1).\",\"hellodj.bot/image-tag\":\"874927898283.dkr.ecr.us-east-1.amazonaws.com/hellodj/spotify-stream:d8a53a84a61c63d4a654c58ac8008d1f29d872d4\"},\"labels\":{\"app.kubernetes.io/name\":\"spotify-stream\",\"app.kubernetes.io/part-of\":\"hellodj\",\"aws.cdk.eks/prune-c8ad4b119bf9cb42deed2d641013803a6764f5d02f\":\"\",\"hellodj.bot/stage\":\"beta\"},\"name\":\"spotify-stream\",\"namespace\":\"hellodj-beta\"},\"spec\":{\"replicas\":1,\"selector\":{\"matchLabels\":{\"app.kubernetes.io/name\":\"spotify-stream\",\"app.kubernetes.io/part-of\":\"hellodj\",\"hellodj.bot/stage\":\"beta\"}},\"template\":{\"metadata\":{\"labels\":{\"app.kubernetes.io/name\":\"spotify-stream\",\"app.kubernetes.io/part-of\":\"hellodj\",\"hellodj.bot/stage\":\"beta\"}},\"spec\":{\"containers\":[{\"env\":[{\"name\":\"HELLODJ_STAGE\",\"value\":\"beta\"},{\"name\":\"HELLODJ_NAMESPACE\",\"value\":\"hellodj-beta\"},{\"name\":\"HELLODJ_STAGE_HOSTNAME\",\"value\":\"beta.us-east-1.hellodj.bot\"},{\"name\":\"AWS_REGION\",\"value\":\"us-east-1\"},{\"name\":\"LOG_LEVEL\",\"value\":\"DEBUG\"},{\"name\":\"HELLODJ_DEBUG\",\"value\":\"true\"},{\"name\":\"HELLODJ_SPOTIFY_SECRET_ARN\",\"value\":\"arn:aws:secretsmanager:us-east-1:874927898283:secret:hellodj/beta/spotify-3Ziomj\"},{\"name\":\"HELLODJ_SOURCE_CREDS_KMS_KEY_ID\",\"value\":\"30e299e0-e3b9-44ca-ad70-65ed1e8c3e9c\"}],\"image\":\"874927898283.dkr.ecr.us-east-1.amazonaws.com/hellodj/spotify-stream:d8a53a84a61c63d4a654c58ac8008d1f29d872d4\",\"imagePullPolicy\":\"Always\",\"name\":\"spotify-stream\",\"ports\":[{\"containerPort\":8802,\"name\":\"http\"}],\"resources\":{\"limits\":{\"cpu\":\"500m\",\"memory\":\"512Mi\"},\"requests\":{\"cpu\":\"100m\",\"memory\":\"256Mi\"}}}],\"enableServiceLinks\":false,\"nodeSelector\":{\"workload\":\"app\"},\"serviceAccountName\":\"hellodj-spotify-stream\"}}}}\n"
+        },
+        "creationTimestamp": "2026-08-26T18:38:22Z",
+        "generation": 12,
+        "labels": {
+            "app.kubernetes.io/name": "spotify-stream",
+            "app.kubernetes.io/part-of": "hellodj",
+            "aws.cdk.eks/prune-c8ad4b119bf9cb42deed2d641013803a6764f5d02f": "",
+            "hellodj.bot/stage": "beta"
+        },
+        "name": "spotify-stream",
+        "namespace": "hellodj-beta",
+        "resourceVersion": "1134268",
+        "uid": "c537a1fa-ba5a-4ede-b83c-45623957ec1f"
+    },
+    "spec": {
+        "progressDeadlineSeconds": 600,
+        "replicas": 1,
+        "revisionHistoryLimit": 10,
+        "selector": {
+            "matchLabels": {
+                "app.kubernetes.io/name": "spotify-stream",
+                "app.kubernetes.io/part-of": "hellodj",
+                "hellodj.bot/stage": "beta"
+            }
+        },
+        "strategy": {
+            "rollingUpdate": {
+                "maxSurge": "25%",
+                "maxUnavailable": "25%"
+            },
+            "type": "RollingUpdate"
+        },
+        "template": {
+            "metadata": {
+                "labels": {
+                    "app.kubernetes.io/name": "spotify-stream",
+                    "app.kubernetes.io/part-of": "hellodj",
+                    "hellodj.bot/stage": "beta"
+                }
+            },
+            "spec": {
+                "containers": [
+                    {
+                        "env": [
+                            {
+                                "name": "HELLODJ_STAGE",
+                                "value": "beta"
+                            },
+                            {
+                                "name": "HELLODJ_NAMESPACE",
+                                "value": "hellodj-beta"
+                            },
+                            {
+                                "name": "HELLODJ_STAGE_HOSTNAME",
+                                "value": "beta.us-east-1.hellodj.bot"
+                            },
+                            {
+                                "name": "AWS_REGION",
+                                "value": "us-east-1"
+                            },
+                            {
+                                "name": "LOG_LEVEL",
+                                "value": "DEBUG"
+                            },
+                            {
+                                "name": "HELLODJ_DEBUG",
+                                "value": "true"
+                            },
+                            {
+                                "name": "HELLODJ_SPOTIFY_SECRET_ARN",
+                                "value": "arn:aws:secretsmanager:us-east-1:874927898283:secret:hellodj/beta/spotify-3Ziomj"
+                            },
+                            {
+                                "name": "HELLODJ_SOURCE_CREDS_KMS_KEY_ID",
+                                "value": "30e299e0-e3b9-44ca-ad70-65ed1e8c3e9c"
+                            }
+                        ],
+                        "image": "874927898283.dkr.ecr.us-east-1.amazonaws.com/hellodj/spotify-stream:d8a53a84a61c63d4a654c58ac8008d1f29d872d4",
+                        "imagePullPolicy": "Always",
+                        "name": "spotify-stream",
+                        "ports": [
+                            {
+                                "containerPort": 8802,
+                                "name": "http",
+                                "protocol": "TCP"
+                            }
+                        ],
+                        "resources": {
+                            "limits": {
+                                "cpu": "500m",
+                                "memory": "512Mi"
+                            },
+                            "requests": {
+                                "cpu": "100m",
+                                "memory": "256Mi"
+                            }
+                        },
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File"
+                    }
+                ],
+                "dnsPolicy": "ClusterFirst",
+                "enableServiceLinks": false,
+                "nodeSelector": {
+                    "workload": "app"
+                },
+                "restartPolicy": "Always",
+                "schedulerName": "default-scheduler",
+                "securityContext": {},
+                "serviceAccount": "hellodj-spotify-stream",
+                "serviceAccountName": "hellodj-spotify-stream",
+                "terminationGracePeriodSeconds": 30
+            }
+        }
+    },
+    "status": {
+        "conditions": [
+            {
+                "lastTransitionTime": "2026-08-27T09:01:55Z",
+                "lastUpdateTime": "2026-08-29T05:29:25Z",
+                "message": "ReplicaSet \"spotify-stream-7cf7d6f567\" has successfully progressed.",
+                "reason": "NewReplicaSetAvailable",
+                "status": "True",
+                "type": "Progressing"
+            },
+            {
+                "lastTransitionTime": "2026-08-29T08:03:13Z",
+                "lastUpdateTime": "2026-08-29T08:03:13Z",
+                "message": "Deployment does not have minimum availability.",
+                "reason": "MinimumReplicasUnavailable",
+                "status": "False",
+                "type": "Available"
+            }
+        ],
+        "observedGeneration": 12,
+        "replicas": 1,
+        "terminatingReplicas": 0,
+        "unavailableReplicas": 1,
+        "updatedReplicas": 1
+    }
+}

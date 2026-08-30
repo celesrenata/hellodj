@@ -1,0 +1,15 @@
+SUCCEEDED (12):
+   build-activity-backend
+   build-config-renderer
+   build-discord-bot-core
+   build-hls-transcode
+   build-lavalink
+   build-playback-orchestrator
+   build-potoken-server
+   build-spotify-stream
+   build-tidal-stream
+   build-voice-pipeline
+   build-web-ui
+   build-yt-cipher
+NOT SUCCEEDED (1):
+   build-gpu-ami Failed

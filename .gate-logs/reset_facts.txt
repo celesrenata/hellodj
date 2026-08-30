@@ -1,0 +1,6 @@
+]633;E;{ echo "core-beta count:"\x3b aws dynamodb scan --table-name hellodj-core-beta --region us-east-1 --profile hellodj --select COUNT --query 'Count' --output text\x3b echo "beta admin status:"\x3b aws cognito-idp admin-get-user --user-pool-id us-east-1_HdG8f93QA --username admin --region us-east-1 --profile hellodj --query 'UserStatus' --output text\x3b echo "staging stage status:"\x3b aws codepipeline get-pipeline-state --name hellodj-pipeline --region us-east-1 --profile hellodj --query 'stageStates[?stageName==`hellodj-staging-stage`].latestExecution.status' --output text\x3b } > .gate-logs/reset_facts.txt 2>&1\x3b true;f407519b-2aeb-4e09-8b9d-e0948228658a]633;Ccore-beta count:
+3
+beta admin status:
+CONFIRMED
+staging stage status:
+Succeeded

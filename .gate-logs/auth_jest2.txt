@@ -1,0 +1,15 @@
+PASS test/auth-per-stage.test.ts
+  one Cognito auth stack per stage (staging/production must have a pool)
+    ✓ every stage synthesizes its own hellodj-<stage> user pool (4 ms)
+    ✓ every stage synthesizes an admins group (1 ms)
+    ✓ every stage synthesizes a web-ui app client named per stage
+    ✓ secrets are stage-scoped (hellodj/<stage>/*) — no cross-stage collision (1 ms)
+    ✓ the AI task role is stage-scoped (hellodj-ai-task-<stage>) (1 ms)
+    ✓ non-prod pools are DESTROY, production pool is RETAIN
+
+Test Suites: 1 passed, 1 total
+Tests:       6 passed, 6 total
+Snapshots:   0 total
+Time:        1.856 s
+Ran all test suites matching /auth-per-stage/i.
+jest_exit=0

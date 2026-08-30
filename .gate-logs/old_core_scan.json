@@ -1,0 +1,282 @@
+{
+    "Items": [
+        {
+            "PK": {
+                "S": "GUILD#1071652545153470605"
+            },
+            "SK": {
+                "S": "BOTIDENTITY"
+            },
+            "entityType": {
+                "S": "GuildBotIdentity"
+            }
+        },
+        {
+            "PK": {
+                "S": "USER#14d83468-20c1-70d3-96a2-09aa94c17865"
+            },
+            "SK": {
+                "S": "PROFILE"
+            },
+            "entityType": {
+                "S": "UserProfile"
+            }
+        },
+        {
+            "PK": {
+                "S": "GUILD#1534429925434593330"
+            },
+            "SK": {
+                "S": "BOTIDENTITY"
+            },
+            "entityType": {
+                "S": "GuildBotIdentity"
+            }
+        },
+        {
+            "PK": {
+                "S": "GUILD#1524891249239265320"
+            },
+            "SK": {
+                "S": "BOTIDENTITY"
+            },
+            "entityType": {
+                "S": "GuildBotIdentity"
+            }
+        },
+        {
+            "PK": {
+                "S": "USER#54386408-60d1-7037-f42b-e236c906add8"
+            },
+            "SK": {
+                "S": "AUDIT#2026-08-28T21:12:12.655375+00:00#7fdfe3a1"
+            },
+            "entityType": {
+                "S": "EntitlementAudit"
+            }
+        },
+        {
+            "PK": {
+                "S": "USER#54386408-60d1-7037-f42b-e236c906add8"
+            },
+            "SK": {
+                "S": "AUDIT#2026-08-28T21:12:14.433047+00:00#cede656c"
+            },
+            "entityType": {
+                "S": "EntitlementAudit"
+            }
+        },
+        {
+            "PK": {
+                "S": "USER#54386408-60d1-7037-f42b-e236c906add8"
+            },
+            "SK": {
+                "S": "ENTITLEMENT"
+            },
+            "entityType": {
+                "S": "Entitlement"
+            }
+        },
+        {
+            "PK": {
+                "S": "USER#54386408-60d1-7037-f42b-e236c906add8"
+            },
+            "SK": {
+                "S": "PROFILE"
+            },
+            "entityType": {
+                "S": "UserProfile"
+            }
+        },
+        {
+            "PK": {
+                "S": "GUILD#1501686893765595296"
+            },
+            "SK": {
+                "S": "BOTIDENTITY"
+            },
+            "entityType": {
+                "S": "GuildBotIdentity"
+            }
+        },
+        {
+            "PK": {
+                "S": "GUILD#1538970112147718235"
+            },
+            "SK": {
+                "S": "BOTIDENTITY"
+            },
+            "entityType": {
+                "S": "GuildBotIdentity"
+            }
+        },
+        {
+            "PK": {
+                "S": "USER#14782418-9021-708c-f348-ea69fe8ff661"
+            },
+            "SK": {
+                "S": "AUDIT#2026-08-30T02:15:25.593242+00:00#566c0d50"
+            },
+            "entityType": {
+                "S": "EntitlementAudit"
+            }
+        },
+        {
+            "PK": {
+                "S": "USER#14782418-9021-708c-f348-ea69fe8ff661"
+            },
+            "SK": {
+                "S": "AUDIT#2026-08-30T02:15:27.602045+00:00#45d27d7c"
+            },
+            "entityType": {
+                "S": "EntitlementAudit"
+            }
+        },
+        {
+            "PK": {
+                "S": "USER#14782418-9021-708c-f348-ea69fe8ff661"
+            },
+            "SK": {
+                "S": "ENTITLEMENT"
+            },
+            "entityType": {
+                "S": "Entitlement"
+            }
+        },
+        {
+            "PK": {
+                "S": "GUILD#1167858999270572162"
+            },
+            "SK": {
+                "S": "ACTIVATION"
+            },
+            "entityType": {
+                "S": "GuildActivation"
+            }
+        },
+        {
+            "PK": {
+                "S": "GUILD#1167858999270572162"
+            },
+            "SK": {
+                "S": "ADMIN#548750634464051211"
+            },
+            "entityType": {
+                "S": "GuildAdmin"
+            }
+        },
+        {
+            "PK": {
+                "S": "GUILD#1167858999270572162"
+            },
+            "SK": {
+                "S": "BOTAPP#1543081229811843153"
+            },
+            "entityType": {
+                "S": "BotAppClaim"
+            }
+        },
+        {
+            "PK": {
+                "S": "GUILD#1167858999270572162"
+            },
+            "SK": {
+                "S": "BOTIDENTITY"
+            },
+            "entityType": {
+                "S": "GuildBotIdentity"
+            }
+        },
+        {
+            "PK": {
+                "S": "GUILD#1167858999270572162"
+            },
+            "SK": {
+                "S": "OWNER"
+            },
+            "entityType": {
+                "S": "GuildOwner"
+            }
+        },
+        {
+            "PK": {
+                "S": "USER#14180438-0041-70d9-905d-8b0389d3fd04"
+            },
+            "SK": {
+                "S": "AUDIT#2026-08-30T02:14:46.449412+00:00#43fc2437"
+            },
+            "entityType": {
+                "S": "EntitlementAudit"
+            }
+        },
+        {
+            "PK": {
+                "S": "USER#14180438-0041-70d9-905d-8b0389d3fd04"
+            },
+            "SK": {
+                "S": "AUDIT#2026-08-30T02:14:50.828923+00:00#e9e44dd6"
+            },
+            "entityType": {
+                "S": "EntitlementAudit"
+            }
+        },
+        {
+            "PK": {
+                "S": "USER#14180438-0041-70d9-905d-8b0389d3fd04"
+            },
+            "SK": {
+                "S": "AUDIT#2026-08-30T02:14:53.523879+00:00#fc56917a"
+            },
+            "entityType": {
+                "S": "EntitlementAudit"
+            }
+        },
+        {
+            "PK": {
+                "S": "USER#14180438-0041-70d9-905d-8b0389d3fd04"
+            },
+            "SK": {
+                "S": "AUDIT#2026-08-30T02:14:55.648531+00:00#3f6251b6"
+            },
+            "entityType": {
+                "S": "EntitlementAudit"
+            }
+        },
+        {
+            "PK": {
+                "S": "USER#14180438-0041-70d9-905d-8b0389d3fd04"
+            },
+            "SK": {
+                "S": "ENTITLEMENT"
+            },
+            "entityType": {
+                "S": "Entitlement"
+            }
+        },
+        {
+            "PK": {
+                "S": "USER#14180438-0041-70d9-905d-8b0389d3fd04"
+            },
+            "SK": {
+                "S": "PROFILE"
+            },
+            "entityType": {
+                "S": "UserProfile"
+            }
+        },
+        {
+            "PK": {
+                "S": "GUILD#1535595201614184562"
+            },
+            "SK": {
+                "S": "BOTIDENTITY"
+            },
+            "entityType": {
+                "S": "GuildBotIdentity"
+            }
+        }
+    ],
+    "Count": 25,
+    "ScannedCount": 25,
+    "ConsumedCapacity": null
+}

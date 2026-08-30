@@ -1,0 +1,2 @@
+Updated context arn:aws:eks:us-east-1:874927898283:cluster/hellodj in /tmp/hellodj-eks-kubeconfig
+grep_exit=1

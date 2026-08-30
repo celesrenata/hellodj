@@ -1,0 +1,47 @@
+[
+    {
+        "id": "CustomS3AutoDeleteObjectsCustomResourceProviderHandler9D90184F",
+        "type": "AWS::Lambda::Function",
+        "status": "IN_SYNC"
+    },
+    {
+        "id": "CustomS3AutoDeleteObjectsCustomResourceProviderRole3B1BD092",
+        "type": "AWS::IAM::Role",
+        "status": "IN_SYNC"
+    },
+    {
+        "id": "EdgeDistribution7D23752A",
+        "type": "AWS::CloudFront::Distribution",
+        "status": "IN_SYNC"
+    },
+    {
+        "id": "EdgeDistributionOrigin2S3OriginAccessControlB96F710F",
+        "type": "AWS::CloudFront::OriginAccessControl",
+        "status": "IN_SYNC"
+    },
+    {
+        "id": "EdgeDistributionOrigin3S3OriginAccessControl9EEAB4DC",
+        "type": "AWS::CloudFront::OriginAccessControl",
+        "status": "IN_SYNC"
+    },
+    {
+        "id": "HlsSegmentsBucket2D3FD8B4",
+        "type": "AWS::S3::Bucket",
+        "status": "IN_SYNC"
+    },
+    {
+        "id": "StickerAssetsBucket09A8F9CB",
+        "type": "AWS::S3::Bucket",
+        "status": "IN_SYNC"
+    },
+    {
+        "id": "WebStaticBucketF22B220B",
+        "type": "AWS::S3::Bucket",
+        "status": "IN_SYNC"
+    }
+]
+---stack drift status---
+{
+    "StackDriftStatus": "IN_SYNC",
+    "LastCheckTimestamp": "2026-08-29T23:10:27.360000+00:00"
+}

@@ -31,14 +31,15 @@ Everything here is dependency-injected (secrets client + ``CoreTable`` + stage)
 so it is unit-testable with fakes, mirroring the token watchdog's approach. It
 holds no boto3 import of its own — the bootstrap builds the concrete clients.
 
-Task 4 (entitlement quotas): the vendored base enforces per-user quotas in
-``assign_instance`` via ``_enforce_quotas`` / ``_resolve_effective``, but those
-do LAZY imports of on-prem-only modules (``playback.user_entitlements``,
-``bot.get_user_entitlements``) absent here. :class:`AwsInstanceOrchestrator`
-takes an INJECTED ``entitlements_resolver`` and overrides ``_resolve_effective``
-(restrictive ``DEFAULT_ENTITLEMENTS`` on any failure, R4.3) + ``_enforce_quotas``
-(same decision, helpers sourced from the SHARED ``entitlements_core`` so web-ui,
-on-prem, and this runtime agree exactly, R4.4).
+Task 4 (entitlement quotas): the base enforces per-user quotas in
+``assign_instance`` via ``_enforce_quotas`` / ``_resolve_effective``, both now
+sourced from the SHARED ``entitlements_core`` (the base returns the restrictive
+``DEFAULT_ENTITLEMENTS`` as it has no resolver seam of its own).
+:class:`AwsInstanceOrchestrator` takes an INJECTED ``entitlements_resolver`` and
+overrides ``_resolve_effective`` (consult the resolver; restrictive
+``DEFAULT_ENTITLEMENTS`` on any failure, R4.3) + ``_enforce_quotas`` (same
+decision, same shared ``entitlements_core`` helpers so web-ui and this runtime
+agree exactly, R4.4).
 
 Requirements: 1.1, 1.2, 1.3, 1.5, 4.1, 4.2, 4.3, 4.4
 """
@@ -152,10 +153,19 @@ class AwsInstanceOrchestrator(InstanceOrchestrator):
         source: PoolCredentialSource,
         entitlements_resolver: EntitlementsResolver | None = None,
         identity_applier: Any | None = None,
+        *,
+        ordinal: int = 0,
+        replica_count: int = 1,
     ) -> None:
         super().__init__(primary_bot, registry)
         self._source = source
         self._entitlements_resolver = entitlements_resolver
+        # Shard identity (distributed-bot-sharding R1/R3). At the default
+        # (0, 1) the runtime is single-shard — identical to today: it serves
+        # every served guild and owns every claimed app, so the app-owner guard
+        # in initialize() is a no-op (every owner ordinal is 0 == self ordinal).
+        self._ordinal = ordinal
+        self._replica_count = replica_count if replica_count > 1 else 1
         # Optional per-bot identity applier (name + avatar). When wired, each
         # connected secondary has its persisted BOTIDENTITY#<client_id> identity
         # applied to its own Discord application user after connect. ``None``
@@ -228,11 +238,12 @@ class AwsInstanceOrchestrator(InstanceOrchestrator):
 
         Same decision as the base ``_enforce_quotas`` — the per-guild bot limit
         (``effective_max_bots_per_guild``) and, for a guild the user is not
-        already active in, the ``max_guilds`` limit — but sources the pure
-        helpers from the SHARED ``entitlements_core`` module (Requirement 4.4)
-        rather than the on-prem ``playback.user_entitlements`` the base imports,
-        so the web-ui, on-prem orchestrator, and this runtime agree exactly. The
-        inherited assign/release counting helpers are reused unchanged.
+        already active in, the ``max_guilds`` limit — sourcing the pure helpers
+        from the SHARED ``entitlements_core`` module (Requirement 4.4) so the
+        web-ui and this runtime agree exactly. Kept as an explicit override
+        (paired with the injected-resolver ``_resolve_effective`` seam) even
+        though the base now uses the same shared helpers. The inherited
+        assign/release counting helpers are reused unchanged.
         """
         from entitlements_core import effective_max_bots_per_guild, quota_reached
 
@@ -284,6 +295,18 @@ class AwsInstanceOrchestrator(InstanceOrchestrator):
         """
         import discord
 
+        # Cross-replica single-owner map (R3.2): compute each claimed app's
+        # owner ordinal ONCE from a single claims scan. When sharded (>1
+        # replica) this replica connects an app ONLY if it is the app's owner,
+        # so no app is ever opened by two replicas (the Discord duplicate-
+        # identify invariant, R3.1). At replica_count == 1 every owner is 0 ==
+        # self._ordinal, so the guard admits everything (today's behavior, R7.1).
+        app_owner = (
+            self._source.app_owner_map(self._replica_count)
+            if self._replica_count > 1
+            else {}
+        )
+
         seen_client_ids: set[str] = set()
         index = 0
         for guild_id in guild_ids or []:
@@ -292,6 +315,17 @@ class AwsInstanceOrchestrator(InstanceOrchestrator):
                     # Already built for an earlier claiming guild — a pool app is
                     # a single Discord identity, so it connects once.
                     continue
+
+                if self._replica_count > 1:
+                    owner = app_owner.get(app.client_id)
+                    if owner != self._ordinal:
+                        # Owned by another replica (or unknown owner) — do NOT
+                        # connect it here (R3.1/R3.2). A play request for a guild
+                        # served here that needs this app is routed to the owner
+                        # replica (R4), never connected locally.
+                        seen_client_ids.add(app.client_id)
+                        continue
+
                 seen_client_ids.add(app.client_id)
 
                 instance = self._build_instance(discord, index, app)

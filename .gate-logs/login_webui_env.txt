@@ -1,0 +1,6 @@
+COGNITO_CLIENT_ID = 5egl659t3d70q7kmti4ft46e38
+HELLODJ_COGNITO_USER_POOL_ID = us-east-1_eLwuITSGz
+COGNITO_DOMAIN = https://hellodj-staging-874927898283.auth.us-east-1.amazoncognito.com
+HELLODJ_STAGE = staging
+HELLODJ_PUBLIC_BASE_URL = https://staging.us-east-1.hellodj.bot
+image= 874927898283.dkr.ecr.us-east-1.amazonaws.com/hellodj/web-ui:4da106f909e45e80489bdcacd12f48251ff95e84

@@ -1,0 +1,1 @@
+cad4ea2 fix(workloads): grant kubectl handler sts:AssumeRole on shared hellodj-kubectl role

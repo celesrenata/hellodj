@@ -1,0 +1,1 @@
+0dbbf76 fix(workloads): correct discord-bot-core token secret env var name

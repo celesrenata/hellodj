@@ -60,3 +60,6 @@ bot/stickers/*.zip
 # Local bot-app pool token material — never commit
 /tokens
 /bot-app-pool.json
+
+# Secrets Manager backups — live token material, never commit
+/secrets-manager-backup*.json

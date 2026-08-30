@@ -1,0 +1,2 @@
+KubectlRole (hellodj-kubectl) present: True [('KubectlRole4D319128', 'hellodj-kubectl')]
+AccessEntry resources: ['ClusterAdminAccess30940FB6', 'ClusterKubectlRoleAccess52D69B3D']

@@ -1,0 +1,9 @@
+{
+    "ChangeInfo": {
+        "Id": "/change/C089677810I5JFZRJK7GE",
+        "Status": "PENDING",
+        "SubmittedAt": "2026-08-29T23:07:23.089000+00:00",
+        "Comment": "Remove stale external-dns-owned staging apex A (ALB) + TXT registry so the per-stage EdgeStack CloudFront alias becomes authoritative; external-dns is now annotation-only and will not recreate them."
+    }
+}
+del_exit=0

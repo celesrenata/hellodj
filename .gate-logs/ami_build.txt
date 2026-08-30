@@ -1,0 +1,20 @@
+these 2 derivations will be built:
+  /nix/store/wbl0ryb0g52d3p86gq8z53flx5mhdagb-nixos.efi.drv
+  /nix/store/wv8rr58a3wb0l4makfd4hhh6bncmsc2f-hellodj-gpu-node.drv
+building '/nix/store/wbl0ryb0g52d3p86gq8z53flx5mhdagb-nixos.efi.drv'...
+error: Cannot build '/nix/store/wbl0ryb0g52d3p86gq8z53flx5mhdagb-nixos.efi.drv'.
+       Reason: builder failed with exit code 1.
+       Output paths:
+         /nix/store/s550dvjqnnl5n0bxzm954ps8xcaf15mj-nixos.efi
+       Last 5 log lines:
+       > Traceback (most recent call last):
+       >   File "/nix/store/rjsqkwiwinpm2j88wl4rll3vzb7dhskr-systemd-261.1/bin/.ukify-wrapped", line 61, in <module>
+       >     import pefile  # type: ignore
+       >     ^^^^^^^^^^^^^
+       > ModuleNotFoundError: No module named 'pefile'
+       For full logs, run:
+         nix log /nix/store/wbl0ryb0g52d3p86gq8z53flx5mhdagb-nixos.efi.drv
+error: Cannot build '/nix/store/wv8rr58a3wb0l4makfd4hhh6bncmsc2f-hellodj-gpu-node.drv'.
+       Reason: 1 dependency failed.
+       Output paths:
+         /nix/store/yyqk0ry55gbpbivfg4lv86vkvqw80s7p-hellodj-gpu-node

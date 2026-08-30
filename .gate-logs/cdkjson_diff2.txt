@@ -1,0 +1,14 @@
+diff --git a/infra/cdk.json b/infra/cdk.json
+index e5cff50..b60ac04 100644
+--- a/infra/cdk.json
++++ b/infra/cdk.json
+@@ -24,6 +24,8 @@
+     "@aws-cdk/core:enablePartitionLiterals": true,
+     "@aws-cdk/core:newStyleStackSynthesis": true,
+     "hellodj:zoneName": "hellodj.bot",
+-    "hellodj:defaultRegion": "us-east-1"
++    "hellodj:defaultRegion": "us-east-1",
++    "hellodj:spotifyClientId": "5335dad8d1a34e32b397c7da73c9febc",
++    "hellodj:tidalClientId": "TWDgxSYAcqDo31fj"
+   }
+ }

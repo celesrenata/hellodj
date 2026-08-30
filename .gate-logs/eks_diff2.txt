@@ -1,0 +1,54 @@
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.aws_dynamodb.TableOptions#pointInTimeRecovery is deprecated.
+  use `pointInTimeRecoverySpecification` instead
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+[WARNING] aws-cdk-lib.CfnResource#addDependency is deprecated.
+  Use `addResourceDependency` instead.
+  This API will be removed in the next major release.
+Including dependency stacks: hellodj-network
+WARNING Ignoring Egress rule since 'allowAllOutbound' is set to true; To add customized rules, set allowAllOutbound=false on the SecurityGroup (Construct Annotations)
+   hellodj-network/FleetSecurityGroup
+   Acknowledge with 'Construct-Annotations::@aws-cdk/aws-ec2:ipv4IgnoreEgressRule'
+start: Building hellodj-network Template
+success: Built hellodj-network Template
+start: Publishing hellodj-network Template (874927898283-us-east-1-f3e9a1ed)
+success: Published hellodj-network Template (874927898283-us-east-1-f3e9a1ed)
+Hold on while we create a read-only change set to get a diff with accurate replacement information (use --method=template to use a less accurate but faster template-only diff)
+
+Stack hellodj-network
+There were no differences
+
+start: Building @aws-cdk--aws-eks.ClusterResourceProvider Nested Stack Template
+success: Built @aws-cdk--aws-eks.ClusterResourceProvider Nested Stack Template
+start: Publishing @aws-cdk--aws-eks.ClusterResourceProvider Nested Stack Template (874927898283-us-east-1-0ceb23df)
+success: Published @aws-cdk--aws-eks.ClusterResourceProvider Nested Stack Template (874927898283-us-east-1-0ceb23df)
+start: Building @aws-cdk--aws-eks.KubectlProvider Nested Stack Template
+success: Built @aws-cdk--aws-eks.KubectlProvider Nested Stack Template
+start: Publishing @aws-cdk--aws-eks.KubectlProvider Nested Stack Template (874927898283-us-east-1-b2c77a3e)
+success: Published @aws-cdk--aws-eks.KubectlProvider Nested Stack Template (874927898283-us-east-1-b2c77a3e)
+start: Building hellodj-eks Template
+success: Built hellodj-eks Template
+start: Publishing hellodj-eks Template (874927898283-us-east-1-aa5b4cd8)
+success: Published hellodj-eks Template (874927898283-us-east-1-aa5b4cd8)
+Hold on while we create a read-only change set to get a diff with accurate replacement information (use --method=template to use a less accurate but faster template-only diff)
+
+Could not create a change set, will base the diff on template differences (run again with -v to see the reason)
+
+Stack hellodj-eks
+There were no differences
+Stack hellodj-eks-awscdkawseksClusterResourceProviderNestedStackawscdkawseksClusterResourceP-1TJDXQYLS0NNN
+There were no differences
+Stack hellodj-eks-awscdkawseksKubectlProviderNestedStackawscdkawseksKubectlProviderNestedSta-LUT2ZQNRU6AM
+There were no differences
+
+
+✨  Number of stacks with differences: 0
+

@@ -1,0 +1,23 @@
+EnvAliasRecordBDEF116F {
+  "AliasTarget": {
+    "DNSName": {
+      "Fn::GetAtt": [
+        "EdgeDistribution7D23752A",
+        "DomainName"
+      ]
+    },
+    "HostedZoneId": {
+      "Fn::FindInMap": [
+        "AWSCloudFrontPartitionHostedZoneIdMap",
+        {
+          "Ref": "AWS::Partition"
+        },
+        "zoneId"
+      ]
+    }
+  },
+  "Comment": "Environment record for staging.us-east-1.hellodj.bot",
+  "HostedZoneId": "Z0624252883VKFQ4E14Q",
+  "Name": "staging.us-east-1.hellodj.bot.",
+  "Type": "A"
+}

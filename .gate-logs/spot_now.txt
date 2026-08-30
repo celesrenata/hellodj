@@ -1,0 +1,8 @@
+pod: pod/spotify-stream-689b76cd97-wjk9f
+spotify-stream: no Spotify credentials injected.
+  Expected AWS Secrets Manager injection via SPOTIFY_CREDENTIALS_FILE (mounted file)
+  or SPOTIFY_CREDENTIALS (env). Refusing to start without credentials.
+=== previous ===
+spotify-stream: no Spotify credentials injected.
+  Expected AWS Secrets Manager injection via SPOTIFY_CREDENTIALS_FILE (mounted file)
+  or SPOTIFY_CREDENTIALS (env). Refusing to start without credentials.

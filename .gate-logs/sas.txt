@@ -1,0 +1,29 @@
+NAME                            AGE
+default                         37m
+hellodj-activity-backend        31m
+hellodj-discord-bot-core        36m
+hellodj-hls-transcode           30m
+hellodj-lavalink                35m
+hellodj-playback-orchestrator   35m
+hellodj-potoken-server          32m
+hellodj-spotify-stream          33m
+hellodj-tidal-stream            34m
+hellodj-voice-pipeline          30m
+hellodj-web-ui                  29m
+hellodj-yt-cipher               32m
+--- pod SA + role env ---
+hellodj-discord-bot-core
+HELLODJ_STAGE=beta
+HELLODJ_NAMESPACE=hellodj-beta
+HELLODJ_STAGE_HOSTNAME=beta.us-east-1.hellodj.bot
+AWS_REGION=us-east-1
+LOG_LEVEL=DEBUG
+HELLODJ_DEBUG=true
+HELLODJ_CORE_TABLE=hellodj-core
+HELLODJ_SESSION_TABLE=hellodj-session
+HELLODJ_DISCORD_TOKEN_SECRET_ID=arn:aws:secretsmanager:us-east-1:874927898283:secret:hellodj/beta/discord-bot-token
+HELLODJ_ASSETS_BUCKET=hellodj-assets-beta-us-east-1
+HELLODJ_SOURCE_CREDS_KMS_KEY_ID=alias/hellodj-source-creds-beta
+AWS_STS_REGIONAL_ENDPOINTS=regional
+AWS_ROLE_ARN=arn:aws:iam::874927898283:role/hellodj-beta-stage-hellod-betaSadiscordbotcoreRole7-oK9DYWMD2gS6
+AWS_WEB_IDENTITY_TOKEN_FILE=/var/run/secrets/eks.amazonaws.com/serviceaccount/token
