@@ -16,15 +16,25 @@ Env:
 * ``GOOGLE_CLIENT_ID`` / ``GOOGLE_CLIENT_SECRET``    YouTube + YouTube Music.
 * ``SPOTIFY_CLIENT_ID`` / ``SPOTIFY_CLIENT_SECRET``  Spotify.
 * ``TIDAL_CLIENT_ID`` / ``TIDAL_CLIENT_SECRET``      Tidal (first-party).
+* ``POTOKEN_SERVER_URL``               In-cluster potoken-server base URL.
+                                       Defaults to
+                                       ``http://potoken-server.hellodj-<stage>.svc.cluster.local:4416``
+                                       (``<stage>`` from ``HELLODJ_STAGE``), so
+                                       the watchdog renews the YouTube PoToken
+                                       alongside the OAuth token every tick.
+* ``HELLODJ_STAGE``                    Deployment stage (potoken URL default).
 
-Requirements: 5.1, 5.4, 5.6, 5.7
+Requirements: 5.1, 5.3, 5.4, 5.6, 5.7
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import threading
+import urllib.request
+from collections.abc import Mapping
 from typing import Any
 
 from hellodj_platform_logic.source_refresh import (
@@ -33,6 +43,7 @@ from hellodj_platform_logic.source_refresh import (
     SpotifyRefreshClient,
     youtube_device_refresh_client,
 )
+from hellodj_platform_logic.source_refresh_potoken import PoTokenRefreshClient
 
 from .token_watchdog import (
     DEFAULT_INTERVAL_SECONDS,
@@ -47,6 +58,65 @@ __all__ = [
     "build_watchdog",
     "start_watchdog_thread",
 ]
+
+
+_HTTP_TIMEOUT = 15
+
+
+def _potoken_server_url() -> str:
+    """Return the in-cluster potoken-server base URL (env or stage-derived).
+
+    Prefers an explicit ``POTOKEN_SERVER_URL``; otherwise derives the standard
+    in-namespace service DNS name from ``HELLODJ_STAGE`` (mirroring the web-ui's
+    ``app.py`` default), so the watchdog can renew PoTokens with no extra CDK
+    env wiring. Returns ``""`` only when neither is resolvable.
+    """
+    explicit = os.getenv("POTOKEN_SERVER_URL", "").strip()
+    if explicit:
+        return explicit
+    stage = os.getenv("HELLODJ_STAGE", "").strip()
+    if not stage:
+        return ""
+    return f"http://potoken-server.hellodj-{stage}.svc.cluster.local:4416"
+
+
+def _build_potoken_fetcher():  # noqa: ANN202 - returns a PoTokenFetcher
+    """Build a PoToken fetcher over the potoken-server, or ``None`` if unset.
+
+    The returned callable POSTs ``/get_pot`` and maps the response
+    (``poToken`` -> ``pot_token``, ``contentBinding`` -> ``pot_visitor_data``),
+    identical to the web-ui's ``fetch_guild_potoken`` and the bot's
+    ``fetch_and_push_potoken`` shape. It returns ``{}`` on any failure (server
+    down / incomplete) so the PoToken decorator degrades to the prior PoToken.
+    Never logs token material.
+    """
+    base = _potoken_server_url()
+    if not base:
+        return None
+    url = base.rstrip("/") + "/get_pot"
+
+    def _fetch() -> Mapping[str, object]:
+        data = json.dumps({}).encode("utf-8")
+        req = urllib.request.Request(  # noqa: S310 - in-cluster service URL only
+            url,
+            data=data,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(  # noqa: S310 - fixed in-cluster URL
+                req, timeout=_HTTP_TIMEOUT
+            ) as resp:
+                parsed = json.loads(resp.read().decode("utf-8")) or {}
+        except Exception:  # noqa: BLE001 - degrade to empty (keep prior PoToken)
+            return {}
+        pot_token = str(parsed.get("poToken", "") or "")
+        visitor = str(parsed.get("contentBinding", "") or "")
+        if not pot_token or not visitor:
+            return {}
+        return {"pot_token": pot_token, "pot_visitor_data": visitor}
+
+    return _fetch
 
 
 def _float_env(name: str, default: float) -> float:
@@ -106,10 +176,10 @@ def build_clients_by_provider() -> dict[str, RefreshClient]:
     google_secret = os.getenv("GOOGLE_CLIENT_SECRET", "").strip()
     if google_id and google_secret:
         # An operator-supplied Google web-app client (rare) takes precedence.
-        clients["youtube"] = GoogleRefreshClient(
+        yt_base: RefreshClient = GoogleRefreshClient(
             client_id=google_id, client_secret=google_secret, provider="youtube"
         )
-        clients["youtube_music"] = GoogleRefreshClient(
+        ytm_base: RefreshClient = GoogleRefreshClient(
             client_id=google_id,
             client_secret=google_secret,
             provider="youtube_music",
@@ -119,8 +189,28 @@ def build_clients_by_provider() -> dict[str, RefreshClient]:
         # PUBLIC device-code client (no operator Google app). Refresh them with
         # that same public client against youtube.com/o/oauth2/token, so
         # device-issued credentials keep renewing with no env configuration.
-        clients["youtube"] = youtube_device_refresh_client("youtube")
-        clients["youtube_music"] = youtube_device_refresh_client("youtube_music")
+        yt_base = youtube_device_refresh_client("youtube")
+        ytm_base = youtube_device_refresh_client("youtube_music")
+
+    # The YouTube playback credential also carries a short-lived PoToken +
+    # visitor data that must stay fresh (R5.3) — the OAuth refresh response has
+    # no PoToken, so wrap the base client to regenerate the PoToken from the
+    # in-cluster potoken-server on every refresh. When no potoken-server is
+    # resolvable the base client is used unwrapped (OAuth-only refresh; the
+    # last-known PoToken is preserved by the watchdog).
+    potoken_fetcher = _build_potoken_fetcher()
+    if potoken_fetcher is not None:
+        clients["youtube"] = PoTokenRefreshClient(
+            base=yt_base, fetch_potoken=potoken_fetcher, provider="youtube"
+        )
+        clients["youtube_music"] = PoTokenRefreshClient(
+            base=ytm_base,
+            fetch_potoken=potoken_fetcher,
+            provider="youtube_music",
+        )
+    else:
+        clients["youtube"] = yt_base
+        clients["youtube_music"] = ytm_base
 
     spotify_id = os.getenv("SPOTIFY_CLIENT_ID", "").strip()
     spotify_secret = os.getenv("SPOTIFY_CLIENT_SECRET", "").strip()

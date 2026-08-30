@@ -401,3 +401,64 @@ def test_build_clients_includes_configured_providers(monkeypatch: Any) -> None:
     assert set(clients) == {"youtube", "youtube_music", "spotify"}
     assert clients["youtube"].provider == "youtube"
     assert clients["youtube_music"].provider == "youtube_music"
+
+
+def test_build_clients_wraps_youtube_with_potoken(monkeypatch: Any) -> None:
+    """With a potoken-server configured, YouTube clients renew the PoToken.
+
+    The watchdog must keep the short-lived PoToken alive, not just the OAuth
+    token (R5.3). When ``POTOKEN_SERVER_URL`` (or a stage default) resolves,
+    ``build_clients_by_provider`` wraps the youtube / youtube_music refresh
+    clients in :class:`PoTokenRefreshClient`.
+    """
+    from hellodj_platform_logic.source_refresh_potoken import PoTokenRefreshClient
+
+    for var in ("GOOGLE_CLIENT_ID", "GOOGLE_CLIENT_SECRET", "TIDAL_CLIENT_ID"):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("POTOKEN_SERVER_URL", "http://potoken.test:4416")
+
+    clients = build_clients_by_provider()
+
+    assert isinstance(clients["youtube"], PoTokenRefreshClient)
+    assert isinstance(clients["youtube_music"], PoTokenRefreshClient)
+    assert clients["youtube"].provider == "youtube"
+    assert clients["youtube_music"].provider == "youtube_music"
+
+
+def test_build_clients_potoken_url_defaults_from_stage(monkeypatch: Any) -> None:
+    """Absent POTOKEN_SERVER_URL, the in-namespace service DNS is derived."""
+    from hellodj_platform_logic.source_refresh_potoken import PoTokenRefreshClient
+
+    for var in (
+        "GOOGLE_CLIENT_ID",
+        "GOOGLE_CLIENT_SECRET",
+        "TIDAL_CLIENT_ID",
+        "POTOKEN_SERVER_URL",
+    ):
+        monkeypatch.delenv(var, raising=False)
+    monkeypatch.setenv("HELLODJ_STAGE", "staging")
+
+    clients = build_clients_by_provider()
+
+    assert isinstance(clients["youtube"], PoTokenRefreshClient)
+
+
+def test_build_clients_no_potoken_leaves_youtube_unwrapped(
+    monkeypatch: Any,
+) -> None:
+    """With no potoken URL resolvable, YouTube uses the base client unwrapped."""
+    from hellodj_platform_logic.source_refresh_potoken import PoTokenRefreshClient
+
+    for var in (
+        "GOOGLE_CLIENT_ID",
+        "GOOGLE_CLIENT_SECRET",
+        "TIDAL_CLIENT_ID",
+        "POTOKEN_SERVER_URL",
+        "HELLODJ_STAGE",
+    ):
+        monkeypatch.delenv(var, raising=False)
+
+    clients = build_clients_by_provider()
+
+    assert not isinstance(clients["youtube"], PoTokenRefreshClient)
+    assert clients["youtube"].provider == "youtube"

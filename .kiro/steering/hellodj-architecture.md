@@ -354,7 +354,27 @@ DynamoDB access and survives a bot bounce. `__main__.main()` starts it on a
   health server still comes up.
 - **Env (playback-orchestrator):** `HELLODJ_SOURCE_CREDS_KMS_KEY_ID`,
   `TOKEN_WATCHDOG_INTERVAL` (default 300s), `TOKEN_WATCHDOG_THRESHOLD` (default
-  600s), `HELLODJ_GOOGLE_OAUTH_SECRET_ARN` + provider client id/secret envs.
+  600s), `HELLODJ_GOOGLE_OAUTH_SECRET_ARN` + provider client id/secret envs,
+  `POTOKEN_SERVER_URL` (see PoToken freshness below).
+- **YouTube PoToken kept fresh by the watchdog (added 2026-08-30).** A stored
+  YouTube/YouTube Music credential carries THREE playback fields that must all
+  stay alive: the OAuth `refresh_token` AND the short-lived
+  `pot_token` / `pot_visitor_data` pair (in the encrypted blob's `extra`). The
+  OAuth refresh response has NO PoToken, so refreshing only the OAuth token
+  would keep re-storing the connect-time PoToken until it went stale and
+  playback degraded. Fix: `watchdog_bootstrap.build_clients_by_provider` wraps
+  the youtube/youtube_music refresh clients in
+  `hellodj_platform_logic.source_refresh_potoken.PoTokenRefreshClient`, which
+  delegates the OAuth refresh to the base (device or web-app) client and then
+  fetches a FRESH PoToken from the in-cluster potoken-server (`POTOKEN_SERVER_URL`,
+  defaulting to `http://potoken-server.hellodj-<stage>.svc.cluster.local:4416`),
+  merging the new `pot_token`/`pot_visitor_data` into the refreshed
+  `TokenState.extra`. Since YouTube's stored `expires_at` is `0` it is ALWAYS
+  near-expiry, so every tick renews both the OAuth token and the PoToken.
+  Degrades gracefully: if the PoToken fetch fails the OAuth-refreshed token is
+  returned WITHOUT clobbering the prior PoToken (the watchdog's
+  `_preserve_prior_extra` carries the last-known PoToken forward), and if no
+  potoken-server is resolvable the base client is used unwrapped (OAuth-only).
 
 **Playback readers** (`bot/playback/guild_credentials.py`) resolve the
 `USER#<sub>`/`SOURCECRED#<provider>` item and decrypt via `token_crypto` with
