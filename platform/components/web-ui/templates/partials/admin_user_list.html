@@ -55,6 +55,10 @@
                       hx-vals='{"enabled": "true"}'
                       hx-target="#admin-user-list">Enable</button>
             {% endif %}
+            <button class="btn btn-ghost btn-sm"
+                    hx-post="{{ url_for('pages.admin_reset_password', username=user.login) }}"
+                    hx-confirm="Send a password-reset email to {{ user.username }}?"
+                    hx-target="#admin-user-list">Reset password</button>
             <button class="btn btn-danger btn-sm"
                     hx-post="{{ url_for('pages.admin_delete_user', username=user.login) }}"
                     hx-confirm="Permanently delete {{ user.username }}? This cannot be undone."

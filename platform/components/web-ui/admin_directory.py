@@ -44,6 +44,8 @@ class CognitoClient(Protocol):
 
     def admin_delete_user(self, **kwargs: Any) -> dict[str, Any]: ...
 
+    def admin_reset_user_password(self, **kwargs: Any) -> dict[str, Any]: ...
+
 
 class AdminDirectory:
     """Manage all platform accounts through the Cognito user pool."""
@@ -104,6 +106,23 @@ class AdminDirectory:
         the user.
         """
         self._client.admin_delete_user(
+            UserPoolId=self._user_pool_id, Username=username
+        )
+
+    def reset_password(self, username: str) -> None:
+        """Trigger a password-reset email for the account.
+
+        Calls Cognito ``AdminResetUserPassword``, which puts the user into the
+        ``RESET_REQUIRED`` state and sends them a password-reset verification
+        code via the pool's configured (branded SES) message. The user then
+        completes the reset on the recovery form with the emailed code — the
+        admin never sees or sets the new password.
+
+        Requires a verified email on the account (the reset code is emailed);
+        Cognito surfaces an error otherwise, which the route reports to the
+        admin.
+        """
+        self._client.admin_reset_user_password(
             UserPoolId=self._user_pool_id, Username=username
         )
 

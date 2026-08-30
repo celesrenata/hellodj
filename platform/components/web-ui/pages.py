@@ -26,6 +26,7 @@ from flask import (
 # Aliased: ``registration_mode`` is also a template context variable name.
 import registration_mode as registration_mode_module
 from admin_dashboard import admin_dashboard_stats
+from admin_user_routes import register_admin_user_routes
 from config_store import effective_default_source
 
 __all__ = ["build_pages_blueprint"]
@@ -309,67 +310,18 @@ def build_pages_blueprint() -> Blueprint:
         )
         return redirect(url_for("pages.admin", regmode="saved"))
 
-    @bp.route("/admin/users/<username>/role", methods=["POST"])
-    def admin_set_role(username: str):  # type: ignore[unused-ignore]
-        """Promote/demote a user's admin role, then return the row. Admin-only."""
-        if not _require_login():
-            return redirect(url_for("pages.login"))
-        if not _is_admin():
-            return redirect(url_for("pages.dashboard"))
-        make_admin = request.form.get("admin") == "true"
-        directory = _admin_directory()
-        if directory:
-            directory.set_admin(username, make_admin)
-        return render_template("partials/admin_user_list.html", users=_admin_users())
-
-    @bp.route("/admin/users/<username>/enabled", methods=["POST"])
-    def admin_set_enabled(username: str):  # type: ignore[unused-ignore]
-        """Enable/disable an account, then return the list. Admin-only."""
-        if not _require_login():
-            return redirect(url_for("pages.login"))
-        if not _is_admin():
-            return redirect(url_for("pages.dashboard"))
-        enabled = request.form.get("enabled") == "true"
-        directory = _admin_directory()
-        if directory:
-            directory.set_enabled(username, enabled)
-        return render_template("partials/admin_user_list.html", users=_admin_users())
-
-    @bp.route("/admin/users/<username>/delete", methods=["POST"])
-    def admin_delete_user(username: str):  # type: ignore[unused-ignore]
-        """Permanently delete an account, then return the list. Admin-only.
-
-        Distinct from disabling (a reversible flag): this removes the account
-        from Cognito outright, so it drops off the directory. A surfaced error
-        (e.g. Cognito failure) is shown as a notice above the refreshed list.
-        """
-        if not _require_login():
-            return redirect(url_for("pages.login"))
-        if not _is_admin():
-            return redirect(url_for("pages.dashboard"))
-        directory = _admin_directory()
-        error = None
-        success = None
-        if not directory:
-            error = "user management is not available (no directory configured)"
-        else:
-            # Resolve the account's email BEFORE deletion so we can also clear
-            # any lingering invite record — deleting the Cognito user alone
-            # leaves the invite stuck "pending" and blocks re-inviting the same
-            # address (the two live in separate systems).
-            email = _email_for_username(username)
-            try:
-                directory.delete_user(username)
-                _delete_invite_for(email)
-                success = f"Account {username} deleted."
-            except Exception as exc:  # noqa: BLE001 - surface message to admin
-                error = str(exc)
-        return render_template(
-            "partials/admin_user_list.html",
-            users=_admin_users(),
-            invite_error=error,
-            invite_success=success,
-        )
+    # Admin user-management routes (role/enable/delete/reset-password) live in
+    # admin_user_routes.py to keep this module under the 500-line ceiling; the
+    # pages-module helpers they need are injected (no circular import).
+    register_admin_user_routes(
+        bp,
+        require_login=_require_login,
+        is_admin=_is_admin,
+        admin_directory=_admin_directory,
+        admin_users=_admin_users,
+        email_for_username=_email_for_username,
+        delete_invite_for=_delete_invite_for,
+    )
 
     return bp
 
