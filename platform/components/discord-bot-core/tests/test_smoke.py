@@ -7,9 +7,12 @@ without requiring discord.py, wavelink, boto3, or aiohttp to be installed.
 
 from __future__ import annotations
 
+import inspect
+
 import pytest
 
-from discord_bot_core.commands.playback_cog import build_request
+from discord_bot_core.commands import playback_cog as _playback_cog_mod
+from discord_bot_core.commands.playback_cog import build_playback_cog, build_request
 from discord_bot_core.config import BotConfig
 from discord_bot_core.playback.client import (
     PlaybackAction,
@@ -113,6 +116,27 @@ def test_guild_policy_expiry_denies_pending() -> None:
 # --------------------------------------------------------------------------- #
 # Playback request building + client delegation (fake transport)
 # --------------------------------------------------------------------------- #
+
+
+def test_playback_cog_does_not_gate_on_guild_policy() -> None:
+    """Regression: playback commands are gated ONLY by the activation gate.
+
+    The AWS bot has no admin-portal approval path, so the legacy
+    ``GuildPolicy`` PENDING→APPROVED state is permanently un-approved and must
+    NOT be consulted per command — doing so refused every command as "awaiting
+    administrator approval" even in an ACTIVATED guild. The gateway installs the
+    activation gate globally (``bot.tree.interaction_check``); the cog builder
+    therefore no longer takes a ``guild_policy`` argument and the module no
+    longer imports it.
+    """
+    params = list(inspect.signature(build_playback_cog).parameters)
+    assert params == ["playback"], (
+        "build_playback_cog must not re-introduce a per-command guild_policy "
+        f"authorization gate (got params {params})"
+    )
+    assert not hasattr(_playback_cog_mod, "GuildPolicy"), (
+        "playback_cog must not import GuildPolicy — activation is the gate"
+    )
 
 
 def test_build_request_payload() -> None:

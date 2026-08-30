@@ -1,7 +1,7 @@
 {% extends layout|default("base.html") %}
 
-{% block title %}Guild{% endblock %}
-{% block heading %}Guild {{ guild_id }}{% endblock %}
+{% block title %}{{ guild_name or "Guild" }}{% endblock %}
+{% block heading %}{{ guild_name if guild_name else "Guild " ~ guild_id }}{% endblock %}
 
 {% block content %}
 <div class="glass-panel panel-section">

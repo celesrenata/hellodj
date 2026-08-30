@@ -231,12 +231,18 @@ def build_guild_blueprint() -> Blueprint:
         providers_configured = {
             p: source_provider_configured(p) for p in OAUTH_SOURCE_PROVIDERS
         }
+        # Resolve the guild's stored Discord name (recorded at claim time) so
+        # the page header reads e.g. "Guild Under the Influence" instead of the
+        # raw snowflake id; falls back to '' (template shows "Guild <id>") when
+        # the name is unknown (older claim that stored no name / degraded mode).
+        guild_name = guild_admin.guild_name(guild_id) if guild_admin else ""
         return render_template(
             "pages/guild_detail.html",
             layout=_layout(),
             nav_items=_nav(),
             active="guilds",
             guild_id=guild_id,
+            guild_name=guild_name,
             admins=guild_admin.list_admins(guild_id) if guild_admin else [],
             source_status=_account_source_status(sub),
             providers=OAUTH_SOURCE_PROVIDERS,

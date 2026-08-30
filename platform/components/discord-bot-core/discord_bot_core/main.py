@@ -153,9 +153,7 @@ async def run(config: BotConfig | None = None) -> None:
     guild_policy = GuildPolicy()
 
     registry = CommandRegistry()
-    registry.register(
-        lambda deps: build_playback_cog(deps.playback, deps.guild_policy)
-    )
+    registry.register(lambda deps: build_playback_cog(deps.playback))
 
     deps = Dependencies(playback=playback, guild_policy=guild_policy)
     gateway = BotClient(cfg, registry, guild_policy, deps)

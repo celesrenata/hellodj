@@ -23,7 +23,6 @@ from ..playback.client import (
     PlaybackError,
     PlaybackRequest,
 )
-from ..policy.guild_policy import GuildPolicy
 
 log = logging.getLogger(__name__)
 
@@ -54,15 +53,27 @@ def build_request(
     )
 
 
-def build_playback_cog(playback: PlaybackClient, guild_policy: GuildPolicy) -> Any:
+def build_playback_cog(playback: PlaybackClient) -> Any:
     """Construct the discord.py playback cog bound to the given dependencies.
 
     Args:
         playback: The client that forwards requests to the orchestrator.
-        guild_policy: The policy consulted before acting in a guild.
 
     Returns:
         A ``discord.ext.commands.Cog`` instance.
+
+    Authorization note: per-guild authorization on the AWS platform is the
+    ``/activate <key>`` gate (``GuildActivation``), installed once and globally
+    on the bot by the gateway as ``bot.tree.interaction_check`` (and the prefix
+    ``bot.add_check``) in :func:`~discord_bot_core.commands.activation_cog.build_activation_cog`.
+    That single gate refuses EVERY command in an unactivated guild before it
+    dispatches, so an activated guild can run playback commands and an
+    unactivated one cannot. The cog therefore does NOT re-check authorization
+    itself: the legacy on-prem ``GuildPolicy`` PENDING→APPROVED admin-portal gate
+    has no approval path wired on AWS (nothing ever calls ``approve``), so
+    consulting it here permanently refused every command as "awaiting
+    administrator approval" even after a guild was activated — the activation
+    gate is the authoritative and only per-guild gate here.
     """
     from discord import app_commands  # local import: optional runtime dependency
     from discord.ext import commands
@@ -75,21 +86,17 @@ def build_playback_cog(playback: PlaybackClient, guild_policy: GuildPolicy) -> A
         — the same path ``/activate`` uses. Prefix (``!hellodj``) commands do
         NOT appear as slash commands, which is why an earlier prefix-only build
         surfaced no commands after activation.
+
+        Per-guild authorization is the activation gate the gateway installs
+        globally (see :func:`build_playback_cog`), not a per-command check here.
         """
 
         def __init__(self) -> None:
             self._playback = playback
-            self._policy = guild_policy
 
         async def _delegate(
             self, interaction: Any, request: PlaybackRequest
         ) -> None:
-            if not self._policy.is_authorized(request.guild_id):
-                await interaction.response.send_message(
-                    "HelloDJ is awaiting administrator approval for this server.",
-                    ephemeral=True,
-                )
-                return
             # Playback delegation is a network hop to the orchestrator; defer so
             # we don't blow Discord's 3s initial-response deadline, then follow
             # up with the result.
