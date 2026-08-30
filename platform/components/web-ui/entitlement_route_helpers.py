@@ -57,6 +57,7 @@ TOGGLE_FLAGS = frozenset(
         "visualizations",
         "wakeword",
         "ai_integration",
+        "premium_sources",
     }
 )
 

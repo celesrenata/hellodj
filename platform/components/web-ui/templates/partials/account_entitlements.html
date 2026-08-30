@@ -30,8 +30,10 @@
         <tr><td>YouTube</td><td>{{ state_cell(sources.get('youtube', False)) }}</td></tr>
         <tr><td>YouTube Music</td><td>{{ state_cell(sources.get('youtube_music', False)) }}</td></tr>
         <tr><td>SoundCloud</td><td>{{ state_cell(sources.get('soundcloud', False)) }}</td></tr>
-        <tr><td>Spotify</td><td>{{ state_cell(sources.get('spotify', False)) }}</td></tr>
-        <tr><td>Tidal</td><td>{{ state_cell(sources.get('tidal', False)) }}</td></tr>
+        {% set premium = entitlements.get('premium_sources', False) %}
+        <tr><td>Spotify</td><td>{{ state_cell(sources.get('spotify', False) and premium) }}</td></tr>
+        <tr><td>Tidal</td><td>{{ state_cell(sources.get('tidal', False) and premium) }}</td></tr>
+        <tr><td>Premium streaming services</td><td>{{ state_cell(premium) }}</td></tr>
         <tr><td>Custom bot avatar</td><td>{{ state_cell(entitlements.get('custom_avatar', False)) }}</td></tr>
         <tr><td>Custom bot name</td><td>{{ state_cell(entitlements.get('custom_name', False)) }}</td></tr>
         <tr><td>Audio above 96 kbps</td><td>{{ state_cell(entitlements.get('audio_above_96k', False)) }}</td></tr>

@@ -32,10 +32,12 @@ from hypothesis import strategies as st
 from entitlements_core import (
     DEFAULT_ENTITLEMENTS,
     DEFAULT_MARKUP,
+    PREMIUM_SOURCES,
     effective_cost,
     effective_max_bots_per_guild,
     merge_effective,
     over_cap,
+    premium_sources_allowed,
     quota_reached,
     source_allowed,
     validate_quota,
@@ -52,6 +54,7 @@ BOOL_FLAGS = [
     "visualizations",
     "wakeword",
     "ai_integration",
+    "premium_sources",
     "max_bots_per_guild_enabled",
 ]
 
@@ -92,6 +95,7 @@ _stored_strategy = st.fixed_dictionaries(
         "visualizations": st.booleans(),
         "wakeword": st.booleans(),
         "ai_integration": st.booleans(),
+        "premium_sources": st.booleans(),
         "max_bots_per_guild": st.integers(min_value=1, max_value=50),
         "max_bots_per_guild_enabled": st.booleans(),
         "max_guilds": st.integers(min_value=1, max_value=50),
@@ -161,12 +165,56 @@ def test_property1_defaults_are_restrictive() -> None:
 def test_property2_source_allowed_matches_map(
     stored: dict[str, Any] | None, provider: str
 ) -> None:
-    """Property 2 — ``source_allowed`` is exactly the effective map value.
+    """Property 2 — ``source_allowed`` is the effective map value, composed with
+    the ``premium_sources`` gate for premium providers.
+
+    A non-premium source is allowed iff its per-source flag is on. A premium
+    source (Spotify/Tidal) is allowed iff its per-source flag is on AND the
+    ``premium_sources`` capability is enabled.
 
     Validates: Requirements 3.2, 3.3, 3.4
     """
     effective = merge_effective(stored)
-    assert source_allowed(effective, provider) == bool(effective["sources"][provider])
+    flag_on = bool(effective["sources"][provider])
+    if provider in PREMIUM_SOURCES:
+        expected = flag_on and bool(effective["premium_sources"])
+    else:
+        expected = flag_on
+    assert source_allowed(effective, provider) == expected
+
+
+@settings(max_examples=200)
+@given(stored=st.one_of(st.none(), _stored_strategy))
+def test_premium_gate_blocks_premium_without_capability(
+    stored: dict[str, Any] | None,
+) -> None:
+    """A premium source is NEVER allowed while ``premium_sources`` is off, even
+    when the per-source flag is on; a non-premium source is unaffected."""
+    effective = merge_effective(stored)
+    effective["premium_sources"] = False
+    for provider in PREMIUM_SOURCES:
+        effective["sources"][provider] = True
+        assert source_allowed(effective, provider) is False
+    # Non-premium sources are governed only by their per-source flag.
+    effective["sources"]["soundcloud"] = True
+    assert source_allowed(effective, "soundcloud") is True
+
+
+def test_premium_gate_allows_premium_with_both() -> None:
+    """A premium source is allowed when its flag AND the premium gate are on."""
+    effective = merge_effective(
+        {"sources": {"spotify": True, "tidal": True}, "premium_sources": True}
+    )
+    assert source_allowed(effective, "spotify") is True
+    assert source_allowed(effective, "tidal") is True
+    assert premium_sources_allowed(effective) is True
+
+
+def test_premium_sources_default_off() -> None:
+    """R13.2 — premium streaming defaults to restricted."""
+    assert DEFAULT_ENTITLEMENTS["premium_sources"] is False
+    assert premium_sources_allowed(merge_effective(None)) is False
+    assert PREMIUM_SOURCES == frozenset({"spotify", "tidal"})
 
 
 @given(provider=st.text(max_size=12))

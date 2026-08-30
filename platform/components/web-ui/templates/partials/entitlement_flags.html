@@ -65,8 +65,8 @@
         {{ flag_row(sub, 'youtube', 'YouTube', sources.get('youtube', False), is_default) }}
         {{ flag_row(sub, 'youtube_music', 'YouTube Music', sources.get('youtube_music', False), is_default) }}
         {{ flag_row(sub, 'soundcloud', 'SoundCloud', sources.get('soundcloud', False), is_default) }}
-        {{ flag_row(sub, 'spotify', 'Spotify', sources.get('spotify', False), is_default) }}
-        {{ flag_row(sub, 'tidal', 'Tidal', sources.get('tidal', False), is_default) }}
+        {{ flag_row(sub, 'spotify', 'Spotify', sources.get('spotify', False), is_default, 'Premium — also requires the Premium streaming services capability below.') }}
+        {{ flag_row(sub, 'tidal', 'Tidal', sources.get('tidal', False), is_default, 'Premium — also requires the Premium streaming services capability below.') }}
       </tbody>
     </table>
   </div>
@@ -93,6 +93,7 @@
         {{ flag_row(sub, 'visualizations', 'Visualizations', effective.get('visualizations', False), is_default) }}
         {{ flag_row(sub, 'wakeword', 'Wake-word / voice activation', effective.get('wakeword', False), is_default) }}
         {{ flag_row(sub, 'ai_integration', 'AI integration', effective.get('ai_integration', False), is_default) }}
+        {{ flag_row(sub, 'premium_sources', 'Premium streaming services', effective.get('premium_sources', False), is_default, 'Gates the paid services outside of YouTube (Spotify, Tidal).') }}
       </tbody>
     </table>
   </div>

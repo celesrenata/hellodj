@@ -127,14 +127,15 @@ class TestSourceGate:
     def test_permits_enabled_source(self, stub_bot):
         import player
 
-        stub_bot(FakeResolver(_sources(spotify=True)))
-        assert player._source_allowed_for_user("discord-1", "spotify") is True
+        # A non-premium source needs only its per-source flag.
+        stub_bot(FakeResolver(_sources(youtube=True)))
+        assert player._source_allowed_for_user("discord-1", "youtube") is True
 
     def test_declines_disabled_source(self, stub_bot):
         import player
 
-        stub_bot(FakeResolver(_sources(spotify=False)))
-        assert player._source_allowed_for_user("discord-1", "spotify") is False
+        stub_bot(FakeResolver(_sources(youtube=False)))
+        assert player._source_allowed_for_user("discord-1", "youtube") is False
 
     def test_default_soundcloud_permitted_youtube_declined(self, stub_bot):
         import player
@@ -157,6 +158,46 @@ class TestSourceGate:
 
         stub_bot(FakeResolver(_sources(spotify=True)))
         assert player._source_allowed_for_user("discord-1", "bandcamp") is False
+
+
+# ── premium source gate (Spotify/Tidal + premium_sources) ───────────────────
+
+
+class TestPremiumSourceGate:
+    def test_premium_source_needs_flag_and_premium_capability(self, stub_bot):
+        import player
+
+        # Per-source flag on but premium capability off → declined.
+        stub_bot(FakeResolver({"sources": {"spotify": True}, "premium_sources": False}))
+        assert player._source_allowed_for_user("discord-1", "spotify") is False
+
+    def test_premium_source_allowed_with_both(self, stub_bot):
+        import player
+
+        stub_bot(
+            FakeResolver(
+                {
+                    "sources": {"spotify": True, "tidal": True},
+                    "premium_sources": True,
+                }
+            )
+        )
+        assert player._source_allowed_for_user("discord-1", "spotify") is True
+        assert player._source_allowed_for_user("discord-1", "tidal") is True
+
+    def test_premium_capability_without_flag_still_declined(self, stub_bot):
+        import player
+
+        # Premium capability on but the per-source flag off → still declined.
+        stub_bot(FakeResolver({"sources": {"spotify": False}, "premium_sources": True}))
+        assert player._source_allowed_for_user("discord-1", "spotify") is False
+
+    def test_premium_gate_does_not_affect_non_premium(self, stub_bot):
+        import player
+
+        # Premium off, but a non-premium source with its flag on is allowed.
+        stub_bot(FakeResolver({"sources": {"youtube": True}, "premium_sources": False}))
+        assert player._source_allowed_for_user("discord-1", "youtube") is True
 
 
 # ── bitrate cap at start (R5.2) ──────────────────────────────────────────────

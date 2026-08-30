@@ -21,8 +21,10 @@ from typing import Any
 __all__ = [
     "DEFAULT_ENTITLEMENTS",
     "DEFAULT_MARKUP",
+    "PREMIUM_SOURCES",
     "merge_effective",
     "source_allowed",
+    "premium_sources_allowed",
     "effective_max_bots_per_guild",
     "quota_reached",
     "over_cap",
@@ -53,11 +55,22 @@ DEFAULT_ENTITLEMENTS: dict[str, Any] = {
     "visualizations": False,
     "wakeword": False,
     "ai_integration": False,
+    # Single gate for the premium streaming services (Spotify, Tidal) — the
+    # paid sources outside of YouTube. A premium source is permitted only when
+    # BOTH its per-source flag is on AND this capability is enabled. Defaults
+    # OFF (restrictive) so an absent record never grants premium streaming.
+    "premium_sources": False,
     "max_bots_per_guild": 1,
     "max_bots_per_guild_enabled": False,
     "max_guilds": 1,
     "ai_spend_cap": None,
 }
+
+#: The playback sources considered PREMIUM (paid streaming services outside of
+#: YouTube). Access to any of these is gated behind the single
+#: ``premium_sources`` capability in addition to the provider's own per-source
+#: flag. SoundCloud / YouTube / YouTube Music are NOT premium.
+PREMIUM_SOURCES: frozenset[str] = frozenset({"spotify", "tidal"})
 
 
 def merge_effective(stored: dict[str, Any] | None) -> dict[str, Any]:
@@ -96,14 +109,34 @@ def merge_effective(stored: dict[str, Any] | None) -> dict[str, Any]:
     return effective
 
 
+def premium_sources_allowed(effective: dict[str, Any]) -> bool:
+    """Return whether the user may use premium streaming services.
+
+    The single gate over the paid sources outside of YouTube (Spotify, Tidal).
+    Secure by default: an absent flag resolves to ``False`` (not permitted).
+    """
+    return bool(effective.get("premium_sources", False))
+
+
 def source_allowed(effective: dict[str, Any], provider: str) -> bool:
     """Return whether ``provider`` is enabled in ``effective`` (R3.2/R3.4).
+
+    A source is permitted iff its per-source flag is ``True`` in the effective
+    ``sources`` map. In addition, a PREMIUM provider (:data:`PREMIUM_SOURCES` —
+    Spotify/Tidal, the paid services outside of YouTube) is permitted only when
+    the single ``premium_sources`` capability is ALSO enabled. So a premium
+    source needs BOTH its per-source flag and the premium gate; a non-premium
+    source needs only its per-source flag.
 
     An unknown provider (absent from the effective ``sources`` map) is treated
     as not allowed — secure by default.
     """
     sources = effective.get("sources") or {}
-    return bool(sources.get(provider, False))
+    if not bool(sources.get(provider, False)):
+        return False
+    if provider in PREMIUM_SOURCES and not premium_sources_allowed(effective):
+        return False
+    return True
 
 
 def effective_max_bots_per_guild(effective: dict[str, Any]) -> int:

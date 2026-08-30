@@ -109,7 +109,9 @@ def _source_allowed_for_user(discord_id, provider: str) -> bool:
     and checks the source flag. Enforcement mirrors the web-ui's
     ``entitlements_core.source_allowed``: a source is permitted iff its key is
     ``True`` in the effective ``sources`` map, which is applied automatically
-    without any additional per-request approval (R3.3).
+    without any additional per-request approval (R3.3). A PREMIUM source
+    (Spotify/Tidal — the paid services outside of YouTube) additionally requires
+    the single ``premium_sources`` capability to be enabled.
 
     Fails safe to the restrictive defaults (SoundCloud only) when the resolver
     is unavailable, the user is unlinked, or the datastore lookup fails (R14.3):
@@ -148,7 +150,20 @@ def _source_allowed_for_user(discord_id, provider: str) -> bool:
             return provider == "soundcloud"
 
     sources = effective.get("sources", {}) if isinstance(effective, dict) else {}
-    return bool(sources.get(key, False))
+    if not bool(sources.get(key, False)):
+        return False
+    # Premium streaming services (Spotify, Tidal — the paid sources outside of
+    # YouTube) require the single ``premium_sources`` capability in ADDITION to
+    # their per-source flag. Mirrors the web-ui ``entitlements_core.source_allowed``
+    # composition so the gate agrees on both sides. Fail-safe: an absent flag is
+    # False, so a premium source is declined without the positive grant.
+    try:
+        from playback.user_entitlements import PREMIUM_SOURCES
+    except Exception:  # noqa: BLE001 - module unavailable → treat all as premium-gated
+        PREMIUM_SOURCES = frozenset({"spotify", "tidal"})
+    if key in PREMIUM_SOURCES and not bool(effective.get("premium_sources", False)):
+        return False
+    return True
 
 
 # ── per-user high-bitrate audio gate (R5.2/R5.3) ─────────────
