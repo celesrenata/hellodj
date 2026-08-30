@@ -76,6 +76,11 @@ class AuthResult:
     challenge_name: str | None = None
     session: str | None = None
     pending_confirmation: bool = False
+    #: True when the account is in RESET_REQUIRED (e.g. an admin ran
+    #: AdminResetUserPassword): the user must complete a code+new-password
+    #: reset before they can sign in. The caller routes them to the recover
+    #: confirm stage (where the emailed code is entered).
+    password_reset_required: bool = False
     extra: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -148,6 +153,12 @@ class CognitoAuth:
             code = _error_code(error)
             if code == "UserNotConfirmedException":
                 return AuthResult(pending_confirmation=True)
+            if code == "PasswordResetRequiredException":
+                # An admin reset the password (AdminResetUserPassword), or
+                # Cognito otherwise flagged RESET_REQUIRED. The user has (or
+                # can request) an emailed code — route them to the reset
+                # confirm stage instead of the dead-end "incorrect password".
+                return AuthResult(password_reset_required=True)
             raise AuthError(GENERIC_AUTH_ERROR) from error
         return self._result_from_response(resp)
 

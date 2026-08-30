@@ -154,6 +154,25 @@ def handle_login():
         # Account exists but is unconfirmed → send them to confirm the email.
         session["pending_confirm_email"] = username
         return redirect(url_for("auth.register"))
+    if result.password_reset_required:
+        # RESET_REQUIRED (e.g. an admin ran AdminResetUserPassword). Trigger a
+        # fresh reset code to the account's email and drop the user straight
+        # into the recover CONFIRM stage — where they enter the emailed code
+        # and choose a new password. Without this the login is a dead end: the
+        # reset emails a code but there's nowhere to enter it. `username` may
+        # be an email or a username alias; forgot_password accepts either and
+        # is non-enumerating.
+        auth.forgot_password(username)
+        return render_template(
+            "pages/auth_recover.html",
+            error=None,
+            stage="confirm",
+            email=username,
+            notice=(
+                "Your password was reset by an administrator. Enter the code "
+                "we emailed you and choose a new password."
+            ),
+        )
     if result.needs_challenge:
         session[_CHALLENGE_NAME] = result.challenge_name
         session[_CHALLENGE_SESSION] = result.session

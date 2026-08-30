@@ -168,6 +168,31 @@ def test_login_challenge_renders_new_password():
     assert 'name="new_password"' in resp.get_data(as_text=True)
 
 
+def test_login_reset_required_lands_on_reset_form_with_code_field():
+    # An admin reset the user's password (RESET_REQUIRED). Login must NOT
+    # dead-end on the generic error: it emails a fresh code and renders the
+    # recover CONFIRM stage so the user has somewhere to enter the code + new
+    # password.
+    auth = _FakeAuth()
+    auth.initiate_result = AuthResult(password_reset_required=True)
+    app = _app(auth, _FakeVerifier())
+    client = app.test_client()
+    resp = client.post(
+        "/auth/admin", data={"username": "a@x.com", "password": "old"}
+    )
+    body = resp.get_data(as_text=True)
+    assert resp.status_code == 200
+    # The confirm stage renders the code + new-password fields...
+    assert 'name="code"' in body
+    assert 'name="new_password"' in body
+    # ...the email is prefilled, and a fresh reset code was requested.
+    assert 'value="a@x.com"' in body
+    assert auth.forgot_calls == ["a@x.com"]
+    # No session established.
+    with client.session_transaction() as sess:
+        assert "user" not in sess
+
+
 def test_login_token_verify_failure_no_session():
     # Cognito returns tokens but JWKS verification fails → no session (P1/R4.2).
     auth = _FakeAuth()

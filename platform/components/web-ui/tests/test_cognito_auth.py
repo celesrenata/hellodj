@@ -136,6 +136,18 @@ def test_login_unconfirmed_routes_to_confirm():
     assert not result.authenticated
 
 
+def test_login_reset_required_routes_to_reset():
+    # An admin ran AdminResetUserPassword (RESET_REQUIRED). Login must flag
+    # password_reset_required so the caller drops the user into the reset
+    # confirm stage instead of the dead-end generic error.
+    idp = _FakeIdp()
+    idp.errors["initiate_auth"] = _ClientError("PasswordResetRequiredException")
+    result = _auth(idp).initiate_auth("user@x.com", _SECRET_PASSWORD)
+    assert result.password_reset_required
+    assert not result.authenticated
+    assert not result.pending_confirmation
+
+
 # -- challenge response -------------------------------------------------- #
 
 

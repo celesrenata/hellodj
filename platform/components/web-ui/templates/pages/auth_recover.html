@@ -16,6 +16,8 @@
       <div aria-live="polite">
         {% if error %}
           <p class="notice notice--danger" role="alert">{{ error }}</p>
+        {% elif notice %}
+          <p class="notice notice--info" role="status">{{ notice }}</p>
         {% endif %}
       </div>
 
